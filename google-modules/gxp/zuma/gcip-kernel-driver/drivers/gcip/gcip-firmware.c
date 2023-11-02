@@ -113,18 +113,13 @@ struct gcip_fw_tracing *gcip_firmware_tracing_create(const struct gcip_fw_tracin
 	mutex_init(&fw_tracing->lock);
 
 	dentry = debugfs_create_dir("fw_tracing", args->dentry);
-	if (IS_ERR(dentry)) {
-		dev_warn(args->dev, "Failed to create debug FS tracing");
-		kfree(fw_tracing);
-
-		return (struct gcip_fw_tracing *)dentry;
-	}
-
 	fw_tracing->dentry = dentry;
-	debugfs_create_file("active", 0440, fw_tracing->dentry, fw_tracing,
-			    &fops_gcip_firmware_tracing_active);
-	debugfs_create_file("request", 0660, fw_tracing->dentry, fw_tracing,
-			    &fops_gcip_firmware_tracing_request);
+	if (!IS_ERR(dentry)) {
+		debugfs_create_file("active", 0440, fw_tracing->dentry, fw_tracing,
+				    &fops_gcip_firmware_tracing_active);
+		debugfs_create_file("request", 0660, fw_tracing->dentry, fw_tracing,
+				    &fops_gcip_firmware_tracing_request);
+	}
 
 	return fw_tracing;
 }
