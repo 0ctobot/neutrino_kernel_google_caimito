@@ -912,12 +912,14 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 		HSI2C_INT_TRANSFER_DONE;
 	writel(i2c_int_en, i2c->regs + HSI2C_INT_ENABLE);
 
-	cpumask_set_cpu(cpu, &cpu_mask);
-	if (IS_ENABLED(CONFIG_SOC_ZUMA) && cpu == 8) {
-		cpumask_setall(&cpu_mask);
-		cpumask_clear_cpu(cpu, &cpu_mask);
+	if (!IS_ENABLED(CONFIG_IRQ_SBALANCE)) {
+	    cpumask_set_cpu(cpu, &cpu_mask);
+	    if (IS_ENABLED(CONFIG_SOC_ZUMA) && cpu == 8) {
+	        cpumask_setall(&cpu_mask);
+	        cpumask_clear_cpu(cpu, &cpu_mask);
+	    }
+	    irq_set_affinity_and_hint(i2c->irq, &cpu_mask);
 	}
-	irq_set_affinity_and_hint(i2c->irq, &cpu_mask);
 
 	i2c_auto_conf &= ~(0xffff);
 	i2c_auto_conf |= i2c->msg->len;
