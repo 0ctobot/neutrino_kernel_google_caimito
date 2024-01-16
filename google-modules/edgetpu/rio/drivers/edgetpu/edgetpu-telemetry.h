@@ -33,6 +33,7 @@ static inline bool edgetpu_telemetry_mapped(struct gcip_telemetry *tel)
 	return tel->memory.dma_addr;
 }
 
+#if IS_ENABLED(CONFIG_EDGETPU_TELEMETRY_TRACE)
 /*
  * Allocates resources needed for @etdev->telemetry LOG and TRACE.
  *
@@ -82,5 +83,59 @@ void edgetpu_telemetry_mappings_show(struct edgetpu_dev *etdev,
  */
 int edgetpu_mmap_telemetry_buffer(struct edgetpu_dev *etdev, struct gcip_telemetry *tel,
 				  struct vm_area_struct *vma);
+#else
+static inline
+int edgetpu_telemetry_init(struct edgetpu_dev *etdev)
+{
+	return 0;
+}
+
+static inline
+int edgetpu_telemetry_hwtrace_init(struct edgetpu_dev *etdev, size_t buffer_size)
+{
+	return 0;
+}
+
+static inline
+void edgetpu_telemetry_exit(struct edgetpu_dev *etdev)
+{
+}
+
+static inline
+int edgetpu_telemetry_kci(struct edgetpu_dev *etdev)
+{
+	return 0;
+}
+
+static inline
+int edgetpu_telemetry_set_event(struct edgetpu_dev *etdev, struct gcip_telemetry *tel,
+                                u32 eventfd)
+{
+	return 0;
+}
+
+static inline
+void edgetpu_telemetry_unset_event(struct edgetpu_dev *etdev, struct gcip_telemetry *tel)
+{
+}
+
+static inline
+void edgetpu_telemetry_irq_handler(struct edgetpu_dev *etdev)
+{
+}
+
+static inline
+void edgetpu_telemetry_mappings_show(struct edgetpu_dev *etdev,
+                                     struct seq_file *s)
+{
+}
+
+static inline
+int edgetpu_mmap_telemetry_buffer(struct edgetpu_dev *etdev, struct gcip_telemetry *tel,
+                                  struct vm_area_struct *vma)
+{
+	return -ENODEV;
+}
+#endif
 
 #endif /* __EDGETPU_TELEMETRY_H__ */
