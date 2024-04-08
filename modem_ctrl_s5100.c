@@ -2323,6 +2323,11 @@ static int s5100_poweroff_pcie(struct modem_ctl *mc, bool force_off)
 		goto exit;
 	}
 
+	/* If power_off is called when PCIe is not active,
+	 * setting force_off to true*/
+	if (pcie_get_sudden_linkdown_state(mc->pcie_ch_num) || pcie_get_cpl_timeout_state(mc->pcie_ch_num)) {
+		force_off = true;
+	}
 	/* CP reads Tx RP (or tail) after CP2AP_WAKEUP = 1.
 	 * skip pci power off if CP2AP_WAKEUP = 1 or Tx pending.
 	 */
