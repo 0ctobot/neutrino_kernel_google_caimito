@@ -92,3 +92,17 @@ ddk_module(
         "//private/google-modules/display/common/gs_panel",
     ],
 )
+
+ddk_module(
+    name = "panel-gs-tk4c-test",
+    srcs = [
+        "panel-gs-tk4c-test.c",
+    ],
+    out = "panel-gs-tk4c-test.ko",
+    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    local_defines = _PANEL_LOCAL_DEFINES,
+    deps = [
+        ":common_headers",
+        "//private/google-modules/display/common/gs_panel",
+    ],
+)
