@@ -188,6 +188,7 @@ kernel_module_group(
         "//private/google-modules/display/panels/caimito:panel-gs-tk4a",
         "//private/google-modules/display/panels/caimito:panel-gs-tk4b",
         "//private/google-modules/display/panels/caimito:panel-gs-tk4c",
+        "//private/google-modules/display/panels/caimito:panel-gs-tk4c-test",
         "//private/google-modules/display/samsung:display.samsung",
         "//private/google-modules/edgetpu/rio/drivers/edgetpu:edgetpu.rio",
         "//private/google-modules/fingerprint/fpc",
