@@ -51,9 +51,6 @@
 		<&gpp11 0 GPIO_ACTIVE_HIGH>,
 		<&gpp13 0 GPIO_ACTIVE_HIGH>;
 	rffe_channel = <11>;
-	pinctrl-names = "bcl-rffe-modem", "bcl-batoilo-modem";
-	pinctrl-0 = <&bcl_rffe_modem>;
-	pinctrl-1 = <&bcl_batoilo_modem>;
 	interrupt-parent = <&max77779_pmic_irq>;
 	interrupts = <6 IRQ_TYPE_LEVEL_LOW>;
 };
