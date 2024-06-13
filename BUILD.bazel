@@ -343,6 +343,7 @@ kernel_module(
         "drivers/usb/gadget/function/usb_f_dm1.ko",
         "drivers/usb/gadget/function/usb_f_etr_miu.ko",
         "drivers/usb/host/xhci-exynos.ko",
+        "drivers/usb/host/xhci-goog-dma.ko",
         "drivers/usb/typec/tcpm/google/bc_max77759.ko",
         "drivers/usb/typec/tcpm/google/google_tcpci_shim.ko",
         "drivers/usb/typec/tcpm/google/max77759_contaminant.ko",
