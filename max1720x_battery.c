@@ -5559,7 +5559,7 @@ static int max17x0x_regmap_init(struct max1720x_chip *chip)
 	}
 
 	/* todo read secondary address from DT */
-	if (!secondary_address) {
+	if (!secondary_address || chip->gauge_type == -1) {
 		dev_warn(chip->dev, "Device 0x%x has no permanent storage\n",
 			chip->devname);
 		return 0;
