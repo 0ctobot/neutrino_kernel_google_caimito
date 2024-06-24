@@ -7,7 +7,7 @@
  */
 
 &google_battery {
-	google,chg-battery-capacity = <4458>;
+	google,chg-battery-capacity = <4558>;
 
 	google,chg-cv-limits = <4200000 4300000 4350000 4480000>;
 	google,chg-temp-limits = <0 100 200 420 460 480 550>;
@@ -33,6 +33,18 @@
 #ifdef ZUMA_BMS_ENABLE_CHG_PROFILE_SWITCH
 	google,enable-switch-chg-profile;
 #endif
+
+	google,batt-id-17-atl {
+		google,batt-id = <17>;
+		google,aacr-ref-cycles = <200 300 400 500 600 700 800>;
+		google,aacr-ref-fade10 = <  3   9  17  23  30  37  44>;
+	};
+
+	google,batt-id-20-lwn {
+		google,batt-id = <20>;
+		google,aacr-ref-cycles = <200 300 400 500 600 700 800>;
+		google,aacr-ref-fade10 = <  6  14  21  29  35  42  72>;
+	};
 
 	google_debug_chg_profile {
 		google,chg-battery-capacity = <4558>;
