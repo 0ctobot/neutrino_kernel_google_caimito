@@ -1337,20 +1337,35 @@ static int ct3a_panel_probe(struct mipi_dsi_device *dsi)
 	ctx->hw_status.te.rate_hz = 60;
 	clear_bit(FEAT_ZA, ctx->hw_status.feat);
 
+	ret = gs_dsi_panel_common_init(dsi, ctx);
+	if (ret)
+		return ret;
+
 	ctx->thermal->tz = thermal_zone_device_register("inner_brightness",
 				0, 0, spanel, &spanel_tzd_ops, NULL, 0, 0);
-	if (IS_ERR(ctx->thermal->tz))
-		dev_err(ctx->dev, "failed to register inner"
+	if (IS_ERR(ctx->thermal->tz)) {
+		dev_warn(ctx->dev, "failed to register inner"
 			" display thermal zone: %ld", PTR_ERR(ctx->thermal->tz));
+		return 0;
+	}
 
 	ret = thermal_zone_device_enable(ctx->thermal->tz);
 	if (ret) {
-		dev_err(ctx->dev, "failed to enable inner"
-					" display thermal zone ret=%d", ret);
+		dev_warn(ctx->dev, "failed to enable inner"
+			" display thermal zone ret=%d", ret);
 		thermal_zone_device_unregister(ctx->thermal->tz);
 	}
 
-	return gs_dsi_panel_common_init(dsi, ctx);
+	return 0;
+}
+
+static void ct3a_panel_remove(struct mipi_dsi_device *dsi)
+{
+	const struct gs_panel *ctx = mipi_dsi_get_drvdata(dsi);
+
+	if (ctx->thermal && ctx->thermal->tz)
+		thermal_zone_device_unregister(ctx->thermal->tz);
+	gs_dsi_panel_common_remove(dsi);
 }
 
 static const struct gs_display_underrun_param underrun_param = {
@@ -1702,7 +1717,7 @@ static const struct of_device_id gs_panel_of_match[] = {
 
 static struct mipi_dsi_driver gs_panel_driver = {
 	.probe = ct3a_panel_probe,
-	.remove = gs_dsi_panel_common_remove,
+	.remove = ct3a_panel_remove,
 	.driver = {
 		.name = "panel-gs-ct3a",
 		.of_match_table = gs_panel_of_match,
