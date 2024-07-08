@@ -12,8 +12,6 @@
 	google,epp_neg_pwr = <13500>;
 	google,wait_prop_irq_ms = <6000>;
 	/* RTx */
-	idt,gpio_ben = <&ln8411_gpio 0 GPIO_ACTIVE_HIGH>;
-	idt,rtx_wait_ben;
 	google,wcin_inlim_en = <&max77779_gpio 0 GPIO_ACTIVE_HIGH>;
 	idt,gpp-cmfet = <48>;
 	idt,has_rtx_gpio;
