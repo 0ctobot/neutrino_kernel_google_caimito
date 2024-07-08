@@ -30,8 +30,8 @@
 	batoilo2_upper = <10000>;
 	batoilo_usb_trig_lvl = <4800>;
 	batoilo2_usb_trig_lvl = <6800>;
-	batoilo_wlc_trig_lvl = <2400>;
-	batoilo2_wlc_trig_lvl = <5200>;
+	batoilo_wlc_trig_lvl = <5200>;
+	batoilo2_wlc_trig_lvl = <7000>;
 	batoilo_trig_lvl = <5200>;
 	batoilo2_trig_lvl = <7000>;
 	batoilo_bat_open_to = <0x8>;    /* 36ms */

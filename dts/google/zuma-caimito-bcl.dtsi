@@ -28,8 +28,8 @@
 	batoilo_upper = <8000>;
 	batoilo2_lower = <3800>;
 	batoilo2_upper = <10000>;
-	batoilo_wlc_trig_lvl = <2200>;
-	batoilo2_wlc_trig_lvl = <5200>;
+	batoilo_wlc_trig_lvl = <5200>;
+	batoilo2_wlc_trig_lvl = <7000>;
 	batoilo_trig_lvl = <5000>;
 	batoilo2_trig_lvl = <8000>;
 	batoilo_bat_open_to = <0x8>;    /* 36ms */
