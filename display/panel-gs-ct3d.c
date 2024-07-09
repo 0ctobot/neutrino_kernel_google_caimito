@@ -25,6 +25,8 @@
 
 #define CT3D_DDIC_ID_LEN 8
 #define CT3D_DIMMING_FRAME 32
+#define CT3D_BEH_LEN 10
+#define CT3D_READ_BEH_RETRY_COUNT 3
 
 #define WIDTH_MM 64
 #define HEIGHT_MM 145
@@ -218,7 +220,7 @@ static const struct gs_dsi_cmd ct3d_init_cmds[] = {
 	GS_DSI_CMD(0x91, 0x89, 0xA8, 0x00, 0x18, 0xD2, 0x00, 0x02, 0x25, 0x02,
 				0x35, 0x00, 0x07, 0x04, 0x86, 0x04, 0x3D, 0x10, 0xF0),
 	GS_DSI_CMD(0x2F, 0x02),
-	GS_DSI_DELAY_CMD(60, MIPI_DCS_EXIT_SLEEP_MODE)
+	GS_DSI_DELAY_CMD(70, MIPI_DCS_EXIT_SLEEP_MODE)
 };
 static DEFINE_GS_CMDSET(ct3d_init);
 
@@ -408,6 +410,38 @@ static void ct3d_dimming_frame_setting(struct gs_panel *ctx, u8 dimming_frame)
 	GS_DCS_BUF_ADD_CMD_AND_FLUSH(dev, 0xB2, dimming_frame, dimming_frame);
 }
 
+static int ct3d_read_beh(struct gs_panel *ctx)
+{
+	struct device *dev = ctx->dev;
+	struct mipi_dsi_device *dsi = to_mipi_dsi_device(dev);
+	u8 buf[CT3D_BEH_LEN] = {0};
+	int ret;
+
+	GS_DCS_WRITE_CMD(dev, 0xF0, 0x55, 0xAA, 0x52, 0x08, 0x04);
+
+	ret = mipi_dsi_dcs_read(dsi, 0xBE, buf, CT3D_BEH_LEN);
+	if (ret != CT3D_BEH_LEN) {
+		dev_warn(dev, "Unable to read BEh values (ret = %d)\n", ret);
+		return -EIO;
+	}
+
+	if (buf[0] != 0 || buf[1] != 2 || buf[2] != 0 || buf[5] != 0 || buf[7] != 0
+		|| buf[8] != 6 || buf[9] != 3)
+		return -EAGAIN;
+
+	return 0;
+}
+
+static void ct3d_change_spi_speed(struct gs_panel *ctx, int speed)
+{
+	struct device *dev = ctx->dev;
+
+	GS_DCS_BUF_ADD_CMD(dev, 0xF0, 0x55, 0xAA, 0x52, 0x08, 0x04);
+	GS_DCS_BUF_ADD_CMD(dev, 0xC2, (speed == 23)? 0x14 : 0x12);
+	GS_DCS_BUF_ADD_CMD(dev, 0xF0, 0x55, 0xAA, 0x52, 0x08, 0x08);
+	GS_DCS_BUF_ADD_CMD_AND_FLUSH(dev, 0xC2, (speed == 23)? 0x00 : 0x33);
+}
+
 static int ct3d_enable(struct drm_panel *panel)
 {
 	struct gs_panel *ctx = container_of(panel, struct gs_panel, base);
@@ -424,6 +458,29 @@ static int ct3d_enable(struct drm_panel *panel)
 	gs_panel_reset_helper(ctx);
 	gs_panel_send_cmdset(ctx, &ct3d_init_cmdset);
 	ct3d_change_frequency(ctx, pmode);
+
+	if (ct3d_read_beh(ctx)) {
+		int retry;
+		int ret = 1;
+
+		dev_warn(dev, "Reading BEh failed at first try\n");
+
+		ct3d_change_spi_speed(ctx, 23);
+
+		for (retry = 0; retry < CT3D_READ_BEH_RETRY_COUNT && ret; retry++) {
+			GS_DCS_WRITE_DELAY_CMD(dev, 120, MIPI_DCS_ENTER_SLEEP_MODE);
+			GS_DCS_WRITE_DELAY_CMD(dev, 120, MIPI_DCS_EXIT_SLEEP_MODE);
+			ret = ct3d_read_beh(ctx);
+		}
+
+		if (retry == CT3D_READ_BEH_RETRY_COUNT)
+			dev_warn(dev, "Failed to read BEh %d times\n", retry);
+		else
+			dev_info(dev, "Success to read BEh after retry %d time(s)\n", retry);
+
+		ct3d_change_spi_speed(ctx, 34);
+	}
+
 	ct3d_dimming_frame_setting(ctx, CT3D_DIMMING_FRAME);
 
 	if (pmode->gs_mode.is_lp_mode)
