@@ -149,9 +149,9 @@
 };
 
 &s_ldo29_reg {
-	regulator-boot-on;
-	regulator-min-microvolt = <1800000>;
-	regulator-max-microvolt = <1800000>;
+	regulator-always-on;
+	regulator-min-microvolt = <1850000>;
+	regulator-max-microvolt = <1850000>;
 	schematic-name = "L29S_OUTER_DISP_VDDI";
 	subsys-name = "Display";
 };
