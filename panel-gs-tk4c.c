@@ -595,7 +595,7 @@ static const struct gs_display_underrun_param underrun_param = {
 static const u16 WIDTH_MM = 65, HEIGHT_MM = 146;
 static const u16 HDISPLAY = 1080, VDISPLAY = 2424;
 static const u16 HFP = 32, HSA = 12, HBP = 16;
-static const u16 VFP = 8, VSA = 4, VBP = 16;
+static const u16 VFP = 8, VSA = 2, VBP = 16;
 
 #define TK4C_DSC {\
 	.enabled = true,\
