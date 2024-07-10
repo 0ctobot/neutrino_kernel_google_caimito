@@ -567,7 +567,10 @@ static inline int syna_pal_completion_wait_for(syna_pal_completion_t *ptr,
  */
 static inline void syna_pal_sleep_ms(int time_ms)
 {
-	msleep(time_ms);
+	if (time_ms > 20)
+		msleep(time_ms);
+	else
+		usleep_range(time_ms * USEC_PER_MSEC, time_ms * USEC_PER_MSEC + 1);
 }
 /*
  * syna_pal_sleep_us()
