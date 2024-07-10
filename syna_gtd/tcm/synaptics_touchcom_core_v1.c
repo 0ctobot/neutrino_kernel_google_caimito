@@ -1188,15 +1188,12 @@ static int syna_tcm_v1_write_message(struct tcm_dev *tcm_dev,
 		polling_ms = delay_ms_resp;
 
 	do {
-		/* wait for the completion event triggered by read_message */
-		retval = syna_pal_completion_wait_for(cmd_completion,
-				polling_ms);
-
-		/* break the loop once a resp was ready */
-		if (ATOMIC_GET(tcm_msg->command_status) == CMD_STATE_IDLE)
-			goto check_response;
-		/* otherwise, keep in polling */
-		if (in_polling) {
+		if (!in_polling) {
+			/* wait for the completion event triggered by read_message from irq */
+			retval = syna_pal_completion_wait_for(cmd_completion, polling_ms);
+		} else {
+			/* otherwise, keep in polling */
+			syna_pal_sleep_ms(polling_ms);
 			ATOMIC_SET(tcm_msg->command_status, CMD_STATE_BUSY);
 
 			/* retrieve the message packet back */
@@ -1205,6 +1202,10 @@ static int syna_tcm_v1_write_message(struct tcm_dev *tcm_dev,
 			if (retval < 0)
 				syna_pal_completion_reset(cmd_completion);
 		}
+
+		/* break the loop once a resp was ready */
+		if (ATOMIC_GET(tcm_msg->command_status) == CMD_STATE_IDLE)
+			goto check_response;
 
 		timeout += polling_ms;
 
