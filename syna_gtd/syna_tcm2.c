@@ -1287,10 +1287,12 @@ static void syna_dev_restore_feature_setting(struct syna_tcm *tcm, unsigned int 
 	goog_notify_fw_status_changed(tcm->gti, GTI_FW_STATUS_RESET, &gti_status_data);
 #endif
 
-	syna_tcm_set_dynamic_config(tcm->tcm_dev,
-			DC_COMPRESSION_THRESHOLD,
-			tcm->hw_if->compression_threhsold,
-			delay_ms_resp);
+	if (tcm->hw_if->compression_threshold != 0) {
+		syna_tcm_set_dynamic_config(tcm->tcm_dev,
+				DC_COMPRESSION_THRESHOLD,
+				tcm->hw_if->compression_threshold,
+				delay_ms_resp);
+	}
 
 	if (tcm->hw_if->grip_delta_threshold != 0) {
 		syna_tcm_set_dynamic_config(tcm->tcm_dev,

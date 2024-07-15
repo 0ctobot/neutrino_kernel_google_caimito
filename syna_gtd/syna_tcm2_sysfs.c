@@ -1235,6 +1235,7 @@ static ssize_t syna_sysfs_compression_threshold_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
 	int retval = 0;
+	u16 output;
 	struct device *p_dev;
 	struct kobject *p_kobj;
 	struct syna_tcm *tcm;
@@ -1243,7 +1244,16 @@ static ssize_t syna_sysfs_compression_threshold_show(struct kobject *kobj,
 	p_dev = container_of(p_kobj, struct device, kobj);
 	tcm = dev_get_drvdata(p_dev);
 
-	retval = scnprintf(buf, PAGE_SIZE, "%u\n", tcm->hw_if->compression_threhsold);
+	retval = syna_tcm_get_dynamic_config(tcm->tcm_dev,
+			DC_COMPRESSION_THRESHOLD,
+			&output,
+			RESP_IN_ATTN);
+	if (retval < 0) {
+		LOGE("Failed to get compression threshold.\n");
+		retval = scnprintf(buf, PAGE_SIZE, "-1\n");
+	} else {
+		retval = scnprintf(buf, PAGE_SIZE, "%u\n", output);
+	}
 
 	return retval;
 }
@@ -1280,7 +1290,7 @@ static ssize_t syna_sysfs_compression_threshold_store(struct kobject *kobj,
 		return -EINVAL;
 	}
 
-	tcm->hw_if->compression_threhsold = input;
+	tcm->hw_if->compression_threshold = input;
 
 	syna_tcm_set_dynamic_config(tcm->tcm_dev,
 			DC_COMPRESSION_THRESHOLD,
@@ -1288,7 +1298,7 @@ static ssize_t syna_sysfs_compression_threshold_store(struct kobject *kobj,
 			RESP_IN_ATTN);
 
 	LOGI("Set the heatmap compression threshold as %u.\n",
-	     tcm->hw_if->compression_threhsold);
+	     tcm->hw_if->compression_threshold);
 
 	return retval;
 }
