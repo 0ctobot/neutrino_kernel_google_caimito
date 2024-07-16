@@ -1958,6 +1958,61 @@ exit:
 static struct kobj_attribute kobj_attr_pt_tag_moisture =
 	__ATTR(pt_moisture, 0444, syna_testing_pt_moisture_show, NULL);
 
+static ssize_t syna_testing_test_setup_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int retval = 0;
+	unsigned char input;
+	struct syna_tcm *tcm = g_tcm_ptr;
+	bool test_setup = false;
+
+	if (kstrtou8(buf, 16, &input))
+		return -EINVAL;
+
+	if (!tcm->is_connected) {
+		LOGW("Device is NOT connected\n");
+		retval = count;
+		goto exit;
+	}
+
+	switch (input) {
+	case 0x00:
+		test_setup = false;
+		break;
+	case 0x01:
+		test_setup = true;
+		break;
+	default:
+		LOGE("Invalid input %#x.\n", input);
+		retval = -EINVAL;
+		goto exit;
+	}
+
+	LOGI("Test setup %s.", test_setup ? "enable" : "disable");
+
+	if (test_setup) {
+		retval = syna_tcm_enable_report(tcm->tcm_dev,
+			REPORT_FW_STATUS, false);
+	} else {
+		retval = syna_tcm_enable_report(tcm->tcm_dev,
+			REPORT_FW_STATUS, true);
+	}
+
+	if (retval < 0) {
+		LOGE("Test setup %s failed.",
+			test_setup ? "enable" : "disable");
+		goto exit;
+	}
+
+	retval = count;
+
+exit:
+	return retval;
+}
+
+static struct kobj_attribute kobj_attr_test_setup =
+	__ATTR(test_setup, 0220, NULL, syna_testing_test_setup_store);
+
 /*
  * declaration of sysfs attributes
  */
@@ -1971,6 +2026,7 @@ static struct attribute *attrs[] = {
 	&kobj_attr_pt12.attr,
 	&kobj_attr_pt16.attr,
 	&kobj_attr_pt_tag_moisture.attr,
+	&kobj_attr_test_setup.attr,
 	NULL,
 };
 
