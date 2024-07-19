@@ -35,6 +35,7 @@ struct s51xx_pcie {
 	pcie_register_event_t pcie_event;
 	pcie_register_event_t pcie_cpl_timeout_event;
 	struct pci_saved_state *pci_saved_configs;
+	struct pci_saved_state *first_pci_saved_configs;
 };
 
 #define AUTOSUSPEND_TIMEOUT	200
