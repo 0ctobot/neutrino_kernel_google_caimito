@@ -25,10 +25,6 @@
 
 #define CT3D_DDIC_ID_LEN 8
 #define CT3D_DIMMING_FRAME 32
-#define CT3D_GRAY_REFRESH_LEN 2
-#define CT3D_GRAY_GAMMA_LEN 3
-#define CT3D_GRAY_RGB_DATA_LEN 2
-#define CT3D_GRAY_RGB_LEN 3
 #define CT3D_BEH_LEN 10
 #define CT3D_READ_BEH_RETRY_COUNT 3
 
@@ -39,10 +35,6 @@
 #define MIPI_DSI_FREQ_MBPS_ALTERNATIVE 756
 
 #define PROJECT "CT3D"
-
-static const u8 gray_refresh_cmd[] = { 0x00, 0x10 };
-static const u8 gray_lvl_cmd[] = { 0x00, 0x02, 0x04 };
-static const u8 gray_rgb_cmd[] = { 0xB0, 0xB3, 0xB6 };
 
 /**
  * struct ct3d_panel - panel specific runtime info
@@ -55,10 +47,6 @@ struct ct3d_panel {
 	struct gs_panel base;
 	/** @is_hbm2_enabled: indicates panel is running in HBM mode 2 */
 	bool is_hbm2_enabled;
-	/** @is_gamma_data_read: indicates panel has read the gray 3 RGB data */
-	bool is_gamma_data_read;
-	/** @g3_2nits_rgb_values: store the RGB data [rr][rgb][data]*/
-	u8 g3_2nits_rgb_values[CT3D_GRAY_REFRESH_LEN][CT3D_GRAY_RGB_LEN][CT3D_GRAY_RGB_DATA_LEN];
 };
 
 #define to_spanel(ctx) container_of(ctx, struct ct3d_panel, base)
@@ -422,98 +410,6 @@ static void ct3d_dimming_frame_setting(struct gs_panel *ctx, u8 dimming_frame)
 	GS_DCS_BUF_ADD_CMD_AND_FLUSH(dev, 0xB2, dimming_frame, dimming_frame);
 }
 
-static void ct3d_read_gray3_rgb_value(struct gs_panel *ctx)
-{
-	struct device *dev = ctx->dev;
-	struct ct3d_panel *spanel = to_spanel(ctx);
-	struct mipi_dsi_device *dsi = to_mipi_dsi_device(ctx->dev);
-	u8 buf[CT3D_GRAY_RGB_DATA_LEN] = {0};
-	int32_t ret;
-
-	if (spanel->is_gamma_data_read)
-		return;
-
-	/* turn on hclk */
-	GS_DCS_BUF_ADD_CMD(dev, 0xFF, 0xAA, 0x55, 0xA5, 0x81);
-	GS_DCS_BUF_ADD_CMD(dev, 0x6F, 0x0E);
-	GS_DCS_BUF_ADD_CMD(dev, 0xF5, 0x20);
-
-	/* read the 2nits G3 RGB value @120Hz and 60Hz */
-	GS_DCS_BUF_ADD_CMD(dev, 0xF0, 0x55, 0xAA, 0x52, 0x08, 0x02);
-	GS_DCS_BUF_ADD_CMD_AND_FLUSH(dev, 0xCC, 0x10);
-
-	for (int rr = 0; rr < CT3D_GRAY_REFRESH_LEN; rr++) {
-		GS_DCS_WRITE_CMD(dev, 0xBF, gray_refresh_cmd[rr]);
-
-		for (int color = 0; color < CT3D_GRAY_RGB_LEN; color++) {
-			GS_DCS_WRITE_CMD(dev, 0x6F, gray_lvl_cmd[CT3D_GRAY_GAMMA_LEN - 1]);
-			ret = mipi_dsi_dcs_read(dsi, gray_rgb_cmd[color],
-						buf, CT3D_GRAY_RGB_DATA_LEN);
-
-			if (ret != CT3D_GRAY_RGB_DATA_LEN) {
-				dev_warn(ctx->dev, "Unable to read Gray3 RGB values (%d)\n", ret);
-				goto done;
-			}
-
-			for (int k = 0; k < CT3D_GRAY_RGB_DATA_LEN; k++)
-				spanel->g3_2nits_rgb_values[rr][color][k] = buf[k];
-		}
-	}
-
-	for (int i = 0; i < CT3D_GRAY_REFRESH_LEN; i++) {
-		for (int j = 0; j < CT3D_GRAY_RGB_LEN; j++) {
-			for (int k = 0; k < CT3D_GRAY_RGB_DATA_LEN; k++) {
-				dev_dbg(ctx->dev, "g3_2nits_rgb_values %x\n",
-					spanel->g3_2nits_rgb_values[i][j][k]);
-			}
-		}
-	}
-
-	spanel->is_gamma_data_read = true;
-
-done:
-	/* turn off hclk */
-	GS_DCS_BUF_ADD_CMD(dev, 0xFF, 0xAA, 0x55, 0xA5, 0x81);
-	GS_DCS_BUF_ADD_CMD(dev, 0x6F, 0x0E);
-	GS_DCS_BUF_ADD_CMD_AND_FLUSH(dev, 0xF5, 0x2B);
-	dev_dbg(ctx->dev, "%s done.\n", __func__);
-}
-
-static void ct3d_write_gray3_rgb_value(struct gs_panel *ctx)
-{
-	struct device *dev = ctx->dev;
-	struct ct3d_panel *spanel = to_spanel(ctx);
-
-	/* turn on hclk */
-	GS_DCS_BUF_ADD_CMD(dev, 0xFF, 0xAA, 0x55, 0xA5, 0x81);
-	GS_DCS_BUF_ADD_CMD(dev, 0x6F, 0x0E);
-	GS_DCS_BUF_ADD_CMD(dev, 0xF5, 0x20);
-
-	/* over write 2nits G3 RGB value to G0 and G1 */
-	GS_DCS_BUF_ADD_CMD(dev, 0xF0, 0x55, 0xAA, 0x52, 0x08, 0x02);
-	GS_DCS_BUF_ADD_CMD_AND_FLUSH(dev, 0xCC, 0x10);
-
-	for (int rr = 0; rr < CT3D_GRAY_REFRESH_LEN; rr++) {
-		GS_DCS_WRITE_CMD(dev, 0xBF, gray_refresh_cmd[rr]);
-
-		for (int lvl = 0; lvl < (CT3D_GRAY_GAMMA_LEN - 1); lvl++) {
-			for (int color = 0; color < CT3D_GRAY_RGB_LEN; color++) {
-				GS_DCS_WRITE_CMD(dev, 0x6F, gray_lvl_cmd[lvl]);
-				GS_DCS_WRITE_CMD(dev, gray_rgb_cmd[color],
-					spanel->g3_2nits_rgb_values[rr][color][0],
-					spanel->g3_2nits_rgb_values[rr][color][1]);
-			}
-		}
-	}
-
-	/* turn off hclk */
-	GS_DCS_BUF_ADD_CMD(dev, 0xFF, 0xAA, 0x55, 0xA5, 0x81);
-	GS_DCS_BUF_ADD_CMD(dev, 0x6F, 0x0E);
-	GS_DCS_BUF_ADD_CMD_AND_FLUSH(dev, 0xF5, 0x2B);
-
-	dev_dbg(ctx->dev, "%s done.\n", __func__);
-}
-
 static int ct3d_read_beh(struct gs_panel *ctx)
 {
 	struct device *dev = ctx->dev;
@@ -550,7 +446,6 @@ static int ct3d_enable(struct drm_panel *panel)
 {
 	struct gs_panel *ctx = container_of(panel, struct gs_panel, base);
 	struct device *dev = ctx->dev;
-	struct ct3d_panel *spanel = to_spanel(ctx);
 	const struct gs_panel_mode *pmode = ctx->current_mode;
 
 	if (!pmode) {
@@ -563,7 +458,6 @@ static int ct3d_enable(struct drm_panel *panel)
 	gs_panel_reset_helper(ctx);
 	gs_panel_send_cmdset(ctx, &ct3d_init_cmdset);
 	ct3d_change_frequency(ctx, pmode);
-	ct3d_read_gray3_rgb_value(ctx);
 
 	if (ct3d_read_beh(ctx)) {
 		int retry;
@@ -593,9 +487,6 @@ static int ct3d_enable(struct drm_panel *panel)
 		gs_panel_set_lp_mode_helper(ctx, pmode);
 
 	GS_DCS_WRITE_CMD(dev, MIPI_DCS_SET_DISPLAY_ON);
-
-	if(spanel->is_gamma_data_read)
-		ct3d_write_gray3_rgb_value(ctx);
 
 	ctx->dsi_hs_clk_mbps = MIPI_DSI_FREQ_MBPS_DEFAULT;
 
@@ -961,7 +852,6 @@ static int ct3d_panel_probe(struct mipi_dsi_device *dsi)
 		return -ENOMEM;
 
 	spanel->is_hbm2_enabled = false;
-	spanel->is_gamma_data_read = false;
 	return gs_dsi_panel_common_init(dsi, &spanel->base);
 }
 
