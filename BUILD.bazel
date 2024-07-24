@@ -332,6 +332,7 @@ kernel_module(
         "drivers/soc/google/vh/kernel/thermal/vh_thermal.ko",
         "drivers/spi/spi-s3c64xx.ko",
         "drivers/spmi/spmi_bit_bang.ko",
+        "drivers/thermal/google/cdev_uclamp.ko",
         "drivers/thermal/google/s2mpg15_spmic_thermal.ko",
         "drivers/thermal/samsung/gpu_cooling.ko",
         "drivers/thermal/samsung/gs_thermal.ko",
