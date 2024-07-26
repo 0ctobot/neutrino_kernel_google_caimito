@@ -49,7 +49,8 @@ struct ct3a_panel {
 	 *		  panel can recover to normal mode after entering pixel-off state.
 	 */
 	bool is_pixel_off;
-	/** @panel_voltage: panel default voltage
+	/**
+	 * @panel_voltage: panel default voltage
 	 *			1st byte: the fixed address 0x46.
 	 *			2nd byte: the fixed data 0x23.
 	 *			3th byte: read from panel.

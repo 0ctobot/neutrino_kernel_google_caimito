@@ -58,14 +58,14 @@ struct ct3b_panel {
 	bool force_changeable_te2;
 	/** @dbv_range: indicates current dbv range  */
 	enum ct3b_dbv_range dbv_range;
-	/** @edge_compensation: compensation default value **/
+	/** @edge_comp: compensation default value **/
 	struct edge_compensation {
 		bool is_support;
 		u8 left_default[EDGE_COMPENSATION_SIZE];
 		u8 right_default[EDGE_COMPENSATION_SIZE];
 		u8 top_default[EDGE_COMPENSATION_SIZE];
 		u8 bottom_default[EDGE_COMPENSATION_SIZE];
-	}edge_comp;
+	} edge_comp;
 
 	/** @needs_display_on: if display_on command needs to send after flip done */
 	bool needs_display_on;
@@ -709,7 +709,6 @@ static void ct3b_set_panel_feat_frequency(struct gs_panel *ctx, unsigned long *f
  * ct3b_set_panel_feat - configure panel features
  * @ctx: gs_panel struct
  * @pmode: gs_panel_mode struct, target panel mode
- * @idle_vrefresh: target vrefresh rate in auto mode, 0 if disabling auto mode
  * @enforce: force to write all of registers even if no feature state changes
  *
  * Configure panel features based on the context.
