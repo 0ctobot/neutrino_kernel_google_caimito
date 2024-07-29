@@ -25,5 +25,4 @@
 #include "zuma-comet-charging.dtsi"
 #include "zumapro-comet-bcl.dtsi"
 #include "zumapro-comet-pmic.dtsi"
-#include "zumapro-comet-dma-heap.dtsi"
 #include "zumapro-comet-gpu.dtsi"
