@@ -37,9 +37,6 @@
 	status = "okay";
 	clock-frequency = <400000>;
 
-	pinctrl-names = "default";
-	pinctrl-0 = <&hsi2c10_bus>;
-
 	pack_bee: m24c08@50 {
 		status = "okay";
 		compatible = "at,24c08";
@@ -54,7 +51,6 @@
 	#size-cells = <0>;
 	status = "okay";
 	clock-frequency = <1000000>;
-	pinctrl-0 = <&hsi2c6_bus>;
 
 	#include "google-dts-zuma/zuma-max777xx.dtsi"
 };
