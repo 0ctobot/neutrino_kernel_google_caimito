@@ -2102,7 +2102,7 @@ static const struct gs_brightness_configuration ct3b_btr_configs[] = {
 
 static struct gs_panel_brightness_desc ct3b_brightness_desc = {
 	.max_luminance = 10000000,
-	.max_avg_luminance = 1200000,
+	.max_avg_luminance = 10000000,
 	.min_luminance = 5,
 };
 
