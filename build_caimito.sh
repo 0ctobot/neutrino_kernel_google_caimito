@@ -14,6 +14,15 @@ if [ "${BUILD_STAGING_KERNEL}" = "1" ]; then
   parameters="--kernel_package=@//aosp-staging"
 fi
 
+# Find `--page_size=16k` in the list of arguments, and append bazel
+# parameters to build a 16k page size kernel.
+for arg in "$@"; do
+  if [[ "$arg" == "--page_size=16k" ]]; then
+    parameters+=" --config=no_download_gki"
+    parameters+=" --config=no_download_gki_fips140"
+  fi
+done
+
 exec tools/bazel run \
     ${parameters} \
     --config=stamp \
