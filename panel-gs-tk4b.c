@@ -97,6 +97,23 @@ static const struct gs_binned_lp tk4b_binned_lp[] = {
 	BINNED_LP_MODE_TIMING("high", 3574, tk4b_lp_high_cmds, 0, 45),
 };
 
+static const struct gs_dsi_cmd tk4b_set_freq_120_cmds[] = {
+	GS_DSI_QUEUE_CMD(0x2F, 0x00),
+	GS_DSI_FLUSH_CMD(MIPI_DCS_SET_GAMMA_CURVE, 0x00),
+};
+static DEFINE_GS_CMDSET(tk4b_set_freq_120);
+
+static const struct gs_dsi_cmd tk4b_set_freq_60_cmds[] = {
+	GS_DSI_QUEUE_REV_CMD(PANEL_REV_LT(PANEL_REV_EVT1), 0x2F, 0x30),
+	GS_DSI_QUEUE_REV_CMD(PANEL_REV_GE(PANEL_REV_EVT1), 0x2F, 0x02),
+	GS_DSI_QUEUE_CMD(0xF0, 0x55, 0xAA, 0x52, 0x08, 0x00),
+	GS_DSI_QUEUE_REV_CMD(PANEL_REV_LT(PANEL_REV_EVT1), 0x6F, 0xB0),
+	GS_DSI_FLUSH_REV_CMD(PANEL_REV_LT(PANEL_REV_EVT1), 0xBA, 0x41),
+	GS_DSI_QUEUE_REV_CMD(PANEL_REV_GE(PANEL_REV_EVT1), 0x6F, 0x03),
+	GS_DSI_FLUSH_REV_CMD(PANEL_REV_GE(PANEL_REV_EVT1), 0xC0, 0x10),
+};
+static DEFINE_GS_CMDSET(tk4b_set_freq_60);
+
 static const struct gs_dsi_cmd tk4b_off_cmds[] = {
 	GS_DSI_DELAY_CMD(100, MIPI_DCS_SET_DISPLAY_OFF),
 	GS_DSI_DELAY_CMD(120, MIPI_DCS_ENTER_SLEEP_MODE),
@@ -442,33 +459,22 @@ static void tk4b_change_frequency(struct gs_panel *ctx,
 				    const struct gs_panel_mode *pmode)
 {
 	int vrefresh = drm_mode_vrefresh(&pmode->mode);
-	struct device *dev = ctx->dev;
 
 	if (!ctx || (vrefresh != 60 && vrefresh != 120))
 		return;
 
+	PANEL_ATRACE_BEGIN("panel change frequency to %dHz", vrefresh);
+
 	if (!GS_IS_HBM_ON(ctx->hbm_mode)) {
-		if (vrefresh == 120) {
-			GS_DCS_BUF_ADD_CMD(dev, 0x2F, 0x00);
-			GS_DCS_BUF_ADD_CMD_AND_FLUSH(dev, MIPI_DCS_SET_GAMMA_CURVE, 0x00);
-		} else {
-			if (ctx->panel_rev < PANEL_REV_EVT1) {
-				GS_DCS_BUF_ADD_CMD(dev, 0x2F, 0x30);
-				GS_DCS_BUF_ADD_CMD(dev, 0xF0, 0x55, 0xAA, 0x52, 0x08, 0x00);
-				GS_DCS_BUF_ADD_CMD(dev, 0x6F, 0xB0);
-				GS_DCS_BUF_ADD_CMD_AND_FLUSH(dev, 0xBA, 0x41);
-			} else {
-				GS_DCS_BUF_ADD_CMD(dev, 0x2F, 0x02);
-				GS_DCS_BUF_ADD_CMD(dev, 0xF0, 0x55, 0xAA, 0x52, 0x08, 0x00);
-				GS_DCS_BUF_ADD_CMD(dev, 0x6F, 0x03);
-				GS_DCS_BUF_ADD_CMD_AND_FLUSH(dev, 0xC0, 0x10);
-			}
-		}
+		if (vrefresh == 120)
+			gs_panel_send_cmdset(ctx, &tk4b_set_freq_120_cmdset);
+		else
+			gs_panel_send_cmdset(ctx, &tk4b_set_freq_60_cmdset);
 	} else {
 		tk4b_update_irc(ctx, ctx->hbm_mode, vrefresh);
 	}
 
-	dev_dbg(ctx->dev, "%s: change to %uhz\n", __func__, vrefresh);
+	PANEL_ATRACE_END("panel change frequency to %dHz", vrefresh);
 }
 
 static void tk4b_set_dimming(struct gs_panel *ctx,
