@@ -34,3 +34,4 @@
 #include "zuma-caimito-usb.dtsi"
 #include "zuma-caimito-typec.dtsi"
 #include "zumapro-cp-s5400-thermal-zone.dtsi"
+#include "google-dts-zuma/gs101-faceauth-dma-heap.dtsi"
