@@ -10,7 +10,10 @@ package(
 
 _PANEL_LOCAL_DEFINES = [
     "DYNAMIC_DEBUG_MODULE",
-]
+] + select({
+    "//private/devices/google/common:factory_build": ["PANEL_FACTORY_BUILD"],
+    "//conditions:default": [],
+})
 
 ddk_headers(
     name = "common_headers",
