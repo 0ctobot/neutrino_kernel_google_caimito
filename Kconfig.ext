@@ -62,8 +62,6 @@ source "$(KCONFIG_SOC_GS_PREFIX)drivers/iio/Kconfig"
 
 source "$(KCONFIG_SOC_GS_PREFIX)drivers/phy/Kconfig"
 
-source "$(KCONFIG_SOC_GS_PREFIX)drivers/staging/android/Kconfig"
-
 source "$(KCONFIG_SOC_GS_PREFIX)drivers/bts/Kconfig"
 
 source "$(KCONFIG_SOC_GS_PREFIX)drivers/block/zram/Kconfig"
