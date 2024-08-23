@@ -204,7 +204,7 @@ static inline void _panel_write_generic(char type, int pid, int value, const cha
  * Used to trace a variable or counter with an integer value
  */
 #define PANEL_ATRACE_INT(name, value) \
-	_panel_write_generic('C', current->tgid, value, name)
+	PANEL_ATRACE_INT_PID(name, value, current->tgid)
 
 #endif /* __PANEL_ATRACE_API_DEF_ */
 
