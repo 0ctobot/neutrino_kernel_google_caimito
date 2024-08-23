@@ -1484,6 +1484,7 @@ int gs_panel_first_enable_helper(struct gs_panel *ctx)
 	if (!ret)
 		ctx->initialized = true;
 
+	ctx->trace_pid = current->tgid;
 	if (!ctx->panel_rev) {
 		if (gs_panel_has_func(ctx, get_panel_rev)) {
 			u32 id;
