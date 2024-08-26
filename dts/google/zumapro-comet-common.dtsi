@@ -26,3 +26,4 @@
 #include "zumapro-comet-bcl.dtsi"
 #include "zumapro-comet-pmic.dtsi"
 #include "zumapro-comet-gpu.dtsi"
+#include "google-dts-zuma/gs101-faceauth-dma-heap.dtsi"
