@@ -1737,7 +1737,7 @@ static const struct gs_panel_mode_array ct3b_modes = {
 #ifdef PANEL_FACTORY_BUILD
 	.num_modes = 5,
 #else
-	.num_modes = 4,
+	.num_modes = 3,
 #endif
 	.modes = {
 /* MRR modes */
@@ -1842,24 +1842,6 @@ static const struct gs_panel_mode_array ct3b_modes = {
 				.mode_flags = MIPI_DSI_CLOCK_NON_CONTINUOUS,
 				.vblank_usec = 120,
 				.te_usec = CT3B_TE_USEC_120HZ_HS,
-				.bpc = 8,
-				.dsc = CT3B_DSC,
-				.underrun_param = &underrun_param,
-			},
-			.idle_mode = GIDLE_MODE_UNSUPPORTED,
-		},
-		{
-			.mode = {
-				.name = "2152x2076@60:60",
-				DRM_MODE_TIMING(60, 2152, 80, 30, 38, 2076, 6, 4, 14),
-				.flags = DRM_MODE_FLAG_TE_FREQ_X1 | DRM_MODE_FLAG_BTS_OP_RATE,
-				.type = DRM_MODE_TYPE_VRR,
-				.width_mm = WIDTH_MM,
-				.height_mm = HEIGHT_MM,
-			},
-			.gs_mode = {
-				.mode_flags = MIPI_DSI_CLOCK_NON_CONTINUOUS,
-				.vblank_usec = 120,
 				.bpc = 8,
 				.dsc = CT3B_DSC,
 				.underrun_param = &underrun_param,
