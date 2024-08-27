@@ -599,7 +599,7 @@ static const u16 VFP = 8, VSA = 2, VBP = 16;
 
 #define TK4C_DSC {\
 	.enabled = true,\
-	.dsc_count = 1,\
+	.dsc_count = 2,\
 	.cfg = &pps_config,\
 }
 
