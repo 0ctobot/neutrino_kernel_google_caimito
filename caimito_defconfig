@@ -1,5 +1,7 @@
 # private/google-modules/display/common/Kconfig
 CONFIG_GS_PANEL_SIMPLE=m
+CONFIG_DEBUG_PANEL_TEST=y
+CONFIG_COMMON_PANEL_TEST=m
 
 # private/google-modules/fingerprint/qcom/qfs4008/Kconfig
 CONFIG_QCOM_QBT_HANDLER=m

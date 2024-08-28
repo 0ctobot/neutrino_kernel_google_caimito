@@ -105,6 +105,7 @@ kernel_module_group(
         "//private/google-modules/amplifiers/cs40l26",
         "//private/google-modules/amplifiers/snd_soc_wm_adsp:snd-soc-wm-adsp",
         "//private/google-modules/bluetooth/broadcom:bluetooth.broadcom",
+        "//private/google-modules/display/common/panel_tests",
         "//private/google-modules/display/common/panels",
         "//private/google-modules/display/panels/caimito:panel-gs-cm4",
         "//private/google-modules/display/panels/caimito:panel-gs-km4",
