@@ -1329,10 +1329,8 @@ static void ct3b_commit_done(struct gs_panel *ctx)
 {
 	struct ct3b_panel *spanel = to_spanel(ctx);
 
-	if (ctx->current_mode->gs_mode.is_lp_mode)
-		return;
-
-	ct3b_update_idle_state(ctx);
+	if (!ctx->current_mode->gs_mode.is_lp_mode)
+		ct3b_update_idle_state(ctx);
 
 	if (!gs_is_panel_active(ctx) || !spanel->needs_display_on)
 		return;
