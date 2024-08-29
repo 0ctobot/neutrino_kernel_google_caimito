@@ -81,6 +81,10 @@
 					vddi-supply = <&s_bucka_reg>;
 					vddd-supply = <&disp_vddd>;
 					vddd-gpios = <&gpp21 5 GPIO_ACTIVE_HIGH>;
+
+					tk4b_test_node: panel-test@1 {
+						compatible = "google,gs-panel-common-test";
+					};
 				};
 
 				panel@3 {
