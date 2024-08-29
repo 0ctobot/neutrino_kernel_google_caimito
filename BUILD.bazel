@@ -9,6 +9,7 @@ load(
     "kernel_abi",
     "kernel_build",
     "kernel_build_config",
+    "kernel_dtstree",
     "kernel_images",
     "kernel_module",
     "kernel_module_group",
@@ -26,6 +27,14 @@ kernel_build_config(
         "//common:set_kernel_dir_build_config",
         "build.config.comet",
     ],
+)
+
+kernel_dtstree(
+    name = "dtstree",
+    srcs = glob(["dts/**"]) + [
+        "//private/google-modules/soc/gs:gs.dt-bindings",
+    ],
+    makefile = "dts/Makefile",
 )
 
 filegroup(
@@ -68,25 +77,25 @@ ZUMAPRO_SOC_REVS = [
 
 # zuma dtbo
 _ZUMA_COMET_DTBOS = [
-    "google/zuma-comet-dev1.dtbo",
-    "google/zuma-comet-proto1-samsung-gnss.dtbo",
-    "google/zuma-comet-proto1-broadcom-gnss.dtbo",
-    "google/zuma-comet-proto1_1-samsung-gnss.dtbo",
-    "google/zuma-comet-proto1_1-broadcom-gnss.dtbo",
+    "zuma-comet-dev1.dtbo",
+    "zuma-comet-proto1-samsung-gnss.dtbo",
+    "zuma-comet-proto1-broadcom-gnss.dtbo",
+    "zuma-comet-proto1_1-samsung-gnss.dtbo",
+    "zuma-comet-proto1_1-broadcom-gnss.dtbo",
 ]
 
 # zumapro dtbo
 _ZUMAPRO_COMET_DTBOS = [
-    "google/zumapro-comet-evt1-samsung-gnss.dtbo",
-    "google/zumapro-comet-evt1-broadcom-gnss.dtbo",
-    "google/zumapro-comet-evt1-samsung-gnss-wingboard.dtbo",
-    "google/zumapro-comet-evt1-samsung-gnss-6layerflex.dtbo",
-    "google/zumapro-comet-evt1-samsung-gnss-sdc.dtbo",
-    "google/zumapro-comet-evt1-broadcom-gnss-sdc.dtbo",
-    "google/zumapro-comet-evt1_1.dtbo",
-    "google/zumapro-comet-dvt1.dtbo",
-    "google/zumapro-comet-pvt1.dtbo",
-    "google/zumapro-comet-mp.dtbo",
+    "zumapro-comet-evt1-samsung-gnss.dtbo",
+    "zumapro-comet-evt1-broadcom-gnss.dtbo",
+    "zumapro-comet-evt1-samsung-gnss-wingboard.dtbo",
+    "zumapro-comet-evt1-samsung-gnss-6layerflex.dtbo",
+    "zumapro-comet-evt1-samsung-gnss-sdc.dtbo",
+    "zumapro-comet-evt1-broadcom-gnss-sdc.dtbo",
+    "zumapro-comet-evt1_1.dtbo",
+    "zumapro-comet-dvt1.dtbo",
+    "zumapro-comet-pvt1.dtbo",
+    "zumapro-comet-mp.dtbo",
 ]
 
 kernel_module_group(
@@ -160,10 +169,10 @@ kernel_build(
         "//private/google-modules/wlan/wlan_ptracker:wlan_ptracker.kconfig",
     ],
     outs = [
-        "google/google-dts-zuma/zuma-{}.dtb".format(soc_rev)
+        "zuma/zuma-{}.dtb".format(soc_rev)
         for soc_rev in ZUMA_SOC_REVS
     ] + [
-        "google/google-dts-zumapro/zumapro-{}.dtb".format(soc_rev)
+        "zumapro/zumapro-{}.dtb".format(soc_rev)
         for soc_rev in ZUMAPRO_SOC_REVS
     ] + _ZUMA_COMET_DTBOS + _ZUMAPRO_COMET_DTBOS,
     # TODO(b/221278445): Use real GKI
@@ -174,7 +183,7 @@ kernel_build(
         "//private/devices/google/zumapro:zumapro_defconfig",
         "comet_defconfig",
     ],
-    dtstree = "//private/devices/google/comet/dts:comet.dt",
+    dtstree = ":dtstree",
     kconfig_ext = "Kconfig.ext",
     kmi_symbol_list = "//common:android/abi_gki_aarch64_pixel",
     make_goals = _PIXEL_MAKE_GOALS,
