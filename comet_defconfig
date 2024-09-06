@@ -20,8 +20,5 @@ CONFIG_TOUCHSCREEN_TBN_AOC_CHANNEL_MODE=y
 CONFIG_TOUCHSCREEN_OFFLOAD=m
 CONFIG_GOOG_TOUCH_INTERFACE=m
 
-# private/google-modules/touch/fts/ftm5/Kconfig
-CONFIG_TOUCHSCREEN_FTS=m
-
 # private/google-modules/touch/sec/Kconfig
 CONFIG_TOUCHSCREEN_SEC_TS=m
