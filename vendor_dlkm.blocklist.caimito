@@ -1,7 +1,5 @@
 blocklist bcmdhd4390
 blocklist cs40l26_i2c
-blocklist ftm5
-blocklist goodix_brl_touch
 blocklist gs-panel-common-test.ko
 blocklist panel-gs-tk4c-test.ko
 blocklist pwm_exynos
