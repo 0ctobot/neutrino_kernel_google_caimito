@@ -63,7 +63,6 @@ filegroup(
         "//private/google-modules/fingerprint/qcom/qfs4008:qbt_handler.kconfig",
         "//private/google-modules/radio/samsung/s5400:cpif.kconfig",
         "//private/google-modules/touch/common:touch.common.kconfig",
-        "//private/google-modules/touch/fts/ftm5:ftm5.kconfig",
         "//private/google-modules/touch/sec:sec.kconfig",
     ],
 )
