@@ -32,7 +32,7 @@ ddk_module(
         "panel-gs-km4.c",
     ],
     out = "panel-gs-km4.ko",
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
@@ -46,7 +46,7 @@ ddk_module(
         "panel-gs-cm4.c",
     ],
     out = "panel-gs-cm4.ko",
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
@@ -60,7 +60,7 @@ ddk_module(
         "panel-gs-tk4a.c",
     ],
     out = "panel-gs-tk4a.ko",
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
@@ -74,7 +74,7 @@ ddk_module(
         "panel-gs-tk4b.c",
     ],
     out = "panel-gs-tk4b.ko",
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
@@ -88,7 +88,7 @@ ddk_module(
         "panel-gs-tk4c.c",
     ],
     out = "panel-gs-tk4c.ko",
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
@@ -102,7 +102,7 @@ ddk_module(
         "panel-gs-tk4c-test.c",
     ],
     out = "panel-gs-tk4c-test.ko",
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
