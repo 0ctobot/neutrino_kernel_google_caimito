@@ -152,23 +152,15 @@ static void delete_bus_manager_id_in_list(int bus_handle, int32_t bus_type)
 			list_entry(bus_manager_list_node, struct lwis_bus_manager_identifier,
 				   bus_manager_list_node);
 
-		if (bus_type == DEVICE_TYPE_I2C) {
-			if ((bus_manager_identifier_node->bus_manager_handle == bus_handle) &&
-			    (bus_manager_identifier_node->bus_type == DEVICE_TYPE_I2C)) {
-				list_del(&bus_manager_identifier_node->bus_manager_list_node);
-				kfree(bus_manager_identifier_node);
-				bus_manager_identifier_node = NULL;
-				break;
-			}
-		} else if (bus_type == DEVICE_TYPE_IOREG) {
-			if ((bus_manager_identifier_node->bus_manager_handle == bus_handle) &&
-			    (bus_manager_identifier_node->bus_type == DEVICE_TYPE_IOREG)) {
-				list_del(&bus_manager_identifier_node->bus_manager_list_node);
-				kfree(bus_manager_identifier_node);
-				bus_manager_identifier_node = NULL;
-				break;
-			}
-		}
+		if (bus_manager_identifier_node->bus_manager_handle != bus_handle)
+			continue;
+
+		if (bus_manager_identifier_node->bus_type != bus_type)
+			continue;
+
+		list_del(&bus_manager_identifier_node->bus_manager_list_node);
+		kfree(bus_manager_identifier_node);
+		bus_manager_identifier_node = NULL;
 	}
 	mutex_unlock(&bus_manager_list_lock);
 }
@@ -192,19 +184,13 @@ static struct lwis_bus_manager *find_bus_manager(int bus_handle, int32_t type)
 			list_entry(bus_manager_list_node, struct lwis_bus_manager_identifier,
 				   bus_manager_list_node);
 
-		if (type == DEVICE_TYPE_I2C) {
-			if ((bus_manager_identifier->bus_manager_handle == bus_handle) &&
-			    (bus_manager_identifier->bus_type == DEVICE_TYPE_I2C)) {
-				bus_manager = bus_manager_identifier->bus_manager;
-				break;
-			}
-		} else if (type == DEVICE_TYPE_IOREG) {
-			if ((bus_manager_identifier->bus_manager_handle == bus_handle) &&
-			    (bus_manager_identifier->bus_type == DEVICE_TYPE_IOREG)) {
-				bus_manager = bus_manager_identifier->bus_manager;
-				break;
-			}
-		}
+		if (bus_manager_identifier->bus_manager_handle != bus_handle)
+			continue;
+
+		if (bus_manager_identifier->bus_type != type)
+			continue;
+
+		bus_manager = bus_manager_identifier->bus_manager;
 	}
 	mutex_unlock(&bus_manager_list_lock);
 
@@ -819,15 +805,27 @@ static int get_device_priority_and_bus_manager(struct lwis_client *client, int *
 	}
 
 	/*
-	 * This check ensures that the LWIS devices have a valid
-	 * bus manager to associate the lwis clients.
+	 * This check ensures that the LWIS devices have a valid bus manager to associate
+	 * the lwis clients.
+	 * Error handling: Default behaviour of IOREG devices is to process transactions
+	 * on their own threads. This does not require a manager to serialize and manage
+	 * the transactions and events for IOREG devices. Hence, NULL bus manager for
+	 * IOREG devices is not necessarily an error.
 	 */
 	*bus_manager = lwis_bus_manager_get(client->lwis_dev);
 	if (!(*bus_manager)) {
-		dev_err(client->lwis_dev->dev, "LWIS bus manager is NULL\n");
-		return -EINVAL;
+		switch (client->lwis_dev->type) {
+		case DEVICE_TYPE_I2C:
+			dev_err(client->lwis_dev->dev, "LWIS bus manager is NULL\n");
+			return -EINVAL;
+		case DEVICE_TYPE_IOREG:
+			dev_info(client->lwis_dev->dev,
+				 "No LWIS bus manager associated with this device.\n");
+			return 0;
+		default:
+			return 0;
+		}
 	}
-
 	return 0;
 }
 
