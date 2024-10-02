@@ -437,6 +437,14 @@ static int xhci_exynos_check_port(struct xhci_hcd_exynos *xhci_exynos,
 			dev_dbg(&action_udev->dev, "enable autosuspend on device\n");
 			device_init_wakeup(&action_udev->dev, 1);
 			usb_enable_autosuspend(action_udev);
+		} else if (!suspend) {
+			/*
+			 * wakelock might be released in previous action. Hold the wakelock if
+			 * the system is not allowed to suspend due to *this* action.
+			 */
+			__pm_stay_awake(xhci_exynos->main_wakelock);
+			__pm_stay_awake(xhci_exynos->shared_wakelock);
+			dev_dbg(xhci_exynos->dev, "holding wakelock\n");
 		}
 	}
 
@@ -448,6 +456,7 @@ static int xhci_exynos_check_port(struct xhci_hcd_exynos *xhci_exynos,
 	if (suspend) {
 		__pm_relax(xhci_exynos->main_wakelock);
 		__pm_relax(xhci_exynos->shared_wakelock);
+		dev_dbg(xhci_exynos->dev, "wakelock released\n");
 	}
 
 	return xhci_exynos->port_state;
@@ -723,6 +732,7 @@ static int xhci_exynos_probe(struct platform_device *pdev)
 
 	main_wakelock = wakeup_source_register(&pdev->dev, dev_name(&pdev->dev));
 	__pm_stay_awake(main_wakelock);
+	dev_dbg(&pdev->dev, "holding wakelock\n");
 
 	/* Initialization shared wakelock for SS HCD */
 	shared_wakelock = wakeup_source_register(&pdev->dev, dev_name(&pdev->dev));
