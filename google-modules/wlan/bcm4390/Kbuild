@@ -20,6 +20,8 @@
 # <<Broadcom-WL-IPTag/Dual:>>
 #
 
+BCMDHD := 4390
+
 # include main kernel build env for BCMDHD if exists
 -include $(BCMDHD_ROOT)/BCMDHD.Kbuild
 ifeq ($(BCMDHD),)
