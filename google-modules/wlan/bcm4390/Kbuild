@@ -152,7 +152,6 @@ DHDCFLAGS += \
   -DWL_BW320MHZ \
   -DWL_P2P_USE_RANDMAC \
   -Wall \
-  -Werror \
   -Wstrict-prototypes
 
 # Allow Zero-length and one-element arrays instead of forcing C99 FAM
