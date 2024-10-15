@@ -2193,7 +2193,8 @@ static int ioctl_handle_cmd_pkt(struct lwis_client *lwis_client,
 		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V5 ||
 		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT ||
 		     header.cmd_id == LWIS_CMD_ID_PERIODIC_IO_SUBMIT ||
-		     header.cmd_id == LWIS_CMD_ID_EVENT_CONTROL_SET)) {
+		     header.cmd_id == LWIS_CMD_ID_EVENT_CONTROL_SET ||
+		     header.cmd_id == LWIS_CMD_ID_DEVICE_RESET)) {
 			dev_err_ratelimited(lwis_dev->dev,
 					    "Unsupported cmd_id(0x%x) on a disabled device.\n",
 					    header.cmd_id);
