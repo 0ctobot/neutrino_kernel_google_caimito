@@ -1062,7 +1062,7 @@ static int dp_link_up(struct dp_device *dp)
 			dp->dfp_count, dp->sink_count);
 
 		/* Sanity-check the sink count */
-		if (dp->sink_count > dp->dfp_count) {
+		if (dp->sink_count > dp->dfp_count + 1) {
 			dp_err(dp, "DP Branch Device: invalid sink count\n");
 			mutex_unlock(&dp->training_lock);
 			dp->stats.sink_count_invalid_failures++;
