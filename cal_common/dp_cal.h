@@ -59,6 +59,7 @@ enum plug_orientation {
 #define MAX_EDID_BLOCK 4
 #define EDID_BLOCK_SIZE 128
 #define EDID_ADDRESS 0x50
+#define DDC_SEGMENT_ADDR 0x30
 
 enum dp_aux_ch_command_type {
 	I2C_READ_NO_MOT = 0x1,
