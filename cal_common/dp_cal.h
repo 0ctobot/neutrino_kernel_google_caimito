@@ -61,6 +61,7 @@ enum plug_orientation {
 #define EDID_ADDRESS 0x50
 
 enum dp_aux_ch_command_type {
+	I2C_READ_NO_MOT = 0x1,
 	I2C_WRITE = 0x4,
 	I2C_READ = 0x5,
 	DPCD_WRITE = 0x8,

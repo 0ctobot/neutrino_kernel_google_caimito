@@ -2345,6 +2345,7 @@ int dp_hw_read_edid(u8 block_cnt, u32 length, u8 *data)
 		}
 
 		if (ret == 0) {
+			dp_reg_set_aux_ch_command(I2C_READ_NO_MOT);
 			dp_reg_set_aux_ch_address_only_command(true);
 			ret = dp_reg_set_aux_ch_operation_enable();
 			dp_reg_set_aux_ch_address_only_command(false);
