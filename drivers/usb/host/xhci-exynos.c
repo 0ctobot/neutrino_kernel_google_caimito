@@ -328,7 +328,7 @@ static bool xhci_exynos_allow_suspend_with_action(struct usb_device *target_udev
 
 			if (child_udev && child_udev->state == USB_STATE_CONFIGURED) {
 				if (!child_udev->config->interface[0])
-					continue;
+					return false;
 
 				allow_suspend = xhci_exynos_allow_suspend_by_descriptor(child_udev);
 			}
@@ -365,8 +365,10 @@ static void xhci_exynos_scan_roothub(struct xhci_hcd_exynos *xhci_exynos,
 		if (child_udev && child_udev->state == USB_STATE_CONFIGURED) {
 			int bInterfaceClass;
 
-			if (!child_udev->config->interface[0])
-				continue;
+			if (!child_udev->config->interface[0]) {
+				*suspend = false;
+				break;
+			}
 
 			bInterfaceClass = child_udev->config->interface[0]
 					->cur_altsetting->desc.bInterfaceClass;
