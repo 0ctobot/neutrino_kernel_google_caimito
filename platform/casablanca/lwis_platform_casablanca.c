@@ -18,6 +18,14 @@
 #include "lwis_debug.h"
 #include "lwis_platform.h"
 
+/*
+ * module_param macro defines the parameter name, type and permission bits
+ * in sysfs file system. 0644 represents that the owner can read and write the kernel
+ * parameter using command line while other users can read it.
+ */
+bool lwis_casablanca_debug;
+module_param(lwis_casablanca_debug, bool, 0644);
+
 /* Uncomment to let kernel panic when IOMMU hits a page fault. */
 /* #define ENABLE_PAGE_FAULT_PANIC */
 
@@ -227,8 +235,10 @@ int lwis_platform_update_qos(struct lwis_device *lwis_dev, int value, int32_t cl
 		exynos_pm_qos_update_request(qos_req, value);
 #endif
 
-	dev_info(lwis_dev->dev, "Updating clock for clock_family %d, freq to %u\n", clock_family,
-		 value);
+	if (lwis_casablanca_debug) {
+		dev_info(lwis_dev->dev, "Updating clock for clock_family %d, freq to %u\n",
+			 clock_family, value);
+	}
 
 	return 0;
 }
@@ -379,7 +389,7 @@ int lwis_platform_update_bts(struct lwis_device *lwis_dev, int block, unsigned i
 	ret = bts_update_bw(bts_index, bts_request);
 	if (ret < 0) {
 		dev_err(lwis_dev->dev, "Failed to update bandwidth to bts, ret: %d\n", ret);
-	} else {
+	} else if (lwis_casablanca_debug) {
 		dev_info(
 			lwis_dev->dev,
 			"Updated bandwidth to bts for device %s block %s: peak: %u, read: %u, write: %u, rt: %u\n",
