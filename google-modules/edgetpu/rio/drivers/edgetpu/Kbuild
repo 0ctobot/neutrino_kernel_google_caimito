@@ -30,11 +30,9 @@ ifdef CONFIG_EDGETPU_TELEMETRY_TRACE
 edgetpu-objs	+= edgetpu-telemetry.o edgetpu-trace.o
 endif
 
-ifdef CONFIG_MODULES
 ifndef CONFIG_EDGETPU_TEST
 # Unit testing doesn't need this because GCIP is compiled as a built-in there.
 edgetpu-objs	+= $(GCIP_DIR)/gcip.o
-endif
 endif
 
 rio-objs	:= rio-core.o \
