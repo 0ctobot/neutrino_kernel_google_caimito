@@ -149,7 +149,7 @@ static int show_mountinfo(struct seq_file *m, struct vfsmount *mnt)
 		return 0;
 	if (likely(r->mnt.android_kabi_reserved1)) {
 	/* If it has fake_mnt_id, then its mnt_id and parent_mnt_id must be spoofed. */
-		seq_printf(m, "%i %i %u:%u ", r->mnt.android_kabi_reserved1,
+		seq_printf(m, "%llu %llu %u:%u ", r->mnt.android_kabi_reserved1,
 		           r->mnt_parent->mnt.android_kabi_reserved1,
 		           MAJOR(sb->s_dev), MINOR(sb->s_dev));
 		goto bypass_orig_flow;
@@ -185,7 +185,7 @@ bypass_orig_flow:
 		int master = r->mnt_master->mnt_group_id;
 		int dom = get_dominating_id(r, &p->root);
 		if (likely(r->mnt.android_kabi_reserved2)) {
-			seq_printf(m, " master:%i", r->mnt.android_kabi_reserved2);
+			seq_printf(m, " master:%llu", r->mnt.android_kabi_reserved2);
 		} else {
 			seq_printf(m, " master:%i", master);
 			if (dom && dom != master)
