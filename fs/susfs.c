@@ -298,7 +298,7 @@ int susfs_set_bootconfig(char* __user user_fake_boot_config) {
 	spin_unlock(&susfs_spin_lock);
 
 	if (res > 0) {
-		SUSFS_LOGI("fake_boot_config is set, length of string: %u\n", strlen(fake_boot_config));
+		SUSFS_LOGI("fake_boot_config is set, length of string: %zu\n", strlen(fake_boot_config));
 		return 0;
 	}
 	SUSFS_LOGI("failed setting fake_boot_config\n");
