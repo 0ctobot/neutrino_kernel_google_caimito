@@ -14,12 +14,14 @@
 #define CMD_SUSFS_ADD_SUS_MOUNT 0x55560
 #define CMD_SUSFS_ADD_TRY_UMOUNT 0x55580
 #define CMD_SUSFS_ENABLE_LOG 0x555a0
+#define CMD_SUSFS_SET_BOOTCONFIG 0x555b0
 
 /*
  * 256 should address many paths already unless you are doing some
  * strange experimental stuff, then set your own desired length.
  */
 #define SUSFS_MAX_LEN_PATHNAME 256
+#define SUSFS_FAKE_BOOT_CONFIG_SIZE 4096
 
 /*
  * inode->i_state => storing flag 'INODE_STATE_'
@@ -105,6 +107,11 @@ void susfs_try_umount(uid_t target_uid);
 /* set_log */
 #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
 void susfs_set_log(bool enabled);
+#endif
+/* spoof_bootconfig */
+#ifdef CONFIG_KSU_SUSFS_SPOOF_BOOTCONFIG
+int susfs_set_bootconfig(char* __user user_fake_boot_config);
+int susfs_spoof_bootconfig(struct seq_file *m);
 #endif
 /* susfs_init */
 void susfs_init(void);
