@@ -2643,6 +2643,10 @@ dhdpcie_irq_disabled(dhd_bus_t *bus)
 {
 	struct irq_desc *desc = (struct irq_desc *)dhd_irq_to_desc(bus->dev->irq);
 
+	if (desc == NULL) {
+		/* if irq_desc is NULL it is assumed that irq is enabled by kernel */
+		return 0;
+	}
 	/* depth will be zero, if enabled */
 	return desc->depth;
 }

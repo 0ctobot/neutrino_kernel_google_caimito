@@ -64,8 +64,10 @@
 #define RTEMACSUSPEND		0x891D	/* Suspend MAC cores */
 #define RTEPTMHOFFSET		0x891E	/* PTM offsets */
 #define RTE_REAL_D3_D0		0x891F	/* Transition from real D3/D0. */
+#define RTERXCMPLCHAINENABLE	0x8920	/* Chained RxCompletion Enable */
+#define RTEGRADIO_STAT		0x8921	/* Radio Stat */
 /* Ensure last RTE IOCTL define val is assigned to RTEIOCTLEND */
-#define RTEIOCTLEND		0x891F  /* LAST RTE IOCTL value */
+#define RTEIOCTLEND		0x8920  /* LAST RTE IOCTL value */
 
 #define RTE_IOCTL_QUERY		0x00
 #define RTE_IOCTL_SET		0x01
@@ -97,7 +99,8 @@ enum hnd_ioctl_cmd {
 	BUS_DUMP_RX_DMA_STALL_RELATED_INFO = 18,
 	BUS_UPDATE_RESVPOOL_STATE = 19,	/* Update resvpool state */
 	BUS_GET_MAX_RING_NUM = 20, /* Get the Max num of the Tx rings */
-	BUS_M2M_LOW_PRIO_DESCR = 21 /* enable/disable m2m low prio descriptor */
+	BUS_M2M_LOW_PRIO_DESCR = 21, /* enable/disable m2m low prio descriptor */
+	BUS_SET_DEV_TRAP_FATAL = 22 /* communicate to host to perform big-hammer */
 };
 
 #define SDPCMDEV_SET_MAXTXPKTGLOM	1

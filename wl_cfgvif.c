@@ -1195,13 +1195,22 @@ wl_cfg80211_del_virtual_iface(struct wiphy *wiphy, bcm_struct_cfgdev *cfgdev)
 	}
 #endif /* WL_STATIC_IF */
 
-	WL_DBG(("Enter  wdev:%p iftype: %d\n", wdev, wdev->iftype));
+	WL_INFORM_MEM(("Enter  wdev:%p iftype: %d\n", wdev, wdev->iftype));
 	if (cfg80211_to_wl_iftype(wdev->iftype, &wl_iftype, &wl_mode) < 0) {
 		WL_ERR(("Wrong iftype: %d\n", wdev->iftype));
 		return -ENODEV;
 	}
 
 	if (ndev) {
+#ifdef WL_NAN
+		if (IS_NDI_IFACE(ndev->name)) {
+			/* Check for aware* iface name for NAN iftype */
+			if (!cfg->nancfg->nan_init_state || !cfg->nancfg->nan_enable) {
+				WL_ERR(("Nan must be inited/enabled\n"));
+				return -ENODEV;
+			}
+		}
+#endif /* WL_NAN */
 		dhd_set_del_in_progress(dhdp, ndev);
 	}
 	if ((ret = wl_cfgvif_del_if(cfg, primary_ndev,
