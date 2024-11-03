@@ -661,7 +661,8 @@ static void gs_panel_bridge_mode_set(struct drm_bridge *bridge, const struct drm
 	dsi->mode_flags = pmode->gs_mode.mode_flags;
 	ctx->timestamps.last_mode_set_ts = ktime_get();
 
-	PANEL_ATRACE_BEGIN(__func__);
+	PANEL_ATRACE_BEGIN("%s: %dx%dx%d@%d", __func__, pmode->mode.hdisplay, pmode->mode.vdisplay,
+			   drm_mode_vrefresh(&pmode->mode), gs_drm_mode_te_freq(&pmode->mode));
 	if (funcs) {
 		const bool is_active = gs_is_panel_active(ctx);
 		const bool was_lp_mode = old_mode && old_mode->gs_mode.is_lp_mode;
@@ -704,12 +705,15 @@ static void gs_panel_bridge_mode_set(struct drm_bridge *bridge, const struct drm
 	if (pmode->gs_mode.is_lp_mode && gs_panel_has_func(ctx, set_post_lp_mode))
 		funcs->set_post_lp_mode(ctx);
 
+	PANEL_ATRACE_INT_PID_FMT(drm_mode_vrefresh(mode), ctx->trace_pid, "vrefresh[%s]",
+				 ctx->panel_model);
+	PANEL_ATRACE_INT_PID_FMT(gs_drm_mode_te_freq(mode), ctx->trace_pid, "vsync[%s]",
+				 ctx->panel_model);
 	mutex_unlock(&ctx->mode_lock); /*TODO(b/267170999): MODE*/
 
 	if (need_update_backlight && ctx->bl)
 		backlight_update_status(ctx->bl);
 
-	PANEL_ATRACE_INT("panel_fps", drm_mode_vrefresh(mode));
 	PANEL_ATRACE_END(__func__);
 }
 
