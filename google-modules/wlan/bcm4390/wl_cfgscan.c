@@ -534,7 +534,6 @@ wl_inform_bss(struct bcm_cfg80211 *cfg)
 #ifdef ESCAN_CHANNEL_CACHE
 	reset_roam_cache(cfg);
 #endif /* ESCAN_CHANNEL_CACHE */
-	preempt_disable();
 	bi = next_bss(bss_list, bi);
 	for_each_bss(bss_list, bi, i) {
 #ifdef ESCAN_CHANNEL_CACHE
@@ -545,7 +544,6 @@ wl_inform_bss(struct bcm_cfg80211 *cfg)
 			WL_ERR(("bss inform failed\n"));
 		}
 	}
-	preempt_enable();
 	WL_MEM(("cfg80211 scan cache updated\n"));
 #if defined(ROAM_CHANNEL_CACHE) && defined(HOST_RCC_UPDATE)
 	/* print_roam_cache(); */
@@ -1280,7 +1278,6 @@ s32 wl_cfgscan_pfn_handler(struct bcm_cfg80211 *cfg, wl_pfn_scanresult_v3_1_t *p
 			"or invalid bss_info length\n"));
 		goto exit;
 	}
-	preempt_disable();
 #ifdef ESCAN_CHANNEL_CACHE
 	add_roam_cache(cfg, bi);
 #endif /* ESCAN_CHANNEL_CACHE */
@@ -1288,7 +1285,6 @@ s32 wl_cfgscan_pfn_handler(struct bcm_cfg80211 *cfg, wl_pfn_scanresult_v3_1_t *p
 	if (unlikely(err)) {
 		WL_ERR(("bss inform failed\n"));
 	}
-	preempt_enable();
 	WL_MEM(("cfg80211 scan cache updated\n"));
 exit:
 	return err;
@@ -4381,9 +4377,11 @@ static void wl_scan_timeout(unsigned long data)
 		return;
 	}
 
+#ifdef DHD_FW_COREDUMP
 	if (dhdp->memdump_enabled) {
 		dhdp->hang_reason = HANG_REASON_SCAN_TIMEOUT;
 	}
+#endif /* DHD_FW_COREDUMP */
 #if defined(DHD_KERNEL_SCHED_DEBUG) && defined(DHD_FW_COREDUMP)
 	/* DHD triggers Kernel panic if the SCAN timeout occurrs
 	 * due to tasklet or workqueue scheduling problems in the Linux Kernel.
@@ -4446,7 +4444,8 @@ static void wl_scan_timeout(unsigned long data)
 	dhd_bus_intr_count_dump(dhdp);
 #endif /* BCMDONGLEHOST */
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)) && !defined(CONFIG_MODULES)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)) && \
+    (LINUX_VERSION_CODE <= KERNEL_VERSION(5, 15, 110)) && !defined(CONFIG_MODULES)
 	/* Print WQ states. Enable only for in-built drivers as the symbol is not exported  */
 	show_workqueue_state();
 #endif /* LINUX_VER >= 4.1 && !CONFIG_MODULES */
