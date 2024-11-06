@@ -39,6 +39,10 @@ struct user_struct {
 
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
+
+#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_SUS_PATH)
+	u64 android_kabi_reserved1;
+#endif
 };
 
 extern int uids_sysfs_init(void);
