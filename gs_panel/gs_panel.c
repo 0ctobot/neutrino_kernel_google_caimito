@@ -1003,6 +1003,7 @@ static int gs_bl_find_range(struct gs_panel *ctx, int brightness, u32 *range)
 	PANEL_ATRACE_##type("cmd_align %s TE:%u vblank:%u interval:%u diff:%llu delay:%u", \
 			event, te, vblank, interval, diff, delay)
 #define SEND_CMD_OVERHEAD_US (2000)
+#define MAXIMUM_PRESENT_TIME_HEADS_UP_US (30000)
 
 static void gs_dsi_cmd_align_delay_us(const char *event, u32 te_period, u32 vblank_period,
 		u32 interval, u32 diff, u32 delay)
@@ -1010,6 +1011,31 @@ static void gs_dsi_cmd_align_delay_us(const char *event, u32 te_period, u32 vbla
 	CMD_ALIGN_ATRACE(BEGIN, event, te_period, vblank_period, interval, diff, delay);
 	usleep_range(delay, delay + 10);
 	CMD_ALIGN_ATRACE(END, event, te_period, vblank_period, interval, diff, delay);
+}
+
+bool gs_dsi_cmd_need_wait_for_present_time_locked(struct gs_panel *ctx, u64 *wait_time_us)
+{
+	ktime_t current_ts, present_ts;
+
+	current_ts = ktime_get();
+	if (ktime_after(ctx->timestamps.conn_last_present_ts,
+			ctx->timestamps.timeline_expected_present_ts))
+		present_ts = ctx->timestamps.conn_last_present_ts;
+	else
+		present_ts = ctx->timestamps.timeline_expected_present_ts;
+	if (ktime_after(present_ts, current_ts)) {
+		u32 te_rate = gs_drm_mode_te_freq(&ctx->current_mode->mode);
+		u32 te_period_us = USEC_PER_SEC / te_rate;
+		u64 diff = ktime_us_delta(present_ts, current_ts);
+
+		if (diff > te_period_us && diff < MAXIMUM_PRESENT_TIME_HEADS_UP_US) {
+			/* wait until 3/4 TE period away from next valid TE */
+			diff -= mult_frac(te_period_us, 3, 4);
+			*wait_time_us = diff;
+			return true;
+		}
+	}
+	return false;
 }
 
 void gs_dsi_cmd_align(struct gs_panel *ctx)
