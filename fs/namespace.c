@@ -36,6 +36,24 @@
 #include "pnode.h"
 #include "internal.h"
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+extern bool susfs_is_current_ksu_domain(void);
+#define DEFAULT_SUS_MNT_ID 500000
+#define DEFAULT_SUS_MNT_GROUP_ID 1000
+static int susfs_sus_mnt_id_min_alloc = DEFAULT_SUS_MNT_ID;
+static int susfs_sus_mnt_group_id_min_alloc = DEFAULT_SUS_MNT_GROUP_ID;
+#endif
+
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_BIND_MOUNT
+extern int susfs_auto_add_bind_mount(const char *pathname, struct path *path_target);
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT
+extern void susfs_auto_add_try_umount(struct path *path);
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_DEFAULT_MOUNT
+extern void susfs_auto_add_default_mount(const char __user *to_pathname);
+#endif
+
 /* Maximum number of mounts in a mount namespace */
 static unsigned int sysctl_mount_max __read_mostly = 100000;
 
@@ -135,6 +153,12 @@ static int mnt_alloc_id(struct mount *mnt)
 
 static void mnt_free_id(struct mount *mnt)
 {
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	if (mnt->mnt_devname && unlikely(!strcmp(mnt->mnt_devname, "KSU"))) {
+		susfs_sus_mnt_id_min_alloc = DEFAULT_SUS_MNT_ID;
+		return;
+	}
+#endif
 	ida_free(&mnt_id_ida, mnt->mnt_id);
 }
 
@@ -143,7 +167,17 @@ static void mnt_free_id(struct mount *mnt)
  */
 static int mnt_alloc_group_id(struct mount *mnt)
 {
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	int res;
+
+	if (mnt->mnt_devname && unlikely(!strcmp(mnt->mnt_devname, "KSU"))) {
+		mnt->mnt_group_id = susfs_sus_mnt_group_id_min_alloc++;
+		return 0;
+	}
+	res = ida_alloc_min(&mnt_group_ida, 1, GFP_KERNEL);
+#else
 	int res = ida_alloc_min(&mnt_group_ida, 1, GFP_KERNEL);
+#endif
 
 	if (res < 0)
 		return res;
@@ -156,6 +190,13 @@ static int mnt_alloc_group_id(struct mount *mnt)
  */
 void mnt_release_group_id(struct mount *mnt)
 {
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	if (mnt->mnt_devname && unlikely(!strcmp(mnt->mnt_devname, "KSU"))) {
+		susfs_sus_mnt_group_id_min_alloc = DEFAULT_SUS_MNT_GROUP_ID;
+		mnt->mnt_group_id = 0;
+		return;
+	}
+#endif
 	ida_free(&mnt_group_ida, mnt->mnt_group_id);
 	mnt->mnt_group_id = 0;
 }
@@ -199,10 +240,20 @@ static struct mount *alloc_vfsmnt(const char *name)
 	if (mnt) {
 		int err;
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	if (name && unlikely(!strcmp(name, "KSU"))) {
+		mnt->mnt_id = susfs_sus_mnt_id_min_alloc++;
+		goto bypass_orig_flow;
+	}
+#endif
+
 		err = mnt_alloc_id(mnt);
 		if (err)
 			goto out_free_cache;
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+bypass_orig_flow:
+#endif
 		if (name) {
 			mnt->mnt_devname = kstrdup_const(name,
 							 GFP_KERNEL_ACCOUNT);
@@ -1014,7 +1065,19 @@ struct vfsmount *vfs_create_mount(struct fs_context *fc)
 	if (!fc->root)
 		return ERR_PTR(-EINVAL);
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	if (unlikely(susfs_is_current_ksu_domain())) {
+		/* Force all the dev name to "KSU" if the calling
+		 * process is from KSU domain. */
+		mnt = alloc_vfsmnt("KSU");
+		goto bypass_orig_flow;
+	}
+#endif
+
 	mnt = alloc_vfsmnt(fc->source ?: "none");
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+bypass_orig_flow:
+#endif
 	if (!mnt)
 		return ERR_PTR(-ENOMEM);
 
@@ -1127,6 +1190,13 @@ static struct mount *clone_mnt(struct mount *old, struct dentry *root,
 	mnt->mnt.mnt_root = dget(root);
 	mnt->mnt_mountpoint = mnt->mnt.mnt_root;
 	mnt->mnt_parent = mnt;
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	/* Allow all sus mounts to be cloned privately to avoid propagation,
+	 * and let try_umount() decide how to handle matched processes. */
+	if (unlikely(mnt->mnt.mnt_root->d_inode->i_state & 33554432)) {
+		flag &= (~CL_SLAVE | ~CL_SHARED_TO_SLAVE | ~CL_MAKE_SHARED | CL_PRIVATE);
+	}
+#endif
 	lock_mount_hash();
 	list_add_tail(&mnt->mnt_instance, &sb->s_mounts);
 	unlock_mount_hash();
@@ -2455,6 +2525,23 @@ static int do_loopback(struct path *path, const char *old_name,
 		umount_tree(mnt, UMOUNT_SYNC);
 		unlock_mount_hash();
 	}
+#if defined(CONFIG_KSU_SUSFS_AUTO_ADD_BIND_MOUNT) || defined(CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT)
+	/* Check if bind mounted paths should be hidden and umounted
+	 * automatically, targeting only processes with ksu domain. */
+	if (susfs_is_current_ksu_domain()) {
+#if defined(CONFIG_KSU_SUSFS_AUTO_ADD_BIND_MOUNT)
+		if (susfs_auto_add_bind_mount(old_name, &old_path)) {
+			goto orig_flow;
+		}
+#endif
+#if defined(CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT)
+		susfs_auto_add_try_umount(path);
+#endif
+	}
+#if defined(CONFIG_KSU_SUSFS_AUTO_ADD_BIND_MOUNT)
+orig_flow:
+#endif
+#endif
 out2:
 	unlock_mount(mp);
 out:
@@ -3828,6 +3915,11 @@ out_to:
 	path_put(&to_path);
 out_from:
 	path_put(&from_path);
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_DEFAULT_MOUNT
+	if (!ret && susfs_is_current_ksu_domain()) {
+		susfs_auto_add_default_mount(to_pathname);
+	}
+#endif
 	return ret;
 }
 
