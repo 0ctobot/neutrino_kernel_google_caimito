@@ -33,6 +33,7 @@
 			310000    200000
 			267000    178000
 		>;
+		list-urgent-lat = "bts_dpu0", "bts_dpu1";
 
 		rt-names = "DECON0",
 			   "DECON1",
