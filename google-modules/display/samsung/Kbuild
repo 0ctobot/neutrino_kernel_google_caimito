@@ -5,7 +5,7 @@
 
 subdir-ccflags-y += -I$(srctree)/$(src)/../common/include
 subdir-ccflags-y += -I$(srctree)/$(src)/include/uapi
-subdir-ccflags-y += -I$(KERNEL_SRC)/../private/google-modules/bms
+subdir-ccflags-y += -I$(KERNEL_SRC)/google-modules/bms
 
 ccflags-y += -I$(srctree)/$(src)/cal_common
 ccflags-$(CONFIG_SOC_ZUMA) += -DCONFIG_DRM_LEGACY=1
