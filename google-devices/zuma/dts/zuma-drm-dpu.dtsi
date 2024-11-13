@@ -438,6 +438,7 @@
 
 		dsim_mode = <&dsim_modes>;
 		dphy_diag = <&dphy_diags>;
+		hs_clock_rates = <&hs_clock_rates>;
 
 		te_from = <0>;
 		/* EINT for TE */
@@ -471,6 +472,7 @@
 
 		dsim_mode = <&dsim_modes>;
 		dphy_diag = <&dphy_diags>;
+		hs_clock_rates = <&hs_clock_rates>;
 
 		te_from = <1>;
 		/* EINT for TE */

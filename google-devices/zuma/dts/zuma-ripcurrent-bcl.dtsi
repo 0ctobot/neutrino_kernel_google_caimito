@@ -1,15 +1,15 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0
 /*
- * Google Zuma specific bcl device tree source
+ * Google Zuma Ripcurrent-specific bcl device tree source
  *
- * Copyright (c) 2024 Google, LLC
+ * Copyright (c) 2022 Google, LLC
  *		https://www.google.com
  */
 
 #include <dt-bindings/thermal/thermal.h>
 #include <dt-bindings/soc/google/zuma-bcl.h>
 
-&pinctrl_11 {
+&pinctrl_12 {
 	bcl_rffe_modem: bcl-rffe-modem {
 		samsung,pins = "gpp22-2";
 		samsung,pin-function = <EXYNOS_PIN_FUNC_OUTPUT>;
@@ -49,11 +49,14 @@
 				aur_clkdivstep = <0x1>;
 				batoilo_lower = <3800>;
 				batoilo_upper = <6800>;
+				batoilo_trig_lvl = <5000>;
+				batoilo_det = <0x1>;   /* 30us */
+				smpl_ctrl = <0xA8>; /* 3.1V, 200mV HYS, 0us Debounce */
 				odpm_ratio = <3>;
-				gpios = <&gpa9 5 GPIO_ACTIVE_HIGH>,		/* VDROOP1 */
-					<&gpa9 6 GPIO_ACTIVE_HIGH>,		/* VDROOP2 */
-					<&gpp22 2 GPIO_ACTIVE_HIGH>,
-					<&gpp22 3 GPIO_ACTIVE_HIGH>;
+				gpios = <&gpa9 5 0>,		/* VDROOP1 */
+					<&gpa9 6 0>,		/* VDROOP2 */
+					<&gpp22 2 0>,		/* MODEM 1 */
+					<&gpp22 3 0>;		/* MODEM 2 */
 				rffe_channel = <11>;
 				pinctrl-names = "bcl-rffe-modem", "bcl-batoilo-modem";
 				pinctrl-0 = <&bcl_rffe_modem>;
@@ -66,6 +69,7 @@
 					irq,uvlo1;
 					irq,uvlo2;
 					irq,batoilo;
+					irq,batoilo2;
 					irq,smpl_warn;
 					/* Disabled IRQ
 					* irq,ocp_cpu1;
@@ -80,39 +84,39 @@
 				};
 				main_limit {
 					pmic = "main_limit";
-					ch1 { setting = <255>; };
-					ch2 { setting = <255>; };
-					ch3 { setting = <222>; };
-					ch4 { setting = <251>; };
-					ch5 { setting = <181>; };
-					ch6 { setting = <126>; };
-					ch7 { setting = <255>; };
-					ch8 { setting = <105>; };
-					ch9 { setting = <224>; };
-					ch10 { setting = <207>; };
-					ch11 { setting = <83>; };
-					ch12 { setting = <83>; };
+					ch1 { setting = <209>; };
+					ch2 { setting = <157>; };
+					ch3 { setting = <182>; };
+					ch4 { setting = <202>; };
+					ch5 { setting = <143>; };
+					ch6 { setting = <89>; };
+					ch7 { setting = <238>; };
+					ch8 { setting = <74>; };
+					ch9 { setting = <177>; };
+					ch10 { setting = <171>; };
+					ch11 { setting = <60>; };
+					ch12 { setting = <60>; };
 				};
 				sub_limit {
 					pmic = "sub_limit";
-					ch1 { setting = <106>; };
-					ch2 { setting = <180>; };
-					ch3 { setting = <151>; };
-					ch4 { setting = <36>; };
-					ch5 { setting = <51>; };
-					ch6 { setting = <56>; };
-					ch7 { setting = <253>; };
-					ch8 { setting = <126>; };
-					ch9 { setting = <195>; };
-					ch10 { setting = <125>; };
-					ch11 { setting = <166>; };
-					ch12 { setting = <166>; };
+					ch1 { setting = <85>; };
+					ch2 { setting = <144>; };
+					ch3 { setting = <107>; };
+					ch4 { setting = <25>; };
+					ch5 { setting = <40>; };
+					ch6 { setting = <34>; };
+					ch7 { setting = <199>; };
+					ch8 { setting = <113>; };
+					ch9 { setting = <85>; };
+					ch10 { setting = <114>; };
+					ch11 { setting = <137>; };
+					ch12 { setting = <106>; };
 				};
 				freq_qos {
 					batoilo {
-						cpucl0 = <1704000>;
-						cpucl1 = <1945000>;
-						cpucl2 = <2294000>;
+						cpucl0 = <955000>;
+						cpucl1 = <1221000>;
+						cpucl2 = <1557000>;
 						gpu = <723000>;
 						tpu = <845000>;
 					};

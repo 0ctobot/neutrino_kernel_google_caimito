@@ -215,4 +215,7 @@
 		};
 	};
 
+	hs_clock_rates: hs_clock_rates {
+		hs-clock-rates = <>;
+	};
 };

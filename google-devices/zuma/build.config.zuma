@@ -1,16 +1,17 @@
-KCONFIG_EXT_MODULES_PREFIX=$(realpath ${ROOT_DIR} --relative-to ${ROOT_DIR}/${KERNEL_DIR})/
-
 . ${ROOT_DIR}/${KERNEL_DIR}/build.config.common
 . ${ROOT_DIR}/${KERNEL_DIR}/build.config.aarch64
 
-DEFCONFIG=zuma_gki_defconfig
-PRE_DEFCONFIG_CMDS="mkdir -p \${OUT_DIR}/arch/arm64/configs/ && KCONFIG_CONFIG=\${OUT_DIR}/arch/arm64/configs/${DEFCONFIG} ${ROOT_DIR}/${KERNEL_DIR}/scripts/kconfig/merge_config.sh -m -r ${ROOT_DIR}/${KERNEL_DIR}/arch/arm64/configs/gki_defconfig ${ROOT_DIR}/${FRAGMENT_CONFIG} && true"
-POST_DEFCONFIG_CMDS=""
+KCONFIG_EXT_MODULES_PREFIX=$(realpath ${ROOT_DIR} --relative-to ${ROOT_DIR}/${KERNEL_DIR})/
+KCONFIG_SOC_GS_PREFIX=${KCONFIG_EXT_MODULES_PREFIX}/private/google-modules/soc/gs/
 
-LZ4_RAMDISK=1
+DEFCONFIG=gki_defconfig
+
 BOOT_IMAGE_HEADER_VERSION=4
 TRIM_UNUSED_MODULES=1
 
-if [ -n "${GKI_BUILD_CONFIG_FRAGMENT}" ]; then
-source ${GKI_BUILD_CONFIG_FRAGMENT}
-fi
+DTC_INCLUDE=" \
+  ${ROOT_DIR}/${KERNEL_DIR}/include \
+  ${ROOT_DIR}/private/google-modules/soc/gs/include/dtc \
+  include \
+  "
+MKDTIMG_FLAGS="--page_size=4096 --id=/:board_id --rev=/:board_rev"

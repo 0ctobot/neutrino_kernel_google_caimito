@@ -122,8 +122,5 @@
 
 		/* Features mask */
 		gpu_features_mask = <0 4>;
-
-		/* KBase RT thread Uclamp values */
-		kbase-rt-uclamp-min = <200>;
 	};
 };

@@ -45,7 +45,7 @@
 				google,cv-tier-switch-cnt = <3>;
 
 				/* rest charging */
-				google,chg-rest-rate = <8>;
+				google,chg-rest-rate = <15>;
 				google,chg-rest-soc = <80>;
 				/* TRICKLE-DEFEND threshold */
 				google,bd-trickle-recharge-soc = <80>;
@@ -61,7 +61,8 @@
 				/* bhi */
 				google,bhi-status-marginal = <79>;
 				google,bhi-status-need-rep = <79>;
-				google,bhi-cycle-grace = <200>;
+				google,bhi-cycle-grace = <100>;
+				google,bhi-algo-ver = <3>;
 
 				#thermal-sensor-cells = <0>;
 				#cooling-cells = <2>;
