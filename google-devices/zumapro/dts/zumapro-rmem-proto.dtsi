@@ -9,6 +9,9 @@
 };
 
 &reserved_memory {
+	#address-cells = <2>;
+	#size-cells = <1>;
+
 	tpu_fw_reserved_zumapro: tpu_fw@92e00000 {
 		reg = <0x0 0x92e00000 0x01200000>;
 		no-map;

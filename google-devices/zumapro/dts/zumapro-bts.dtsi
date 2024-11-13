@@ -10,7 +10,7 @@
  *
  */
 
-#include "google-dts-zuma/zuma-bts.dtsi"
+#include "zuma/zuma-bts.dtsi"
 
 / {
 	exynos-bts {
@@ -28,5 +28,7 @@
 			200000    200000
 			134000    178000
 		>;
+
+		list-urgent-lat = "bts_dpu0", "bts_dpu1";
 	};
 };

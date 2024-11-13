@@ -7,5 +7,5 @@
 	compatible = "google,ZUMAPRO DPM-eng", "google,ZUMAPRO DPM-eng";
 };
 
-#include "google-dts-zuma/zuma-dpm-eng.dtsi"
-#include "google-dts-zuma/avf-dpm-eng.dtsi"
+#include "zuma/zuma-dpm-eng.dtsi"
+#include "zuma/avf-dpm-eng.dtsi"

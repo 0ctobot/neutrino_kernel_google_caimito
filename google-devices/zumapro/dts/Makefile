@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0
 
 zumapro_overlays := \
+	zumapro-dpm-eng.dtbo \
+	zumapro-dpm-userdebug.dtbo \
+	zumapro-dpm-user.dtbo \
 	zumapro-emulator.dtbo \
 	zumapro-hybrid.dtbo
 
@@ -9,6 +12,10 @@ zumapro_dtbs := \
 	zumapro-a0-ipop.dtb \
 	zumapro-a1-foplp.dtb \
 	zumapro-a1-ipop.dtb
+
+DTC_FLAGS_zuma-dpm-eng += -a 4096
+DTC_FLAGS_zuma-dpm-user += -a 4096
+DTC_FLAGS_zuma-dpm-userdebug += -a 4096
 
 # Usage:
 #   $(call DTBS_overlay_template, overlay, base_dtb, suffix)

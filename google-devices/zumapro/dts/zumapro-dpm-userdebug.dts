@@ -7,5 +7,5 @@
 	compatible = "google,ZUMAPRO DPM-userdebug", "google,ZUMAPRO DPM-userdebug";
 };
 
-#include "google-dts-zuma/zuma-dpm-userdebug.dtsi"
-#include "google-dts-zuma/avf-dpm-userdebug.dtsi"
+#include "zuma/zuma-dpm-userdebug.dtsi"
+#include "zuma/avf-dpm-userdebug.dtsi"

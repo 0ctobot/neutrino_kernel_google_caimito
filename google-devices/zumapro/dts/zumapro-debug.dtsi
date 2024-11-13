@@ -545,6 +545,9 @@
 		};
 
 		in-ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
 			port@0 {
 				reg = <0>;
 				funnel0_in_port0: endpoint {
@@ -626,7 +629,8 @@
 		in-ports {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			port {
+
+			port@0 {
 				reg = <0>;
 				funnel1_in_port0: endpoint {
 					remote-endpoint = <&funnel0_out_port>;

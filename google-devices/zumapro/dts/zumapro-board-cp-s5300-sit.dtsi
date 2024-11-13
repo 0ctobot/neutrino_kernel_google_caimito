@@ -7,7 +7,7 @@
  */
 
 #include <dt-bindings/pinctrl/zuma.h>
-#include "google-dts-zuma/zuma-cp-s5300-sit.dtsi"
+#include "zuma/zuma-cp-s5300-sit.dtsi"
 
 / {
 	fragment@modemif {
@@ -74,6 +74,28 @@
 				mif_off_during_volte = <1>;
 				/* phandle used for shutdown calls to s5910 clk-buffer*/
 				google,clk-buffer = <&s5910>;
+
+				/* TPMON: CP throughput monitor */
+				cpif_tpmon {
+
+					tpmon_irq_affinity_0 {
+						level = <0x30 0x70 0xF0>;
+
+						boost0 {
+							boost_threshold = <1500 3500>;
+							unboost_threshold_mbps = <1000 3000>;
+						};
+					};
+
+					tpmon_rps {
+						level = <0x30 0x70 0xF0>;
+
+						boost0 {
+							boost_threshold = <1500 3500>;
+							unboost_threshold_mbps = <1000 3000>;
+						};
+					};
+				};
 			};
 		};
 	};

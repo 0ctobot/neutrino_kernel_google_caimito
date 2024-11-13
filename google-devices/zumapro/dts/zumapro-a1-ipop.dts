@@ -29,6 +29,17 @@
 		k_i = <42>;
 		early_throttle_k_p = <90>;
 		early_throttle_offset = <20>; // in Celsius
+
+		use-temp-lut-thermal;
+		temp_state_table =
+			//temp level
+			<  60    0
+			   65    1
+			   68    2
+			   69    3
+			   71    4
+			   77    5
+			   255   6 >;
 	};
 
 	tmuctrl_1: MID@100A0000 {

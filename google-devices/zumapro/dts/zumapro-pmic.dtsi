@@ -6,7 +6,7 @@
  *
  */
 
-#include "google-dts-zuma/zuma-pmic.dtsi"
+#include "zuma/zuma-pmic.dtsi"
 
 &m_buck2_reg {
 	schematic-name = "S2M_VDD_CPUCL1";

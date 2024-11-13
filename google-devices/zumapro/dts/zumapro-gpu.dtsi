@@ -4,7 +4,7 @@
  *
  */
 
-#include "google-dts-zuma/zuma-gpu.dtsi"
+#include "zuma/zuma-gpu.dtsi"
 
 &mali {
 	gpu_dvfs_max_freq = <940000>;

@@ -20,7 +20,11 @@
 			#address-cells = <3>;
 			#size-cells = <2>;
 			num-lanes = <2>;
+			use-sysmmu = "true";
 			ranges = <0x82000000 0 0x14E00000 0 0x40000000 0 0xFF0000>;
 		};
 	};
+};
+&sysmmu_hsi1 {
+	status = "okay";
 };
