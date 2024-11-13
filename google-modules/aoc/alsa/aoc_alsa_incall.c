@@ -405,11 +405,24 @@ static int snd_aoc_pcm_prepare(struct snd_soc_component *component,
 	struct aoc_service_dev *dev = alsa_stream->dev;
 	struct aoc_chip *chip = alsa_stream->chip;
 	int channels;
+#if !IS_ENABLED(CONFIG_SOC_GS101)
+	int err;
+#endif
 
 	aoc_timer_stop_sync(alsa_stream);
 
 	if (mutex_lock_interruptible(&chip->audio_mutex))
 		return -EINTR;
+
+	alsa_stream->buffer_size = snd_pcm_lib_buffer_bytes(substream);
+	alsa_stream->period_size = snd_pcm_lib_period_bytes(substream);
+
+#if !IS_ENABLED(CONFIG_SOC_GS101)
+	/* Set the audio formats and flush the DRAM buffer */
+	err = aoc_hifi_incall_set_params(alsa_stream);
+	if (err < 0)
+		pr_notice("Failed to set %d Hifi/Incall params\n", err);
+#endif
 
 	channels = alsa_stream->channels;
 
@@ -421,8 +434,6 @@ static int snd_aoc_pcm_prepare(struct snd_soc_component *component,
 
 	/* in preparation of the stream */
 	/* aoc_audio_set_ctls(alsa_stream->chip); */
-	alsa_stream->buffer_size = snd_pcm_lib_buffer_bytes(substream);
-	alsa_stream->period_size = snd_pcm_lib_period_bytes(substream);
 	alsa_stream->pos = 0;
 	alsa_stream->prev_pos = 0;
 	alsa_stream->pos_delta = 0;

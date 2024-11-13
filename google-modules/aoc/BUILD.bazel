@@ -39,7 +39,7 @@ kernel_module(
         "aoc_uwb_service_dev.ko",
         "mailbox-wc.ko",
     ],
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     visibility = [
         ":__subpackages__",
         "//private/devices/google:__subpackages__",

@@ -1687,6 +1687,46 @@ int aoc_audio_path_close(struct aoc_chip *chip, int src, int dest, bool be_on)
 			 hw_id_to_sink(dest_idx), STOP, chip);
 }
 
+#if !IS_ENABLED(CONFIG_SOC_GS101)
+static int aoc_audio_playback_set_params2(struct aoc_alsa_stream *alsa_stream, int source_mode)
+{
+	struct CMD_AUDIO_OUTPUT_EP_SETUP2 cmd;
+
+	AocCmdHdrSet(&(cmd.parent), CMD_AUDIO_OUTPUT_EP_SETUP2_ID, sizeof(cmd));
+	cmd.channel = alsa_stream->entry_point_idx;
+
+	cmd.buffer_size = alsa_stream->buffer_size;
+	cmd.period_size = alsa_stream->period_size;
+
+	cmd.mode = source_mode;
+
+	pr_debug("audio set param2:idx %d, buffer_size=%d, period_size=%d\n", cmd.channel,
+				cmd.buffer_size, cmd.period_size);
+	return aoc_audio_control(CMD_OUTPUT_CHANNEL, (uint8_t *)&cmd,
+				sizeof(cmd), NULL, alsa_stream->chip);
+}
+
+int aoc_hifi_incall_set_params(struct aoc_alsa_stream *alsa_stream)
+{
+	int source_mode;
+
+	if (alsa_stream->stream_type == INCALL)
+		source_mode = ENTRYPOINT_MODE_INCALL_SCREEN;
+	else
+		source_mode = ENTRYPOINT_MODE_HIFI;
+
+	return aoc_audio_playback_set_params2(alsa_stream, source_mode);
+}
+
+int aoc_voip_set_params(struct aoc_alsa_stream *alsa_stream)
+{
+	int source_mode;
+
+	source_mode = ENTRYPOINT_MODE_VOIP;
+	return aoc_audio_playback_set_params2(alsa_stream, source_mode);
+}
+#endif
+
 static int aoc_audio_playback_set_params(struct aoc_alsa_stream *alsa_stream,
 					 uint32_t channels, uint32_t samplerate,
 					 uint32_t bps, bool pcm_float_fmt,
@@ -1760,11 +1800,42 @@ static int aoc_audio_playback_set_params(struct aoc_alsa_stream *alsa_stream,
 
 	err = aoc_audio_control(CMD_OUTPUT_CHANNEL, (uint8_t *)&cmd,
 				sizeof(cmd), NULL, alsa_stream->chip);
-	if (err < 0)
+	if (err < 0) {
 		pr_err("ERR:%d in playback set parameters\n", err);
+		goto exit;
+	}
 
+#if !IS_ENABLED(CONFIG_SOC_GS101)
+	err = aoc_audio_playback_set_params2(alsa_stream, cmd.mode);
+	if (err < 0)
+		pr_err("ERR:%d in playback set parameters2\n", err);
+#endif
+
+exit:
 	return err;
 }
+
+#if !IS_ENABLED(CONFIG_SOC_GS101)
+static int aoc_audio_capture_set_params2(struct aoc_alsa_stream *alsa_stream) {
+	struct CMD_AUDIO_INPUT_MIC_RECORD_AP_SET_PARAMS2 cmd;
+	int cmd_id;
+
+	cmd.channel = alsa_stream->idx;
+	cmd.buffer_size = alsa_stream->buffer_size;
+	cmd.period_size = alsa_stream->period_size;
+
+	if (alsa_stream->idx == UC_ULTRASONIC_RECORD)
+		cmd_id = CMD_AUDIO_INPUT_ULTRASONIC_AP_SET_PARAMS2_ID;
+	else
+		cmd_id = CMD_AUDIO_INPUT_MIC_RECORD_AP_SET_PARAMS2_ID;
+	AocCmdHdrSet(&(cmd.parent), cmd_id, sizeof(cmd));
+
+	pr_debug("audio set param2:idx %d, buffer_size=%d, period_size=%d\n", cmd.channel,
+				cmd.buffer_size, cmd.period_size);
+	return aoc_audio_control(CMD_INPUT_CHANNEL, (uint8_t *)&cmd,
+				sizeof(cmd), NULL, alsa_stream->chip);
+}
+#endif
 
 static int aoc_audio_capture_set_params(struct aoc_alsa_stream *alsa_stream, uint32_t channels,
 					uint32_t samplerate, uint32_t bps, bool pcm_float_fmt)
@@ -1883,6 +1954,14 @@ static int aoc_audio_capture_set_params(struct aoc_alsa_stream *alsa_stream, uin
 		pr_err("ERR:%d in capture parameter setup\n", err);
 		goto exit;
 	}
+
+#if !IS_ENABLED(CONFIG_SOC_GS101)
+	err = aoc_audio_capture_set_params2(alsa_stream);
+	if (err < 0) {
+		pr_err("ERR:%d in capture parameter2 setup\n", err);
+		goto exit;
+	}
+#endif
 
 	chip->capture_param_set |= (1 << alsa_stream->idx);
 
@@ -4179,6 +4258,25 @@ int aoc_audio_set_chre_src_aec_timeout(struct aoc_chip *chip, int timeout)
 		return 0;
 	}
 }
+
+#if !(IS_ENABLED(CONFIG_SOC_GS101) || IS_ENABLED(CONFIG_SOC_GS201))
+int aoc_audio_set_hdmic_gain(struct aoc_chip *chip, int gain)
+{
+	int err;
+	struct CMD_AUDIO_INPUT_SET_HDMIC_GAIN cmd;
+
+	AocCmdHdrSet(&cmd.parent, CMD_AUDIO_INPUT_SET_HDMIC_GAIN_ID,
+			sizeof(cmd));
+	cmd.gain_centibel = gain;
+
+	err = aoc_audio_control(CMD_INPUT_CHANNEL, (uint8_t *)&cmd,
+				sizeof(cmd), (uint8_t *)&cmd, chip);
+	if (err < 0)
+		pr_err("ERR:%d in AoC set HDMIC gain\n", err);
+
+	return err < 0 ? err : 0;
+}
+#endif
 
 /* Update PDM mic mask */
 int aoc_audio_mic_mask_set(struct aoc_chip *chip, bool is_voice)

@@ -86,9 +86,6 @@ static struct gpio_chip chip = {
 	.get = value_get,
 	.direction_input = direction_input,
 	.direction_output = direction_output,
-	.request = gpiochip_generic_request,
-	.free = gpiochip_generic_free,
-	.set_config = gpiochip_generic_config,
 	.base = -1,
 };
 

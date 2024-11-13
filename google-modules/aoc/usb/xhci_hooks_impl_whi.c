@@ -22,6 +22,11 @@
 #include "xhci-exynos.h"
 #include "xhci_offload_impl.h"
 
+#if IS_ENABLED(CONFIG_USB_XHCI_GOOG_DMA)
+#include <linux/iommu.h>
+#include "xhci-goog-dma.h"
+#endif
+
 static struct xhci_offload_data *offload_data;
 struct xhci_offload_data *xhci_get_offload_data(void)
 {
@@ -199,14 +204,67 @@ static int usb_audio_offload_init(struct xhci_hcd *xhci)
 	struct device *dev = xhci_to_hcd(xhci)->self.sysdev;
 	int ret;
 	u32 out_val;
+#if IS_ENABLED(CONFIG_USB_XHCI_GOOG_DMA)
+	struct iommu_domain	*domain;
+	struct reserved_mem	*rmem;
+	struct device_node	*np;
+	int i, count;
+#endif
 
 	offload_data = kzalloc(sizeof(struct xhci_offload_data), GFP_KERNEL);
-	if (!offload_data) {
+	if (!offload_data)
 		return -ENOMEM;
-	}
 
 	if (!of_property_read_u32(dev->of_node, "offload", &out_val))
 		offload_data->usb_audio_offload = (out_val == 1) ? true : false;
+
+#if IS_ENABLED(CONFIG_USB_XHCI_GOOG_DMA)
+	domain = iommu_get_domain_for_dev(dev);
+	if (!domain) {
+		dev_err(dev, "iommu domain not found.\n");
+		ret = -ENOMEM;
+		goto free_data;
+	}
+
+	xhci_goog_rmem_setup_latecall(dev);
+
+	for (i = 0; i < XHCI_GOOG_DMA_RMEM_MAX; i++) {
+		ret = of_reserved_mem_device_init_by_idx(dev, dev->of_node, i);
+		if (ret) {
+			dev_err(dev, "Could not get reserved memory index %d\n", i);
+			goto release_rmem;
+		}
+	}
+
+	count = of_property_count_elems_of_size(dev->of_node, "memory-region",
+						sizeof(u32));
+
+	for (i = 0; i < count; i++) {
+		np = of_parse_phandle(dev->of_node, "memory-region", i);
+		if (!np) {
+			dev_err(dev, "memory-region not found\n");
+			ret = -ENOMEM;
+			goto unmap_iommu;
+		}
+
+		rmem = of_reserved_mem_lookup(np);
+		if (!rmem) {
+			dev_err(dev, "rmem lookup failed.\n");
+			ret = -ENOMEM;
+			goto unmap_iommu;
+		}
+
+		ret = iommu_map(domain, rmem->base, rmem->base, rmem->size,
+				IOMMU_READ | IOMMU_WRITE);
+		if (ret < 0) {
+			dev_err(dev, "iommu_map error: %d\n", ret);
+			goto unmap_iommu;
+		}
+	}
+
+	xhci_goog_setup_dma_ops(dev);
+
+#else
 
 	ret = of_reserved_mem_device_init(dev);
 	if (ret) {
@@ -215,6 +273,7 @@ static int usb_audio_offload_init(struct xhci_hcd *xhci)
 		return ret;
 	}
 
+#endif
 	offload_data->dt_direct_usb_access =
 		of_property_read_bool(dev->of_node, "direct-usb-access") ? true : false;
 	if (!offload_data->dt_direct_usb_access)
@@ -223,6 +282,9 @@ static int usb_audio_offload_init(struct xhci_hcd *xhci)
 	offload_data->offload_state = true;
 	offload_data->usb_audio_count = 0;
 
+	/* Notification for xhci driver probing */
+	usb_host_mode_state_notify(USB_CONNECTED);
+
 	aoc_alsa_usb_callback_register(setup_transfer_ring);
 	usb_register_notify(&xhci_udev_nb);
 	offload_data->xhci = xhci;
@@ -230,6 +292,30 @@ static int usb_audio_offload_init(struct xhci_hcd *xhci)
 	INIT_WORK(&offload_data->offload_connect_ws, offload_connect_work);
 
 	return 0;
+#if IS_ENABLED(CONFIG_USB_XHCI_GOOG_DMA)
+unmap_iommu:
+	if (i > 0) {
+		for (i = 0; i < count - 1; i++) {
+			np = of_parse_phandle(dev->of_node, "memory-region", i);
+			if (!np)
+				continue;
+
+			rmem = of_reserved_mem_lookup(np);
+			if (!rmem)
+				continue;
+
+			iommu_unmap(domain, rmem->base, rmem->size);
+		}
+	}
+
+release_rmem:
+	of_reserved_mem_device_release(dev);
+
+free_data:
+	kfree(offload_data);
+
+	return ret;
+#endif
 }
 
 static int usb_audio_offload_setup(struct xhci_hcd *xhci)
@@ -244,6 +330,14 @@ static int usb_audio_offload_setup(struct xhci_hcd *xhci)
 
 static void usb_audio_offload_cleanup(struct xhci_hcd *xhci)
 {
+#if IS_ENABLED(CONFIG_USB_XHCI_GOOG_DMA)
+	struct device *dev = xhci_to_hcd(xhci)->self.sysdev;
+	struct iommu_domain	*domain;
+	struct reserved_mem	*rmem;
+	struct device_node	*np;
+	int i, count, ret;
+#endif
+
 	offload_data->usb_audio_offload = false;
 	offload_data->offload_state = false;
 	offload_data->xhci = NULL;
@@ -255,6 +349,39 @@ static void usb_audio_offload_cleanup(struct xhci_hcd *xhci)
 	usb_host_mode_state_notify(USB_DISCONNECTED);
 
 	cancel_work_sync(&offload_data->offload_connect_ws);
+
+#if IS_ENABLED(CONFIG_USB_XHCI_GOOG_DMA)
+	xhci_goog_restore_dma_ops(dev);
+
+	domain = iommu_get_domain_for_dev(dev);
+
+	count = of_property_count_elems_of_size(dev->of_node, "memory-region",
+						sizeof(u32));
+
+	for (i = 0; i < count; i++) {
+		if (!domain)
+			break;
+
+		np = of_parse_phandle(dev->of_node, "memory-region", i);
+		if (!np) {
+			dev_err(dev, "memory-region not found\n");
+			continue;
+		}
+
+		rmem = of_reserved_mem_lookup(np);
+		if (!rmem) {
+			dev_err(dev, "rmem lookup failed.\n");
+			continue;
+		}
+
+		ret = iommu_unmap(domain, rmem->base, rmem->size);
+		if (ret < 0)
+			dev_err(dev, "iommu_map error: %d\n", ret);
+	}
+
+	of_reserved_mem_device_release(dev);
+#endif
+
 	kfree(offload_data);
 	offload_data = NULL;
 }

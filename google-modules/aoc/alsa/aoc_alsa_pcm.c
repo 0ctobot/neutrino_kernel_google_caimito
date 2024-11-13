@@ -569,6 +569,9 @@ static int snd_aoc_pcm_prepare(struct snd_soc_component *component,
 		}
 	}
 
+	alsa_stream->buffer_size = snd_pcm_lib_buffer_bytes(substream);
+	alsa_stream->period_size = snd_pcm_lib_period_bytes(substream);
+
 	/* Set the audio formats and flush the DRAM buffer */
 	err = aoc_audio_set_params(alsa_stream, channels, alsa_stream->params_rate,
 				   alsa_stream->pcm_format_width, alsa_stream->pcm_float_fmt,
@@ -586,8 +589,6 @@ static int snd_aoc_pcm_prepare(struct snd_soc_component *component,
 
 	/* in preparation of the stream */
 	/* aoc_audio_set_ctls(alsa_stream->chip); */
-	alsa_stream->buffer_size = snd_pcm_lib_buffer_bytes(substream);
-	alsa_stream->period_size = snd_pcm_lib_period_bytes(substream);
 	alsa_stream->pos = 0;
 	alsa_stream->prev_pos = 0;
 	alsa_stream->pos_delta = 0;

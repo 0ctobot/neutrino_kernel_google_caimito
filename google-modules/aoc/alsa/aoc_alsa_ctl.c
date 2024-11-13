@@ -2189,6 +2189,38 @@ static int aoc_audio_chre_src_aec_timeout_set(struct snd_kcontrol *kcontrol,
 	return err;
 }
 
+#if !(IS_ENABLED(CONFIG_SOC_GS101) || IS_ENABLED(CONFIG_SOC_GS201))
+static int aoc_audio_hdmic_gain_get(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol) {
+	struct aoc_chip *chip = snd_kcontrol_chip(kcontrol);
+
+	if (mutex_lock_interruptible(&chip->audio_mutex))
+		return -EINTR;
+
+	ucontrol->value.integer.value[0] = chip->hdmic_gain;
+
+	mutex_unlock(&chip->audio_mutex);
+	return 0;
+}
+
+static int aoc_audio_hdmic_gain_set(struct snd_kcontrol *kcontrol,
+				struct snd_ctl_elem_value *ucontrol)
+{
+	struct aoc_chip *chip = snd_kcontrol_chip(kcontrol);
+	int err = 0;
+
+
+	if (mutex_lock_interruptible(&chip->audio_mutex))
+		return -EINTR;
+
+	chip->hdmic_gain = ucontrol->value.integer.value[0];
+	err = aoc_audio_set_hdmic_gain(chip, chip->hdmic_gain);
+
+	mutex_unlock(&chip->audio_mutex);
+	return err;
+}
+#endif
+
 static int pdm_mic_power_init_put(struct snd_kcontrol *kcontrol,
 				       struct snd_ctl_elem_value *ucontrol)
 {
@@ -2785,6 +2817,10 @@ static struct snd_kcontrol_new snd_aoc_ctl[] = {
 		CHRE_GAIN_PATH_AEC, -1280, 1280, 0, aoc_audio_chre_src_gain_get, aoc_audio_chre_src_gain_set, NULL),
 	SOC_SINGLE_RANGE_EXT_TLV_modified("CHRE SRC AEC Timeout in MSec", SND_SOC_NOPM,
 		0, 0, 60000, 0, aoc_audio_chre_src_aec_timeout_get, aoc_audio_chre_src_aec_timeout_set, NULL),
+#if !(IS_ENABLED(CONFIG_SOC_GS101) || IS_ENABLED(CONFIG_SOC_GS201))
+	SOC_SINGLE_RANGE_EXT_TLV_modified("HD Mic gain (cB)", SND_SOC_NOPM,
+		0, -1280, 1280, 0, aoc_audio_hdmic_gain_get, aoc_audio_hdmic_gain_set, NULL),
+#endif
 
 	SOC_SINGLE_EXT("HAC AMP EN", SND_SOC_NOPM, 0, 1, 0,
 		       hac_amp_en_get, hac_amp_en_set),

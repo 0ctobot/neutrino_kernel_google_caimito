@@ -3,12 +3,9 @@
 # ASoC-based ALSA driver gluing all the audio amplifier drivers
 #
 
-ifeq ($(CONFIG_RADIO_S5300),y)
-	ccflags-y       += -I$(srctree)/../private/google-modules/radio/samsung/s5300
-endif
-ifeq ($(CONFIG_RADIO_S5400),y)
-	ccflags-y       += -I$(srctree)/../private/google-modules/radio/samsung/s5400
-endif
+# Only one of them exists at build time, depending on :radio flag.
+ccflags-y       += -I$(srctree)/../private/google-modules/radio/samsung/s5300
+ccflags-y       += -I$(srctree)/../private/google-modules/radio/samsung/s5400
 
 obj-$(CONFIG_AOC_DRIVER)	+= aoc_alsa_dev.o
 obj-$(CONFIG_AOC_DRIVER)	+= aoc_alsa_dev_util.o

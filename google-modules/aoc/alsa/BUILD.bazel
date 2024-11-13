@@ -63,7 +63,7 @@ kernel_module(
         "aoc_alsa_dev.ko",
         "aoc_alsa_dev_util.ko",
     ],
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     visibility = [
         "//private/devices/google:__subpackages__",
         "//private/google-modules/aoc/usb:__pkg__",
