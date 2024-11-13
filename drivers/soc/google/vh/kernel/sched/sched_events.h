@@ -348,8 +348,8 @@ TRACE_EVENT(sched_find_energy_efficient_cpu,
 		__entry->idle_unfit        = *candidate_mask[IDLE_UNFIT].bits;
 		__entry->unimportant_fit   = *candidate_mask[UNIMPORTANT_FIT].bits;
 		__entry->unimportant_unfit = *candidate_mask[UNIMPORTANT_UNFIT].bits;
-		__entry->packing           = *candidate_mask[MAX_SPARE_CAP].bits;
-		__entry->max_spare_cap     = *candidate_mask[PACKING].bits;
+		__entry->packing           = *candidate_mask[PACKING].bits;
+		__entry->max_spare_cap     = *candidate_mask[MAX_SPARE_CAP].bits;
 		__entry->idle_unpreferred  = *candidate_mask[IDLE_UNPREFERRED].bits;
 		__entry->best_energy_cpu   = best_energy_cpu;
 		),
