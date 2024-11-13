@@ -3727,7 +3727,10 @@ static int cs40l26_aux_noise_gate_config(struct cs40l26_private *cs40l26)
 	u32 aux_ng_config;
 	int error;
 
-	/* Configure AUX noise gate source */
+	error = regmap_write(cs40l26->regmap, CS40L26_NGATE1_INPUT, CS40L26_DATA_SRC_DSP1TX4);
+	if (error)
+		return error;
+
 	error = cs40l26_wseq_write(cs40l26, CS40L26_NGATE1_INPUT, CS40L26_DATA_SRC_DSP1TX4,
 			true, CS40L26_WSEQ_OP_WRITE_L16, &pseq_params);
 	if (error)
@@ -3999,7 +4002,7 @@ static int cs40l26_logger_src_add(struct cs40l26_private *cs40l26,
 static int cs40l26_logger_setup(struct cs40l26_private *cs40l26)
 {
 	enum cs40l26_logger_src_type ep_src_type;
-	u32 exc_reg, imon_reg, reg, src;
+	u32 ep_buf_ptr, imon_buf_ptr, reg, src;
 	int error, i;
 
 	if (cs40l26->log_srcs != NULL) {
@@ -4027,31 +4030,33 @@ static int cs40l26_logger_setup(struct cs40l26_private *cs40l26)
 			return error;
 
 		error = cl_dsp_get_reg(cs40l26->dsp, "DBG_ADDR", CL_DSP_XM_UNPACKED_TYPE,
-				CS40L26_EP_ALGO_ID, &exc_reg);
+				CS40L26_EP_ALGO_ID, &ep_buf_ptr);
 		if (error)
 			return error;
 
-		exc_reg += CL_DSP_BYTES_PER_WORD;
-		exc_reg /= CL_DSP_BYTES_PER_WORD;
+		ep_buf_ptr += CL_DSP_BYTES_PER_WORD;
+		ep_buf_ptr /= CL_DSP_BYTES_PER_WORD;
 
 		ep_src_type = cs40l26->revid == CS40L26_REVID_B2 ?
 				CS40L26_LOGGER_SRC_TYPE_XM_TO_YM : CS40L26_LOGGER_SRC_TYPE_XM_TO_XM;
 
 		error = cs40l26_logger_src_add(cs40l26, CS40L26_LOGGER_SRC_SIGN_SIGNED,
 				CS40L26_LOGGER_SRC_SIZE_BLOCK, ep_src_type,
-				CS40L26_LOGGER_SRC_ID_EP, exc_reg);
+				CS40L26_LOGGER_SRC_ID_EP, ep_buf_ptr);
 		if (error)
 			return error;
 	}
 
 	error = cl_dsp_get_reg(cs40l26->dsp, "LOGGER_IMON", CL_DSP_XM_UNPACKED_TYPE,
-			CS40L26_EXT_ALGO_ID, &imon_reg);
+			CS40L26_EXT_ALGO_ID, &imon_buf_ptr);
 	if (error)
 		return error;
 
+	imon_buf_ptr /= CL_DSP_BYTES_PER_WORD;
+
 	error = cs40l26_logger_src_add(cs40l26, CS40L26_LOGGER_SRC_SIGN_SIGNED,
 			CS40L26_LOGGER_SRC_SIZE_BLOCK, CS40L26_LOGGER_SRC_TYPE_XM_TO_XM,
-			CS40L26_LOGGER_SRC_ID_IMON, imon_reg / 4);
+			CS40L26_LOGGER_SRC_ID_IMON, imon_buf_ptr);
 	if (error)
 		return error;
 
@@ -4727,6 +4732,10 @@ int cs40l26_fw_swap(struct cs40l26_private *cs40l26, const u32 id)
 		cs40l26_pm_runtime_teardown(cs40l26);
 		re_enable = true;
 	}
+
+	error = cs40l26_pm_state_transition(cs40l26, CS40L26_PM_STATE_PREVENT_HIBERNATE);
+	if (error)
+		return error;
 
 	error = cs40l26_wseq_clear(cs40l26, &pseq_params);
 	if (error)
@@ -5554,4 +5563,4 @@ EXPORT_SYMBOL_GPL(cs40l26_pm_ops);
 MODULE_DESCRIPTION("CS40L26 Boosted Mono Class D Amplifier for Haptics");
 MODULE_AUTHOR("Fred Treven, Cirrus Logic Inc. <fred.treven@cirrus.com>");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("14.4.1");
+MODULE_VERSION("14.5.0");

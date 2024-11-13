@@ -1445,7 +1445,7 @@ static int32_t tas25xx_enum_put_idx_value(struct tas25xx_priv *p_tas25xx,
 	dev_info(plat_data->dev, "%s kcontrol=%s with value index=%d", __func__,
 		g_kctrl_data[ctrl_idx].kcontrol.enum_type.name, value_idx);
 
-	if (value_idx < count_w) {
+	if (value_idx >= 0 && value_idx < count_w) {
 		char *mem = g_kctrl_data[ctrl_idx].kcontrol.enum_type.data[value_idx].data;
 		ret = tas25xx_process_block(p_tas25xx, mem, channel);
 		if (ret)
