@@ -25,7 +25,7 @@ kernel_module(
     outs = [
         "exynos-hdcp2.ko",
     ],
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     visibility = [
         "//private/devices/google:__subpackages__",
         "//private/google-modules/display:__subpackages__",
