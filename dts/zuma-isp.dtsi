@@ -189,8 +189,6 @@
 		clock-family = <CAMERA_CLOCK_FAMILY_CAM>;
 		bts-scenario = "camera_default";
 
-		device-group = <1>;
-
 		interrupts =
 			<GIC_SPI IRQ_ISPFE_1_ISPFE IRQ_TYPE_LEVEL_HIGH 0>,
 			<GIC_SPI IRQ_ISPFE_1_ISPFE IRQ_TYPE_LEVEL_HIGH 0>,
@@ -847,8 +845,6 @@
 			"gdc",
 			"gdc_ssmt";
 
-		device-group = <2>;
-
 		interrupts =
 			<GIC_SPI IRQ_GDC0_IRQ_0_GDC IRQ_TYPE_LEVEL_HIGH 0>,
 			<GIC_SPI IRQ_GDC0_IRQ_1_GDC IRQ_TYPE_LEVEL_HIGH 0>,
@@ -904,8 +900,6 @@
 		reg-names =
 			"gdc",
 			"gdc_ssmt";
-
-		device-group = <3>;
 
 		interrupts =
 			<GIC_SPI IRQ_GDC1_IRQ_0_GDC IRQ_TYPE_LEVEL_HIGH 0>,
@@ -984,8 +978,6 @@
 			"cmu_mcsc",
 			"mcsc_sysreg";
 
-		device-group = <4>;
-
 		interrupts =
 			<GIC_SPI IRQ_MCSC_0_MCSC IRQ_TYPE_LEVEL_HIGH 0>,
 			<GIC_SPI IRQ_MCSC_1_MCSC IRQ_TYPE_LEVEL_HIGH 0>,
@@ -1045,8 +1037,6 @@
 			"ssmt_d1_gse",
 			"ssmt_d2_gse",
 			"gse_sysreg";
-
-		device-group = <5>;
 
 		interrupts =
 			<GIC_SPI IRQ_GSE_NonSecu_IRQ_GSE IRQ_TYPE_LEVEL_HIGH 0>,
@@ -1124,8 +1114,6 @@
 			"ssmt_d2_mcfp",
 			"ssmt_d3_mcfp",
 			"ssmt_d4_mcfp";
-
-		device-group = <6>;
 
 		interrupts =
 			<GIC_SPI IRQ_RGBP_INTREQ_0_RGBP IRQ_TYPE_LEVEL_HIGH 0>,
@@ -1247,8 +1235,6 @@
 			"gtnr_cmu",
 			"gtnr_merge_sysreg";
 
-		device-group = <7>;
-
 		interrupts =
 			<GIC_SPI IRQ_TNR_0_TNR IRQ_TYPE_LEVEL_HIGH 0>,
 			<GIC_SPI IRQ_TNR_1_TNR IRQ_TYPE_LEVEL_HIGH 0>,
@@ -1298,8 +1284,6 @@
 		reg-names =
 			"gtnr_align";
 
-		device-group = <8>;
-
 		interrupts =
 			<GIC_SPI IRQ_TNR_A_TNR IRQ_TYPE_LEVEL_HIGH 0>,
 			<GIC_SPI IRQ_TNR_A_TNR IRQ_TYPE_LEVEL_HIGH 0>;
@@ -1336,8 +1320,6 @@
 			<0x0 0x1D4A0000 0x10000>;  /* LME */
 		reg-names =
 			"lme";
-
-		device-group = <9>;
 
 		interrupts =
 			<GIC_SPI IRQ_LME_IntReq_GDC IRQ_TYPE_LEVEL_HIGH 0>;
@@ -1390,8 +1372,6 @@
 			"gdc0-c2serv",
 			"gdc1-c2serv",
 			"gse-c2serv";
-
-		device-group = <10>;
 
 		iommus =
 			<&sysmmu_yuvp>,
