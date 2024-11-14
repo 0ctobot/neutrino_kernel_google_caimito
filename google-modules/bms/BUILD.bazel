@@ -61,7 +61,7 @@ kernel_module(
         # "max77759.ko",
         # "pca9468-google.ko",
     ],
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     visibility = [
         "//private/devices/google:__subpackages__",
         "//private/google-modules/power/mitigation:__subpackages__",

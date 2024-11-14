@@ -2525,7 +2525,8 @@ static void chg_work(struct work_struct *work)
 
 		gbms_logbuffer_devlog(bd_state->bd_log, chg_drv->device,
 				      LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
-				      "online:%d->%d [%d/%d/%d], present:%d->%d [%d/%d/%d] (%d)",
+				      "online:%d->%d [USB:%d/WLC:%d/EXT:%d], "
+				      "present:%d->%d [USB:%d/WLC:%d/EXT:%d] (stop_charging:%d)",
 				      chg_drv->online, online, usb_online, wlc_online,  ext_online,
 				      chg_drv->present, present, usb_present, wlc_present,
 				      ext_present, chg_drv->stop_charging);
@@ -4840,12 +4841,7 @@ static bool chg_therm_override_fcc(struct chg_drv *chg_drv)
 		return false;
 
 	wlc_online = GPSY_GET_PROP(chg_drv->wlc_psy, POWER_SUPPLY_PROP_ONLINE);
-	if (wlc_online == PPS_PSY_PROG_ONLINE)
-		override = ctdev_wlcfcc->current_level != 0;
-	else if (wlc_online && override)
-		override = ctdev_dcin->current_level != 0;
-	else
-		override = 0;
+	override = wlc_online > 0;
 
 	pr_debug("%s: MSC_THERM_FCC wlc_online=%d override=%d, wlcfcc_lvl=%d, dcin_lvl=%d\n",
 		__func__,  wlc_online, override, ctdev_wlcfcc->current_level,
@@ -5471,6 +5467,9 @@ static int chg_thermal_device_init(struct chg_drv *chg_drv)
 {
 	struct chg_thermal_device *ctdev_fcc, *ctdev_dc, *ctdev_wlcfcc;
 	int rfcc, rdc, rwfcc;
+	bool no_wlc;
+
+	no_wlc = of_property_read_bool(chg_drv->device->of_node, "no-wlc");
 
 	ctdev_fcc = &chg_drv->thermal_devices[CHG_TERMAL_DEVICE_FCC];
 	rfcc = chg_tdev_init(ctdev_fcc, "google,thermal-mitigation", chg_drv);
@@ -5501,7 +5500,13 @@ static int chg_thermal_device_init(struct chg_drv *chg_drv)
 	}
 
 	ctdev_dc = &chg_drv->thermal_devices[CHG_TERMAL_DEVICE_DC_IN];
-	rdc = chg_tdev_init(ctdev_dc, "google,wlc-thermal-mitigation", chg_drv);
+
+	if (no_wlc) {
+		dev_err(chg_drv->device, "No cooling device for wlc\n");
+		rdc = -ENOENT;
+	} else {
+		rdc = chg_tdev_init(ctdev_dc, "google,wlc-thermal-mitigation", chg_drv);
+	}
 	if (rdc == 0) {
 		int ret;
 
@@ -5733,6 +5738,17 @@ static void google_charger_init_work(struct work_struct *work)
 	ret = power_supply_reg_notifier(&chg_drv->psy_nb);
 	if (ret < 0)
 		pr_err("Cannot register power supply notifer, ret=%d\n", ret);
+
+	/* pass logbuffer_bd addr to google_battery to log AACP */
+	if (chg_drv->bd_state.bd_log) {
+		ret = GPSY_SET_INT64_PROP(chg_drv->bat_psy,
+					 GBMS_PROP_LOGBUFFER_BD,
+					 chg_drv->bd_state.bd_log);
+		if (ret == -EAGAIN)
+			goto retry_init_work;
+		if (ret < 0)
+			pr_info("send logbuffer_bd addr failed %d", ret);
+	}
 
 	chg_drv->init_done = true;
 	pr_info("google_charger chg=%d bat=%d wlc=%d usb=%d ext=%d tcpm=%d init_work done\n",

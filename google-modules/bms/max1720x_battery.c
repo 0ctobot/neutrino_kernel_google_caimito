@@ -1359,7 +1359,7 @@ static int max1720x_restore_battery_cycle(struct max1720x_chip *chip)
 	u16 eeprom_cycle, reg_cycle;
 
 	if (chip->gauge_type != MAX_M5_GAUGE_TYPE)
-		return -EINVAL;
+		return 0;
 
 	ret = REGMAP_READ(&chip->regmap, MAX1720X_CYCLES, &reg_cycle);
 	if (ret < 0) {
@@ -1424,10 +1424,11 @@ static u16 max1720x_save_battery_cycle(const struct max1720x_chip *chip,
 	reg_cycle /= 2;
 
 	/* Over 655 cycles */
-	if (reg_cycle < eeprom_cycle)
+	if (reg_cycle < eeprom_cycle && chip->cycle_count_offset == MAXIM_CYCLE_COUNT_RESET)
 		reg_cycle |= EEPROM_CC_OVERFLOW_BIT;
 
-	if (reg_cycle <= eeprom_cycle)
+	/* Block write 0xFFFF to CNHS, or it would be reset during restore */
+	if (reg_cycle <= eeprom_cycle || reg_cycle == 0xFFFF)
 		return eeprom_cycle;
 
 	ret = gbms_storage_write(GBMS_TAG_CNHS, &reg_cycle,
@@ -1530,16 +1531,17 @@ static int max1720x_update_cycle_count(struct max1720x_chip *chip)
 			reg_cycle += max_m5_recal_cycle(chip->model_data);
 
 	cycle_count = reg_to_cycles((u32)reg_cycle, chip->gauge_type) + chip->cycle_count_offset;
-	if (cycle_count < chip->cycle_count) {
+	if (cycle_count < chip->cycle_count && chip->cycle_count_offset == 0) {
 		chip->cycle_count_offset = max1720x_get_cycle_count_offset(chip);
 		chip->model_next_update = -1;
 		dev_info(chip->dev, "cycle count last:%d, now:%d => cycle_count_offset:%d\n",
 			 chip->cycle_count, cycle_count, chip->cycle_count_offset);
+		cycle_count += chip->cycle_count_offset;
 	}
 
 	chip->eeprom_cycle = max1720x_save_battery_cycle(chip, reg_cycle);
 
-	chip->cycle_count = cycle_count;
+	chip->cycle_count = cycle_count >= chip->cycle_count ? cycle_count : chip->cycle_count;
 
 	if (chip->model_ok && reg_cycle >= chip->model_next_update) {
 		err = max1720x_set_next_update(chip);
@@ -2566,7 +2568,7 @@ static irqreturn_t max1720x_fg_irq_thread_fn(int irq, void *obj)
 	if (!chip->init_complete || !chip->resume_complete) {
 		dev_warn_ratelimited(chip->dev, "%s: irq skipped, irq%d\n", __func__, irq);
 		pm_runtime_put_sync(chip->dev);
-		return IRQ_HANDLED;
+		return IRQ_NONE;
 	}
 	pm_runtime_put_sync(chip->dev);
 
@@ -3397,6 +3399,9 @@ static ssize_t debug_get_nvram_por(struct file *filp,
 	struct max1720x_chip *chip = (struct max1720x_chip *)filp->private_data;
 	int size;
 
+	if (*ppos)
+		return 0;
+
 	if (!chip || !chip->nRAM_por.cache_data)
 		return -ENODATA;
 
@@ -3459,6 +3464,9 @@ static ssize_t debug_get_reglog_writes(struct file *filp,
 	struct maxfg_reglog *reglog =
 				(struct maxfg_reglog *)filp->private_data;
 
+	if (*ppos)
+		return 0;
+
 	buff = kmalloc(count, GFP_KERNEL);
 	if (!buff)
 		return -ENOMEM;
@@ -3480,6 +3488,9 @@ static ssize_t max1720x_show_custom_model(struct file *filp, char __user *buf,
 	struct max1720x_chip *chip = (struct max1720x_chip *)filp->private_data;
 	char *tmp;
 	int len;
+
+	if (*ppos)
+		return 0;
 
 	if (!chip->model_data)
 		return -EINVAL;
@@ -3544,6 +3555,9 @@ static ssize_t max1720x_show_model_reg(struct file *filp, char __user *buf,
 	unsigned int data;
 	char *tmp;
 	int len = 0, ret, rc;
+
+	if (*ppos)
+		return 0;
 
 	if (!map->regmap) {
 		pr_err("Failed to read, no regmap\n");
@@ -3624,49 +3638,31 @@ static int debug_model_version_set(void *data, u64 val)
 DEFINE_SIMPLE_ATTRIBUTE(debug_model_version_fops, debug_model_version_get,
 			debug_model_version_set, "%llu\n");
 
-static ssize_t max1720x_show_debug_data(struct file *filp, char __user *buf,
-					size_t count, loff_t *ppos)
+static int max1720x_show_debug_data(void *data, u64 *val)
 {
-	struct max1720x_chip *chip = (struct max1720x_chip *)filp->private_data;
-	char msg[8];
-	u16 data;
+	struct max1720x_chip *chip = data;
+	u16 reg;
 	int ret;
 
-	ret = REGMAP_READ(&chip->regmap, chip->debug_reg_address, &data);
+	ret = REGMAP_READ(&chip->regmap, chip->debug_reg_address, &reg);
 	if (ret < 0)
 		return ret;
 
-	ret = scnprintf(msg, sizeof(msg), "%x\n", data);
+	*val = reg;
 
-	return simple_read_from_buffer(buf, count, ppos, msg, ret);
+	return 0;
 }
 
-static ssize_t max1720x_set_debug_data(struct file *filp,
-				       const char __user *user_buf,
-				       size_t count, loff_t *ppos)
+static int max1720x_set_debug_data(void *data, u64 val)
 {
-	struct max1720x_chip *chip = (struct max1720x_chip *)filp->private_data;
-	char temp[8] = { };
-	u16 data;
-	int ret;
+	struct max1720x_chip *chip = data;
+	u16 reg = (u16) val;
 
-	ret = simple_write_to_buffer(temp, sizeof(temp) - 1, ppos, user_buf, count);
-	if (!ret)
-		return -EFAULT;
-
-	ret = kstrtou16(temp, 16, &data);
-	if (ret < 0)
-		return ret;
-
-	ret =  REGMAP_WRITE(&chip->regmap, chip->debug_reg_address, data);
-	if (ret < 0)
-		return ret;
-
-	return count;
+	return REGMAP_WRITE(&chip->regmap, chip->debug_reg_address, reg);
 }
 
-BATTERY_DEBUG_ATTRIBUTE(debug_reg_data_fops, max1720x_show_debug_data,
-			max1720x_set_debug_data);
+DEFINE_SIMPLE_ATTRIBUTE(debug_reg_data_fops, max1720x_show_debug_data,
+			max1720x_set_debug_data, "%02llx\n");
 
 static ssize_t max1720x_show_reg_all(struct file *filp, char __user *buf,
 					size_t count, loff_t *ppos)
@@ -3677,6 +3673,9 @@ static ssize_t max1720x_show_reg_all(struct file *filp, char __user *buf,
 	unsigned int data;
 	char *tmp;
 	int ret = 0, len = 0;
+
+	if (*ppos)
+		return 0;
 
 	if (!map->regmap) {
 		pr_err("Failed to read, no regmap\n");
@@ -3714,6 +3713,9 @@ static ssize_t max1720x_show_nvreg_all(struct file *filp, char __user *buf,
 	unsigned int data;
 	char *tmp;
 	int ret = 0, len = 0;
+
+	if (*ppos)
+		return 0;
 
 	if (!map->regmap) {
 		pr_err("Failed to read, no regmap\n");

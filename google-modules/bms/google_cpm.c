@@ -3688,7 +3688,7 @@ static irqreturn_t google_cpm_cop_warn_irq_handler(int irq, void *ptr)
 	struct gcpm_drv *gcpm = ptr;
 
 	if (gcpm_resume_check(gcpm))
-		return IRQ_HANDLED;
+		return IRQ_NONE;
 
 	dev_warn(gcpm->device, "COP Warn triggered cc_max:%u\n", gcpm->cc_max);
 	/* Schedule work on the first instance of COP Warn */

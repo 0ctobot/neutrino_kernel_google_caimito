@@ -28,6 +28,14 @@ enum ln8411_modes {
 	LN8411_REV1TO1,
 };
 
+enum ln8411_error {
+	LN8411_ERROR_NONE = 0,
+	LN8411_ERROR_UCP,
+	LN8411_ERROR_NOT_ACTIVE,
+	LN8411_ERROR_APDO,
+	LN8411_ERROR_LOW_VBATT,
+};
+
 struct ln8411_platform_data {
 	s32		irq_gpio;	/* GPIO pin that's connected to INT# */
 	u32		iin_cfg;	/* Input Current Limit - uA unit */
@@ -215,9 +223,11 @@ struct ln8411_charger {
 
 	s32			adc_comp_gain;
 
+	enum ln8411_error	error;
 	s32			retry_cnt;
 	s32			ibus_ucp_retry_cnt;
 	u8			ibus_ucp_debounce_cnt;
+	s32			low_batt_retry_cnt;
 
 	struct ln8411_platform_data *pdata;
 

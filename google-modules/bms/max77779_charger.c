@@ -50,8 +50,8 @@
 #define CHGR_CHG_CNFG_12_VREG_4P7V			0x2
 
 #define WCIN_INLIM_T					(5000)
-#define WCIN_INLIM_HEADROOM_MA				(200000)
-#define WCIN_INLIM_STEP_MV				(50000)
+#define WCIN_INLIM_HEADROOM_MA				(50000)
+#define WCIN_INLIM_STEP_MV				(25000)
 #define MAX77779_GPIO_WCIN_INLIM_EN			0
 #define MAX77779_NUM_GPIOS				1
 
@@ -1246,8 +1246,8 @@ static int max77779_chgin_input_suspend(struct max77779_chgr_data *data,
 	const int old_value = data->chgin_input_suspend;
 	int ret;
 
-	pr_debug("%s enabled=%d->%d reason=%s\n", __func__,
-		 data->wcin_input_suspend, enabled, reason);
+	dev_dbg(data->dev, "%s enabled=%d->%d reason=%s\n", __func__,
+		 data->chgin_input_suspend, enabled, reason);
 
 	data->chgin_input_suspend = enabled; /* the callback might use this */
 	ret = gvotable_cast_long_vote(data->mode_votable, "CHGIN_SUSP",
@@ -1895,6 +1895,15 @@ static int max77779_wcin_is_valid(struct max77779_chgr_data *data)
 
 static inline int max77779_wcin_is_online(struct max77779_chgr_data *data)
 {
+	uint8_t val;
+	int ret;
+
+	ret = max77779_reg_read(data, MAX77779_CHG_CNFG_12, &val);
+	if (ret < 0)
+		return ret;
+	if (!_max77779_chg_cnfg_12_wcinsel_get(val))
+		return 0;
+
 	return max77779_wcin_is_valid(data);
 }
 
@@ -3138,7 +3147,7 @@ static irqreturn_t max77779_chgr_irq(int irq, void *d)
 
 	if (max77779_resume_check(data)) {
 		dev_warn_ratelimited(data->dev, "%s: irq skipped, irq%d\n", __func__, irq);
-		return IRQ_HANDLED;
+		return IRQ_NONE;
 	}
 
 	ret = max77779_readn(data, MAX77779_CHG_INT, chg_int, 2);
@@ -3163,7 +3172,8 @@ static irqreturn_t max77779_chgr_irq(int irq, void *d)
 		dev_err_ratelimited(data->dev, "%s i2c error writing INT, IRQ_NONE\n", __func__);
 		return IRQ_NONE;
 	}
-	pr_debug("max77779_chgr_irq INT : %02x %02x\n", chg_int[0], chg_int[1]);
+
+	dev_info_ratelimited(data->dev, "%s INT : %02x %02x\n", __func__, chg_int[0], chg_int[1]);
 
 	/* No need to monitor wcin_inlim when on USB */
 	if (chg_int[0] & MAX77779_CHG_INT_CHGIN_I_MASK) {
@@ -3313,7 +3323,7 @@ static irqreturn_t max77779_chg_irq_handler(int irq, void *ptr)
 
 	if (max77779_resume_check(data)) {
 		dev_warn_ratelimited(data->dev, "%s: irq skipped, irq%d\n", __func__, irq);
-		return IRQ_HANDLED;
+		return IRQ_NONE;
 	}
 
 	ret = max77779_readn(data, MAX77779_CHG_INT, (uint8_t*)&intsrc_sts, 2);

@@ -218,6 +218,10 @@ properties:
     description: Dock defend debounce trigger time.
     $ref: /schemas/types.yaml#/definitions/uint32
 
+  no-wlc:
+    description: Skip wireless charging settings, such as thermal table.
+    type: boolean
+
 required:
   - compatible
   - #cooling-cells

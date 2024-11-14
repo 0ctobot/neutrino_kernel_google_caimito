@@ -288,19 +288,19 @@ int gbms_read_aacr_limits(struct gbms_chg_profile *profile,
 	if (cycle_nb_limits != fade10_nb_limits ||
 	    cycle_nb_limits > GBMS_AACR_DATA_MAX ||
 	    cycle_nb_limits == 0) {
-		gbms_warn(profile, "aacr not enable, cycle_nb:%d, fade10_nb:%d, max:%d",
+		gbms_warn(profile, "aacr not enabled, cycle_nb:%d, fade10_nb:%d, max:%d",
 			  cycle_nb_limits, fade10_nb_limits, GBMS_AACR_DATA_MAX);
 		profile->aacr_nb_limits = 0;
 		return -ERANGE;
 	}
 
 	ret = of_property_read_u32_array(node, "google,aacr-ref-cycles",
-					 (u32 *)profile->reference_cycles, cycle_nb_limits);
+					 (u32 *)profile->aacr_reference_cycles, cycle_nb_limits);
 	if (ret < 0)
 		return ret;
 
 	ret = of_property_read_u32_array(node, "google,aacr-ref-fade10",
-					 (u32 *)profile->reference_fade10, fade10_nb_limits);
+					 (u32 *)profile->aacr_reference_fade10, fade10_nb_limits);
 	if (ret < 0)
 		return ret;
 
@@ -324,20 +324,100 @@ int gbms_aacr_fade10(const struct gbms_chg_profile *profile, int cycles)
 		return -EINVAL;
 
 	for (idx = 0; idx < profile->aacr_nb_limits - 1; idx++)
-		if (cycles < profile->reference_cycles[idx])
+		if (cycles < profile->aacr_reference_cycles[idx])
 			break;
 
 	/* Interpolation */
-	cycle_f = profile->reference_cycles[idx];
-	fade_f = profile->reference_fade10[idx];
+	cycle_f = profile->aacr_reference_cycles[idx];
+	fade_f = profile->aacr_reference_fade10[idx];
 	if (idx > 0) {
-		cycle_s = profile->reference_cycles[idx - 1];
-		fade_s = profile->reference_fade10[idx - 1];
+		cycle_s = profile->aacr_reference_cycles[idx - 1];
+		fade_s = profile->aacr_reference_fade10[idx - 1];
 	}
 
 	return (cycles - cycle_s) * (fade_f - fade_s) / (cycle_f - cycle_s) + fade_s;
 }
 EXPORT_SYMBOL_GPL(gbms_aacr_fade10);
+
+int gbms_read_aafv_limits(struct gbms_chg_profile *profile,
+			  struct device_node *node)
+{
+	int ret = 0, cycle_nb_limits = 0, offset_nb_limits = 0;
+
+	if (!profile || !node)
+		return -ENODEV;
+
+	ret = of_property_count_elems_of_size(node, "google,aafv-ref-cycles", sizeof(u32));
+	if (ret < 0)
+		goto no_data;
+
+	cycle_nb_limits = ret;
+
+	ret = of_property_count_elems_of_size(node, "google,aafv-ref-offset", sizeof(u32));
+	if (ret < 0)
+		goto no_data;
+
+	offset_nb_limits = ret;
+
+	if (cycle_nb_limits != offset_nb_limits ||
+	    cycle_nb_limits > GBMS_AAFV_DATA_MAX ||
+	    cycle_nb_limits == 0) {
+		gbms_warn(profile, "aafv not enabled, cycle_nb:%d, offset_nb:%d, max:%d",
+			  cycle_nb_limits, offset_nb_limits, GBMS_AAFV_DATA_MAX);
+		profile->aafv_nb_limits = 0;
+		return -ERANGE;
+	}
+
+	ret = of_property_read_u32_array(node, "google,aafv-ref-cycles",
+					 (u32 *)profile->aafv_cycles, cycle_nb_limits);
+	if (ret < 0)
+		return ret;
+
+	ret = of_property_read_u32_array(node, "google,aafv-ref-offset",
+					 (u32 *)profile->aafv_offsets, offset_nb_limits);
+	if (ret < 0)
+		return ret;
+
+	profile->aafv_nb_limits = cycle_nb_limits;
+
+	return 0;
+
+no_data:
+	profile->aafv_nb_limits = 0;
+	return ret;
+}
+EXPORT_SYMBOL_GPL(gbms_read_aafv_limits);
+
+/* return the pct amount of capacity fade at cycles or negative if not enabled */
+int gbms_aafv_get_offset(const struct gbms_chg_profile *profile, const int cycles)
+{
+	int idx;
+
+	if (profile->aafv_nb_limits == 0 || cycles < 0)
+		return 0;
+
+	for (idx = 0; idx < profile->aafv_nb_limits - 1; idx++)
+		if (cycles < profile->aafv_cycles[idx])
+			break;
+
+	return profile->aafv_offsets[idx];
+}
+EXPORT_SYMBOL_GPL(gbms_aafv_get_offset);
+
+bool gbms_aafv_offset_is_valid(const struct gbms_chg_profile *profile,
+			       const u32 offset, const u32 len)
+{
+	u32 last_fv, penultimate_fv, delta;
+
+	/* The last updated fv cannot be less than the second to last fv */
+	last_fv = profile->volt_limits[profile->volt_nb_limits - 1];
+	penultimate_fv = (profile->volt_nb_limits > 1) ?
+			profile->volt_limits[profile->volt_nb_limits - 2] : 0;
+	delta = (last_fv - penultimate_fv) / 1000;
+
+	return offset >= 0 && offset < delta && len > 0;
+}
+EXPORT_SYMBOL_GPL(gbms_aafv_offset_is_valid);
 
 int gbms_init_chg_profile_internal(struct gbms_chg_profile *profile,
 			  struct device_node *node,

@@ -212,6 +212,47 @@ static int max77779_sp_debug_reg_write(void *d, u64 val)
 DEFINE_SIMPLE_ATTRIBUTE(debug_reg_rw_fops, max77779_sp_debug_reg_read,
 			max77779_sp_debug_reg_write, "%02llx\n");
 
+#define DUMP_PAGES 1
+static ssize_t registers_dump_show(struct device *dev, struct device_attribute *attr,
+				   char *buf)
+{
+	struct max77779_sp_data *data = dev_get_drvdata(dev);
+	u8 dump[256];
+	int ret = 0, offset = 0, page, i;
+
+	if (!data->regmap) {
+		dev_err(dev, "Failed to read, no regmap\n");
+		return -EIO;
+	}
+
+	mutex_lock(&data->page_lock);
+
+	for (page = 0; page < DUMP_PAGES; page++) {
+		const int addr = page * 256;
+
+		ret = max77779_sp_rd(dump, addr, 256, data->regmap);
+		if (ret < 0) {
+			dev_err(dev, "[%s]: Failed to dump page:%d ret:%d\n", __func__, page, ret);
+			goto unlock;
+		}
+
+		for (i = 0; i < 256; i++) {
+			ret = sysfs_emit_at(buf, offset, "%02x: %02x\n", i + addr, dump[i]);
+			if (!ret) {
+				dev_err(dev, "[%s]: Not all registers printed. page:%d, last:%x\n",
+					__func__, page, i - 1);
+				goto unlock;
+			}
+			offset += ret;
+		}
+	}
+
+unlock:
+	mutex_unlock(&data->page_lock);
+	return offset;
+}
+static DEVICE_ATTR_RO(registers_dump);
+
 static struct gbms_storage_desc max77779_sp_dsc = {
 	.write = max77779_sp_write,
 	.read = max77779_sp_read,
@@ -264,6 +305,10 @@ int max77779_sp_init(struct max77779_sp_data *data)
 	ret = max77779_sp_dbg_init_fs(data);
 	if (ret < 0)
 		dev_warn(data->dev, "Failed to initialize debug fs\n");
+
+	ret = device_create_file(data->dev, &dev_attr_registers_dump);
+	if (ret != 0)
+		dev_warn(data->dev, "Failed to create registers_dump, ret=%d\n", ret);
 
 	return 0;
 }

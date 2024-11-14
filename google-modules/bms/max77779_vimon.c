@@ -414,6 +414,9 @@ static ssize_t max77779_vimon_show_reg_all(struct file *filp, char __user *buf, 
 	int ret = 0, len = 0;
 	int regread;
 
+	if (*ppos)
+		return 0;
+
 	if (!data->regmap)
 		return -EIO;
 
@@ -453,6 +456,9 @@ static ssize_t max77779_vimon_show_buff_all(struct file *filp, char __user *buf,
 					  MAX77779_VIMON_BYTES_PER_ENTRY;
 	const size_t readback_size = MAX77779_VIMON_PAGE_SIZE * MAX77779_VIMON_BYTES_PER_ENTRY;
 	int readback_cnt;
+
+	if (*ppos)
+		return 0;
 
 	if (!data->regmap)
 		return -EIO;
