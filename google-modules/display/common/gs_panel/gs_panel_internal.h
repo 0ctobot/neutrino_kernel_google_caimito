@@ -64,7 +64,7 @@ void gs_panel_wait_for_cmd_tx_window(struct drm_crtc *crtc,
 /**
  * gs_panel_sysfs_create_files() - Creates sysfs files for panel
  * @dev: pointer to panel's device node
- * @ctx: Pointer to gs_panel
+ * @ctx: pointer to gs_panel
  *
  * Creates sysfs files for panel itself
  *
@@ -74,12 +74,13 @@ int gs_panel_sysfs_create_files(struct device *dev, struct gs_panel *ctx);
 /**
  * gs_panel_sysfs_create_bl_files() - Creates sysfs files for panel backlight
  * @bl_dev: pointer to backlight's device node
+ * @ctx: pointer to gs_panel
  *
  * Creates sysfs files for panel backlight
  *
  * Return: Result of sysfs_create_files function
  */
-int gs_panel_sysfs_create_bl_files(struct device *bl_dev);
+int gs_panel_sysfs_create_bl_files(struct device *bl_dev, struct gs_panel *ctx);
 
 /* drm_bridge_funcs.c */
 /**

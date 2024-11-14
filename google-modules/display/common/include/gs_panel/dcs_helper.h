@@ -32,19 +32,6 @@
 /** Mark the end of mipi commands transaction */
 #define GS_DSI_MSG_FORCE_FLUSH BIT(12)
 
-/** Panel Command Flags **/
-
-/* indicates that all commands in this cmd set should be batched together */
-#define GS_PANEL_CMD_SET_BATCH BIT(0)
-/*
- * indicates that all commands in this cmd set should be queued, a follow up
- * command should take care of triggering transfer of batch
- */
-#define GS_PANEL_CMD_SET_QUEUE BIT(1)
-
-/* packetgo feature to batch msgs can wait for vblank, use this flag to ignore explicitly */
-#define GS_PANEL_CMD_SET_IGNORE_VBLANK BIT(2)
-
 /* Panel Rev bits */
 #define PANEL_REV_PROTO1        BIT(0)
 #define PANEL_REV_PROTO1_1      BIT(1)
@@ -73,12 +60,18 @@
  * @cmd:      Pointer to a dsi command.
  * @delay_ms: Delay time after executing this dsi command.
  * @panel_rev:Send the command only when the panel revision is matched.
+ * @flags:    Specialized flags to be passed to dsi host that may affect
+ *	      transfer. This will often be GS_DSI_MSG_QUEUE or similar, but
+ *	      could include other flags as needed.
+ * @type:     MIPI_DSI_DCS_* flags or other transfer type. This parameter is
+ *	      not usually applied manually, but can be overridden
  */
 struct gs_dsi_cmd {
 	u32 cmd_len;
 	const u8 *cmd;
 	u32 delay_ms;
 	u32 panel_rev;
+	u16 flags;
 	u8 type;
 };
 
@@ -95,43 +88,89 @@ struct gs_dsi_cmdset {
 /* Arrays */
 
 /**
- * GS_DSI_DELAY_REV_CMDLIST - construct a struct gs_dsi_cmd from inline data
+ * GS_DSI_FLAGS_DELAY_REV_CMDLIST - construct a struct gs_dsi_cmd from inline data
+ * @flags: any dsi flags to apply to this command, likely for queuing
+ *         Its default value is GS_DSI_MSG_IGNORE_VBLANK if using a nonzero
+ *         delay value; otherwise, its default value (see below) is 0
  * @delay: The delay to attach to sending the command
- * @rev: The panel revision this applies to, if any
+ *         Its default value (see below) is 0
+ * @rev: The panel revision this applies to, if any (using bitmask)
+ *       Its default value (see below) is PANEL_REV_ALL
  * @cmdlist: The binary array of data to be sent to the device
+ *
+ * Note: there are many variants of this macro below. They may be considered
+ * constructions of the following form:
+ * `GS_DSI[_QUEUE|_FLUSH][_DELAY][_REV]_CMDLIST(...)`
+ * where the `_DELAY` and `_REV` components require their additional parameters,
+ * but the `_QUEUE|_FLUSH` component applies the respective flag in a boolean fashion.
+ * If the parameter is not included, the default value is used
  *
  * Return: struct gs_dsi_cmd holding data necessary to send the command to the
  * panel.
  */
-#define GS_DSI_DELAY_REV_CMDLIST(delay, rev, cmdlist) \
-{                                                     \
+#define GS_DSI_FLAGS_DELAY_REV_CMDLIST(flags, delay, rev, cmdlist) \
+{ \
 	sizeof(cmdlist),                              \
 	cmdlist,                                      \
 	delay,                                        \
 	(u32)rev,                                     \
+	(u16)flags,                                   \
 }
+#define GS_DSI_QUEUE_DELAY_REV_CMDLIST(delay, rev, cmdlist) \
+	GS_DSI_FLAGS_DELAY_REV_CMDLIST(GS_DSI_MSG_QUEUE, delay, rev, cmdlist)
+#define GS_DSI_FLUSH_DELAY_REV_CMDLIST(delay, rev, cmdlist) \
+	GS_DSI_FLAGS_DELAY_REV_CMDLIST(GS_DSI_MSG_IGNORE_VBLANK, delay, rev, cmdlist)
+#define GS_DSI_DELAY_REV_CMDLIST(delay, rev, cmdlist) \
+	GS_DSI_FLAGS_DELAY_REV_CMDLIST(((delay) > 0) ? GS_DSI_MSG_IGNORE_VBLANK : 0, delay, rev, cmdlist)
+/* NOTE: queueing cmd with delay unsupported */
+#define GS_DSI_FLUSH_DELAY_CMDLIST(delay, cmdlist) \
+	GS_DSI_FLUSH_DELAY_REV_CMDLIST(delay, PANEL_REV_ALL, cmdlist)
 #define GS_DSI_DELAY_CMDLIST(delay, cmdlist) GS_DSI_DELAY_REV_CMDLIST(delay, PANEL_REV_ALL, cmdlist)
+#define GS_DSI_QUEUE_REV_CMDLIST(rev, cmdlist) GS_DSI_QUEUE_DELAY_REV_CMDLIST(0, rev, cmdlist)
+#define GS_DSI_FLUSH_REV_CMDLIST(rev, cmdlist) GS_DSI_FLUSH_DELAY_REV_CMDLIST(0, rev, cmdlist)
 #define GS_DSI_REV_CMDLIST(rev, cmdlist) GS_DSI_DELAY_REV_CMDLIST(0, rev, cmdlist)
+#define GS_DSI_QUEUE_CMDLIST(cmdlist) GS_DSI_QUEUE_REV_CMDLIST(PANEL_REV_ALL, cmdlist)
+#define GS_DSI_FLUSH_CMDLIST(cmdlist) GS_DSI_FLUSH_REV_CMDLIST(PANEL_REV_ALL, cmdlist)
 #define GS_DSI_CMDLIST(cmdlist) GS_DSI_DELAY_REV_CMDLIST(0, PANEL_REV_ALL, cmdlist)
 
 /* Variadic */
 
 /**
- * GS_DSI_DELAY_REV_CMD - construct a struct gs_dsi_cmd from inline data
+ * GS_DSI_FLAGS_DELAY_REV_CMD - construct a struct gs_dsi_cmd from inline data
+ * @flags: any dsi flags to apply to this command, likely for queuing
+ *         Its default value is GS_DSI_MSG_IGNORE_VBLANK if using a nonzero
+ *         delay value; otherwise, its default value (see below) is 0
  * @delay: The delay to attach to sending the command
+ *         Its default value (see below) is 0
  * @rev: The panel revision this applies to, if any
+ *       Its default value (see below) is PANEL_REV_ALL
  * @seq: Sequence of binary data to be sent to the device
  *
  * This is functionally the same as the CMDLIST invocation, except that it takes
  * a variadic list of bytes to pack into the struct gs_dsi_cmd.
+ * It follows the same kind of syntactic construction, but as:
+ * `GS_DSI[_QUEUE|_FLUSH][_DELAY][_REV]_CMD(...)`
+ * If the parameter is not included, the default value is used
  *
  * Return: struct gs_dsi_cmd holding data necessary to send the command to the
  * panel.
  */
+#define GS_DSI_FLAGS_DELAY_REV_CMD(flags, delay, rev, seq...) \
+	GS_DSI_FLAGS_DELAY_REV_CMDLIST(flags, delay, rev, ((const u8[]){ seq }))
+#define GS_DSI_QUEUE_DELAY_REV_CMD(delay, rev, seq...) \
+	GS_DSI_FLAGS_DELAY_REV_CMD(GS_DSI_MSG_QUEUE, delay, rev, seq)
+#define GS_DSI_FLUSH_DELAY_REV_CMD(delay, rev, seq...) \
+	GS_DSI_FLAGS_DELAY_REV_CMD(GS_DSI_MSG_IGNORE_VBLANK, delay, rev, seq)
 #define GS_DSI_DELAY_REV_CMD(delay, rev, seq...) \
-	GS_DSI_DELAY_REV_CMDLIST(delay, rev, ((const u8[]){ seq }))
+	GS_DSI_FLAGS_DELAY_REV_CMD(((delay) > 0) ? GS_DSI_MSG_IGNORE_VBLANK : 0, delay, rev, seq)
+/* NOTE: queueing cmd with delay unsupported */
+#define GS_DSI_FLUSH_DELAY_CMD(delay, seq...) GS_DSI_FLUSH_DELAY_REV_CMD(delay, PANEL_REV_ALL, seq)
 #define GS_DSI_DELAY_CMD(delay, seq...) GS_DSI_DELAY_REV_CMD(delay, PANEL_REV_ALL, seq)
+#define GS_DSI_QUEUE_REV_CMD(rev, seq...) GS_DSI_QUEUE_DELAY_REV_CMD(0, rev, seq)
+#define GS_DSI_FLUSH_REV_CMD(rev, seq...) GS_DSI_FLUSH_DELAY_REV_CMD(0, rev, seq)
 #define GS_DSI_REV_CMD(rev, seq...) GS_DSI_DELAY_REV_CMD(0, rev, seq)
+#define GS_DSI_QUEUE_CMD(seq...) GS_DSI_QUEUE_REV_CMD(PANEL_REV_ALL, seq)
+#define GS_DSI_FLUSH_CMD(seq...) GS_DSI_FLUSH_REV_CMD(PANEL_REV_ALL, seq)
 #define GS_DSI_CMD(seq...) GS_DSI_DELAY_REV_CMD(0, PANEL_REV_ALL, seq)
 
 /**
@@ -146,8 +185,8 @@ struct gs_dsi_cmdset {
  *
  * Usage example:
  * static const struct gs_dsi_cmd my_panel_turn_on_cmds[] = {
- *   GS_DSI_CMD_SEQ(0x01, 0x02, 0x03, 0x04),
- *   GS_DSI_CMD0(0xB9),
+ *   GS_DSI_CMD(0x01, 0x02, 0x03, 0x04),
+ *   GS_DSI_CMD(0xB9),
  * };
  * static DEFINE_GS_CMDSET(my_panel_turn_on);
  *
@@ -156,11 +195,34 @@ struct gs_dsi_cmdset {
  *
  * Return: expansion of array of commands into a `struct gs_dsi_cmdset`;
  */
-#define DEFINE_GS_CMDSET(name)                        \
+#define DEFINE_GS_CMDSET(name)                                \
 	const struct gs_dsi_cmdset name##_cmdset = {   \
-	  .num_cmd = ARRAY_SIZE(name##_cmds),          \
-	  .cmds = name##_cmds                          \
+	  .num_cmd = ARRAY_SIZE(name##_cmds),                 \
+	  .cmds = name##_cmds                                 \
 	}
+
+/**
+ * DEFINE_GS_CMDSET_MUTABLE - Constructs a struct gs_dsi_cmdset with associated mutex
+ * @name: The name of the array of `struct gs_dsi_cmd` members
+ *
+ * This is an expansion of DEFINE_GS_CMDSET, but with the understanding that
+ * some of the internal data might be edited by one or more methods.
+ * As such, it also instantiates an associated mutex that may be used to control
+ * access to its underlying data structures.
+ *
+ * If using a mutable cmdset, please make sure your program design is such that
+ * it will encounter the need for this concurrency control as little as possible.
+ *
+ * The naming conventions are the same as DEFINE_GS_CMDSET, with the following
+ * additional variable declared: <name>_mutex.
+ * So using the previous example, we should also initialize a mutex named
+ * `my_panel_turn_on_mutex`.
+ *
+ * (NOTE: this may have slightly different text in the bootloader)
+ */
+#define DEFINE_GS_CMDSET_MUTABLE(name)    \
+	static struct mutex name##_mutex; \
+	static DEFINE_GS_CMDSET(name)
 
 /** TE2 Timing **/
 
@@ -212,16 +274,6 @@ struct gs_binned_lp {
 /** Write Functions **/
 
 /* Command Sets */
-
-/**
- * gs_dsi_send_cmdset_flags() - Sends a series of dsi commands to the panel
- * @dsi: pointer to mipi_dsi_device by which to write to panel
- * @cmdset: Set of commands to send
- * @panel_rev: revision identifier for panel to be matched against commands
- * @flags: Any of the Private DSI msg flags to affect command behavior
- */
-void gs_dsi_send_cmdset_flags(struct mipi_dsi_device *dsi, const struct gs_dsi_cmdset *cmdset,
-			      u32 panel_rev, u32 flags);
 
 /**
  * gs_dsi_send_cmdset() - Sends a series of dsi commands to the panel

@@ -14,9 +14,10 @@ kernel_module(
     outs = [
         "gs-panel.ko",
     ],
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     visibility = [
         "//private/devices/google:__subpackages__",
+        "//private/google-modules/display/common/panel_tests:__subpackages__",
         "//private/google-modules/display/common/panels:__subpackages__",
         "//private/google-modules/display/panels:__subpackages__",
         "//private/google-modules/touch:__subpackages__",

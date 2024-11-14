@@ -13,6 +13,7 @@
 #include <linux/sysfs.h>
 #include <drm/drm_mipi_dsi.h>
 #include <drm/drm_vblank.h>
+#include <video/mipi_display.h>
 
 #include "gs_panel/gs_panel.h"
 #include "trace/panel_trace.h"
@@ -756,6 +757,35 @@ static ssize_t force_power_on_show(struct device *dev, struct device_attribute *
 	return count;
 }
 
+static ssize_t power_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct mipi_dsi_device *dsi = to_mipi_dsi_device(dev);
+	struct gs_panel *ctx = mipi_dsi_get_drvdata(dsi);
+	int err;
+	u8 power_mode;
+
+	if (!gs_is_panel_active(ctx)) {
+		dev_warn(dev, "%s: panel is not enabled\n", __func__);
+		return -EPERM;
+	}
+
+	mutex_lock(&ctx->mode_lock);
+	err = mipi_dsi_dcs_read(dsi, MIPI_DCS_GET_POWER_MODE, &power_mode, sizeof(power_mode));
+	mutex_unlock(&ctx->mode_lock);
+	if (err <= 0) {
+		if (err == 0)
+			err = -ENODATA;
+		dev_warn(dev, "Unable to read power mode register (%#02x: %d)\n",
+			MIPI_DCS_GET_POWER_MODE, err);
+		return err;
+	}
+
+	power_mode &= (MIPI_DSI_DCS_POWER_MODE_DISPLAY |
+	    MIPI_DSI_DCS_POWER_MODE_NORMAL | MIPI_DSI_DCS_POWER_MODE_SLEEP);
+
+	return sysfs_emit(buf, "%#02x\n", power_mode);
+}
+
 static ssize_t frame_rate_store(struct device *dev, struct device_attribute *attr,
 				const char *buf, size_t count)
 {
@@ -771,7 +801,7 @@ static ssize_t frame_rate_store(struct device *dev, struct device_attribute *att
 	}
 
 	if (!gs_is_panel_active(ctx)) {
-		dev_warn(ctx->dev, "panel is not enabled\n");
+		dev_warn(ctx->dev, "%s: panel is not enabled\n", __func__);
 		return -EPERM;
 	}
 
@@ -881,6 +911,7 @@ static DEVICE_ATTR_RO(power_state);
 static DEVICE_ATTR_RO(error_count_te);
 static DEVICE_ATTR_RO(error_count_unknown);
 static DEVICE_ATTR_RW(force_power_on);
+static DEVICE_ATTR_RO(power_mode);
 static DEVICE_ATTR_WO(frame_rate);
 static DEVICE_ATTR_RW(expected_present_time_ns);
 static DEVICE_ATTR_RW(frame_interval_ns);
@@ -912,6 +943,7 @@ static const struct attribute *panel_attrs[] = { &dev_attr_serial_number.attr,
 						 &dev_attr_error_count_te.attr,
 						 &dev_attr_error_count_unknown.attr,
 						 &dev_attr_force_power_on.attr,
+						 &dev_attr_power_mode.attr,
 						 &dev_attr_expected_present_time_ns.attr,
 						 &dev_attr_frame_interval_ns.attr,
 /* TODO(tknelms): re-implement below */
@@ -1307,6 +1339,73 @@ static ssize_t als_table_show(struct device *dev, struct device_attribute *attr,
 	return len;
 }
 
+static ssize_t cabc_mode_store(struct device *dev, struct device_attribute *attr, const char *buf,
+			       size_t count)
+{
+	struct backlight_device *bl = to_backlight_device(dev);
+	struct gs_panel *ctx = bl_get_data(bl);
+	ssize_t ret;
+	u32 cabc_mode;
+
+	if (!gs_panel_has_func(ctx, set_cabc_mode)) {
+		dev_err(ctx->dev, "CABC is not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (!gs_is_panel_active(ctx)) {
+		dev_err(ctx->dev, "panel is not enabled\n");
+		return -EAGAIN;
+	}
+
+	ret = kstrtouint(buf, 0, &cabc_mode);
+	if (ret || (cabc_mode > GCABC_MOVIE_MODE)) {
+		dev_err(ctx->dev, "invalid CABC mode value");
+		return ret;
+	}
+
+	mutex_lock(&ctx->mode_lock);
+	ctx->cabc_mode = cabc_mode;
+	ctx->desc->gs_panel_func->set_cabc_mode(ctx, cabc_mode);
+	mutex_unlock(&ctx->mode_lock);
+
+	return count;
+}
+
+static ssize_t cabc_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct backlight_device *bl = to_backlight_device(dev);
+	struct gs_panel *ctx = bl_get_data(bl);
+	const char *mode;
+
+	switch (ctx->cabc_mode) {
+	case GCABC_OFF:
+		mode = "OFF";
+		break;
+	case GCABC_UI_MODE:
+		mode = "UI";
+		break;
+	case GCABC_STILL_MODE:
+		mode = "STILL";
+		break;
+	case GCABC_MOVIE_MODE:
+		mode = "MOVIE";
+		break;
+	default:
+		dev_err(ctx->dev, "unknown CABC mode : %d\n", ctx->cabc_mode);
+		return -EINVAL;
+	}
+
+	return sysfs_emit(buf, "%s\n", mode);
+}
+
+static ssize_t dim_brightness_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct backlight_device *bl = to_backlight_device(dev);
+	struct gs_panel *ctx = bl_get_data(bl);
+
+	return sysfs_emit(buf, "%d\n", ctx->desc->brightness_desc->lower_min_brightness);
+}
+
 static DEVICE_ATTR_RW(hbm_mode);
 static DEVICE_ATTR_RW(dimming_on);
 static DEVICE_ATTR_RW(local_hbm_mode);
@@ -1315,6 +1414,8 @@ static DEVICE_ATTR_RO(state);
 static DEVICE_ATTR_RW(acl_mode);
 static DEVICE_ATTR_RW(ssc_en);
 static DEVICE_ATTR_RW(als_table);
+static DEVICE_ATTR_RW(cabc_mode);
+static DEVICE_ATTR_RO(dim_brightness);
 
 static struct attribute *bl_device_attrs[] = { &dev_attr_hbm_mode.attr,
 					       &dev_attr_dimming_on.attr,
@@ -1324,10 +1425,15 @@ static struct attribute *bl_device_attrs[] = { &dev_attr_hbm_mode.attr,
 					       &dev_attr_state.attr,
 					       &dev_attr_ssc_en.attr,
 					       &dev_attr_als_table.attr,
+					       &dev_attr_dim_brightness.attr,
 					       NULL };
 ATTRIBUTE_GROUPS(bl_device);
 
-int gs_panel_sysfs_create_bl_files(struct device *bl_dev)
+int gs_panel_sysfs_create_bl_files(struct device *bl_dev, struct gs_panel *ctx)
 {
+	if (gs_panel_has_func(ctx, set_cabc_mode)) {
+		if (sysfs_create_file(&bl_dev->kobj, &dev_attr_cabc_mode.attr))
+			dev_err(bl_dev, "unable to add set_cabc_mode sysfs file\n");
+	}
 	return sysfs_create_groups(&bl_dev->kobj, bl_device_groups);
 }

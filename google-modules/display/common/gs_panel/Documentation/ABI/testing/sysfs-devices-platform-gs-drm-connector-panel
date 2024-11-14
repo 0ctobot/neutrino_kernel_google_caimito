@@ -221,7 +221,33 @@ Date: June 2024
 KernelVersion: 6.1
 Contact: "Jeremy DeHaan" <jdehaan@google.com>
 Description:
-  Userspace client uses this to write the current frame rate. The unit is frames per second.
+  Userspace client uses this to write the current frame rate. This is to inform the panel about
+  the frequency of frames exiting the OS's display management system (such as SurfaceFlinger),
+  in cases where that information may affect a particular panel's behavior. Not all panels
+  need (or support) this feature. Setting this value directly will not affect the
+  refresh_rate of the panel. The unit is frames per second.
+
+What: /sys/devices/platform/gs-drm-connector/panel/power_mode
+Date: June 2024
+KernelVersion: 6.1
+Contact: "Attis Chen" <attis@google.com>
+Description:
+  Userspace client uses this to read the display_on, normal and sleep bits at
+  bit 2, 3, 4 respectively of power mode register.
+
+What: /sys/devices/platform/gs-drm-connector/panel/backlight/panel0-backlight/dim_brightness
+Date: August 2024
+KernelVersion: 6.1
+Contact: "Ken Lin" <lyenting@google.com>
+Description:
+  Userspace client uses this to read lower minimum brightness.
+
+What: /sys/devices/platform/gs-drm-connector/panel/backlight/panel0-backlight/cabc_mode
+Date: August 2024
+KernelVersion: 6.1
+Contact: "Ken Lin" <lyenting@google.com>
+Description:
+  Userspace client can activate Content Adaptive Brightness Control to save backlight power.
 
 What: /sys/devices/platform/gs-drm-connector/panel/expected_present_time_ns
 Date: August 2024

@@ -416,7 +416,6 @@ static void gs_panel_commit_properties(struct gs_panel *ctx,
 	if (mipi_sync) {
 		gs_panel_wait_for_cmd_tx_window(conn_state->base.crtc, ctx->current_mode,
 						ctx->current_mode, ctx);
-		dev_info(ctx->dev, "%s missing mipi_sync\n", __func__);
 		gs_dsi_dcs_write_buffer_force_batch_begin(dsi);
 	}
 

@@ -44,10 +44,11 @@ static char sec_panel_name[PANEL_DRV_LEN] = "panel-gs-simple";
 module_param_string(sec_panel_name, sec_panel_name, sizeof(sec_panel_name), 0644);
 MODULE_PARM_DESC(sec_panel_name, "preferred panel name for secondary panel");
 
-int gs_drm_mode_bts_fps(const struct drm_display_mode *mode)
+int gs_drm_mode_bts_fps(const struct drm_display_mode *mode, unsigned int min_bts_fps)
 {
-	/* TODO: get bts fps*/
-	return drm_mode_vrefresh(mode);
+	unsigned int bts_fps = drm_mode_vrefresh(mode);
+
+	return (min_bts_fps > bts_fps) ? min_bts_fps : bts_fps;
 }
 EXPORT_SYMBOL_GPL(gs_drm_mode_bts_fps);
 

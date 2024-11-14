@@ -148,6 +148,7 @@ static void usleep_since_ts(ktime_t ts, u32 offset_us)
  * @lhbm: Handle for waiting panel's lhbm information
  * @crtc: Associated crtc for panel
  * @frames: number of full frames to wait
+ * @offset_us: Time after ts to wait
  */
 static void lhbm_wait_vblank_and_delay(struct gs_local_hbm *lhbm, struct drm_crtc *crtc, int frames,
 				       u32 offset_us)

@@ -78,7 +78,8 @@ void gs_panel_set_backlight_state(struct gs_panel *ctx, enum gs_panel_state pane
 
 	if (state_changed) {
 		notify_panel_mode_changed(ctx);
-		dev_dbg(ctx->dev, "%s: panel:%d, bl:0x%x\n", __func__, panel_state,
+		dev_info(ctx->dev, "panel: %s | bl: brightness@%u, state@%#x\n",
+			gs_get_panel_state_string(panel_state), bl->props.brightness,
 			bl->props.state);
 	}
 }
@@ -244,6 +245,8 @@ static void gs_panel_bridge_enable(struct drm_bridge *bridge,
 
 /**
  * gs_panel_vsync_start_time_us() - Get vsync start time within TE period
+ * @te_us: TE pulse time.
+ * @te_period_us: TE period.
  */
 static u64 gs_panel_vsync_start_time_us(u32 te_us, u32 te_period_us)
 {
@@ -864,8 +867,10 @@ static int gs_panel_bridge_atomic_check(struct drm_bridge *bridge,
 		struct gs_drm_connector_state *gs_conn_state = to_gs_connector_state(conn_state);
 		int current_vrefresh = drm_mode_vrefresh(current_mode);
 		int target_vrefresh = drm_mode_vrefresh(target_mode);
-		int current_bts_fps = gs_drm_mode_bts_fps(current_mode);
-		int target_bts_fps = gs_drm_mode_bts_fps(target_mode);
+		int current_bts_fps = gs_drm_mode_bts_fps(current_mode,
+			ctx->current_mode->gs_mode.min_bts_fps);
+		int target_bts_fps = gs_drm_mode_bts_fps(target_mode,
+			gs_conn_state->gs_mode.min_bts_fps);
 
 		int clock;
 

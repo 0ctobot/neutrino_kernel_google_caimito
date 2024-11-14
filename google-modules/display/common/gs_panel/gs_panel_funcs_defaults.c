@@ -25,12 +25,6 @@
 #define PANEL_SLSI_DDIC_ID_LEN 5
 #define PROJECT_CODE_MAX 5
 
-#define PANEL_ID_REG_DEFAULT 0xA1
-#define PANEL_ID_LEN 7
-#define PANEL_ID_OFFSET 6
-#define PANEL_ID_READ_SIZE (PANEL_ID_LEN + PANEL_ID_OFFSET)
-#define PANEL_SLSI_DDIC_ID_REG 0xD6
-#define PANEL_SLSI_DDIC_ID_LEN 5
 
 void gs_panel_get_panel_rev(struct gs_panel *ctx, u8 rev)
 {

@@ -426,9 +426,22 @@ struct gs_panel_funcs {
 	void (*refresh_ctrl)(struct gs_panel *gs_panel);
 
 	/**
+	 * @set_cabc_mode
+	 *
+	 * This callback is used to implement panel specific logic for cabc mode
+	 * enablement. If this is not defined, it means that panel does not
+	 * support cabc.
+	 */
+	void (*set_cabc_mode)(struct gs_panel *gs_panel, enum gs_cabc_mode mode);
+
+	/**
 	 * @set_frame_rate
 	 *
-	 * Set the current frame rate.
+	 * Set the current frame rate. This is called by a userspace client to
+	 * mark when the display software is changing the frame update rate,
+	 * for panels where that may require additional updates from the driver.
+	 * This is an optional function, and unrelated to control of the panel
+	 * refresh rate.
 	 */
 	void (*set_frame_rate)(struct gs_panel *gs_panel, u16 frame_rate);
 
@@ -608,6 +621,7 @@ struct gs_panel_funcs {
 /**
  * struct gs_panel_brightness_desc
  * TODO: document
+ * @lower_min_brightness: dim brightness for tablets in dock mode
  */
 struct gs_panel_brightness_desc {
 	u32 max_luminance;
@@ -615,6 +629,7 @@ struct gs_panel_brightness_desc {
 	u32 min_luminance;
 	u32 max_brightness;
 	u32 min_brightness;
+	u32 lower_min_brightness;
 	u32 default_brightness;
 	const struct brightness_capability *brt_capability;
 };
@@ -1231,6 +1246,30 @@ struct gs_panel {
 };
 
 /* FUNCTIONS */
+static inline const char *
+gs_get_panel_state_string(enum gs_panel_state panel_state)
+{
+	switch (panel_state) {
+	case GPANEL_STATE_UNINITIALIZED:
+		return "UNINITIALIZED";
+	case GPANEL_STATE_HANDOFF:
+		return "HANDOFF";
+	case GPANEL_STATE_HANDOFF_MODESET:
+		return "HANDOFF_MODESET";
+	case GPANEL_STATE_OFF:
+		return "OFF";
+	case GPANEL_STATE_NORMAL:
+		return "NORMAL";
+	case GPANEL_STATE_LP:
+		return "LP";
+	case GPANEL_STATE_MODESET:
+		return "MODESET";
+	case GPANEL_STATE_BLANK:
+		return "BLANK";
+	default:
+		return "UNKNOWN";
+	}
+}
 
 /* accessors */
 
@@ -1401,15 +1440,10 @@ u16 gs_panel_get_brightness(struct gs_panel *panel);
 
 /** Command Functions with specific purposes **/
 
-static inline void gs_panel_send_cmdset_flags(struct gs_panel *ctx,
-					      const struct gs_dsi_cmdset *cmdset, u32 flags)
-{
-	struct mipi_dsi_device *dsi = to_mipi_dsi_device(ctx->dev);
-	gs_dsi_send_cmdset_flags(dsi, cmdset, ctx->panel_rev, flags);
-}
 static inline void gs_panel_send_cmdset(struct gs_panel *ctx, const struct gs_dsi_cmdset *cmdset)
 {
-	gs_panel_send_cmdset_flags(ctx, cmdset, 0);
+	struct mipi_dsi_device *dsi = to_mipi_dsi_device(ctx->dev);
+	gs_dsi_send_cmdset(dsi, cmdset, ctx->panel_rev);
 }
 static inline int gs_dcs_set_brightness(struct gs_panel *ctx, u16 br)
 {
