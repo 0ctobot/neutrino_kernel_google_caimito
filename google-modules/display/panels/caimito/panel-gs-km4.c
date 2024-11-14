@@ -615,7 +615,7 @@ static void km4_set_panel_feat_te(struct gs_panel *ctx, unsigned long *feat,
 	struct device *dev = ctx->dev;
 	bool is_vrr = gs_is_vrr_mode(pmode);
 	u32 te_freq = gs_drm_mode_te_freq(&pmode->mode);
-	u32 vrefresh = drm_mode_vrefresh(&pmode->mode);
+	__maybe_unused u32 vrefresh = drm_mode_vrefresh(&pmode->mode);
 
 	if (test_bit(FEAT_EARLY_EXIT, feat) && !spanel->force_changeable_te) {
 		if (is_vrr && te_freq == 240) {
@@ -2865,7 +2865,7 @@ static const struct gs_brightness_configuration km4_btr_configs[] = {
 
 static struct gs_panel_brightness_desc km4_brightness_desc = {
 	.max_luminance = 10000000,
-	.max_avg_luminance = 1200000,
+	.max_avg_luminance = 10000000,
 	.min_luminance = 5,
 };
 

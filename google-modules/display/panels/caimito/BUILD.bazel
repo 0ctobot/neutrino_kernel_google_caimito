@@ -10,7 +10,10 @@ package(
 
 _PANEL_LOCAL_DEFINES = [
     "DYNAMIC_DEBUG_MODULE",
-]
+] + select({
+    "//private/devices/google/common:factory_build": ["PANEL_FACTORY_BUILD"],
+    "//conditions:default": [],
+})
 
 ddk_headers(
     name = "common_headers",
@@ -29,7 +32,7 @@ ddk_module(
         "panel-gs-km4.c",
     ],
     out = "panel-gs-km4.ko",
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
@@ -43,7 +46,7 @@ ddk_module(
         "panel-gs-cm4.c",
     ],
     out = "panel-gs-cm4.ko",
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
@@ -57,7 +60,7 @@ ddk_module(
         "panel-gs-tk4a.c",
     ],
     out = "panel-gs-tk4a.ko",
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
@@ -71,7 +74,7 @@ ddk_module(
         "panel-gs-tk4b.c",
     ],
     out = "panel-gs-tk4b.ko",
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
@@ -85,7 +88,21 @@ ddk_module(
         "panel-gs-tk4c.c",
     ],
     out = "panel-gs-tk4c.ko",
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
+    local_defines = _PANEL_LOCAL_DEFINES,
+    deps = [
+        ":common_headers",
+        "//private/google-modules/display/common/gs_panel",
+    ],
+)
+
+ddk_module(
+    name = "panel-gs-tk4c-test",
+    srcs = [
+        "panel-gs-tk4c-test.c",
+    ],
+    out = "panel-gs-tk4c-test.ko",
+    kernel_build = "//private/devices/google/common:kernel",
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",

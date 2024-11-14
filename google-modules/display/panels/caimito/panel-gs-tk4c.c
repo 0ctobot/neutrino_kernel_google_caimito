@@ -595,11 +595,11 @@ static const struct gs_display_underrun_param underrun_param = {
 static const u16 WIDTH_MM = 65, HEIGHT_MM = 146;
 static const u16 HDISPLAY = 1080, VDISPLAY = 2424;
 static const u16 HFP = 32, HSA = 12, HBP = 16;
-static const u16 VFP = 8, VSA = 4, VBP = 16;
+static const u16 VFP = 8, VSA = 2, VBP = 16;
 
 #define TK4C_DSC {\
 	.enabled = true,\
-	.dsc_count = 1,\
+	.dsc_count = 2,\
 	.cfg = &pps_config,\
 }
 
@@ -730,7 +730,7 @@ const struct gs_panel_brightness_desc tk4c_brightness_desc = {
 	.max_brightness = 4095,
 	.min_brightness = 2,
 	.max_luminance = 10000000,
-	.max_avg_luminance = 1200000,
+	.max_avg_luminance = 10000000,
 	.min_luminance = 5,
 	.default_brightness = 1290, /* 140 nits */
 	.brt_capability = &tk4c_brightness_capability,
