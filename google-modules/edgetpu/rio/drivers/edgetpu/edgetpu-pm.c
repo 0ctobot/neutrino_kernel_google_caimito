@@ -28,7 +28,6 @@
 #include "edgetpu-sw-watchdog.h"
 #include "edgetpu-thermal.h"
 #include "edgetpu-wakelock.h"
-#include "mobile-firmware.h"
 
 #define BLOCK_DOWN_RETRY_TIMES 1000
 #define BLOCK_DOWN_MIN_DELAY_US 1000
@@ -38,13 +37,6 @@
 #define POLL_BLOCK_OFF_DELAY_US_MIN 200
 #define POLL_BLOCK_OFF_DELAY_US_MAX 200
 #define POLL_BLOCK_OFF_MAX_DELAY_COUNT 20
-
-enum edgetpu_pwr_state edgetpu_active_states[EDGETPU_NUM_STATES] = {
-	TPU_ACTIVE_MIN, TPU_ACTIVE_ULTRA_LOW, TPU_ACTIVE_VERY_LOW, TPU_ACTIVE_SUB_LOW,
-	TPU_ACTIVE_LOW, TPU_ACTIVE_MEDIUM,    TPU_ACTIVE_NOM,
-};
-
-uint32_t *edgetpu_states_display = edgetpu_active_states;
 
 static bool edgetpu_always_on(void)
 {
@@ -65,10 +57,64 @@ static bool edgetpu_poll_block_off(struct edgetpu_dev *etdev)
 	return false;
 }
 
-static int mobile_pwr_state_set_locked(struct edgetpu_mobile_platform_dev *etmdev, u64 val)
+/* Caller must hold pm->freq_limits_lock. */
+static int mobile_pwr_update_freq_limits_locked(struct edgetpu_dev *etdev)
+{
+	int ret;
+
+	ret = edgetpu_kci_set_freq_limits(etdev->etkci, etdev->pm->min_freq, etdev->pm->max_freq);
+	switch (ret) {
+	case GCIP_KCI_ERROR_OK:
+		return 0;
+	case GCIP_KCI_ERROR_INVALID_ARGUMENT:
+		dev_err(etdev->dev,
+			"No valid values within debugfs frequency limits: (%u, %u)\n",
+			etdev->pm->min_freq, etdev->pm->max_freq);
+		etdev->pm->min_freq = 0;
+		etdev->pm->max_freq = 0;
+		return -EINVAL;
+	default:
+		dev_err(etdev->dev, "Fw rejected frequency limits command with KCI err %d", ret);
+		return -EIO;
+	}
+}
+
+int edgetpu_pm_set_freq_limits(struct edgetpu_dev *etdev, u32 *min_freq, u32 *max_freq)
+{
+	bool limits_updated = false;
+	int ret = 0;
+
+	/*
+	 * Need to hold pm lock to prevent races with power up/down when checking block state and
+	 * sending the KCI command to update limits.
+	 *
+	 * Since power_up will also acquire freq_limits_lock to send initial limits, pm lock must be
+	 * held first to avoid lock inversion.
+	 */
+	edgetpu_pm_lock(etdev);
+	mutex_lock(&etdev->pm->freq_limits_lock);
+
+	if (min_freq && *min_freq != etdev->pm->min_freq) {
+		etdev->pm->min_freq = *min_freq;
+		limits_updated = true;
+	}
+
+	if (max_freq && *max_freq != etdev->pm->max_freq) {
+		etdev->pm->max_freq = *max_freq;
+		limits_updated = true;
+	}
+
+	if (limits_updated && (edgetpu_always_on() || !edgetpu_poll_block_off(etdev)))
+		ret = mobile_pwr_update_freq_limits_locked(etdev);
+
+	mutex_unlock(&etdev->pm->freq_limits_lock);
+	edgetpu_pm_unlock(etdev);
+	return ret;
+}
+
+static int mobile_pwr_state_set_locked(struct edgetpu_dev *etdev, u64 val)
 {
 	int ret = 0;
-	struct edgetpu_dev *etdev = &etmdev->edgetpu_dev;
 	struct device *dev = etdev->dev;
 
 	dev_dbg(dev, "Power state to %llu\n", val);
@@ -109,81 +155,127 @@ static int mobile_pwr_state_get_locked(void *data, u64 *val)
 static int mobile_pwr_state_set(void *data, u64 val)
 {
 	struct edgetpu_dev *etdev = (typeof(etdev))data;
-	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(etdev);
-	struct edgetpu_mobile_platform_pwr *platform_pwr = &etmdev->platform_pwr;
 	int ret = 0;
 
-	mutex_lock(&platform_pwr->state_lock);
-	platform_pwr->requested_state = val;
-	ret = mobile_pwr_state_set_locked(etmdev, val);
-	mutex_unlock(&platform_pwr->state_lock);
+	mutex_lock(&etdev->pm->state_lock);
+	etdev->pm->requested_state = val;
+	ret = mobile_pwr_state_set_locked(etdev, val);
+	mutex_unlock(&etdev->pm->state_lock);
 	return ret;
 }
 
 static int mobile_pwr_state_get(void *data, u64 *val)
 {
 	struct edgetpu_dev *etdev = (typeof(etdev))data;
-	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(etdev);
-	struct edgetpu_mobile_platform_pwr *platform_pwr = &etmdev->platform_pwr;
 	int ret;
 
-	mutex_lock(&platform_pwr->state_lock);
+	mutex_lock(&etdev->pm->state_lock);
 	ret = mobile_pwr_state_get_locked(etdev, val);
-	mutex_unlock(&platform_pwr->state_lock);
+	mutex_unlock(&etdev->pm->state_lock);
 	return ret;
 }
+
+DEFINE_DEBUGFS_ATTRIBUTE(fops_tpu_pwr_state, mobile_pwr_state_get, mobile_pwr_state_set, "%llu\n");
 
 static int mobile_pwr_policy_set(void *data, u64 val)
 {
 	struct edgetpu_dev *etdev = (typeof(etdev))data;
-	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(etdev);
-	struct edgetpu_mobile_platform_pwr *platform_pwr = &etmdev->platform_pwr;
 	int ret = -EAGAIN;
 
-	mutex_lock(&platform_pwr->policy_lock);
+	mutex_lock(&etdev->pm->policy_lock);
 
-	if (!gcip_pm_get_if_powered(etdev->pm, false)) {
+	if (!edgetpu_pm_get_if_powered(etdev, false)) {
 		ret = edgetpu_thermal_set_rate(etdev, val);
-		gcip_pm_put(etdev->pm);
+		edgetpu_pm_put(etdev);
 	}
 
 	if (ret) {
-		dev_err(etmdev->edgetpu_dev.dev,
-			"unable to set policy %lld (ret %d)\n", val, ret);
-		mutex_unlock(&platform_pwr->policy_lock);
+		dev_err(etdev->dev, "unable to set policy %lld (ret %d)\n", val, ret);
+		mutex_unlock(&etdev->pm->policy_lock);
 		return ret;
 	}
 
-	platform_pwr->curr_policy = val;
-	mutex_unlock(&platform_pwr->policy_lock);
+	etdev->pm->curr_policy = val;
+	mutex_unlock(&etdev->pm->policy_lock);
 	return 0;
 }
 
 static int mobile_pwr_policy_get(void *data, u64 *val)
 {
 	struct edgetpu_dev *etdev = (typeof(etdev))data;
-	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(etdev);
-	struct edgetpu_mobile_platform_pwr *platform_pwr = &etmdev->platform_pwr;
 
-	mutex_lock(&platform_pwr->policy_lock);
-	*val = platform_pwr->curr_policy;
-	mutex_unlock(&platform_pwr->policy_lock);
-
+	mutex_lock(&etdev->pm->policy_lock);
+	*val = etdev->pm->curr_policy;
+	mutex_unlock(&etdev->pm->policy_lock);
 	return 0;
 }
 
 DEFINE_DEBUGFS_ATTRIBUTE(fops_tpu_pwr_policy, mobile_pwr_policy_get, mobile_pwr_policy_set,
-			"%llu\n");
+			 "%llu\n");
 
-DEFINE_DEBUGFS_ATTRIBUTE(fops_tpu_pwr_state, mobile_pwr_state_get, mobile_pwr_state_set, "%llu\n");
+static int mobile_pwr_min_freq_set(void *data, u64 val)
+{
+	struct edgetpu_dev *etdev = (typeof(etdev))data;
+	u32 min_freq;
+
+	if (val > UINT_MAX) {
+		dev_err(etdev->dev, "Requested debugfs min freq %llu must be <= %u (UINT_MAX)\n",
+			val, UINT_MAX);
+		return -EINVAL;
+	}
+
+	min_freq = (u32)val;
+
+	return edgetpu_pm_set_freq_limits(etdev, &min_freq, NULL);
+}
+
+static int mobile_pwr_min_freq_get(void *data, u64 *val)
+{
+	struct edgetpu_dev *etdev = (typeof(etdev))data;
+
+	mutex_lock(&etdev->pm->freq_limits_lock);
+	*val = etdev->pm->min_freq;
+	mutex_unlock(&etdev->pm->freq_limits_lock);
+	return 0;
+}
+
+DEFINE_DEBUGFS_ATTRIBUTE(fops_tpu_pwr_min_freq, mobile_pwr_min_freq_get, mobile_pwr_min_freq_set,
+			 "%llu\n");
+
+static int mobile_pwr_max_freq_set(void *data, u64 val)
+{
+	struct edgetpu_dev *etdev = (typeof(etdev))data;
+	u32 max_freq;
+
+	if (val > UINT_MAX) {
+		dev_err(etdev->dev, "Requested debugfs max freq %llu must be <= %u (UINT_MAX)\n",
+			val, UINT_MAX);
+		return -EINVAL;
+	}
+
+	max_freq = (u32)val;
+
+	return edgetpu_pm_set_freq_limits(etdev, NULL, &max_freq);
+}
+
+static int mobile_pwr_max_freq_get(void *data, u64 *val)
+{
+	struct edgetpu_dev *etdev = (typeof(etdev))data;
+
+	mutex_lock(&etdev->pm->freq_limits_lock);
+	*val = etdev->pm->max_freq;
+	mutex_unlock(&etdev->pm->freq_limits_lock);
+	return 0;
+}
+
+DEFINE_DEBUGFS_ATTRIBUTE(fops_tpu_pwr_max_freq, mobile_pwr_max_freq_get, mobile_pwr_max_freq_set,
+			 "%llu\n");
 
 static int mobile_power_down(void *data);
 
 static int mobile_power_up(void *data)
 {
 	struct edgetpu_dev *etdev = (struct edgetpu_dev *)data;
-	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(etdev);
-	struct edgetpu_mobile_platform_pwr *platform_pwr = &etmdev->platform_pwr;
 	int times = 0;
 	int ret;
 
@@ -212,10 +304,7 @@ static int mobile_power_up(void *data)
 		return ret;
 	}
 
-	if (platform_pwr->lpm_up)
-		platform_pwr->lpm_up(etdev);
-
-	edgetpu_chip_init(etdev);
+	edgetpu_soc_pm_lpm_up(etdev);
 
 	/* TODO(b/269374029) Do *_reinit() results need to be checked? */
 	if (etdev->etkci) {
@@ -234,18 +323,22 @@ static int mobile_power_up(void *data)
 	if (!etdev->firmware)
 		goto out;
 
+	/* State is set to shutdown only when unloading the driver, firmware loader is shutdown. */
+	if (etdev->state == ETDEV_STATE_SHUTDOWN)
+		return 0;
+
 	/*
 	 * Why this function uses edgetpu_firmware_*_locked functions without explicitly holding
 	 * edgetpu_firmware_lock:
 	 *
-	 * gcip_pm_get() is called in two scenarios - one is when the firmware loading is
+	 * edgetpu_pm_get() is called in two scenarios - one is when the firmware loading is
 	 * attempting, another one is when the user-space clients need the device be powered
 	 * (usually through acquiring the wakelock).
 	 *
 	 * For the first scenario edgetpu_firmware_is_loading() below shall return true.
 	 * For the second scenario we are indeed called without holding the firmware lock, but the
-	 * firmware loading procedures (i.e. the first scenario) always call gcip_pm_get() before
-	 * changing the firmware state, and gcip_pm_get() is blocked until this function
+	 * firmware loading procedures (i.e. the first scenario) always call edgetpu_pm_get() before
+	 * changing the firmware state, and edgetpu_pm_get() is blocked until this function
 	 * finishes. In short, we are protected by the PM lock.
 	 */
 
@@ -266,19 +359,28 @@ static int mobile_power_up(void *data)
 
 	if (ret)
 		mobile_power_down(etdev);
-	else if (platform_pwr->post_fw_start)
-		platform_pwr->post_fw_start(etdev);
+	else
+		edgetpu_soc_pm_post_fw_start(etdev);
 
 out:
-	if (!ret)
+	if (!ret) {
 		edgetpu_mailbox_restore_active_mailbox_queues(etdev);
+		mutex_lock(&etdev->pm->freq_limits_lock);
+		/* Only send limits to FW if at least one has been set. */
+		if (etdev->pm->min_freq || etdev->pm->max_freq)
+			mobile_pwr_update_freq_limits_locked(etdev);
+		mutex_unlock(&etdev->pm->freq_limits_lock);
+	}
 
 	return ret;
 }
 
 static void mobile_firmware_down(struct edgetpu_dev *etdev)
 {
-	int ret = edgetpu_kci_shutdown(etdev->etkci);
+	int ret = 0;
+
+	if (!edgetpu_always_on())
+		ret = edgetpu_kci_shutdown(etdev->etkci);
 
 	if (ret)
 		etdev_warn(etdev, "firmware shutdown failed: %d", ret);
@@ -288,7 +390,6 @@ static int mobile_power_down(void *data)
 {
 	struct edgetpu_dev *etdev = (struct edgetpu_dev *)data;
 	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(etdev);
-	struct edgetpu_mobile_platform_pwr *platform_pwr = &etmdev->platform_pwr;
 	int res = 0;
 
 	etdev_info(etdev, "Powering down\n");
@@ -308,8 +409,7 @@ static int mobile_power_down(void *data)
 			edgetpu_kci_update_usage_locked(etdev);
 			mobile_firmware_down(etdev);
 			/* Ensure firmware is completely off */
-			if (platform_pwr->lpm_down)
-				platform_pwr->lpm_down(etdev);
+			edgetpu_soc_pm_lpm_down(etdev);
 			/* Indicate firmware is no longer running */
 			etdev->state = ETDEV_STATE_NOFW;
 		}
@@ -317,9 +417,8 @@ static int mobile_power_down(void *data)
 	}
 
 	if (etdev->firmware) {
-		res = edgetpu_mobile_firmware_reset_cpu(etdev, true);
+		res = edgetpu_firmware_reset_cpu(etdev, true);
 
-		/* TODO(b/198181290): remove -EIO once gsaproxy wakelock is implemented */
 		if (res == -EAGAIN || res == -EIO)
 			return -EAGAIN;
 		if (res < 0)
@@ -349,30 +448,32 @@ static int mobile_pm_after_create(void *data)
 {
 	int ret;
 	struct edgetpu_dev *etdev = (struct edgetpu_dev *)data;
-	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(etdev);
 	struct device *dev = etdev->dev;
-	struct edgetpu_mobile_platform_pwr *platform_pwr = &etmdev->platform_pwr;
 
-	pm_runtime_enable(dev);
-
+	devm_pm_runtime_enable(dev);
 	ret = pm_runtime_get_sync(dev);
 	if (ret) {
 		dev_err(dev, "pm_runtime_get_sync returned %d\n", ret);
 		goto err_pm_runtime_put;
 	}
 
-	mutex_init(&platform_pwr->policy_lock);
-	mutex_init(&platform_pwr->state_lock);
+	mutex_init(&etdev->pm->policy_lock);
+	mutex_init(&etdev->pm->state_lock);
+	mutex_init(&etdev->pm->freq_limits_lock);
 
-	platform_pwr->debugfs_dir = debugfs_create_dir("power", edgetpu_fs_debugfs_dir());
-	if (IS_ERR_OR_NULL(platform_pwr->debugfs_dir)) {
+	etdev->pm->debugfs_dir = debugfs_create_dir("power", edgetpu_fs_debugfs_dir());
+	if (IS_ERR_OR_NULL(etdev->pm->debugfs_dir)) {
 		dev_warn(etdev->dev, "Failed to create debug FS power");
 		/* don't fail the procedure on debug FS creation fails */
 	} else {
-		debugfs_create_file("state", 0660, platform_pwr->debugfs_dir, etdev,
+		debugfs_create_file("state", 0660, etdev->pm->debugfs_dir, etdev,
 				    &fops_tpu_pwr_state);
-		debugfs_create_file("policy", 0660, platform_pwr->debugfs_dir, etdev,
+		debugfs_create_file("policy", 0660, etdev->pm->debugfs_dir, etdev,
 				    &fops_tpu_pwr_policy);
+		debugfs_create_file("min_freq", 0660, etdev->pm->debugfs_dir, etdev,
+				    &fops_tpu_pwr_min_freq);
+		debugfs_create_file("max_freq", 0660, etdev->pm->debugfs_dir, etdev,
+				    &fops_tpu_pwr_max_freq);
 	}
 
 	ret = edgetpu_soc_pm_init(etdev);
@@ -382,11 +483,10 @@ static int mobile_pm_after_create(void *data)
 	return 0;
 
 err_debugfs_remove:
-	debugfs_remove_recursive(platform_pwr->debugfs_dir);
+	debugfs_remove_recursive(etdev->pm->debugfs_dir);
 
 err_pm_runtime_put:
 	pm_runtime_put_noidle(dev);
-	pm_runtime_disable(dev);
 
 	return ret;
 }
@@ -394,34 +494,9 @@ err_pm_runtime_put:
 static void mobile_pm_before_destroy(void *data)
 {
 	struct edgetpu_dev *etdev = (struct edgetpu_dev *)data;
-	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(etdev);
-	struct edgetpu_mobile_platform_pwr *platform_pwr = &etmdev->platform_pwr;
 
-	debugfs_remove_recursive(platform_pwr->debugfs_dir);
-	pm_runtime_disable(etdev->dev);
+	debugfs_remove_recursive(etdev->pm->debugfs_dir);
 	edgetpu_soc_pm_exit(etdev);
-}
-
-static int __edgetpu_pm_create(struct edgetpu_dev *etdev, const struct gcip_pm_args *args)
-{
-	struct gcip_pm *pm;
-	int ret;
-
-	if (etdev->pm) {
-		dev_err(etdev->dev,
-			"Refusing to replace existing PM interface\n");
-		return -EEXIST;
-	}
-
-	ret = edgetpu_chip_pm_create(etdev);
-	if (ret)
-		return ret;
-	pm = gcip_pm_create(args);
-	if (IS_ERR(pm))
-		return PTR_ERR(pm);
-
-	etdev->pm = pm;
-	return 0;
 }
 
 int edgetpu_pm_create(struct edgetpu_dev *etdev)
@@ -434,50 +509,49 @@ int edgetpu_pm_create(struct edgetpu_dev *etdev)
 		.power_up = mobile_power_up,
 		.power_down =  mobile_power_down,
 	};
+	int ret = 0;
 
-	return __edgetpu_pm_create(etdev, &args);
+	if (etdev->pm) {
+		dev_err(etdev->dev,
+			"Refusing to replace existing PM interface\n");
+		return -EEXIST;
+	}
+
+	etdev->pm = devm_kzalloc(etdev->dev, sizeof(*etdev->pm), GFP_KERNEL);
+	if (!etdev->pm)
+		return -ENOMEM;
+
+	mutex_init(&etdev->pm->policy_lock);
+	etdev->pm->curr_policy = TPU_POLICY_MAX;
+	etdev->pm->gpm = gcip_pm_create(&args);
+	if (IS_ERR(etdev->pm->gpm)) {
+		ret = PTR_ERR(etdev->pm->gpm);
+		devm_kfree(etdev->dev, etdev->pm);
+	}
+
+	return ret;
 }
-
-#if IS_ENABLED(CONFIG_EDGETPU_TEST)
-int edgetpu_pm_create_handlers(struct edgetpu_dev *etdev,
-			       const struct edgetpu_pm_handlers *handlers)
-{
-	const struct gcip_pm_args args = {
-		.dev = etdev->dev,
-		.data = etdev,
-		.after_create = handlers->after_create,
-		.before_destroy = handlers->before_destroy,
-		.power_up = handlers->power_up,
-		.power_down = handlers->power_down,
-	};
-
-	return __edgetpu_pm_create(etdev, &args);
-}
-#endif
 
 void edgetpu_pm_destroy(struct edgetpu_dev *etdev)
 {
-	gcip_pm_destroy(etdev->pm);
+	gcip_pm_destroy(etdev->pm->gpm);
+	devm_kfree(etdev->dev, etdev->pm);
 	etdev->pm = NULL;
 }
 
 static int __maybe_unused edgetpu_pm_suspend(struct device *dev)
 {
 	struct edgetpu_dev *etdev = dev_get_drvdata(dev);
-	struct gcip_pm *pm = etdev->pm;
 	struct edgetpu_list_device_client *lc;
 	int count;
 
-	if (unlikely(!pm))
-		return 0;
-
-	if (!gcip_pm_trylock(pm)) {
+	if (!edgetpu_pm_trylock(etdev)) {
 		etdev_warn_ratelimited(etdev, "cannot suspend during power state transition\n");
 		return -EAGAIN;
 	}
 
-	count = gcip_pm_get_count(pm);
-	gcip_pm_unlock(etdev->pm);
+	count = edgetpu_pm_get_count(etdev);
+	edgetpu_pm_unlock(etdev);
 
 	if (!count) {
 		etdev_info_ratelimited(etdev, "suspended\n");
@@ -489,13 +563,13 @@ static int __maybe_unused edgetpu_pm_suspend(struct device *dev)
 	if (!mutex_trylock(&etdev->clients_lock))
 		return -EAGAIN;
 	for_each_list_device_client(etdev, lc) {
-		if (!lc->client->wakelock->req_count)
+		if (!lc->client->wakelock.req_count)
 			continue;
 		etdev_warn_ratelimited(etdev,
 				       "client pid %d tgid %d count %d\n",
 				       lc->client->pid,
 				       lc->client->tgid,
-				       lc->client->wakelock->req_count);
+				       lc->client->wakelock.req_count);
 	}
 	mutex_unlock(&etdev->clients_lock);
 	return -EAGAIN;

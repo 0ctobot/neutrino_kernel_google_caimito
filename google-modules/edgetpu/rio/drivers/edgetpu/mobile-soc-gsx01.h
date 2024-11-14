@@ -13,6 +13,8 @@
 #include <linux/types.h>
 #include <soc/google/exynos_pm_qos.h>
 
+#include <gcip/gcip-kci.h>
+
 struct bcl_device;
 
 /* SoC data for GSx01 platforms */

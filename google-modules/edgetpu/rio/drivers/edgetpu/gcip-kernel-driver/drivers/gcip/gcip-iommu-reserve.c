@@ -13,6 +13,7 @@
 #include <linux/dma-buf.h>
 #include <linux/kref.h>
 #include <linux/list.h>
+#include <linux/mm.h>
 #include <linux/mutex.h>
 #include <linux/rbtree.h>
 #include <linux/slab.h>
@@ -532,9 +533,10 @@ struct gcip_iommu_mapping *gcip_iommu_reserve_map_buffer(struct gcip_iommu_reser
 	struct gcip_iommu_reserve_region *region;
 	struct gcip_iommu_reserve_mapping *reserve_mapping;
 	struct gcip_iommu_mapping *mapping;
+	u64 offset = host_address & (PAGE_SIZE - 1);
 	int ret;
 
-	if (!size)
+	if (!size || !PAGE_ALIGNED(iova))
 		return ERR_PTR(-EINVAL);
 
 	mutex_lock(&mgr->lock);
@@ -544,7 +546,16 @@ struct gcip_iommu_mapping *gcip_iommu_reserve_map_buffer(struct gcip_iommu_reser
 		return ERR_PTR(-EPERM);
 	}
 
-	region = gcip_iommu_reserve_manager_get_region_fit_locked(mgr, iova, size);
+	/*
+	 * If @host_address is not page-aligned, the buffer will be mapped to the address which is
+	 * shifted from @iova as much as @offset. Therefore, we should consider @offset as the part
+	 * of the buffer size while searching a region.
+	 *
+	 * Additionally, we don't need to care about the page alignment of (size + offset) since
+	 * we are just going to find any region where the buffer can fit in. That alignment will be
+	 * considered when we actually map it.
+	 */
+	region = gcip_iommu_reserve_manager_get_region_fit_locked(mgr, iova, size + offset);
 	mutex_unlock(&mgr->lock);
 
 	if (IS_ERR(region))
@@ -557,6 +568,17 @@ struct gcip_iommu_mapping *gcip_iommu_reserve_map_buffer(struct gcip_iommu_reser
 		goto err_out;
 	}
 
+	/*
+	 * The mapping function will consider the page alignment of @host_address and @size
+	 * internally. If the range of aligned buffer overlaps with other mapped buffers, it will
+	 * fail.
+	 *
+	 * Note that if the reserved region is [0x1000, 0x1500) and we going to map a buffer to
+	 * [0x1000, 0x1300), the actual mapped area will be [0x1000, 0x2000) which exceeds the
+	 * region. However, it's fine since the region also reserves an area from the IOMMU domain
+	 * considering the page alignment. (i.e., the region actually reserves [0x1000, 0x2000))
+	 * Therefore, we allow this case since the buffer actually fits into the region.
+	 */
 	mapping = gcip_iommu_domain_map_buffer_to_iova(region->domain, host_address, size, iova,
 						       gcip_map_flags, pin_user_pages_lock);
 	if (IS_ERR(mapping)) {
@@ -595,7 +617,7 @@ struct gcip_iommu_mapping *gcip_iommu_reserve_map_dma_buf(struct gcip_iommu_rese
 	struct gcip_iommu_mapping *mapping;
 	int ret;
 
-	if (!dmabuf || !dmabuf->size)
+	if (!dmabuf || !dmabuf->size || !PAGE_ALIGNED(iova))
 		return ERR_PTR(-EINVAL);
 
 	mutex_lock(&mgr->lock);

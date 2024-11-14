@@ -9,37 +9,47 @@
 #include <linux/mutex.h>
 #include <linux/spinlock.h>
 
+#include <gcip/gcip-fence-array.h>
 #include <gcip/gcip-mailbox.h>
+#include <iif/iif-shared.h>
 
 #include "edgetpu-ikv-mailbox-ops.h"
 #include "edgetpu-ikv.h"
+#include "edgetpu-iremap-pool.h"
 #include "edgetpu-mailbox.h"
+#include "edgetpu-vii-packet.h"
 
 /*
  * Helper function with shared logic needed for notifying awaiters when a command has a response
  * ready or is being flushed.
  */
-static void signal_response_waiters(struct edgetpu_ikv_response *resp, int error, bool notify_group)
+static void signal_response_waiters(struct edgetpu_ikv_response *ikv_resp, int error,
+				    bool notify_group)
 {
 	/* Refund the credit before notifying any waiters in case they send another command. */
-	if (resp->group_to_notify)
-		atomic_inc(&resp->group_to_notify->available_vii_credits);
+	if (ikv_resp->group_to_notify)
+		atomic_inc(&ikv_resp->group_to_notify->available_vii_credits);
 
 	/*
-	 * Signal dma_fences before notifying the group of the response.
+	 * Signal fences before notifying the group of the response.
 	 * It is likely the user-space client that owns the group will need any drivers waiting on
 	 * the command to finish their work before user-space can make use of the results.
 	 */
-	if (resp->out_fence) {
-		gcip_signal_dma_fence_with_status(resp->out_fence, error, true);
-		dma_fence_put(resp->out_fence);
-	}
+	gcip_fence_array_signal_async(ikv_resp->out_fence_array, error);
 
-	if (resp->group_to_notify && notify_group)
-		edgetpu_group_notify(resp->group_to_notify, EDGETPU_EVENT_RESPDATA);
+	/*
+	 * This function call is meaningful only when the fences are inter-IP fences.
+	 * It will decrement the number of outstanding waiters of each fence. Once that becomes
+	 * 0 and the fence file is closed, it means that no one is referring to the fence and it
+	 * will try to retire the fence.
+	 */
+	gcip_fence_array_waited_async(ikv_resp->in_fence_array, IIF_IP_TPU);
+	gcip_fence_array_put_async(ikv_resp->out_fence_array);
+	gcip_fence_array_put_async(ikv_resp->in_fence_array);
+
+	if (ikv_resp->group_to_notify && notify_group)
+		edgetpu_group_notify(ikv_resp->group_to_notify, EDGETPU_EVENT_RESPDATA);
 }
-
-/* In-Kernel VII gcip_mailbox_ops */
 
 static u32 edgetpu_ikv_get_cmd_queue_head(struct gcip_mailbox *mailbox)
 {
@@ -48,6 +58,8 @@ static u32 edgetpu_ikv_get_cmd_queue_head(struct gcip_mailbox *mailbox)
 
 	return EDGETPU_MAILBOX_CMD_QUEUE_READ(mbx_hw, head);
 }
+
+/* In-Kernel VII gcip_mailbox_ops */
 
 static u32 edgetpu_ikv_get_cmd_queue_tail(struct gcip_mailbox *mailbox)
 {
@@ -83,23 +95,23 @@ static void edgetpu_ikv_release_cmd_queue_lock(struct gcip_mailbox *mailbox)
 
 static u64 edgetpu_ikv_get_cmd_elem_seq(struct gcip_mailbox *mailbox, void *cmd)
 {
-	struct edgetpu_vii_command *vii_cmd = cmd;
+	struct edgetpu_ikv *ikv = gcip_mailbox_get_data(mailbox);
 
-	return vii_cmd->seq;
+	return edgetpu_vii_command_get_seq_number(ikv->etdev, cmd);
 }
 
 static void edgetpu_ikv_set_cmd_elem_seq(struct gcip_mailbox *mailbox, void *cmd, u64 seq)
 {
-	struct edgetpu_vii_command *vii_cmd = cmd;
+	struct edgetpu_ikv *ikv = gcip_mailbox_get_data(mailbox);
 
-	vii_cmd->seq = seq;
+	edgetpu_vii_command_set_seq_number(ikv->etdev, cmd, seq);
 }
 
 static u32 edgetpu_ikv_get_cmd_elem_code(struct gcip_mailbox *mailbox, void *cmd)
 {
-	struct edgetpu_vii_command *vii_cmd = cmd;
+	struct edgetpu_ikv *ikv = gcip_mailbox_get_data(mailbox);
 
-	return vii_cmd->code;
+	return edgetpu_vii_command_get_code(ikv->etdev, cmd);
 }
 
 static u32 edgetpu_ikv_get_resp_queue_size(struct gcip_mailbox *mailbox)
@@ -156,16 +168,16 @@ static void edgetpu_ikv_release_resp_queue_lock(struct gcip_mailbox *mailbox)
 
 static u64 edgetpu_ikv_get_resp_elem_seq(struct gcip_mailbox *mailbox, void *resp)
 {
-	struct edgetpu_vii_response *vii_resp = resp;
+	struct edgetpu_ikv *ikv = gcip_mailbox_get_data(mailbox);
 
-	return vii_resp->seq;
+	return edgetpu_vii_response_get_seq_number(ikv->etdev, resp);
 }
 
 static void edgetpu_ikv_set_resp_elem_seq(struct gcip_mailbox *mailbox, void *resp, u64 seq)
 {
-	struct edgetpu_vii_response *vii_resp = resp;
+	struct edgetpu_ikv *ikv = gcip_mailbox_get_data(mailbox);
 
-	vii_resp->seq = seq;
+	edgetpu_vii_response_set_seq_number(ikv->etdev, resp, seq);
 }
 
 static void edgetpu_ikv_acquire_wait_list_lock(struct gcip_mailbox *mailbox, bool irqsave,
@@ -190,14 +202,14 @@ static int edgetpu_ikv_wait_for_cmd_queue_not_full(struct gcip_mailbox *mailbox)
 	u32 tail = mailbox->ops->get_cmd_queue_tail(mailbox);
 	int ret;
 
-	if (mailbox->ops->get_cmd_queue_head(mailbox) != (tail ^ mailbox->queue_wrap_bit))
+	if (edgetpu_ikv_get_cmd_queue_head(mailbox) != (tail ^ mailbox->queue_wrap_bit))
 		return 0;
 
 	/* Credit enforcement should prevent this from ever happening. Log an error. */
 	etdev_warn_ratelimited(ikv->etdev, "kernel VII command queue full\n");
 
 	ret = wait_event_timeout(ikv->pending_commands,
-				 mailbox->ops->get_cmd_queue_head(mailbox) !=
+				 edgetpu_ikv_get_cmd_queue_head(mailbox) !=
 					 (tail ^ mailbox->queue_wrap_bit),
 				 msecs_to_jiffies(mailbox->timeout));
 	if (!ret)
@@ -210,6 +222,7 @@ static int edgetpu_ikv_before_enqueue_wait_list(struct gcip_mailbox *mailbox, vo
 						struct gcip_mailbox_resp_awaiter *awaiter)
 {
 	struct edgetpu_ikv_response *ikv_resp;
+	int ret;
 
 	/*
 	 * Save the awaiter inside the response, so it can be cleaned up on response arrival,
@@ -221,7 +234,27 @@ static int edgetpu_ikv_before_enqueue_wait_list(struct gcip_mailbox *mailbox, vo
 	ikv_resp = awaiter->data;
 	ikv_resp->awaiter = awaiter;
 
-	return 0;
+	/*
+	 * This function call is meaningful only for IIFs in the arrays.
+	 *
+	 * Submitting a waiter means that there is a request sent to the firmware which is waiting
+	 * on the fence to be unblocked. Internally, it increments the number of outstanding waiters
+	 * of the fence. Once the fence is unblocked and the request is processed, the number will
+	 * be decremented back. Its purpose is to track whether it is possible to retire the fence.
+	 *
+	 * Submitting a signaler means that a request has been sent to the firmware which will
+	 * signal the fence once it is processed. To avoid a deadlock, we doesn't allow submitting
+	 * waiter commands earlier than signaler commands. The total number of expected signalers
+	 * is decided when the fence is created and this function will decrement the number of
+	 * remaining signalers to be submitted. If that number is non-zero, IIF will reject
+	 * submitting waiter commands to the fence.
+	 */
+	ret = gcip_fence_array_submit_waiter_and_signaler(ikv_resp->in_fence_array,
+							  ikv_resp->out_fence_array, IIF_IP_TPU);
+	if (ret)
+		dev_err(mailbox->dev, "Failed to submit waiter or signaler to fences, ret=%d", ret);
+
+	return ret;
 }
 
 static int edgetpu_ikv_after_enqueue_cmd(struct gcip_mailbox *mailbox, void *cmd)
@@ -248,56 +281,59 @@ static void edgetpu_ikv_after_fetch_resps(struct gcip_mailbox *mailbox, u32 num_
 static void edgetpu_ikv_handle_awaiter_arrived(struct gcip_mailbox *mailbox,
 					       struct gcip_mailbox_resp_awaiter *awaiter)
 {
-	struct edgetpu_ikv_response *resp = awaiter->data;
+	struct edgetpu_ikv_response *ikv_resp = awaiter->data;
 
-	edgetpu_ikv_process_response(resp, NULL, NULL, 0);
+	edgetpu_ikv_process_response(ikv_resp, NULL, NULL, 0);
 }
 
 static void edgetpu_ikv_handle_awaiter_timedout(struct gcip_mailbox *mailbox,
 						struct gcip_mailbox_resp_awaiter *awaiter)
 {
 	struct edgetpu_ikv *ikv = gcip_mailbox_get_data(mailbox);
-	struct edgetpu_ikv_response *resp = awaiter->data;
+	struct edgetpu_ikv_response *ikv_resp = awaiter->data;
 	u16 code = VII_RESPONSE_CODE_KERNEL_CMD_TIMEOUT;
-	u64 data = (u64)IKV_TIMEOUT;
+	u64 data = (u64)ikv->command_timeout_ms;
 
-	etdev_warn(ikv->etdev, "IKV seq %llu timed out", resp->client_seq);
-	edgetpu_ikv_process_response(resp, &code, &data, -ETIMEDOUT);
+	etdev_warn(ikv->etdev, "IKV seq %llu timed out", ikv_resp->client_seq);
+	edgetpu_ikv_process_response(ikv_resp, &code, &data, -ETIMEDOUT);
 }
 
-static void edgetpu_ikv_flush_awaiter(struct gcip_mailbox *mailbox,
-				      struct gcip_mailbox_resp_awaiter *awaiter)
+static void edgetpu_ikv_handle_awaiter_flushed(struct gcip_mailbox *mailbox,
+					       struct gcip_mailbox_resp_awaiter *awaiter)
 {
-	struct edgetpu_ikv_response *resp = awaiter->data;
+	struct edgetpu_ikv_response *ikv_resp = awaiter->data;
 	/* Store an independent pointer to `dest_queue_lock`, since `resp` may be released. */
-	spinlock_t *dest_queue_lock = resp->dest_queue_lock;
+	spinlock_t *dest_queue_lock = ikv_resp->dest_queue_lock;
 	unsigned long flags;
 
 	spin_lock_irqsave(dest_queue_lock, flags);
 
-	if (resp->processed) {
+	if (ikv_resp->processed) {
 		spin_unlock_irqrestore(dest_queue_lock, flags);
 		return;
 	}
-	resp->processed = true;
+	ikv_resp->processed = true;
 
 	spin_unlock_irqrestore(dest_queue_lock, flags);
 
 	/* Signal any out-fence, but skip the device group since it's being flushed. */
-	signal_response_waiters(resp, -ECANCELED, false);
+	signal_response_waiters(ikv_resp, -ECANCELED, false);
 
 	gcip_mailbox_release_awaiter(awaiter);
 }
 
 static void edgetpu_ikv_release_awaiter_data(void *data)
 {
-	struct edgetpu_ikv_response *resp = data;
+	struct edgetpu_ikv_response *ikv_resp = data;
 
-	kfree(resp);
+	edgetpu_ikv_additional_info_free(ikv_resp->etikv->etdev, &ikv_resp->additional_info);
+	if (ikv_resp->release_callback)
+		ikv_resp->release_callback(ikv_resp->release_data);
+	kfree(ikv_resp->resp);
+	kfree(ikv_resp);
 }
 
 const struct gcip_mailbox_ops ikv_mailbox_ops = {
-	.get_cmd_queue_head = edgetpu_ikv_get_cmd_queue_head,
 	.get_cmd_queue_tail = edgetpu_ikv_get_cmd_queue_tail,
 	.inc_cmd_queue_tail = edgetpu_ikv_inc_cmd_queue_tail,
 	.acquire_cmd_queue_lock = edgetpu_ikv_acquire_cmd_queue_lock,
@@ -322,7 +358,7 @@ const struct gcip_mailbox_ops ikv_mailbox_ops = {
 	/* .before_handle_resp is not needed */
 	.handle_awaiter_arrived = edgetpu_ikv_handle_awaiter_arrived,
 	.handle_awaiter_timedout = edgetpu_ikv_handle_awaiter_timedout,
-	.flush_awaiter = edgetpu_ikv_flush_awaiter,
+	.handle_awaiter_flushed = edgetpu_ikv_handle_awaiter_flushed,
 	.release_awaiter_data = edgetpu_ikv_release_awaiter_data,
 };
 
@@ -346,12 +382,14 @@ void edgetpu_ikv_process_response(struct edgetpu_ikv_response *ikv_resp, u16 *re
 
 	/* If the command resulted in an error, override the error code and retval as provided. */
 	if (resp_code)
-		ikv_resp->resp.code = *resp_code;
+		edgetpu_vii_response_set_code(ikv_resp->etikv->etdev, ikv_resp->resp, *resp_code);
 	if (resp_retval)
-		ikv_resp->resp.retval = *resp_retval;
+		edgetpu_vii_response_set_retval(ikv_resp->etikv->etdev, ikv_resp->resp,
+						*resp_retval);
 
 	/* Set the response sequence number to the value expected by the client. */
-	ikv_resp->resp.seq = ikv_resp->client_seq;
+	edgetpu_vii_response_set_seq_number(ikv_resp->etikv->etdev, ikv_resp->resp,
+					    ikv_resp->client_seq);
 
 	/*
 	 * Move the response from the "pending" list to the "ready" list.

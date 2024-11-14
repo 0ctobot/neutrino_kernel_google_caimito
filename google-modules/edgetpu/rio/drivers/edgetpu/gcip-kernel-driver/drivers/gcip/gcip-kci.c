@@ -14,13 +14,6 @@
 #include <gcip/gcip-kci.h>
 #include <gcip/gcip-mailbox.h>
 
-static u32 gcip_kci_get_cmd_queue_head(struct gcip_mailbox *mailbox)
-{
-	struct gcip_kci *kci = gcip_mailbox_get_data(mailbox);
-
-	return kci->ops->get_cmd_queue_head(kci);
-}
-
 static u32 gcip_kci_get_cmd_queue_tail(struct gcip_mailbox *mailbox)
 {
 	struct gcip_kci *kci = gcip_mailbox_get_data(mailbox);
@@ -255,7 +248,6 @@ static void gcip_kci_on_error(struct gcip_mailbox *mailbox, int err)
 }
 
 static const struct gcip_mailbox_ops gcip_mailbox_ops = {
-	.get_cmd_queue_head = gcip_kci_get_cmd_queue_head,
 	.get_cmd_queue_tail = gcip_kci_get_cmd_queue_tail,
 	.inc_cmd_queue_tail = gcip_kci_inc_cmd_queue_tail,
 	.acquire_cmd_queue_lock = gcip_kci_acquire_cmd_queue_lock,
@@ -406,6 +398,8 @@ static int gcip_reverse_kci_init(struct gcip_reverse_kci *rkci, struct device *d
 	if (rkci->buffer)
 		return 0;
 
+	rkci->head = 0;
+	rkci->tail = 0;
 	rkci->buffer_size = buffer_size;
 	rkci->buffer = devm_kcalloc(dev, buffer_size, sizeof(*rkci->buffer), GFP_KERNEL);
 	if (!rkci->buffer)
@@ -416,6 +410,12 @@ static int gcip_reverse_kci_init(struct gcip_reverse_kci *rkci, struct device *d
 	INIT_WORK(&rkci->work, gcip_reverse_kci_work);
 
 	return 0;
+}
+
+static void gcip_reverse_kci_reinit(struct gcip_reverse_kci *rkci)
+{
+	rkci->head = 0;
+	rkci->tail = 0;
 }
 
 /* Verifies and sets the KCI operators. */
@@ -502,6 +502,11 @@ err_unset_data:
 	return ret;
 }
 
+void gcip_kci_reinit(struct gcip_kci *kci)
+{
+	gcip_reverse_kci_reinit(&kci->rkci);
+}
+
 void gcip_kci_cancel_work_queues(struct gcip_kci *kci)
 {
 	cancel_work_sync(&kci->usage_work);
@@ -525,4 +530,47 @@ void gcip_kci_release(struct gcip_kci *kci)
 	if (!list_empty(gcip_kci_get_wait_list(kci)))
 		dev_warn(kci->dev, "KCI commands still pending.\n");
 	gcip_mailbox_release(&kci->mailbox);
+}
+
+int gcip_kci_error_to_errno(struct device *dev, enum gcip_kci_error code)
+{
+	switch (code) {
+	case GCIP_KCI_ERROR_OK:
+		return 0;
+	case GCIP_KCI_ERROR_CANCELLED:
+		return -ECANCELED;
+	case GCIP_KCI_ERROR_UNKNOWN:
+		return -EINVAL;
+	case GCIP_KCI_ERROR_INVALID_ARGUMENT:
+		return -EINVAL;
+	case GCIP_KCI_ERROR_DEADLINE_EXCEEDED:
+		return -ETIMEDOUT;
+	case GCIP_KCI_ERROR_NOT_FOUND:
+		return -EIO;
+	case GCIP_KCI_ERROR_ALREADY_EXISTS:
+		return -EALREADY;
+	case GCIP_KCI_ERROR_PERMISSION_DENIED:
+		return -EPERM;
+	case GCIP_KCI_ERROR_RESOURCE_EXHAUSTED:
+		return -ENOSPC;
+	case GCIP_KCI_ERROR_FAILED_PRECONDITION:
+		return -EFAULT;
+	case GCIP_KCI_ERROR_ABORTED:
+		return -EACCES;
+	case GCIP_KCI_ERROR_OUT_OF_RANGE:
+		return -ERANGE;
+	case GCIP_KCI_ERROR_UNIMPLEMENTED:
+		return -EOPNOTSUPP;
+	case GCIP_KCI_ERROR_INTERNAL:
+		return -EBADRQC;
+	case GCIP_KCI_ERROR_UNAVAILABLE:
+		return -EAGAIN;
+	case GCIP_KCI_ERROR_DATA_LOSS:
+		return -EIO;
+	case GCIP_KCI_ERROR_UNAUTHENTICATED:
+		return -EPERM;
+	default:
+		dev_warn(dev, "Unknown KCI firmware error code: %d.\n", code);
+		return -EBADRQC;
+	}
 }

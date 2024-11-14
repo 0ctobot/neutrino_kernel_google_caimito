@@ -5,17 +5,23 @@
  * Copyright (C) 2023 Google LLC
  */
 
-#include <gcip/gcip-mailbox.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
+
+#include <gcip/gcip-fence-array.h>
+#include <gcip/gcip-mailbox.h>
 
 #include "edgetpu-ikv.h"
 #include "edgetpu-ikv-mailbox-ops.h"
 #include "edgetpu-iremap-pool.h"
 #include "edgetpu-mailbox.h"
+#include "edgetpu-vii-packet.h"
 #include "edgetpu.h"
 
-/* size of queue for in-kernel VII  mailbox */
+static unsigned int user_ikv_timeout;
+module_param(user_ikv_timeout, uint, 0660);
+
+/* size of queue for in-kernel VII mailbox */
 #define QUEUE_SIZE CIRC_QUEUE_MAX_SIZE(CIRC_QUEUE_WRAP_BIT)
 
 static void edgetpu_ikv_handle_irq(struct edgetpu_mailbox *mailbox)
@@ -85,17 +91,19 @@ static void edgetpu_ikv_free_queue(struct edgetpu_ikv *etikv, enum gcip_mailbox_
 int edgetpu_ikv_init(struct edgetpu_mailbox_manager *mgr, struct edgetpu_ikv *etikv)
 {
 	struct edgetpu_mailbox *mbx_hardware;
+	const unsigned int timeout = user_ikv_timeout ? user_ikv_timeout : IKV_TIMEOUT;
 	struct gcip_mailbox_args args = {
 		.dev = mgr->etdev->dev,
 		.queue_wrap_bit = CIRC_QUEUE_WRAP_BIT,
-		.cmd_elem_size = sizeof(struct edgetpu_vii_command),
-		.resp_elem_size = sizeof(struct edgetpu_vii_response),
-		.timeout = IKV_TIMEOUT,
+		.cmd_elem_size = edgetpu_vii_command_packet_size(mgr->etdev),
+		.resp_elem_size = edgetpu_vii_response_packet_size(mgr->etdev),
+		.timeout = timeout,
 		.ops = &ikv_mailbox_ops,
 		.data = etikv,
 	};
 	int ret;
 
+	etikv->command_timeout_ms = timeout;
 	etikv->etdev = mgr->etdev;
 	etikv->enabled = mgr->use_ikv;
 	if (!etikv->enabled)
@@ -219,12 +227,12 @@ struct send_cmd_args {
 	spinlock_t *pending_queue_lock;
 	struct dma_fence *fence;
 	struct gcip_mailbox_resp_awaiter *err_resp_awaiter;
-	struct edgetpu_vii_command cmd;
+	void *cmd;
 };
 
 static int do_send_cmd(struct send_cmd_args *args) {
 	struct edgetpu_ikv *etikv = args->etikv;
-	struct edgetpu_vii_command *cmd = &args->cmd;
+	void *cmd = args->cmd;
 	struct edgetpu_ikv_response *ikv_resp = args->ikv_resp;
 	struct list_head *pending_queue = args->pending_queue;
 	spinlock_t *pending_queue_lock = args->pending_queue_lock;
@@ -236,7 +244,7 @@ static int do_send_cmd(struct send_cmd_args *args) {
 	list_add_tail(&ikv_resp->list_entry, pending_queue);
 	spin_unlock_irqrestore(pending_queue_lock, flags);
 
-	awaiter = gcip_mailbox_put_cmd(etikv->mbx_protocol, cmd, &ikv_resp->resp, ikv_resp);
+	awaiter = gcip_mailbox_put_cmd(etikv->mbx_protocol, cmd, ikv_resp->resp, ikv_resp);
 	if (IS_ERR(awaiter)) {
 		ret = PTR_ERR(awaiter);
 		goto err;
@@ -248,7 +256,6 @@ err:
 	spin_lock_irqsave(pending_queue_lock, flags);
 	list_del(&ikv_resp->list_entry);
 	spin_unlock_irqrestore(pending_queue_lock, flags);
-	kfree(ikv_resp);
 	return ret;
 }
 
@@ -283,6 +290,14 @@ static int send_cmd_thread_fn(void *data)
 	/* If the wait was interrupted to kill the thread, then the command is abandoned. */
 	if (kthread_should_stop()) {
 		/* The command will never be sent at this point so its response must be released. */
+		kfree(args->err_resp_awaiter);
+		gcip_fence_array_put(args->ikv_resp->out_fence_array);
+		gcip_fence_array_put(args->ikv_resp->in_fence_array);
+		edgetpu_ikv_additional_info_free(args->ikv_resp->etikv->etdev,
+						 &args->ikv_resp->additional_info);
+		if (args->ikv_resp->release_callback)
+			args->ikv_resp->release_callback(args->ikv_resp->release_data);
+		kfree(args->ikv_resp->resp);
 		kfree(args->ikv_resp);
 		goto out_free_args;
 	}
@@ -292,7 +307,8 @@ static int send_cmd_thread_fn(void *data)
 		etdev_err(
 			args->etikv->etdev,
 			"Waiting for client_id=%u's command in-fence failed (ret=%d fence_status=%d)",
-			args->cmd.client_id, ret, fence_status);
+			edgetpu_vii_command_get_client_id(args->etikv->etdev, args->cmd), ret,
+			fence_status);
 		if (!ret) {
 			resp_code = VII_RESPONSE_CODE_KERNEL_FENCE_TIMEOUT;
 			resp_data = VII_IN_FENCE_TIMEOUT_MS;
@@ -309,7 +325,7 @@ static int send_cmd_thread_fn(void *data)
 	if (ret) {
 		etdev_err(args->etikv->etdev,
 			  "Failed to send command in fence thread for client_id=%u (ret=%d)",
-			  args->cmd.client_id, ret);
+			  edgetpu_vii_command_get_client_id(args->etikv->etdev, args->cmd), ret);
 		resp_code = VII_RESPONSE_CODE_KERNEL_ENQUEUE_FAILED;
 		resp_data = (u64)ret;
 		fence_status = -ECANCELED;
@@ -335,6 +351,7 @@ out_untrack:
 	edgetpu_device_group_untrack_fence_task(group_to_notify, current);
 
 out_free_args:
+	kfree(args->cmd);
 	kfree(args);
 	/*
 	 * This is the return status of the thread, and indicates that the thread is exiting
@@ -345,18 +362,34 @@ out_free_args:
 	return 0;
 }
 
-int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, struct edgetpu_vii_command *cmd,
-			 struct list_head *pending_queue, struct list_head *ready_queue,
-			 spinlock_t *queue_lock, struct edgetpu_device_group *group_to_notify,
-			 struct dma_fence *in_fence, struct dma_fence *out_fence)
+int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head *pending_queue,
+			 struct list_head *ready_queue, spinlock_t *queue_lock,
+			 struct edgetpu_device_group *group_to_notify,
+			 struct gcip_fence_array *in_fence_array,
+			 struct gcip_fence_array *out_fence_array,
+			 struct edgetpu_ikv_additional_info *additional_info,
+			 void (*release_callback)(void *), void *release_data)
 {
-	struct edgetpu_ikv_response *resp;
+	struct edgetpu_ikv_response *ikv_resp;
 	struct send_cmd_args *args;
+	dma_addr_t additional_info_daddr = 0;
+	ssize_t additional_info_size = 0;
 	int ret;
 	struct task_struct *wait_task;
+	struct dma_fence *in_fence;
 
 	if (!etikv->enabled)
 		return -ENODEV;
+
+	in_fence = gcip_fence_array_merge_ikf(in_fence_array);
+	if (IS_ERR(in_fence)) {
+		ret = PTR_ERR(in_fence);
+		etdev_err(etikv->etdev, "Failed to merge in-kernel fences, ret=%d", ret);
+		return ret;
+	}
+
+	if (in_fence)
+		dma_fence_enable_sw_signaling(in_fence);
 
 	if (in_fence && !group_to_notify) {
 		etdev_err(etikv->etdev,
@@ -364,37 +397,70 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, struct edgetpu_vii_command *
 		return -EINVAL;
 	}
 
-	resp = kzalloc(sizeof(*resp), GFP_KERNEL);
-	if (!resp)
+	ikv_resp = kzalloc(sizeof(*ikv_resp), GFP_KERNEL);
+	if (!ikv_resp)
 		return -ENOMEM;
+
+	ikv_resp->resp = kzalloc(edgetpu_vii_response_packet_size(etikv->etdev), GFP_KERNEL);
+	if (!ikv_resp->resp) {
+		ret = -ENOMEM;
+		goto err_free_ikv_resp;
+	}
 
 	args = kzalloc(sizeof(*args), GFP_KERNEL);
 	if (!args) {
 		ret = -ENOMEM;
-		goto err_free_resp;
+		goto err_free_ikv_resp_resp;
 	}
 
-	resp->dest_queue = ready_queue;
-	resp->dest_queue_lock = queue_lock;
-	resp->processed = false;
-	resp->client_seq = cmd->seq;
-	resp->group_to_notify = group_to_notify;
-	resp->out_fence = out_fence;
+	args->cmd = kzalloc(edgetpu_vii_command_packet_size(etikv->etdev), GFP_KERNEL);
+	if (!args->cmd) {
+		ret = -ENOMEM;
+		goto err_free_args;
+	}
+
+	if (additional_info) {
+		additional_info_size = edgetpu_ikv_additional_info_alloc_and_copy(
+			etikv->etdev, additional_info, &ikv_resp->additional_info);
+		if (additional_info_size < 0) {
+			ret = additional_info_size;
+			goto err_free_args_cmd;
+		}
+		additional_info_daddr = ikv_resp->additional_info.dma_addr;
+	}
+
+	edgetpu_vii_command_set_additional_info(etikv->etdev, cmd, additional_info_daddr,
+						additional_info_size);
+
+	ikv_resp->etikv = etikv;
+	ikv_resp->dest_queue = ready_queue;
+	ikv_resp->dest_queue_lock = queue_lock;
+	ikv_resp->processed = false;
+	ikv_resp->client_seq = edgetpu_vii_command_get_seq_number(etikv->etdev, cmd);
+	ikv_resp->group_to_notify = group_to_notify;
+	ikv_resp->in_fence_array = gcip_fence_array_get(in_fence_array);
+	ikv_resp->out_fence_array = gcip_fence_array_get(out_fence_array);
+	ikv_resp->release_callback = release_callback;
+	ikv_resp->release_data = release_data;
 
 	args->etikv = etikv;
-	args->ikv_resp = resp;
+	args->ikv_resp = ikv_resp;
 	args->pending_queue = pending_queue;
 	args->pending_queue_lock = queue_lock;
 	args->fence = in_fence;
-	memcpy(&args->cmd, cmd, sizeof(*cmd));
+	memcpy(args->cmd, cmd, edgetpu_vii_command_packet_size(etikv->etdev));
 
 	/* Send the command immediately if there's no fence to wait on. */
 	if (!in_fence || dma_fence_is_signaled(in_fence)) {
 		if (in_fence)
 			dma_fence_put(in_fence);
 		ret = do_send_cmd(args);
+		if (ret)
+			goto err_put_out_fence_array;
+		/* If the command was successfully sent, args is no longer needed. */
+		kfree(args->cmd);
 		kfree(args);
-		return ret;
+		return 0;
 	}
 
 	/*
@@ -409,12 +475,13 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, struct edgetpu_vii_command *
 	args->err_resp_awaiter = kzalloc(sizeof(*args->err_resp_awaiter), GFP_KERNEL);
 	if (!args->err_resp_awaiter) {
 		ret = -ENOMEM;
-		goto err_free_args;
+		goto err_put_out_fence_array;
 	}
 
 	wait_task = kthread_create(send_cmd_thread_fn, args,
-				   "edgetpu_ikv_send_cmd_client%u_seq%llu", cmd->client_id,
-				   cmd->seq);
+				   "edgetpu_ikv_send_cmd_client%u_seq%llu",
+				   edgetpu_vii_command_get_client_id(etikv->etdev, cmd),
+				   edgetpu_vii_command_get_seq_number(etikv->etdev, cmd));
 	if (IS_ERR(wait_task)) {
 		ret = PTR_ERR(wait_task);
 		goto err_free_awaiter;
@@ -432,9 +499,22 @@ err_stop_thread:
 	kthread_stop(wait_task);
 err_free_awaiter:
 	kfree(args->err_resp_awaiter);
+err_put_out_fence_array:
+	gcip_fence_array_put(out_fence_array);
+	gcip_fence_array_put(in_fence_array);
+	edgetpu_ikv_additional_info_free(etikv->etdev, &ikv_resp->additional_info);
+err_free_args_cmd:
+	kfree(args->cmd);
 err_free_args:
 	kfree(args);
-err_free_resp:
-	kfree(resp);
+err_free_ikv_resp_resp:
+	kfree(ikv_resp->resp);
+err_free_ikv_resp:
+	kfree(ikv_resp);
 	return ret;
+}
+
+void edgetpu_ikv_flush_responses(struct edgetpu_ikv *etikv)
+{
+	gcip_mailbox_consume_responses(etikv->mbx_protocol);
 }

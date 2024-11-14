@@ -34,5 +34,4 @@ config EDGETPU_TELEMETRY_TRACE
 	  It's fine to have this enabled even the firmware doesn't send tracing
 	  events.
 
-
 endmenu

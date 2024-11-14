@@ -22,6 +22,10 @@
 #define EDGETPU_MMAP_TRACE_BUFFER_OFFSET 0x1C00000
 #define EDGETPU_MMAP_LOG1_BUFFER_OFFSET 0x1D00000
 #define EDGETPU_MMAP_TRACE1_BUFFER_OFFSET 0x1E00000
+#define EDGETPU_MMAP_LOG2_BUFFER_OFFSET 0x1F00000
+#define EDGETPU_MMAP_TRACE2_BUFFER_OFFSET 0x2000000
+#define EDGETPU_MMAP_LOG3_BUFFER_OFFSET 0x2100000
+#define EDGETPU_MMAP_TRACE3_BUFFER_OFFSET 0x2200000
 
 /* EdgeTPU map flag macros */
 
@@ -298,8 +302,6 @@ struct edgetpu_map_dmabuf_ioctl {
 	__u64 size;
 	/*
 	 * Returned TPU VA.
-	 *
-	 * The address is page-aligned.
 	 */
 	__u64 device_address;
 	/* A dma-buf FD. */
@@ -324,7 +326,6 @@ struct edgetpu_map_dmabuf_ioctl {
  *
  * On success, @device_address is set and the syscall returns zero.
  *
- * EINVAL: If @offset is not page-aligned.
  * EINVAL: (for EDGETPU_MAP_NONMIRRORED case) If @die_index exceeds the number
  *         of clients in the group.
  * EINVAL: If the target device group is disbanded.
@@ -661,7 +662,13 @@ struct edgetpu_vii_command {
 	 * Usage and values agreed upon by firmware/runtime and are opaque to the Kernel driver.
 	 */
 	__u8 cluster_ids_bitset;
-	__u8 reserved_2[2];
+	/*
+	 * Indicates if the command should be executed atomically with regards to
+	 * other commands from the same client at the same priority level and QoS
+	 * class.
+	 */
+	__u8 atomic;
+	__u8 reserved_2[1];
 } __attribute__((packed));
 
 #define EDGETPU_VII_COMMAND_MAX_NUM_FENCES 64
@@ -670,7 +677,11 @@ struct edgetpu_vii_command_ioctl {
 	struct edgetpu_vii_command command;
 	/*
 	 * User-space pointer to an array of file descriptors for dma_fences that this command
-	 * should wait on before being sent.
+	 * will wait on before being sent.
+	 *
+	 * - The type of fences cannot be mixed. (i.e., the user can't pass DMA fences and inter-IP
+	 * fences together in one in-fence array.)
+	 * - `dma_fence_array` is acceptable.
 	 */
 	__u64 in_fence_array;
 	/*
@@ -679,8 +690,11 @@ struct edgetpu_vii_command_ioctl {
 	 */
 	__u32 in_fence_count;
 	/*
-	 * User-space pointer to an array of file descriptors for dma_fences which should be
-	 * sigaled when this command is completed or sent an error if the command fails.
+	 * User-space pointer to an array of file descriptors for dma_fences to be signaled when
+	 * this command is completed or sent an error if the command fails.
+	 *
+	 * - The type of fences can be mixed.
+	 * - `dma_fence_array` is not acceptable unlike in-fence.
 	 */
 	__u64 out_fence_array;
 	/*
@@ -724,12 +738,12 @@ struct edgetpu_vii_command_ioctl {
 
 /* VII response structure as sent by firmware and consumed from the mailbox response queue. */
 struct edgetpu_vii_response {
-	/* Sequence number. Should match the corresponding command. */
+	/* Sequence number. Will match the corresponding command. */
 	__u64 seq;
 	/*
 	 * The error code of the response, if any.
 	 * Values > VII_RESPONSE_CODE_KERNEL_BASE indicate an error reported by the driver that
-	 * prevented the command from ever being completed by firmware.
+	 * prevented the command from being completed by firmware.
 	 */
 	__u16 code;
 	/* The cluster index which handled the command. -1 if the command was not handled. */
@@ -744,5 +758,75 @@ struct edgetpu_vii_response_ioctl {
 };
 #define EDGETPU_VII_RESPONSE \
 	_IOWR(EDGETPU_IOCTL_BASE, 36, struct edgetpu_vii_response_ioctl)
+
+struct edgetpu_vii_litebuf_command_ioctl {
+	/* User-space address for the RuntimeCommand litebuf. */
+	__u64 litebuf_address;
+	/* Size of the RuntimeCommand litebuf in bytes. */
+	__u32 litebuf_size;
+	/*
+	 * Sequence number.
+	 * When this command's response is returned by EDGETPU_VII_LITEBUF_RESPONSE, the response's
+	 * `seq` field will match whatever value is passed here.
+	 */
+	__u64 seq;
+	/*
+	 * User-space pointer to an array of file descriptors for dma_fences that this command
+	 * will wait on before being sent.
+	 *
+	 * - The type of fences cannot be mixed. (i.e., the user can't pass DMA fences and inter-IP
+	 * fences together in one in-fence array.)
+	 * - `dma_fence_array` is acceptable.
+	 */
+	__u64 in_fence_array;
+	/*
+	 * Number of elements in `in_fence_array`.
+	 * If > EDGETPU_VII_COMMAND_MAX_NUM_FENCES, the ioctl will fail with errno == EINVAL.
+	 */
+	__u32 in_fence_count;
+	/*
+	 * User-space pointer to an array of file descriptors for dma_fences to be signaled when
+	 * this command is completed or sent an error if the command fails.
+	 *
+	 * - The type of fences can be mixed.
+	 * - `dma_fence_array` is not acceptable unlike in-fence.
+	 */
+	__u64 out_fence_array;
+	/*
+	 * Number of elements in `out_fence_array`.
+	 * If > EDGETPU_VII_COMMAND_MAX_NUM_FENCES, the ioctl will fail with errno == EINVAL.
+	 */
+	__u32 out_fence_count;
+	__u8 reserved[4];
+};
+/*
+ * errno will be set to -EOPNOTSUPP if in-Kernel VII is not enabled or firmware does not support
+ * litebuf-based VII
+ */
+#define EDGETPU_VII_LITEBUF_COMMAND \
+	_IOWR(EDGETPU_IOCTL_BASE, 37, struct edgetpu_vii_litebuf_command_ioctl)
+
+struct edgetpu_vii_litebuf_response_ioctl {
+	/*
+	 * User-space pointer for response payload to be copied to.
+	 * The buffer pointed to must be at least 48 bytes.
+	 */
+	__u64 litebuf_address;
+	/* Sequence number. Will match the corresponding command. */
+	__u64 seq;
+	/*
+	 * The error code of the response, if any.
+	 * Values > VII_RESPONSE_CODE_KERNEL_BASE indicate an error reported by the driver that
+	 * prevented the command from being completed by firmware.
+	 */
+	__u16 code;
+	__u8 reserved[6];
+};
+/*
+ * errno will be set to -EOPNOTSUPP if in-Kernel VII is not enabled or firmware does not support
+ * litebuf-based VII
+ */
+#define EDGETPU_VII_LITEBUF_RESPONSE \
+	_IOWR(EDGETPU_IOCTL_BASE, 38, struct edgetpu_vii_litebuf_response_ioctl)
 
 #endif /* __EDGETPU_H__ */

@@ -5,12 +5,36 @@
  *
  * Copyright (C) 2020 Google, Inc.
  */
-#ifndef __EDGETPU_DEBUG_DUMP_H__
-#define __EDGETPU_DEBUG_DUMP_H__
+#ifndef __EDGETPU_DEBUG_H__
+#define __EDGETPU_DEBUG_H__
 
+#include <linux/completion.h>
+#include <linux/scatterlist.h>
 #include <linux/seq_file.h>
+#include <linux/types.h>
 
-#include "edgetpu-internal.h"
+struct edgetpu_dev;
+
+/* Firmware debug service buffer IOVA and size. */
+/* TODO(b/333625284): reserve firmware debug buffer IOVA range from DMA window used by DMA API */
+#define FW_DEBUG_BUFFER_IOVA	0x18000000
+#define FW_DEBUG_BUFFER_SIZE	(13 * SZ_1M)
+
+/* Firmware debug service command/response memory. */
+struct edgetpu_fw_debug_mem {
+	/* Scatter-gather table for the non-contiguous buffer. */
+	struct sg_table *sgt;
+	/* Kernel VA of buffer start. */
+	void *vaddr;
+	/* If true, data in buffer is a fw response, will discard if not read before write. */
+	bool resp_data_ready;
+	/* Completion for firmware returned response data ready for reading. */
+	struct completion rd_data_ready;
+	/* Length of firmware buffer data ready for reading or writing. */
+	size_t data_len;
+	/* If true FW responded to last cmd saying response packet will be async via RKCI. */
+	bool async_resp_pending;
+};
 
 #define DEBUG_DUMP_HOST_CONTRACT_VERSION 3
 
@@ -23,9 +47,6 @@ enum edgetpu_dump_type_bit_position {
 	DUMP_TYPE_CSRS_BIT = 5,
 
 	DUMP_TYPE_KERNEL_ETDEV_BIT = 32,
-	DUMP_TYPE_KERNEL_CLIENTS_BIT = 33,
-	DUMP_TYPE_KERNEL_GROUPS_BIT = 34,
-	DUMP_TYPE_KERNEL_MAPPINGS_BIT = 35,
 
 	DUMP_TYPE_MAX_BIT = 63
 };
@@ -75,50 +96,30 @@ struct edgetpu_debug_dump {
 	u64 dump_segments_num;	/* number of dump segments populated */
 };
 
-struct edgetpu_debug_dump_setup {
-	/* types of dumps requested by host */
-	u64 type;
-	u64 dump_mem_size;	/* total size of memory allocated to dump */
-	u64 reserved[2];
+struct mobile_sscd_info {
+	void *pdata; /* SSCD platform data */
+	void *dev; /* SSCD platform device */
 };
 
 /*
- * Allocate and initialize debug dump memory.
+ * Handle FW response data available. Data has been written to debug_mem by firmware.
+ * @data_len is the number of bytes of data written.
  */
-int edgetpu_debug_dump_init(struct edgetpu_dev *etdev);
+void edgetpu_fw_debug_resp_ready(struct edgetpu_dev *etdev, u32 data_len);
 
-/*
- * Free debug dump memory.
- */
-void edgetpu_debug_dump_exit(struct edgetpu_dev *etdev);
-
-/* Dump the content according to @dump_setup and @dump_reason. */
-void edgetpu_debug_dump(struct edgetpu_dev *etdev, struct edgetpu_debug_dump_setup *dump_setup,
-			u64 dump_reason);
-
-/*
- * Send KCI request to get fw debug dump segments.
- *
- * This function can be called with @type set to 0 to simply set the dump buffer address and size
- * in the FW without dumping any segments.
- *
- * The caller must ensure that the device is powered on.
- */
-int edgetpu_get_debug_dump(struct edgetpu_dev *etdev,
-			   u64 type);
-
-/*
- * KCI interrupt handler to handle any debug information dumped by firmware.
- */
-void edgetpu_debug_dump_resp_handler(struct edgetpu_dev *etdev);
+/* Generate a debug dump for reason @dump_reason. */
+void edgetpu_debug_dump(struct edgetpu_dev *etdev, u64 dump_reason);
 
 /* Dump the external debug TPU CPU registers. */
 void edgetpu_debug_dump_cpu_regs(struct edgetpu_dev *etdev);
 
-/* Workqueue worker for debug dump generation. */
-void edgetpu_debug_dump_work(struct work_struct *work);
-
 /* debugfs mappings dump */
 void edgetpu_debug_dump_mappings_show(struct edgetpu_dev *etdev, struct seq_file *s);
 
-#endif /* EDGETPU_DEBUG_DUMP_H_ */
+/* Init debug features including debug dump. */
+void edgetpu_debug_init(struct edgetpu_dev *etdev);
+
+/* De-init debug features including debug dump. */
+void edgetpu_debug_exit(struct edgetpu_dev *etdev);
+
+#endif /* EDGETPU_DEBUG_H_ */

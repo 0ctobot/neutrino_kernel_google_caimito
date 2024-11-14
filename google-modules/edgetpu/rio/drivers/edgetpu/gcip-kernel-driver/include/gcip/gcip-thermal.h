@@ -15,7 +15,7 @@
 
 #define GCIP_THERMAL_TABLE_SIZE_NAME "gcip-dvfs-table-size"
 #define GCIP_THERMAL_TABLE_NAME "gcip-dvfs-table"
-#define GCIP_THERMAL_MAX_NUM_STATES 10
+#define GCIP_THERMAL_MAX_NUM_STATES 16
 
 enum gcip_thermal_voter {
 	GCIP_THERMAL_COOLING_DEVICE,

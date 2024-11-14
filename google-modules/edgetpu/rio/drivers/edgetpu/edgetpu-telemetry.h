@@ -31,9 +31,7 @@ struct edgetpu_telemetry_ctx {
  *
  * Returns 0 on success, or a negative errno on error.
  */
-int edgetpu_telemetry_init(struct edgetpu_dev *etdev,
-			   struct edgetpu_coherent_mem *log_mem,
-			   struct edgetpu_coherent_mem *trace_mem);
+int edgetpu_telemetry_init(struct edgetpu_dev *etdev);
 
 /*
  * Disable the telemetry if enabled, release resources allocated in init().

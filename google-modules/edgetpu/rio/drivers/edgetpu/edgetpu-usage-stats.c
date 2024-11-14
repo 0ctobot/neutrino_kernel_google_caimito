@@ -15,6 +15,7 @@
 #include "edgetpu-config.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-kci.h"
+#include "edgetpu-pm.h"
 #include "edgetpu-usage-stats.h"
 
 /*
@@ -41,7 +42,7 @@ static ssize_t tpu_usage_show(struct device *dev, struct gcip_usage_stats_attr *
 		mutex_unlock(&ustats->dvfs_freqs_lock);
 		for (i = 0; i < EDGETPU_NUM_STATES; i++)
 			ret += scnprintf(buf + ret, PAGE_SIZE - ret, " %d",
-					 edgetpu_states_display[i]);
+					 edgetpu_active_states[i]);
 	} else {
 		for (i = 0; i < ustats->dvfs_freqs_num; i++)
 			ret += scnprintf(buf + ret, PAGE_SIZE - ret, " %d", ustats->dvfs_freqs[i]);
@@ -209,11 +210,11 @@ static int get_default_dvfs_freqs_num(void *data)
 	return EDGETPU_NUM_STATES;
 }
 
-static int get_default_dvfs_freq(int idx, void *data)
+static unsigned int get_default_dvfs_freq(int idx, void *data)
 {
 	if (idx >= EDGETPU_NUM_STATES)
 		return 0;
-	return edgetpu_states_display[idx];
+	return edgetpu_active_states[idx];
 }
 
 static const struct gcip_usage_stats_ops ustats_ops = {

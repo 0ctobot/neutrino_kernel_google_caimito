@@ -15,8 +15,11 @@
 
 /* SoC-specific calls for the following functions. */
 
-/* Probe-time init */
-int edgetpu_soc_init(struct edgetpu_dev *etdev);
+/* Probe-time early stage init, before power on. */
+int edgetpu_soc_early_init(struct edgetpu_dev *etdev);
+
+/* Probe-time after power on init. */
+int edgetpu_soc_post_power_on_init(struct edgetpu_dev *etdev);
 
 /* Module remove-time exit. */
 void edgetpu_soc_exit(struct edgetpu_dev *etdev);
@@ -42,6 +45,15 @@ int edgetpu_soc_pm_init(struct edgetpu_dev *etdev);
 
 /* De-init SoC PM system */
 void edgetpu_soc_pm_exit(struct edgetpu_dev *etdev);
+
+/* Handle bringing control cluster LPM up. */
+int edgetpu_soc_pm_lpm_up(struct edgetpu_dev *etdev);
+
+/* Wait for control cluster LPM down. */
+void edgetpu_soc_pm_lpm_down(struct edgetpu_dev *etdev);
+
+/* Called after firmware is started on power up. */
+void edgetpu_soc_pm_post_fw_start(struct edgetpu_dev *etdev);
 
 /*
  * Handle Reverse KCI commands for SoC family.

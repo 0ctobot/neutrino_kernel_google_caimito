@@ -21,13 +21,7 @@ enum edgetpu_pwr_state {
 };
 
 #define MIN_ACTIVE_STATE TPU_ACTIVE_MIN
-
-#define EDGETPU_NUM_STATES 7
-
-extern enum edgetpu_pwr_state edgetpu_active_states[];
-
-extern uint32_t *edgetpu_states_display;
-
 #define TPU_POLICY_MAX	TPU_ACTIVE_NOM
+#define EDGETPU_NUM_STATES 7
 
 #endif /* __RIO_CONFIG_PWR_STATE_H__ */

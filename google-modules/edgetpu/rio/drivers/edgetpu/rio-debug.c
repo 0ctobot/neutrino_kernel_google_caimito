@@ -1,2 +1,3 @@
 // SPDX-License-Identifier: GPL-2.0
-#include "edgetpu-wakelock.c"
+
+#include "edgetpu-debug.c"

@@ -9,9 +9,11 @@
 #include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/mutex.h>
-#include <linux/slab.h>
+#include <linux/ktime.h>
+#include <linux/string.h>
+#include <linux/time64.h>
+#include <linux/timekeeping.h>
 
-#include "edgetpu-config.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-wakelock.h"
 
@@ -43,25 +45,13 @@ static bool wakelock_warn_non_zero_event(struct edgetpu_wakelock *wakelock)
 	return ret;
 }
 
-struct edgetpu_wakelock *edgetpu_wakelock_alloc(struct edgetpu_dev *etdev)
+void edgetpu_wakelock_init(struct edgetpu_dev *etdev, struct edgetpu_wakelock *wakelock)
 {
-	struct edgetpu_wakelock *wakelock =
-		kzalloc(sizeof(*wakelock), GFP_KERNEL);
-
-	if (!wakelock)
-		return NULL;
+	memset(wakelock, 0, sizeof(*wakelock));
 	wakelock->etdev = etdev;
 	mutex_init(&wakelock->lock);
 	/* Initialize client wakelock state to "released" */
 	wakelock->req_count = 0;
-	return wakelock;
-}
-
-void edgetpu_wakelock_free(struct edgetpu_wakelock *wakelock)
-{
-	if (IS_ERR_OR_NULL(wakelock))
-		return;
-	kfree(wakelock);
 }
 
 bool edgetpu_wakelock_inc_event_locked(struct edgetpu_wakelock *wakelock,
@@ -147,22 +137,31 @@ int edgetpu_wakelock_acquire(struct edgetpu_wakelock *wakelock)
 		wakelock->req_count--;
 		return -EOVERFLOW;
 	}
+	if (!ret)
+		ktime_get_ts64(&wakelock->current_acquire_timestamp);
 	return ret;
 }
 
 int edgetpu_wakelock_release(struct edgetpu_wakelock *wakelock)
 {
+	struct timespec64 curr;
+
 	if (!wakelock->req_count) {
 		etdev_warn(wakelock->etdev, "invalid wakelock release");
 		return -EINVAL;
 	}
 	/* only need to check events when this is the last reference */
-	if (wakelock->req_count == 1 &&
-	    wakelock_warn_non_zero_event(wakelock)) {
-		etdev_warn(
-			wakelock->etdev,
-			"detected non-zero events, refusing wakelock release");
-		return -EAGAIN;
+	if (wakelock->req_count == 1) {
+		if (wakelock_warn_non_zero_event(wakelock)) {
+			etdev_warn(
+				   wakelock->etdev,
+				   "detected non-zero events, refusing wakelock release");
+			return -EAGAIN;
+		}
+
+		ktime_get_ts64(&curr);
+		curr = timespec64_sub(curr, wakelock->current_acquire_timestamp);
+		wakelock->total_acquired_time = timespec64_add(wakelock->total_acquired_time, curr);
 	}
 
 	return --wakelock->req_count;

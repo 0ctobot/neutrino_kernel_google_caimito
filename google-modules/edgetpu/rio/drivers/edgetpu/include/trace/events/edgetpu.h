@@ -294,6 +294,97 @@ TRACE_EVENT(edgetpu_vii_response_end,
 		  __entry->pid, __entry->tgid, __entry->seq, __entry->retval, __entry->ret)
 );
 
+TRACE_EVENT(edgetpu_vii_litebuf_command_start,
+
+	TP_PROTO(struct edgetpu_client *client),
+
+	TP_ARGS(client),
+
+	TP_STRUCT__entry(
+		__field(pid_t, pid)
+		__field(pid_t, tgid)
+	),
+
+	TP_fast_assign(
+		__entry->pid = client->pid;
+		__entry->tgid = client->tgid;
+	),
+
+	TP_printk("client pid = %u, tgid = %u", __entry->pid, __entry->tgid)
+);
+
+TRACE_EVENT(edgetpu_vii_litebuf_command_end,
+
+	TP_PROTO(struct edgetpu_client *client, struct edgetpu_vii_litebuf_command_ioctl *ibuf,
+		 int ret),
+
+	TP_ARGS(client, ibuf, ret),
+
+	TP_STRUCT__entry(
+		__field(pid_t, pid)
+		__field(pid_t, tgid)
+		__field(__u64, seq)
+		__field(int, ret)
+	),
+
+	TP_fast_assign(
+		__entry->pid = client->pid;
+		__entry->tgid = client->tgid;
+		__entry->seq = ibuf->seq;
+		__entry->ret = ret;
+	),
+
+	TP_printk("client pid = %u, tgid = %u, seq = %llu (ret = %d)",
+		  __entry->pid, __entry->tgid, __entry->seq, __entry->ret)
+
+);
+
+TRACE_EVENT(edgetpu_vii_litebuf_response_start,
+
+	TP_PROTO(struct edgetpu_client *client),
+
+	TP_ARGS(client),
+
+	TP_STRUCT__entry(
+		__field(pid_t, pid)
+		__field(pid_t, tgid)
+	),
+
+	TP_fast_assign(
+		__entry->pid = client->pid;
+		__entry->tgid = client->tgid;
+	),
+
+	TP_printk("client pid = %u, tgid = %u", __entry->pid, __entry->tgid)
+);
+
+TRACE_EVENT(edgetpu_vii_litebuf_response_end,
+
+	TP_PROTO(struct edgetpu_client *client, struct edgetpu_vii_litebuf_response_ioctl *ibuf,
+		 int ret),
+
+	TP_ARGS(client, ibuf, ret),
+
+	TP_STRUCT__entry(
+		__field(pid_t, pid)
+		__field(pid_t, tgid)
+		__field(__u64, seq)
+		__field(__u16, code)
+		__field(int, ret)
+	),
+
+	TP_fast_assign(
+		__entry->pid = client->pid;
+		__entry->tgid = client->tgid;
+		__entry->seq = ibuf->seq;
+		__entry->code = ibuf->code;
+		__entry->ret = ret;
+	),
+
+	TP_printk("client pid = %u, tgid = %u, seq = %llu, code = 0x%hx (ret = %d)",
+		  __entry->pid, __entry->tgid, __entry->seq, __entry->code, __entry->ret)
+);
+
 #endif /* _TRACE_EDGETPU_H */
 
 /* This part must be outside protection */

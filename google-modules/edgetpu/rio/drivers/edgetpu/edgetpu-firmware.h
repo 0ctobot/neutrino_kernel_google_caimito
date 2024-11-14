@@ -2,151 +2,94 @@
 /*
  * EdgeTPU firmware loader.
  *
- * Copyright (C) 2020 Google, Inc.
+ * Copyright (C) 2020-2022,2024 Google, Inc.
  */
 #ifndef __EDGETPU_FIRMWARE_H__
 #define __EDGETPU_FIRMWARE_H__
 
 #include <linux/seq_file.h>
+#include <linux/sizes.h>
 
 #include <gcip/gcip-firmware.h>
 #include <gcip/gcip-image-config.h>
 
 #include "edgetpu-internal.h"
+#include "edgetpu-mmu.h"
 
-enum edgetpu_firmware_flags {
-	/* Image is default firmware for the chip */
-	FW_DEFAULT = 0x1,
+#define MAX_IOMMU_MAPPINGS 23
+#define MAX_NS_IOMMU_MAPPINGS 5
+
+#define EDGETPU_FW_HEADER_SIZE SZ_4K
+
+struct edgetpu_image_sub_header_common {
+	int Magic;
+	int Generation;
+	int RollbackInfo;
+	int Length;
+	char Flags[16];
 };
 
-struct edgetpu_firmware_private;
-struct gcip_fault_injection;
-
-struct edgetpu_firmware {
-	struct edgetpu_dev *etdev;
-	struct edgetpu_firmware_private *p;
-	struct gcip_fault_inject *fault_inject;
+struct edgetpu_image_sub_header_gen1 {
+	char BodyHash[32];
+	char ChipId[32];
+	char AuthConfig[256];
+	struct gcip_image_config ImageConfig;
 };
 
-struct edgetpu_firmware_buffer {
-	/*
-	 * fields set by alloc_buffer() handler for using custom allocated
-	 * buffer
-	 *
-	 * edgetpu_firmware framework also updates these fields when using
-	 * shared firmware buffer.
-	 */
-	/*
-	 * kernel VA, leave NULL to indicate edgetpu_firmware using shared
-	 * firmware buffer.
-	 */
-	void *vaddr;
-	size_t alloc_size;	/* allocated size of @vaddr in bytes */
-	size_t used_size_align;	/* firmware size alignment in bytes */
-
-	/* fields set by setup_buffer() handler */
-	dma_addr_t dma_addr;	/* DMA handle for downstream IOMMU, if any */
-
-	/* fields set by prepare_run() handler */
-
-	/* fields modifiable by handlers */
-	enum edgetpu_firmware_flags flags;
-
-	/*
-	 * fields set by edgetpu_firmware, don't modify the following fields in
-	 * the handlers
-	 */
-	size_t used_size;	/* actual size of firmware image */
-	const char *name;	/* the name of this firmware */
+struct edgetpu_image_sub_header_gen2 {
+	char BodyHash[64];
+	char ChipId[32];
+	char AuthConfig[256];
+	struct gcip_image_config ImageConfig;
 };
+
+struct edgetpu_image_header {
+	char sig[512];
+	char pub[512];
+	struct {
+		struct edgetpu_image_sub_header_common common;
+		union {
+			struct edgetpu_image_sub_header_gen1 gen1;
+			struct edgetpu_image_sub_header_gen2 gen2;
+		};
+	};
+};
+
+/* Value of Magic field above: 'TPUF' as a 32-bit LE int */
+#define EDGETPU_FW_MAGIC	0x46555054
 
 /*
- * Descriptor for loaded firmware, either in shared buffer mode or carveout mode
- * (non-shared, custom allocated memory).
+ * Instruction remap registers make carveout memory appear at address
+ * 0x10000000 from the TPU CPU perspective
  */
-struct edgetpu_firmware_desc {
-	/*
-	 * Mode independent buffer information. This is either passed into or
-	 * updated by handlers.
-	 */
-	struct edgetpu_firmware_buffer buf;
-	/*
-	 * Shared firmware buffer when we're using shared buffer mode. This
-	 * pointer to keep and release the reference count on unloading this
-	 * shared firmware buffer.
-	 *
-	 * This is NULL when firmware is loaded in carveout mode.
-	 */
-	struct edgetpu_shared_fw_buffer *shared_buf;
-};
+#define EDGETPU_INSTRUCTION_REMAP_BASE		0x10000000
 
-struct edgetpu_firmware_chip_data {
-	/* Name of default firmware image for this chip. */
-	const char *default_firmware_name;
+/* Default size limit of the area in remapped DRAM reserved for firmware code and internal data. */
+#define EDGETPU_DEFAULT_FW_LIMIT 0x100000
 
-	/*
-	 * Chip handlers called by common firmware processing.
-	 * Each handler returns 0 to indicate success, non-zero value to
-	 * indicate error.
-	 */
-	int (*after_create)(struct edgetpu_firmware *et_fw);
-	/*
-	 * Release resource used in platform specific implementation,
-	 * including stopping firmware.
-	 */
-	void (*before_destroy)(struct edgetpu_firmware *et_fw);
-	/*
-	 * Allocate a buffer for loading firmware and filling out the
-	 * information into @fw_buf before running. See comments of
-	 * edgetpu_firmware_buffer for the details of each field.
-	 *
-	 * This is invoked for each run.
-	 */
-	int (*alloc_buffer)(struct edgetpu_firmware *et_fw,
-			    struct edgetpu_firmware_buffer *fw_buf);
-	/*
-	 * Free the buffer allocated by alloc_buffer() handler after running.
-	 * See comments of edgetpu_firmware_buffer for the details of each
-	 * field.
-	 *
-	 * This is invoked for each run.
-	 */
-	void (*free_buffer)(struct edgetpu_firmware *et_fw,
-			    struct edgetpu_firmware_buffer *fw_buf);
-	/*
-	 * Setup for an allocated host buffer, mainly for dma mapping,
-	 * for loading firmware and filling out the information into
-	 * @fw_buf before running. See comments of
-	 * edgetpu_firmware_buffer for the details of each
-	 * field.
-	 *
-	 * This is invoked for each run.
-	 */
-	int (*setup_buffer)(struct edgetpu_firmware *et_fw,
-			    struct edgetpu_firmware_buffer *fw_buf);
-	/*
-	 * Platform-specific handling after firmware loaded, before running
-	 * the firmware, such as validating the firmware or resetting the
-	 * processor.
-	 */
-	int (*prepare_run)(struct edgetpu_firmware *et_fw,
-			   struct edgetpu_firmware_buffer *fw_buf);
+/* Default size of remapped DRAM data region. */
+#define EDGETPU_DEFAULT_REMAPPED_DATA_SIZE 0x100000
 
-	/*
-	 * Optional platform-specific handler to restart an already loaded
-	 * firmware.
-	 */
-	int (*restart)(struct edgetpu_firmware *et_fw, bool force_reset);
-};
+/*
+ * Maximum size limit of the area in remapped DRAM reserved for firmware code and internal data.
+ * The firmware image config may modify the split between code and data, but the total size of both
+ * must be respected.
+ */
+#define EDGETPU_MAX_FW_LIMIT (EDGETPU_DEFAULT_FW_LIMIT + EDGETPU_DEFAULT_REMAPPED_DATA_SIZE)
+
+/*
+ * Default address from which the TPU CPU can access data in the remapped region.
+ * Data in remapped DRAM starts after firmware code and internal data.
+ */
+#define EDGETPU_DEFAULT_REMAPPED_DATA_ADDR                                                         \
+	(EDGETPU_INSTRUCTION_REMAP_BASE + EDGETPU_DEFAULT_FW_LIMIT)
 
 /*
  * Load and run firmware.
  * @name: the name passed into underlying request_firmware API
- * @flags: edgetpu_firmware_flags for the image
  * Used internally by the sysfs load interface and by unit tests.
  */
-int edgetpu_firmware_run(struct edgetpu_dev *etdev, const char *name,
-			 enum edgetpu_firmware_flags flags);
+int edgetpu_firmware_run(struct edgetpu_dev *etdev, const char *name);
 
 /* Load and run the default firmware name for the chip. */
 int edgetpu_firmware_run_default(struct edgetpu_dev *etdev);
@@ -154,21 +97,18 @@ int edgetpu_firmware_run_default(struct edgetpu_dev *etdev);
 /* Runs default firmware for the chip, caller holds FW/PM locks */
 int edgetpu_firmware_run_default_locked(struct edgetpu_dev *etdev);
 
-/*
- * Private data set and used by handlers. It is expected to
- * allocate and set the data on after_create() and release on
- * before_destroy().
- */
-void edgetpu_firmware_set_data(struct edgetpu_firmware *et_fw, void *data);
-void *edgetpu_firmware_get_data(struct edgetpu_firmware *et_fw);
-
 void edgetpu_firmware_set_img_cfg_parser(struct edgetpu_firmware *et_fw,
 					 struct gcip_image_config_parser *parser);
 struct gcip_image_config_parser *
 edgetpu_firmware_get_img_cfg_parser(struct edgetpu_firmware *et_fw);
 
-int edgetpu_firmware_create(struct edgetpu_dev *etdev,
-			    const struct edgetpu_firmware_chip_data *chip_fw);
+/*
+ * Creates the firmware loader for device.
+ * Must be called after the firmware region is setup via edgetpu_firmware_setup_fw_region.
+ * @etdev: the device for which to create the firmware loader.
+ */
+int edgetpu_firmware_create(struct edgetpu_dev *etdev);
+
 void edgetpu_firmware_destroy(struct edgetpu_dev *etdev);
 void edgetpu_firmware_mappings_show(struct edgetpu_dev *etdev,
 				    struct seq_file *s);
@@ -218,5 +158,58 @@ uint64_t edgetpu_firmware_get_build_time(struct edgetpu_firmware *et_fw);
 
 /* Returns the flavor of the firmware image. */
 enum gcip_fw_flavor edgetpu_firmware_get_flavor(struct edgetpu_dev *etdev);
+
+/* Establish "shared" mappings from the firmware image config at domain attach time. */
+void edgetpu_firmware_shared_mappings_context_map(struct edgetpu_dev *etdev,
+						  struct edgetpu_iommu_domain *etdomain);
+
+/* Unmap "shared" mappings from the firmware image config at domain detach time. */
+void edgetpu_firmware_shared_mappings_context_unmap(struct edgetpu_dev *etdev,
+						    struct edgetpu_iommu_domain *etdomain);
+
+/*
+ * Assert or release the reset signal of the TPU's CPU
+ * Depending on privilege level, this may be by a direct register write
+ * or a call into GSA.
+ */
+int edgetpu_firmware_reset_cpu(struct edgetpu_dev *etdev, bool assert_reset);
+
+/*
+ * Setup firmware region carveout and iremap pool for device.
+ * Allocates device firmware private data.  Must be called before edgetpu_firmware_create.
+ *
+ * @etdev: device for which to setup firmware region.
+ * @fw_region_paddr: phys addr of firmware region (as from device tree)
+ */
+int edgetpu_firmware_setup_fw_region(struct edgetpu_dev *etdev, phys_addr_t fw_region_paddr);
+
+/* Cleanup firmware region carveout and iremap pool, free firmware private data. */
+void edgetpu_firmware_cleanup_fw_region(struct edgetpu_dev *etdev);
+
+/* Return KVA of FW shared data area. */
+void *edgetpu_firmware_shared_data_vaddr(struct edgetpu_dev *etdev);
+
+/* Return device DMA addr of FW shared data area. */
+dma_addr_t edgetpu_firmware_shared_data_daddr(struct edgetpu_dev *etdev);
+
+/* Return phys addr of FW shared data area. */
+phys_addr_t edgetpu_firmware_shared_data_paddr(struct edgetpu_dev *etdev);
+
+/* Return size of FW shared data area. */
+size_t edgetpu_firmware_shared_data_size(struct edgetpu_dev *etdev);
+
+/* Return phys addr of FW remap region start. */
+phys_addr_t edgetpu_firmware_fw_region_paddr(struct edgetpu_dev *etdev);
+
+/* Return size of entire FW remap region. */
+size_t edgetpu_firmware_fw_region_size(struct edgetpu_dev *etdev);
+
+#if IS_ENABLED(CONFIG_EDGETPU_TEST)
+/* Used by unit tests to set a mocked GSA device. */
+void edgetpu_firmware_set_fake_gsa_dev(struct edgetpu_dev *etdev, struct device *gsa_dev);
+
+/* Return the gcip_fault_inject from the private firmware data for the device. */
+struct gcip_fault_inject *edgetpu_firmware_get_fault_inject(struct edgetpu_dev *etdev);
+#endif
 
 #endif /* __EDGETPU_FIRMWARE_H__ */

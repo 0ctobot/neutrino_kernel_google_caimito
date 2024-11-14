@@ -7,11 +7,11 @@
 
 #include <linux/device.h>
 
-#include <gcip/gcip-pm.h>
 #include <gcip/gcip-thermal.h>
 
 #include "edgetpu-internal.h"
 #include "edgetpu-kci.h"
+#include "edgetpu-pm.h"
 #include "edgetpu-soc.h"
 #include "edgetpu-thermal.h"
 
@@ -59,7 +59,7 @@ int edgetpu_thermal_create(struct edgetpu_dev *etdev)
 {
 	const struct gcip_thermal_args args = {
 		.dev = etdev->dev,
-		.pm = etdev->pm,
+		.pm = edgetpu_gcip_pm(etdev),
 		.dentry = edgetpu_fs_debugfs_dir(),
 		.node_name = EDGETPU_COOLING_NAME,
 		.type = EDGETPU_COOLING_TYPE,

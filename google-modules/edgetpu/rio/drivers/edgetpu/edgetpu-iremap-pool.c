@@ -89,6 +89,9 @@ void edgetpu_iremap_free(struct edgetpu_dev *etdev, struct edgetpu_coherent_mem 
 {
 	struct edgetpu_mempool *etmempool = etdev->iremap_pool;
 
+	if (!mem || !mem->vaddr)
+		return;
+
 	etdev_dbg(etdev, "%s @ %pK IOVA = %pad size = %zu", __func__, mem->vaddr, &mem->dma_addr,
 		  mem->size);
 	gen_pool_free(etmempool->gen_pool, (unsigned long)mem->vaddr,

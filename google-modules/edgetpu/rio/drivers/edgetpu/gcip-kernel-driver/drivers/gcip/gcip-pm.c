@@ -99,6 +99,8 @@ void gcip_pm_destroy(struct gcip_pm *pm)
 	if (!pm)
 		return;
 
+	gcip_pm_flush_put_work(pm);
+
 	pm->power_down_pending = false;
 	cancel_delayed_work_sync(&pm->power_down_work);
 

@@ -160,7 +160,7 @@ int edgetpu_kci_update_usage(struct edgetpu_dev *etdev);
 /*
  * Works the same as edgetpu_kci_update_usage() except the caller of this
  * function must guarantee the device stays powered up, typically by calling
- * gcip_pm_get() or by calling this function from the power management
+ * edgetpu_pm_get() or by calling this function from the power management
  * functions themselves.
  *
  * Returns KCI response code on success or < 0 on error (typically -ETIMEDOUT).
@@ -307,5 +307,18 @@ static inline void edgetpu_kci_update_usage_async(struct edgetpu_kci *etkci)
  * Return: 0 if the command is sent successfully.
  */
 int edgetpu_kci_fault_injection(struct gcip_fault_inject *injection);
+
+/**
+ * edgetpu_kci_fw_debug_cmd() - Send firmware debug service command data.
+ * @daddr: device address within etdev->fw_debug_mem.sgt of command data.
+ * @count: number of bytes of command data to send.
+ */
+int edgetpu_kci_fw_debug_cmd(struct edgetpu_dev *etdev, dma_addr_t daddr, size_t count);
+
+/**
+ * edgetpu_kci_fw_debug_reset() - Send firmware debug service reset while waiting for async
+ * response to the previous command.
+ */
+int edgetpu_kci_fw_debug_reset(struct edgetpu_dev *etdev);
 
 #endif /* __EDGETPU_KCI_H__ */

@@ -127,6 +127,7 @@ struct edgetpu_external_mailbox_req {
  *   In usual cases @state always equals @fw_state. But when the FW is reloaded,
  *   @fw_state is reset to zero, then this structure can be used to know the FW
  *   state is out-of-sync and need further actions.
+ *   In addition to "OPEN_DEVICE", "ALLOCATE_VMBOX" also use this structure to record the states.
  */
 struct edgetpu_handshake {
 	struct mutex lock;
@@ -152,6 +153,7 @@ struct edgetpu_mailbox_manager {
 	get_csr_base_t get_cmd_queue_csr_base;
 	get_csr_base_t get_resp_queue_csr_base;
 	struct edgetpu_handshake open_devices;
+	struct edgetpu_handshake enabled_pasids;
 	bool use_ikv;
 };
 

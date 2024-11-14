@@ -8,9 +8,11 @@
 #ifndef __GCIP_FENCE_ARRAY_H__
 #define __GCIP_FENCE_ARRAY_H__
 
+#include <linux/dma-fence.h>
 #include <linux/kref.h>
 
 #include <gcip/gcip-fence.h>
+#include <iif/iif-shared.h>
 
 /*
  * Contains multiple fences.
@@ -47,28 +49,40 @@ struct gcip_fence_array *gcip_fence_array_get(struct gcip_fence_array *fence_arr
 /*
  * Decrements the refcount of @fence_array. If it becomes 0, it will release the refcount of the
  * fences which it is referring to.
+ *
+ * If @fence_array contains inter-IP fence(s) and the caller is going to put @fence in the
+ * un-sleepable context such as IRQ context or spin lock, one should use the async one.
  */
 void gcip_fence_array_put(struct gcip_fence_array *fence_array);
-
-/* Signals the fences in @fence_array. */
-void gcip_fence_array_signal(struct gcip_fence_array *fence_array, int errno);
+void gcip_fence_array_put_async(struct gcip_fence_array *fence_array);
 
 /*
- * Notifies the fences in @fence_array that a command which waited on them has finished their work.
+ * Its functionality is the same with the `gcip_fence_array_signal{_async}` function, but receives a
+ `struct gcip_fence_array` instance.
  *
- * This function is only meaningful when a fence is GCIP_INTER_IP_FENCE.
+ * See the `gcip_fence_array_signal{_async}` function for details.
  */
-void gcip_fence_array_waited(struct gcip_fence_array *fence_array);
+void gcip_fence_array_signal(struct gcip_fence_array *fence_array, int errno);
+void gcip_fence_array_signal_async(struct gcip_fence_array *fence_array, int errno);
+
+/*
+ * Its functionality is the same with the `gcip_fence_waited{_async}` function, but receives a
+ `struct gcip_fence_array` instance.
+ *
+ * See the `gcip_fence_waited{_async}` function for details.
+ */
+void gcip_fence_array_waited(struct gcip_fence_array *fence_array, enum iif_ip_type ip);
+void gcip_fence_array_waited_async(struct gcip_fence_array *fence_array, enum iif_ip_type ip);
 
 /* Submits a signaler to the fences in @fence_array. */
 void gcip_fence_array_submit_signaler(struct gcip_fence_array *fence_array);
 
-/* Submits a waiter to the fences in @fence_array. */
-void gcip_fence_array_submit_waiter(struct gcip_fence_array *fence_array);
+/* Submits a waiter of @ip to the fences in @fence_array. */
+void gcip_fence_array_submit_waiter(struct gcip_fence_array *fence_array, enum iif_ip_type ip);
 
 /*
- * Submits a waiter to each fence in @in_fences and a signaler to each fence in @out_fences. Either
- * @in_fences or @out_fences is allowed to be NULL.
+ * Submits a waiter of @ip to each fence in @in_fences and a signaler to each fence in @out_fences.
+ * Either @in_fences or @out_fences is allowed to be NULL.
  *
  * For the waiter submission, if at least one fence of @in_fences haven't finished the signaler
  * submission, this function will fail and return -EAGAIN.
@@ -82,7 +96,8 @@ void gcip_fence_array_submit_waiter(struct gcip_fence_array *fence_array);
  * Otherwise, returns 0 on success.
  */
 int gcip_fence_array_submit_waiter_and_signaler(struct gcip_fence_array *in_fences,
-						struct gcip_fence_array *out_fences);
+						struct gcip_fence_array *out_fences,
+						enum iif_ip_type ip);
 
 /*
  * Allocates and returns the array of inter-IP fence IDs. The number of IIFs in @fence_array will
@@ -107,5 +122,31 @@ uint16_t *gcip_fence_array_get_iif_id(struct gcip_fence_array *fence_array, int 
  */
 int gcip_fence_array_wait_signaler_submission(struct gcip_fence_array *fence_array,
 					      unsigned int eventfd, int *remaining_signalers);
+
+/*
+ * Creates a merged dma_fence_array object of the underlying DMA fences of @fence_array.
+ *
+ * Note that this function is meaningful only when the fence type of all fences of @fence_array are
+ * the same (i.e., @fence_array->same_type is true) and the type is DMA fence (i.e., fence_array->
+ * type is GCIP_IN_KERNEL_FENCE). If that's not the case or there is no fence in @fence_array, the
+ * function will return NULL.
+ *
+ * If there is only one DMA fence in @fence_array, the function will return the DMA fence itself,
+ * not a base fence of merged dma_fence_array.
+ *
+ * Returns the representing fence of the merged DMA fences on success or NULL if @fence_array is not
+ * meaningful to be merged. Otherwise, returns an errno pointer.
+ *
+ * The returned fence must be released with `dma_fence_put()`.
+ */
+struct dma_fence *gcip_fence_array_merge_ikf(struct gcip_fence_array *fence_array);
+
+/*
+ * Its functionality is the same with the `gcip_fence_iif_set_propagate_unblock` function, but
+ * receives an array of fences.
+ *
+ * See the `gcip_fence_iif_set_propagate_unblock` function for the details.
+ */
+void gcip_fence_array_iif_set_propagate_unblock(struct gcip_fence_array *fence_array);
 
 #endif /* __GCIP_FENCE_ARRAY_H__ */

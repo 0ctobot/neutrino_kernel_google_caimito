@@ -25,6 +25,10 @@
 #define EDGETPU_NUM_CORES 1
 #endif
 
+#ifndef EDGETPU_MAX_TELEMETRY_BUFFERS
+#define EDGETPU_MAX_TELEMETRY_BUFFERS EDGETPU_NUM_CORES
+#endif
+
 /* By default IOMMU domains can be modified while detached from a mailbox.*/
 #ifndef HAS_DETACHABLE_IOMMU_DOMAINS
 #define HAS_DETACHABLE_IOMMU_DOMAINS	1
@@ -36,6 +40,14 @@
 
 #ifndef EDGETPU_FEATURE_ALWAYS_ON
 #define EDGETPU_FEATURE_ALWAYS_ON 0
+#endif
+
+#ifndef EDGETPU_USE_LITEBUF_VII
+#define EDGETPU_USE_LITEBUF_VII 0
+#endif
+
+#ifndef EDGETPU_HAS_FW_DEBUG
+#define EDGETPU_HAS_FW_DEBUG 0
 #endif
 
 #endif /* __EDGETPU_CONFIG_H__ */

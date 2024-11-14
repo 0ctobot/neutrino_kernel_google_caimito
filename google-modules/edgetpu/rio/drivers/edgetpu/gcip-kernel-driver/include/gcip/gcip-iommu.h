@@ -22,6 +22,7 @@
 #include <linux/device.h>
 #include <linux/dma-buf.h>
 #include <linux/dma-direction.h>
+#include <linux/idr.h>
 #include <linux/iommu.h>
 #include <linux/iova.h>
 #include <linux/scatterlist.h>
@@ -31,10 +32,6 @@
 #include <gcip/gcip-config.h>
 #include <gcip/gcip-domain-pool.h>
 #include <gcip/gcip-mem-pool.h>
-
-#if GCIP_HAS_IOMMU_PASID
-#include <linux/idr.h>
-#endif
 
 /*
  * Helpers for manipulating @gcip_map_flags parameter of the `gcip_iommu_domain_{map,unmap}_sg`
@@ -62,6 +59,12 @@
 #define GCIP_MAP_FLAGS_RESTRICT_IOVA_TO_FLAGS(restrict) \
 	((u64)(restrict) << GCIP_MAP_FLAGS_RESTRICT_IOVA_OFFSET)
 
+#define GCIP_MAP_FLAGS_MMIO_OFFSET \
+	(GCIP_MAP_FLAGS_RESTRICT_IOVA_OFFSET + GCIP_MAP_FLAGS_RESTRICT_IOVA_BIT_SIZE)
+#define GCIP_MAP_FLAGS_MMIO_BIT_SIZE 1
+#define GCIP_MAP_FLAGS_MMIO_TO_FLAGS(mmio) \
+	((u64)(mmio) << GCIP_MAP_FLAGS_RESTRICT_IOVA_OFFSET)
+
 /* Helper macros to easily create the mapping direction flags. */
 #define GCIP_MAP_FLAGS_DMA_RW GCIP_MAP_FLAGS_DMA_DIRECTION_TO_FLAGS(DMA_BIDIRECTIONAL)
 #define GCIP_MAP_FLAGS_DMA_RO GCIP_MAP_FLAGS_DMA_DIRECTION_TO_FLAGS(DMA_TO_DEVICE)
@@ -80,7 +83,9 @@
  *               (See [REDACTED]
  *   [13:13] - RESTRICT_IOVA:
  *               Restrict the IOVA assignment to 32 bit address window.
- *   [63:14] - RESERVED
+ *   [14:14] - MMIO:
+ *               Mapping is for device memory, use IOMMU_MMIO flag.
+ *   [63:15] - RESERVED
  *               Set RESERVED bits to 0 to ensure backwards compatibility.
  *
  * One can use gcip_iommu_encode_gcip_map_flags or `GCIP_MAP_FLAGS_DMA_*_TO_FLAGS` macros to
@@ -124,9 +129,6 @@ struct gcip_iommu_mapping_ops {
  *       This value is the real one that was used for mapping and should be the same as the one
  *       encoded in gcip_map_flags.
  *       This field should be used in revert functions and dma sync functions.
- * @orig_dir: The data direction that the user originally tried to map.
- *            This value may be different from the one encoded in gcip_map_flags.
- *            This field should be used for logging to user to hide the underlying mechanisms
  * @gcip_map_flags: The flags used to create the mapping, which can be encoded with
  *                  gcip_iommu_encode_gcip_map_flags() or `GCIP_MAP_FLAGS_DMA_*_TO_FLAGS` macros.
  * @owning_mm: For holding a reference to MM.
@@ -144,7 +146,6 @@ struct gcip_iommu_mapping {
 	uint num_pages;
 	struct sg_table *sgt;
 	enum dma_data_direction dir;
-	enum dma_data_direction orig_dir;
 	u64 gcip_map_flags;
 	/*
 	 * TODO(b/302510715): Use another wrapper struct to contain this because it is used in
@@ -190,11 +191,7 @@ struct gcip_iommu_domain_pool {
 	enum gcip_iommu_domain_type domain_type;
 	ioasid_t min_pasid;
 	ioasid_t max_pasid;
-#if GCIP_HAS_IOMMU_PASID
 	struct ida pasid_pool;
-#elif GCIP_HAS_AUX_DOMAINS
-	bool aux_enabled;
-#endif
 };
 
 /*
@@ -317,6 +314,16 @@ void gcip_iommu_domain_pool_set_pasid_range(struct gcip_iommu_domain_pool *pool,
 static inline int gcip_iommu_domain_pool_get_num_pasid(struct gcip_iommu_domain_pool *pool)
 {
 	return pool->max_pasid - pool->min_pasid + 1;
+}
+
+/*
+ * Returns the size of IOVA space of this pool. Does not consider reserved size.
+ *
+ * @pool: IOMMU domain pool.
+ */
+static inline size_t gcip_iommu_domain_pool_get_size(struct gcip_iommu_domain_pool *pool)
+{
+	return pool->size;
 }
 
 /*
@@ -537,6 +544,13 @@ static inline void gcip_iommu_mapping_set_ops(struct gcip_iommu_mapping *mapping
 static inline void gcip_iommu_mapping_set_data(struct gcip_iommu_mapping *mapping, void *data)
 {
 	mapping->data = data;
+}
+
+static inline size_t gcip_iommu_domain_granule(struct gcip_iommu_domain *domain)
+{
+	if (unlikely(domain->default_domain))
+		return PAGE_SIZE;
+	return domain->domain_pool->granule;
 }
 
 /**

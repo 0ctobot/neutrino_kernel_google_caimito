@@ -14,14 +14,13 @@
 #include <linux/mmzone.h> /* MAX_ORDER_NR_PAGES */
 #include <linux/slab.h>
 
-#include <gcip/gcip-pm.h>
-
 #include "edgetpu-device-group.h"
 #include "edgetpu-ikv.h"
 #include "edgetpu-iremap-pool.h"
 #include "edgetpu-kci.h"
 #include "edgetpu-mailbox.h"
 #include "edgetpu-mmu.h"
+#include "edgetpu-pm.h"
 #include "edgetpu-sw-watchdog.h"
 #include "edgetpu-wakelock.h"
 #include "edgetpu.h"
@@ -250,7 +249,7 @@ out:
  * Previously allocated KCI mailbox is returned if it hasn't been removed via
  * edgetpu_mailbox_remove().
  */
-inline struct edgetpu_mailbox *edgetpu_mailbox_kci(struct edgetpu_mailbox_manager *mgr)
+struct edgetpu_mailbox *edgetpu_mailbox_kci(struct edgetpu_mailbox_manager *mgr)
 {
 	return dedicated_mailbox(mgr, KERNEL_MAILBOX_INDEX);
 }
@@ -260,7 +259,7 @@ inline struct edgetpu_mailbox *edgetpu_mailbox_kci(struct edgetpu_mailbox_manage
  * Previously allocated VII mailbox is returned if it hasn't been removed via
  * edgetpu_mailbox_remove().
  */
-inline struct edgetpu_mailbox *edgetpu_mailbox_ikv(struct edgetpu_mailbox_manager *mgr)
+struct edgetpu_mailbox *edgetpu_mailbox_ikv(struct edgetpu_mailbox_manager *mgr)
 {
 	if (mgr && mgr->use_ikv)
 		return dedicated_mailbox(mgr, IKV_MAILBOX_INDEX);
@@ -513,6 +512,7 @@ edgetpu_mailbox_create_mgr(struct edgetpu_dev *etdev,
 		return ERR_PTR(-ENOMEM);
 	rwlock_init(&mgr->mailboxes_lock);
 	mutex_init(&mgr->open_devices.lock);
+	mutex_init(&mgr->enabled_pasids.lock);
 
 	return mgr;
 }
@@ -759,11 +759,13 @@ static int edgetpu_mailbox_activate_bulk(struct edgetpu_dev *etdev, u32 mailbox_
 int edgetpu_mailbox_activate_vii(struct edgetpu_dev *etdev, u32 pasid, u32 client_priv, s16 vcid,
 				 bool first_open)
 {
+	struct edgetpu_handshake *eh = &etdev->mailbox_manager->enabled_pasids;
+	u32 mailbox_map = BIT(pasid);
 	bool first_party_client;
 	int ret;
 
 	if (!etdev->mailbox_manager->use_ikv)
-		return edgetpu_mailbox_activate_bulk(etdev, BIT(pasid), client_priv, vcid,
+		return edgetpu_mailbox_activate_bulk(etdev, mailbox_map, client_priv, vcid,
 						     first_open);
 
 	/*
@@ -783,9 +785,15 @@ int edgetpu_mailbox_activate_vii(struct edgetpu_dev *etdev, u32 pasid, u32 clien
 	 */
 	first_party_client = client_priv != 0;
 
+	mutex_lock(&eh->lock);
 	/* TODO(b/267978887) Finalize `client_id` field format */
 	ret = edgetpu_kci_allocate_vmbox(etdev->etkci, pasid, (u8)vcid, first_open,
 					 first_party_client);
+	if (!ret) {
+		eh->state |= mailbox_map;
+		eh->fw_state |= mailbox_map;
+	}
+	mutex_unlock(&eh->lock);
 	if (ret == -ETIMEDOUT)
 		edgetpu_watchdog_bite(etdev);
 
@@ -813,13 +821,31 @@ static void edgetpu_mailbox_deactivate_bulk(struct edgetpu_dev *etdev, u32 mailb
 
 void edgetpu_mailbox_deactivate_vii(struct edgetpu_dev *etdev, u32 pasid)
 {
+	struct edgetpu_handshake *eh = &etdev->mailbox_manager->enabled_pasids;
+	u32 mailbox_map = BIT(pasid);
+
 	if (!etdev->mailbox_manager->use_ikv) {
-		edgetpu_mailbox_deactivate_bulk(etdev, BIT(pasid));
+		edgetpu_mailbox_deactivate_bulk(etdev, mailbox_map);
 		return;
 	}
 
+	mutex_lock(&eh->lock);
 	/* TODO(b/267978887) Finalize `client_id` field format */
-	edgetpu_kci_release_vmbox(etdev->etkci, pasid);
+	if (mailbox_map & eh->fw_state) {
+		edgetpu_kci_release_vmbox(etdev->etkci, pasid);
+
+		/*
+		 * Now that firmware has acknowledged the PASID's closure and flushed all in-flight
+		 * IKV commands, the IKV response queue must be flushed to ensure no stale packets
+		 * meant for this PASID are not incorrectly consumed by a future client that
+		 * recycles this PASID.
+		 */
+		edgetpu_ikv_flush_responses(etdev->etikv);
+	}
+
+	eh->state &= ~mailbox_map;
+	eh->fw_state &= ~mailbox_map;
+	mutex_unlock(&eh->lock);
 }
 
 void edgetpu_handshake_clear_fw_state(struct edgetpu_handshake *eh)
@@ -1034,7 +1060,7 @@ static int edgetpu_mailbox_external_alloc_enable(struct edgetpu_client *client,
 	group = edgetpu_device_group_get(client->group);
 	mutex_unlock(&client->group_lock);
 
-	if (gcip_pm_get_if_powered(group->etdev->pm, true)) {
+	if (edgetpu_pm_get_if_powered(group->etdev, true)) {
 		mutex_lock(&group->lock);
 		ret = edgetpu_mailbox_external_alloc(group, req);
 		mutex_unlock(&group->lock);
@@ -1049,11 +1075,11 @@ static int edgetpu_mailbox_external_alloc_enable(struct edgetpu_client *client,
 		edgetpu_mailbox_init_external_mailbox(group->ext_mailbox);
 		ret = edgetpu_mailbox_activate_external_mailbox(group);
 		mutex_unlock(&group->lock);
-		gcip_pm_put(group->etdev->pm);
+		edgetpu_pm_put(group->etdev);
 		goto out;
 	}
 err:
-	gcip_pm_put(group->etdev->pm);
+	edgetpu_pm_put(group->etdev);
 out:
 	edgetpu_device_group_put(group);
 	return ret;
@@ -1071,7 +1097,7 @@ static int edgetpu_mailbox_external_disable_free(struct edgetpu_client *client)
 	group = edgetpu_device_group_get(client->group);
 	mutex_unlock(&client->group_lock);
 
-	if (gcip_pm_get_if_powered(group->etdev->pm, true)) {
+	if (edgetpu_pm_get_if_powered(group->etdev, true)) {
 		mutex_lock(&group->lock);
 		edgetpu_mailbox_external_free(group);
 		mutex_unlock(&group->lock);
@@ -1079,7 +1105,7 @@ static int edgetpu_mailbox_external_disable_free(struct edgetpu_client *client)
 		mutex_lock(&group->lock);
 		edgetpu_mailbox_external_disable_free_locked(group);
 		mutex_unlock(&group->lock);
-		gcip_pm_put(group->etdev->pm);
+		edgetpu_pm_put(group->etdev);
 	}
 
 	edgetpu_device_group_put(group);
@@ -1105,10 +1131,10 @@ static int edgetpu_mailbox_external_enable_by_id(struct edgetpu_client *client, 
 {
 	int ret;
 
-	if (!edgetpu_wakelock_lock(client->wakelock)) {
+	if (!edgetpu_wakelock_lock(&client->wakelock)) {
 		etdev_err(client->etdev, "Enabling mailbox %d needs wakelock acquired\n",
 			  mailbox_id);
-		edgetpu_wakelock_unlock(client->wakelock);
+		edgetpu_wakelock_unlock(&client->wakelock);
 		return -EAGAIN;
 	}
 
@@ -1118,9 +1144,9 @@ static int edgetpu_mailbox_external_enable_by_id(struct edgetpu_client *client, 
 	if (ret)
 		etdev_err(client->etdev, "Activate mailbox %d failed: %d", mailbox_id, ret);
 	else
-		edgetpu_wakelock_inc_event_locked(client->wakelock,
+		edgetpu_wakelock_inc_event_locked(&client->wakelock,
 						  EDGETPU_WAKELOCK_EVENT_EXT_MAILBOX);
-	edgetpu_wakelock_unlock(client->wakelock);
+	edgetpu_wakelock_unlock(&client->wakelock);
 	return ret;
 }
 
@@ -1133,18 +1159,18 @@ static int edgetpu_mailbox_external_disable_by_id(struct edgetpu_client *client,
 	 * released, so theoretically the check fail here can only happen when enable_ext() is
 	 * failed or not called before.
 	 */
-	if (!edgetpu_wakelock_lock(client->wakelock)) {
+	if (!edgetpu_wakelock_lock(&client->wakelock)) {
 		etdev_err(client->etdev, "Disabling mailbox %d needs wakelock acquired\n",
 			  mailbox_id);
-		edgetpu_wakelock_unlock(client->wakelock);
+		edgetpu_wakelock_unlock(&client->wakelock);
 		return -EAGAIN;
 	}
 
 	etdev_dbg(client->etdev, "Disabling mailbox: %d\n", mailbox_id);
 
 	edgetpu_mailbox_deactivate_bulk(client->etdev, BIT(mailbox_id));
-	edgetpu_wakelock_dec_event_locked(client->wakelock, EDGETPU_WAKELOCK_EVENT_EXT_MAILBOX);
-	edgetpu_wakelock_unlock(client->wakelock);
+	edgetpu_wakelock_dec_event_locked(&client->wakelock, EDGETPU_WAKELOCK_EVENT_EXT_MAILBOX);
+	edgetpu_wakelock_unlock(&client->wakelock);
 	return ret;
 }
 

@@ -11,9 +11,11 @@
 #include <linux/mutex.h>
 #include <linux/spinlock.h>
 
+#include <gcip/gcip-fence-array.h>
 #include <gcip/gcip-mailbox.h>
 
 #include "edgetpu-device-group.h"
+#include "edgetpu-ikv-additional-info.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-mailbox.h"
 
@@ -21,15 +23,17 @@
 #define IKV_TIMEOUT	EDGETPU_IKV_TIMEOUT
 #elif IS_ENABLED(CONFIG_EDGETPU_TEST)
 /* fake-firmware could respond in a short time */
-#define IKV_TIMEOUT	(200)
+#define IKV_TIMEOUT	(2000)
 #else
 /* Wait for up to 2 minutes for FW to respond. */
 #define IKV_TIMEOUT	(120000)
 #endif
 
 struct edgetpu_ikv_response {
+	struct edgetpu_ikv *etikv;
 	struct list_head list_entry;
-	struct edgetpu_vii_response resp;
+	/* Pointer to the VII response packet. */
+	void *resp;
 	/*
 	 * The queue this response will be added to when it has arrived.
 	 *
@@ -69,8 +73,15 @@ struct edgetpu_ikv_response {
 	 * A group to notify with the EDGETPU_EVENT_RESPDATA event when this response arrives.
 	 */
 	struct edgetpu_device_group *group_to_notify;
-	/* DMA fence to signal on timeout or completion. */
-	struct dma_fence *out_fence;
+	/* Fences which the command is waiting on. */
+	struct gcip_fence_array *in_fence_array;
+	/* Fences to signal on timeout or completion. */
+	struct gcip_fence_array *out_fence_array;
+	/* The coherent buffer for the additional_info to be shared with the firmware. */
+	struct edgetpu_coherent_mem additional_info;
+	/* Callback to clean-up any data allocated for this command. */
+	void (*release_callback)(void *data);
+	void *release_data;
 };
 
 struct edgetpu_ikv {
@@ -102,6 +113,13 @@ struct edgetpu_ikv {
 
 	/* Whether in-kernel VII is supported. If false, VII is routed through user-space. */
 	bool enabled;
+
+	/*
+	 * Timeout for a command, once it has been enqueued.
+	 * Set during `edgetpu_ikv_init()` then never changes. Can be customized with the module
+	 * param `user_ikv_timeout`.
+	 */
+	unsigned int command_timeout_ms;
 };
 
 /*
@@ -138,11 +156,12 @@ void edgetpu_ikv_release(struct edgetpu_dev *etdev, struct edgetpu_ikv *etikv);
  * @queue_lock will be acquired then released during this call, and will be acquired asynchronously
  * when the response arrives or times-out, so that it can be moved between queues.
  *
- * If @in_fence is non-NULL and not yet signaled, a new thread will be created to wait on @in_fence
- * before sending the command.
+ * If @in_fence_array contains in-kernel fences (DMA fences) and at least one of them are not yet
+ * signaled, a new thread will be created to wait on @in_fence_array before sending the command.
+ * If the fences are inter-IP fences, the command will be submitted to the firmware right away.
  *
- * @out_fence will be signaled when this command's corresponding response arrives, or errored if the
- * command is otherwise errored/canceled.
+ * The fences in @out_fence_array will be signaled when this command's corresponding response
+ * arrives, or errored if the command is otherwise errored/canceled.
  *
  * Before freeing either queue, their owner must first:
  * 1) Set the `processed` flag on all responses in the @pending_queue
@@ -150,11 +169,33 @@ void edgetpu_ikv_release(struct edgetpu_dev *etdev, struct edgetpu_ikv *etikv);
  * 3) Cancel all responses in @pending_queue with `gcip_mailbox_cancel_awaiter()`
  * 4) Release all responses in both queues with `gcip_mailbox_release_awaiter()`
  *
+ * @release_callback will be called, with @release_data as an argument, immediately before the
+ * command's edgetpu_ikv_response is released. This can be used to release any resources that were
+ * allocated to support the command. If this function returns an error, @release_callback will not
+ * be called.
+ *
  * Returns 0 on success, -errno on error.
  */
-int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, struct edgetpu_vii_command *cmd,
-			 struct list_head *pending_queue, struct list_head *ready_queue,
-			 spinlock_t *queue_lock, struct edgetpu_device_group *group_to_notify,
-			 struct dma_fence *in_fence, struct dma_fence *out_fence);
+int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head *pending_queue,
+			 struct list_head *ready_queue, spinlock_t *queue_lock,
+			 struct edgetpu_device_group *group_to_notify,
+			 struct gcip_fence_array *in_fence_array,
+			 struct gcip_fence_array *out_fence_array,
+			 struct edgetpu_ikv_additional_info *additional_info,
+			 void (*release_callback)(void *), void *release_data);
+
+/*
+ * Process all responses currently in the VII response queue.
+ *
+ * By the time this function returns, all valid responses will have been added to their ready_queue
+ * and invalid responses (e.g. those with an invalid sequence number or client_id) will be dropped.
+ *
+ * This function should not be called from an interrupt context, as it will wait for the response
+ * queue spinlock if another thread is already processing responses.
+ *
+ * The caller of this function must not hold any response queue_locks (see edgetpu_ikv_send_cmd())
+ * or @etikv's resp_queue_lock, as they may be acquired during response processing.
+ */
+void edgetpu_ikv_flush_responses(struct edgetpu_ikv *etikv);
 
 #endif /* __EDGETPU_IKV_H__*/

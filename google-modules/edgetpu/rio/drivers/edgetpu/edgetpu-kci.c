@@ -8,7 +8,9 @@
 
 #include <linux/bits.h>
 #include <linux/circ_buf.h>
+#include <linux/completion.h>
 #include <linux/device.h>
+#include <linux/dma-mapping.h>
 #include <linux/errno.h>
 #include <linux/io.h>
 #include <linux/kernel.h>
@@ -16,16 +18,17 @@
 #include <linux/slab.h>
 #include <linux/string.h> /* memcpy */
 
-#include <gcip/gcip-pm.h>
 #include <gcip/gcip-telemetry.h>
 #include <gcip/gcip-usage-stats.h>
 
-#include "edgetpu-debug-dump.h"
+#include "edgetpu-config.h"
+#include "edgetpu-debug.h"
 #include "edgetpu-firmware.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-iremap-pool.h"
 #include "edgetpu-kci.h"
 #include "edgetpu-mmu.h"
+#include "edgetpu-pm.h"
 #include "edgetpu-soc.h"
 #include "edgetpu-telemetry.h"
 #include "edgetpu-usage-stats.h"
@@ -172,6 +175,11 @@ static void edgetpu_reverse_kci_handle_response(struct gcip_kci *kci,
 	case GCIP_RKCI_JOB_LOCKUP:
 		edgetpu_handle_job_lockup(etdev, resp->retval);
 		break;
+#if EDGETPU_HAS_FW_DEBUG
+	case GCIP_RKCI_DEBUG_ASYNC_RESP:
+		edgetpu_fw_debug_resp_ready(etdev, resp->retval);
+		break;
+#endif
 	default:
 		etdev_warn(etdev, "Unrecognized RKCI request: %#x\n", resp->code);
 	}
@@ -467,7 +475,7 @@ int edgetpu_kci_update_usage(struct edgetpu_dev *etdev)
 	int ret = -EAGAIN;
 
 	/* Quick return if device is already powered down. */
-	if (!gcip_pm_is_powered(etdev->pm))
+	if (!edgetpu_pm_is_powered(etdev))
 		return -EAGAIN;
 
 	/*
@@ -492,13 +500,13 @@ int edgetpu_kci_update_usage(struct edgetpu_dev *etdev)
 	 * down, and the power down code holds the PM lock.
 	 * Using trylock to prevent cancel_work_sync() waiting forever.
 	 */
-	if (!gcip_pm_trylock(etdev->pm))
+	if (!edgetpu_pm_trylock(etdev))
 		goto fw_unlock;
 
-	if (gcip_pm_is_powered(etdev->pm))
+	if (edgetpu_pm_is_powered(etdev))
 		ret = edgetpu_kci_update_usage_locked(etdev);
 
-	gcip_pm_unlock(etdev->pm);
+	edgetpu_pm_unlock(etdev);
 
 fw_unlock:
 	edgetpu_firmware_unlock(etdev);
@@ -530,26 +538,17 @@ int edgetpu_kci_update_usage_locked(struct edgetpu_dev *etdev)
 		return ret;
 	}
 
-	/* TODO(b/271372136): remove v1 when v1 firmware no longer in use. */
-retry_v1:
-	if (etdev->usage_stats && etdev->usage_stats->ustats.version == GCIP_USAGE_STATS_V1)
-		cmd.code = GCIP_KCI_CODE_GET_USAGE_V1;
 	cmd.dma.address = mem.dma_addr;
 	cmd.dma.size = EDGETPU_USAGE_BUFFER_SIZE;
 	memset(mem.vaddr, 0, sizeof(struct gcip_usage_stats_header));
 	ret = gcip_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
 
 	if (ret == GCIP_KCI_ERROR_UNIMPLEMENTED || ret == GCIP_KCI_ERROR_UNAVAILABLE) {
-		if (etdev->usage_stats &&
-		    etdev->usage_stats->ustats.version != GCIP_USAGE_STATS_V1) {
-			etdev->usage_stats->ustats.version = GCIP_USAGE_STATS_V1;
-			goto retry_v1;
-		}
 		etdev_dbg(etdev, "firmware does not report usage\n");
 	} else if (ret == GCIP_KCI_ERROR_OK) {
 		edgetpu_usage_stats_process_buffer(etdev, mem.vaddr);
 	} else if (ret != -ETIMEDOUT) {
-		etdev_warn_once(etdev, "error %d", ret);
+		etdev_warn_once(etdev, "fw usage stats error %d", ret);
 	}
 
 	edgetpu_iremap_free(etdev, &mem);
@@ -574,7 +573,6 @@ void edgetpu_kci_mappings_show(struct edgetpu_dev *etdev, struct seq_file *s)
 				PAGE_SIZE));
 	edgetpu_telemetry_mappings_show(etdev, s);
 	edgetpu_firmware_mappings_show(etdev, s);
-	edgetpu_debug_dump_mappings_show(etdev, s);
 }
 
 int edgetpu_kci_shutdown(struct edgetpu_kci *etkci)
@@ -792,3 +790,33 @@ int edgetpu_kci_fault_injection(struct gcip_fault_inject *injection)
 	return edgetpu_kci_send_cmd_with_data(etkci, &cmd, injection->opaque,
 					      sizeof(injection->opaque));
 }
+
+#if EDGETPU_HAS_FW_DEBUG
+int edgetpu_kci_fw_debug_cmd(struct edgetpu_dev *etdev, dma_addr_t daddr, size_t count)
+{
+	struct gcip_kci_command_element cmd = {
+		.code = GCIP_KCI_CODE_DEBUG_CMD,
+	};
+	struct gcip_kci_response_element resp;
+	int ret;
+
+	cmd.dma.address = daddr;
+	cmd.dma.size = count;
+	ret = gcip_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
+	if (ret == GCIP_KCI_ERROR_OK)
+		edgetpu_fw_debug_resp_ready(etdev, resp.retval);
+	return ret;
+}
+
+int edgetpu_kci_fw_debug_reset(struct edgetpu_dev *etdev)
+{
+	struct gcip_kci_command_element cmd = {
+		.code = GCIP_KCI_CODE_DEBUG_RESET,
+	};
+	struct gcip_kci_response_element resp;
+	int ret;
+
+	ret = gcip_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
+	return ret;
+}
+#endif /* EDGETPU_HAS_FW_DEBUG */

@@ -60,7 +60,7 @@
 #define GCIP_USAGE_STATS_METRIC_SIZE_V1 20
 
 /* Max number of frequencies to support. */
-#define GCIP_USAGE_STATS_MAX_DVFS_FREQ_NUM 10
+#define GCIP_USAGE_STATS_MAX_DVFS_FREQ_NUM 25
 
 struct gcip_usage_stats_attr;
 
@@ -457,7 +457,7 @@ struct gcip_usage_stats_ops {
 	 * @idx will not exceed the number of default DVFS frequencies which is returned by the
 	 * `get_default_dvfs_freqs_num` operator.
 	 */
-	int (*get_default_dvfs_freq)(int idx, void *data);
+	unsigned int (*get_default_dvfs_freq)(int idx, void *data);
 };
 
 /* Structure manages the information of usage stats and device attributes. */
@@ -516,8 +516,17 @@ struct gcip_usage_stats {
 	 * of the `struct gcip_usage_stats_ops`.
 	 */
 	uint32_t dvfs_freqs[GCIP_USAGE_STATS_MAX_DVFS_FREQ_NUM];
-	/* The number of DVFS frequencies. */
+	/* The number of DVFS frequencies in @dvfs_freqs_num. */
 	int dvfs_freqs_num;
+	/*
+	 * Default DVFS frequencies defined by the IP driver. These frequencies will be used until
+	 * the firmware sends `DVFS_FREQUENCY_INFO` metrics. Those values will be fetched from the
+	 * IP driver via the `get_default_dvfs_freq` callback, but we are going to store them here
+	 * separately to removing duplicate ones.
+	 */
+	uint32_t default_dvfs_freqs[GCIP_USAGE_STATS_MAX_DVFS_FREQ_NUM];
+	/* The number of default DVFS frequencies in @default_dvfs_freqs. */
+	int default_dvfs_freqs_num;
 	/* Protects DVFS frequencies. */
 	struct mutex dvfs_freqs_lock;
 };

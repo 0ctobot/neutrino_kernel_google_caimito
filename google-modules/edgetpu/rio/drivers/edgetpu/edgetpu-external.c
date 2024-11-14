@@ -12,13 +12,104 @@
 
 #include <soc/google/tpu-ext.h>
 
-#include <gcip/iif/iif-manager.h>
+#include <iif/iif-manager.h>
 
 #include "edgetpu-config.h"
 #include "edgetpu-device-group.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-mailbox.h"
 #include "edgetpu-mobile-platform.h"
+
+static int check_ext_mailbox_args(const char *func, struct edgetpu_dev *etdev,
+				  struct edgetpu_ext_mailbox_ioctl *args)
+{
+	if (args->type != EDGETPU_EXT_MAILBOX_TYPE_TZ) {
+		etdev_err(etdev, "%s: Invalid type %d != %d\n", func, args->type,
+			  EDGETPU_EXT_MAILBOX_TYPE_TZ);
+		return -EINVAL;
+	}
+	if (args->count != 1) {
+		etdev_err(etdev, "%s: Invalid mailbox count: %d != 1\n", func, args->count);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+int edgetpu_acquire_ext_mailbox(struct edgetpu_client *client,
+				struct edgetpu_ext_mailbox_ioctl *args)
+{
+	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(client->etdev);
+	int ret;
+
+	ret = check_ext_mailbox_args(__func__, client->etdev, args);
+	if (ret)
+		return ret;
+
+	mutex_lock(&etmdev->tz_mailbox_lock);
+	if (etmdev->secure_client) {
+		etdev_err(client->etdev, "TZ mailbox already in use by PID %d\n",
+			  etmdev->secure_client->pid);
+		mutex_unlock(&etmdev->tz_mailbox_lock);
+		return -EBUSY;
+	}
+	ret = edgetpu_mailbox_enable_ext(client, EDGETPU_TZ_MAILBOX_ID, NULL, 0);
+	if (!ret)
+		etmdev->secure_client = client;
+	mutex_unlock(&etmdev->tz_mailbox_lock);
+	return ret;
+}
+
+int edgetpu_release_ext_mailbox(struct edgetpu_client *client,
+				struct edgetpu_ext_mailbox_ioctl *args)
+{
+	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(client->etdev);
+	int ret = 0;
+
+	ret = check_ext_mailbox_args(__func__, client->etdev, args);
+	if (ret)
+		return ret;
+
+	mutex_lock(&etmdev->tz_mailbox_lock);
+	if (!etmdev->secure_client) {
+		etdev_warn(client->etdev, "TZ mailbox already released\n");
+		mutex_unlock(&etmdev->tz_mailbox_lock);
+		return 0;
+	}
+	if (etmdev->secure_client != client) {
+		etdev_err(client->etdev,
+			  "TZ mailbox owned by different client\n");
+		mutex_unlock(&etmdev->tz_mailbox_lock);
+		return -EBUSY;
+	}
+	etmdev->secure_client = NULL;
+	ret = edgetpu_mailbox_disable_ext(client, EDGETPU_TZ_MAILBOX_ID);
+	mutex_unlock(&etmdev->tz_mailbox_lock);
+	return ret;
+}
+
+void edgetpu_ext_client_remove(struct edgetpu_client *client)
+{
+	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(client->etdev);
+
+	mutex_lock(&etmdev->tz_mailbox_lock);
+	if (etmdev->secure_client == client) {
+		etmdev->secure_client = NULL;
+		edgetpu_mailbox_disable_ext(client, EDGETPU_TZ_MAILBOX_ID);
+	}
+	mutex_unlock(&etmdev->tz_mailbox_lock);
+}
+
+static int edgetpu_get_ext_mailbox_index(u32 mbox_type, u32 *start, u32 *end)
+{
+	switch (mbox_type) {
+	case EDGETPU_EXTERNAL_MAILBOX_TYPE_DSP:
+		*start = EDGETPU_EXT_DSP_MAILBOX_START;
+		*end = EDGETPU_EXT_DSP_MAILBOX_END;
+		return 0;
+	default:
+		return -ENOENT;
+	}
+}
 
 static enum edgetpu_ext_mailbox_type
 edgetpu_external_client_to_mailbox_type(enum edgetpu_ext_client_type client_type)
@@ -93,7 +184,7 @@ static int edgetpu_external_mailbox_alloc(struct device *edgetpu_dev,
 	req.mbox_type = edgetpu_external_client_to_mailbox_type(client_type);
 	req.mbox_map = client_info->mbox_map;
 
-	ret = edgetpu_chip_get_ext_mailbox_index(req.mbox_type, &req.start, &req.end);
+	ret = edgetpu_get_ext_mailbox_index(req.mbox_type, &req.start, &req.end);
 	if (ret)
 		goto out;
 

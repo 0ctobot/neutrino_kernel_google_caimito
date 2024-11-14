@@ -10,8 +10,9 @@
 
 #include <linux/err.h>
 #include <linux/mutex.h>
+#include <linux/time64.h>
 
-#include "edgetpu-internal.h"
+struct edgetpu_dev;
 
 /*
  * Events that could block the wakelock from being released.
@@ -48,16 +49,14 @@ struct edgetpu_wakelock {
 	 * release() would fail if one of the slots is not zero.
 	 */
 	uint event_count[EDGETPU_WAKELOCK_EVENT_END];
+	/* Current first (req_count == 1) acquire timestamp (monotonic clock). */
+	struct timespec64 current_acquire_timestamp;
+	/* Total time acquired as of last release (not including current; monotonic clock). */
+	struct timespec64 total_acquired_time;
 };
 
-/*
- * Allocates and initializes a wakelock object.
- *
- * Returns the pointer on success, or NULL when out of memory.
- */
-struct edgetpu_wakelock *edgetpu_wakelock_alloc(struct edgetpu_dev *etdev);
-/* Frees the allocated wakelock. */
-void edgetpu_wakelock_free(struct edgetpu_wakelock *wakelock);
+/* Initialize a wakelock object.*/
+void edgetpu_wakelock_init(struct edgetpu_dev *etdev, struct edgetpu_wakelock *wakelock);
 
 /*
  * Increases the event counter of @evt by one.

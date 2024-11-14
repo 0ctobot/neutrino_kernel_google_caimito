@@ -10,6 +10,7 @@
 #include <linux/cdev.h>
 #include <linux/debugfs.h>
 #include <linux/device.h>
+#include <linux/dma-fence.h>
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/init.h>
@@ -28,16 +29,20 @@
 #include <linux/uaccess.h>
 #include <trace/events/edgetpu.h>
 
-#include <gcip/gcip-pm.h>
+#include <gcip/gcip-fence-array.h>
 
 #include "edgetpu-config.h"
 #include "edgetpu-device-group.h"
 #include "edgetpu-dmabuf.h"
 #include "edgetpu-firmware.h"
+#include "edgetpu-ikv-additional-info.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-kci.h"
 #include "edgetpu-mapping.h"
+#include "edgetpu-pm.h"
 #include "edgetpu-telemetry.h"
+#include "edgetpu-vii-litebuf.h"
+#include "edgetpu-vii-packet.h"
 #include "edgetpu-wakelock.h"
 #include "edgetpu.h"
 
@@ -87,6 +92,21 @@ static int edgetpu_fs_open(struct inode *inode, struct file *file)
 {
 	struct edgetpu_dev_iface *etiface =
 		container_of(inode->i_cdev, struct edgetpu_dev_iface, cdev);
+	struct edgetpu_dev *etdev = etiface->etdev;
+	int ret = 0;
+
+	/* Initialize `vii_format` the first time open() is called. */
+	mutex_lock(&etdev->vii_format_uninitialized_lock);
+	if (etdev->vii_format == EDGETPU_VII_FORMAT_UNKNOWN) {
+		ret = edgetpu_pm_get(etdev);
+		if (ret) {
+			etdev_err(etdev, "Failed to load firmware to init vii_format %d", ret);
+			mutex_unlock(&etdev->vii_format_uninitialized_lock);
+			return ret;
+		}
+		edgetpu_pm_put(etdev);
+	}
+	mutex_unlock(&etdev->vii_format_uninitialized_lock);
 
 	return edgetpu_open(etiface, file);
 }
@@ -192,9 +212,9 @@ static int edgetpu_ioctl_finalize_group(struct edgetpu_client *client)
 	 * Hold the wakelock since we need to decide whether VII should be
 	 * initialized during finalization.
 	 */
-	edgetpu_wakelock_lock(client->wakelock);
+	edgetpu_wakelock_lock(&client->wakelock);
 	ret = edgetpu_device_group_finalize(group);
-	edgetpu_wakelock_unlock(client->wakelock);
+	edgetpu_wakelock_unlock(&client->wakelock);
 
 	UNLOCK(client);
 	return ret;
@@ -414,12 +434,12 @@ static int edgetpu_ioctl_tpu_timestamp(struct edgetpu_client *client,
 	u64 timestamp;
 	int ret = 0;
 
-	if (!edgetpu_wakelock_lock(client->wakelock)) {
-		edgetpu_wakelock_unlock(client->wakelock);
+	if (!edgetpu_wakelock_lock(&client->wakelock)) {
+		edgetpu_wakelock_unlock(&client->wakelock);
 		ret = -EAGAIN;
 	} else {
 		timestamp = edgetpu_tpu_timestamp(client->etdev);
-		edgetpu_wakelock_unlock(client->wakelock);
+		edgetpu_wakelock_unlock(&client->wakelock);
 		if (copy_to_user(argp, &timestamp, sizeof(*argp)))
 			ret = -EFAULT;
 	}
@@ -438,10 +458,10 @@ static int edgetpu_ioctl_release_wakelock(struct edgetpu_client *client)
 	trace_edgetpu_release_wakelock_start(client->pid);
 
 	LOCK(client);
-	edgetpu_wakelock_lock(client->wakelock);
-	count = edgetpu_wakelock_release(client->wakelock);
+	edgetpu_wakelock_lock(&client->wakelock);
+	count = edgetpu_wakelock_release(&client->wakelock);
 	if (count < 0) {
-		edgetpu_wakelock_unlock(client->wakelock);
+		edgetpu_wakelock_unlock(&client->wakelock);
 		UNLOCK(client);
 
 		trace_edgetpu_release_wakelock_end(client->pid, count);
@@ -452,9 +472,9 @@ static int edgetpu_ioctl_release_wakelock(struct edgetpu_client *client)
 		if (client->group)
 			edgetpu_group_close_and_detach_mailbox(client->group);
 	}
-	edgetpu_wakelock_unlock(client->wakelock);
+	edgetpu_wakelock_unlock(&client->wakelock);
 	UNLOCK(client);
-	gcip_pm_put(client->etdev->pm);
+	edgetpu_pm_put(client->etdev);
 	etdev_dbg(client->etdev, "%s: wakelock req count = %u", __func__,
 		  count);
 
@@ -479,7 +499,7 @@ static int edgetpu_ioctl_acquire_wakelock(struct edgetpu_client *client)
 		goto error_trace_end;
 	}
 
-	ret = gcip_pm_get(client->etdev->pm);
+	ret = edgetpu_pm_get(client->etdev);
 	if (ret) {
 		etdev_warn(client->etdev, "pm_get failed (%d)", ret);
 		goto error_trace_end;
@@ -494,8 +514,8 @@ static int edgetpu_ioctl_acquire_wakelock(struct edgetpu_client *client)
 	 */
 	client->pid = current->pid;
 	client->tgid = current->tgid;
-	edgetpu_wakelock_lock(client->wakelock);
-	count = edgetpu_wakelock_acquire(client->wakelock);
+	edgetpu_wakelock_lock(&client->wakelock);
+	count = edgetpu_wakelock_acquire(&client->wakelock);
 	if (count < 0) {
 		ret = count;
 		goto error_wakelock_unlock;
@@ -505,18 +525,18 @@ static int edgetpu_ioctl_acquire_wakelock(struct edgetpu_client *client)
 			ret = edgetpu_group_attach_and_open_mailbox(client->group);
 		if (ret) {
 			etdev_warn(client->etdev, "failed to attach mailbox: %d", ret);
-			edgetpu_wakelock_release(client->wakelock);
+			edgetpu_wakelock_release(&client->wakelock);
 			/* fall through to error handling below */
 		}
 	}
 
 error_wakelock_unlock:
-	edgetpu_wakelock_unlock(client->wakelock);
+	edgetpu_wakelock_unlock(&client->wakelock);
 	UNLOCK(client);
 
 	if (ret) {
 		etdev_err(client->etdev, "client pid %d failed to acquire wakelock", client->pid);
-		gcip_pm_put(client->etdev->pm);
+		edgetpu_pm_put(client->etdev);
 	} else {
 		etdev_dbg(client->etdev, "%s: wakelock req count = %u", __func__, count + 1);
 	}
@@ -550,7 +570,7 @@ edgetpu_ioctl_acquire_ext_mailbox(struct edgetpu_client *client,
 	if (copy_from_user(&ext_mailbox, argp, sizeof(ext_mailbox)))
 		return -EFAULT;
 
-	ret = edgetpu_chip_acquire_ext_mailbox(client, &ext_mailbox);
+	ret = edgetpu_acquire_ext_mailbox(client, &ext_mailbox);
 	if (ret)
 		etdev_err(client->etdev, "client pid %d failed to acquire ext mailbox",
 			  client->pid);
@@ -566,7 +586,7 @@ edgetpu_ioctl_release_ext_mailbox(struct edgetpu_client *client,
 	if (copy_from_user(&ext_mailbox, argp, sizeof(ext_mailbox)))
 		return -EFAULT;
 
-	return edgetpu_chip_release_ext_mailbox(client, &ext_mailbox);
+	return edgetpu_release_ext_mailbox(client, &ext_mailbox);
 }
 
 static int edgetpu_ioctl_get_fatal_errors(struct edgetpu_client *client,
@@ -605,44 +625,73 @@ edgetpu_ioctl_set_device_properties(struct edgetpu_dev *etdev,
 }
 
 /*
- * Helper to fetch an array of `dma_fence` file descriptors from user-space, merge them into a
- * `dma_fence_array`, and return the merged `dma_fence_array`'s base `dma_fence`.
+ * Helper to fetch an array of fence file descriptors from user-space, convert them to a
+ * `gcip_fence_array`, and return it.
  *
- * If the array of file descriptors only contains a single entry, then the `dma_fence` associated
- * with that FD will be returned directly, rather than creating a `dma_fence_array`.
+ * - @same_type: if it is true, it only allows the fences which are the same type.
+ * - @reject_dma_fence_array: if it is true, it doesn't allow DMA fence array.
  */
-static struct dma_fence *get_merged_fence_from_user(u32 count, int __user  *user_addr)
+static struct gcip_fence_array *
+get_fence_array_from_user(struct edgetpu_dev *etdev, u32 count, const int __user *user_addr,
+			  bool same_type, bool reject_dma_fence_array, const char *name)
 {
-	int *fence_fd_array;
-	struct dma_fence *merged_fence;
+	int *fence_fd_array, i;
+	struct gcip_fence_array *fence_array;
+	struct gcip_fence *fence;
 
-	if (count > EDGETPU_VII_COMMAND_MAX_NUM_FENCES)
+	if (!count)
+		return NULL;
+
+	if (count > EDGETPU_VII_COMMAND_MAX_NUM_FENCES) {
+		etdev_err(etdev, "Too many VII command %s-fences: %u", name, count);
 		return ERR_PTR(-EINVAL);
+	}
+
 	fence_fd_array = kcalloc(count, sizeof(*fence_fd_array), GFP_KERNEL);
 	if (!fence_fd_array)
 		return ERR_PTR(-ENOMEM);
 
 	if (copy_from_user(fence_fd_array, user_addr, count * sizeof(*fence_fd_array))) {
-		merged_fence = ERR_PTR(-EFAULT);
+		fence_array = ERR_PTR(-EFAULT);
 		goto out;
 	}
 
-	merged_fence = gcip_dma_fence_merge_fds(count, fence_fd_array);
-	if (IS_ERR(merged_fence))
+	fence_array = gcip_fence_array_create(fence_fd_array, count, same_type);
+	if (IS_ERR(fence_array))
 		goto out;
-	dma_fence_enable_sw_signaling(merged_fence);
+
+	if (!reject_dma_fence_array)
+		goto out;
+
+	/*
+	 * TODO(b/329178403): Theoretically, DMA fence array is not supposed to be used as an
+	 * out-fence according to the implementation of it. It doesn't propagate the signal to its
+	 * underlying fences. Therefore, we should reject the command if it contains an array as
+	 * an out-fence. Once we get a request from the runtime side of supporting that, we need to
+	 * improve it.
+	 */
+	for (i = 0; i < fence_array->size; i++) {
+		fence = fence_array->fences[i];
+		if (fence->type == GCIP_IN_KERNEL_FENCE && dma_fence_is_array(fence->fence.ikf)) {
+			etdev_err(etdev, "Passing DMA fence array to %s-fence is not allowed",
+				  name);
+			gcip_fence_array_put(fence_array);
+			fence_array = ERR_PTR(-EINVAL);
+			goto out;
+		}
+	}
 
 out:
 	kfree(fence_fd_array);
-	return merged_fence;
+	return fence_array;
 }
 
 static int edgetpu_ioctl_vii_command(struct edgetpu_client *client,
 				     struct edgetpu_vii_command_ioctl __user *argp)
 {
 	struct edgetpu_vii_command_ioctl command;
-	struct dma_fence *in_fence = NULL;
-	struct dma_fence *out_fence = NULL;
+	struct gcip_fence_array *in_fence_array;
+	struct gcip_fence_array *out_fence_array;
 	int ret;
 
 	if (copy_from_user(&command, argp, sizeof(command)))
@@ -650,7 +699,8 @@ static int edgetpu_ioctl_vii_command(struct edgetpu_client *client,
 
 	trace_edgetpu_vii_command_start(client);
 
-	if (!client->etdev->mailbox_manager->use_ikv) {
+	if (!client->etdev->mailbox_manager->use_ikv ||
+	    client->etdev->vii_format != EDGETPU_VII_FORMAT_FLATBUFFER) {
 		ret = -EOPNOTSUPP;
 		goto err_ret;
 	}
@@ -660,45 +710,29 @@ static int edgetpu_ioctl_vii_command(struct edgetpu_client *client,
 		goto err_ret;
 	}
 
-	if (command.in_fence_count) {
-		in_fence = get_merged_fence_from_user(command.in_fence_count,
-						      (int __user *)command.in_fence_array);
-		if (IS_ERR(in_fence)) {
-			ret = PTR_ERR(in_fence);
-			if (ret == -EINVAL)
-				etdev_err(client->etdev, "Too many VII command in_fences: %u",
-					  command.in_fence_count);
-			goto err_unlock;
-		}
+	in_fence_array = get_fence_array_from_user(client->etdev, command.in_fence_count,
+						   (int __user *)command.in_fence_array, true,
+						   false, "in");
+	if (IS_ERR(in_fence_array)) {
+		ret = PTR_ERR(in_fence_array);
+		goto err_unlock;
 	}
 
-	if (command.out_fence_count) {
-		out_fence = get_merged_fence_from_user(command.out_fence_count,
-						       (int __user *)command.out_fence_array);
-		if (IS_ERR(out_fence)) {
-			ret = PTR_ERR(out_fence);
-			if (ret == -EINVAL)
-				etdev_err(client->etdev, "Too many VII command out_fences: %u",
-					  command.out_fence_count);
-			goto err_free_in_fence;
-		}
+	out_fence_array = get_fence_array_from_user(client->etdev, command.out_fence_count,
+						    (int __user *)command.out_fence_array, false,
+						    true, "out");
+	if (IS_ERR(out_fence_array)) {
+		ret = PTR_ERR(out_fence_array);
+		goto err_free_in_fence;
 	}
 
-	ret = edgetpu_device_group_send_vii_command(client->group, &command.command, in_fence,
-						    out_fence);
-	if (ret)
-		goto err_free_out_fence;
-
-	UNLOCK(client);
-	trace_edgetpu_vii_command_end(client, &command, ret);
-	return 0;
-
-err_free_out_fence:
-	if (out_fence)
-		dma_fence_put(out_fence);
+	ret = edgetpu_device_group_send_vii_command(client->group, &command.command, in_fence_array,
+						    out_fence_array, /*additional_info=*/NULL,
+						    /*release_callback=*/NULL,
+						    /*release_data=*/NULL);
+	gcip_fence_array_put(out_fence_array);
 err_free_in_fence:
-	if (in_fence)
-		dma_fence_put(in_fence);
+	gcip_fence_array_put(in_fence_array);
 err_unlock:
 	UNLOCK(client);
 err_ret:
@@ -714,7 +748,8 @@ static int edgetpu_ioctl_vii_response(struct edgetpu_client *client,
 
 	trace_edgetpu_vii_response_start(client);
 
-	if (!client->etdev->mailbox_manager->use_ikv) {
+	if (!client->etdev->mailbox_manager->use_ikv ||
+	    client->etdev->vii_format != EDGETPU_VII_FORMAT_FLATBUFFER) {
 		ret = -EOPNOTSUPP;
 		goto out_end_trace;
 	}
@@ -736,6 +771,188 @@ out_unlock:
 
 out_end_trace:
 	trace_edgetpu_vii_response_end(client, &ibuf, ret);
+	return ret;
+}
+
+struct litebuf_command_iremap_buffer {
+	struct edgetpu_dev *etdev;
+	struct edgetpu_coherent_mem mem;
+};
+
+static void release_litebuf_iremap_buffer(void *data)
+{
+	struct litebuf_command_iremap_buffer *buffer = data;
+
+	edgetpu_iremap_free(buffer->etdev, &buffer->mem);
+	kfree(buffer);
+}
+
+static int edgetpu_ioctl_vii_litebuf_command(struct edgetpu_client *client,
+					     struct edgetpu_vii_litebuf_command_ioctl __user *argp)
+{
+	struct edgetpu_vii_litebuf_command_ioctl ibuf;
+	struct edgetpu_vii_litebuf_command cmd;
+	struct gcip_fence_array *in_fence_array;
+	struct gcip_fence_array *out_fence_array;
+	struct edgetpu_ikv_additional_info additional_info = {};
+	uint16_t *in_iif_fences, *out_iif_fences;
+	int num_in_iif_fences, num_out_iif_fences;
+	struct litebuf_command_iremap_buffer *iremap_buffer = NULL;
+	void (*release_callback)(void *) = NULL;
+	int ret = 0;
+
+	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
+		return -EFAULT;
+
+	trace_edgetpu_vii_litebuf_command_start(client);
+
+	if (!client->etdev->mailbox_manager->use_ikv ||
+	    client->etdev->vii_format != EDGETPU_VII_FORMAT_LITEBUF) {
+		ret = -EOPNOTSUPP;
+		goto out_end_trace;
+	}
+
+	if (!lock_check_group_member(client)) {
+		ret = -EINVAL;
+		goto out_end_trace;
+	}
+
+	if (ibuf.litebuf_size <= VII_CMD_PAYLOAD_SIZE_BYTES) {
+		if (copy_from_user(cmd.runtime_command, (u8 __user *)ibuf.litebuf_address,
+				   ibuf.litebuf_size)) {
+			ret = -EFAULT;
+			goto out_unlock;
+		}
+		cmd.type = EDGETPU_VII_LITEBUF_RUNTIME_COMMAND;
+	} else {
+		iremap_buffer = kzalloc(sizeof(*iremap_buffer), GFP_KERNEL);
+		if (!iremap_buffer) {
+			ret = -ENOMEM;
+			goto out_unlock;
+		}
+
+		iremap_buffer->etdev = client->etdev;
+		ret = edgetpu_iremap_alloc(client->etdev, ibuf.litebuf_size, &iremap_buffer->mem);
+		if (ret)
+			goto out_free_large_command_buffer;
+
+		if (copy_from_user(iremap_buffer->mem.vaddr, (u8 __user *)ibuf.litebuf_address,
+				   ibuf.litebuf_size)) {
+			ret = -EFAULT;
+			goto out_free_large_command_iremap;
+		}
+
+		cmd.large_runtime_command.address = iremap_buffer->mem.dma_addr;
+		cmd.large_runtime_command.size_bytes = ibuf.litebuf_size;
+		cmd.type = EDGETPU_VII_LITEBUF_LARGE_RUNTIME_COMMAND;
+		release_callback = release_litebuf_iremap_buffer;
+	}
+
+	/*
+	 * In-kernel VII expects a command to have the client-provided sequence number set.
+	 * It will be saved and overridden by the in-kernel VII stack before it is sent to firmware.
+	 */
+	edgetpu_vii_command_set_seq_number(client->etdev, &cmd, ibuf.seq);
+
+	in_fence_array = get_fence_array_from_user(client->etdev, ibuf.in_fence_count,
+						   (int __user *)ibuf.in_fence_array, true, false,
+						   "in");
+	if (IS_ERR(in_fence_array)) {
+		ret = PTR_ERR(in_fence_array);
+		goto out_unlock;
+	}
+
+	out_fence_array = get_fence_array_from_user(client->etdev, ibuf.out_fence_count,
+						    (int __user *)ibuf.out_fence_array, false, true,
+						    "out");
+	if (IS_ERR(out_fence_array)) {
+		ret = PTR_ERR(out_fence_array);
+		goto out_free_in_fence_array;
+	}
+
+	in_iif_fences = gcip_fence_array_get_iif_id(in_fence_array, &num_in_iif_fences, false, 0);
+	if (IS_ERR(in_iif_fences)) {
+		ret = PTR_ERR(in_iif_fences);
+		goto out_free_out_fence_array;
+	}
+
+	out_iif_fences =
+		gcip_fence_array_get_iif_id(out_fence_array, &num_out_iif_fences, true, IIF_IP_TPU);
+	if (IS_ERR(out_iif_fences)) {
+		ret = PTR_ERR(out_iif_fences);
+		goto out_free_in_iif_fences;
+	}
+
+	edgetpu_ikv_additional_info_fill(&additional_info, in_iif_fences, num_in_iif_fences,
+					 out_iif_fences, num_out_iif_fences, 0, NULL, 0);
+
+	ret = edgetpu_device_group_send_vii_command(client->group, &cmd, in_fence_array,
+						    out_fence_array, &additional_info,
+						    release_callback, iremap_buffer);
+
+	kfree(out_iif_fences);
+out_free_in_iif_fences:
+	kfree(in_iif_fences);
+out_free_out_fence_array:
+	gcip_fence_array_put(out_fence_array);
+out_free_in_fence_array:
+	gcip_fence_array_put(in_fence_array);
+out_free_large_command_iremap:
+	if (ret && iremap_buffer)
+		edgetpu_iremap_free(client->etdev, &iremap_buffer->mem);
+out_free_large_command_buffer:
+	if (ret && iremap_buffer)
+		kfree(iremap_buffer);
+out_unlock:
+	UNLOCK(client);
+out_end_trace:
+	trace_edgetpu_vii_litebuf_command_end(client, &ibuf, ret);
+	return ret;
+}
+
+static int
+edgetpu_ioctl_vii_litebuf_response(struct edgetpu_client *client,
+				   struct edgetpu_vii_litebuf_response_ioctl __user *argp)
+{
+	struct edgetpu_vii_litebuf_response_ioctl ibuf;
+	struct edgetpu_vii_litebuf_response resp;
+	int ret = 0;
+
+	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
+		return -EFAULT;
+
+	trace_edgetpu_vii_litebuf_response_start(client);
+
+	if (!client->etdev->mailbox_manager->use_ikv ||
+	    client->etdev->vii_format != EDGETPU_VII_FORMAT_LITEBUF) {
+		ret = -EOPNOTSUPP;
+		goto out_end_trace;
+	}
+
+	if (!lock_check_group_member(client)) {
+		ret = -EINVAL;
+		goto out_end_trace;
+	}
+
+	ret = edgetpu_device_group_get_vii_response(client->group, &resp);
+	if (ret)
+		goto out_unlock;
+
+	if (copy_to_user((u8 __user *)ibuf.litebuf_address, resp.runtime_response,
+			 VII_RESP_PAYLOAD_SIZE_BYTES)) {
+		ret = -EFAULT;
+		goto out_unlock;
+	}
+	ibuf.seq = resp.seq;
+	ibuf.code = resp.code;
+
+	if (copy_to_user(argp, &ibuf, sizeof(ibuf)))
+		ret = -EFAULT;
+out_unlock:
+	UNLOCK(client);
+
+out_end_trace:
+	trace_edgetpu_vii_litebuf_response_end(client, &ibuf, ret);
 	return ret;
 }
 
@@ -839,6 +1056,12 @@ long edgetpu_ioctl(struct file *file, uint cmd, ulong arg)
 	case EDGETPU_VII_RESPONSE:
 		ret = edgetpu_ioctl_vii_response(client, argp);
 		break;
+	case EDGETPU_VII_LITEBUF_COMMAND:
+		ret = edgetpu_ioctl_vii_litebuf_command(client, argp);
+		break;
+	case EDGETPU_VII_LITEBUF_RESPONSE:
+		ret = edgetpu_ioctl_vii_litebuf_response(client, argp);
+		break;
 	default:
 		return -ENOTTY; /* unknown command */
 	}
@@ -910,9 +1133,9 @@ static int edgetpu_pm_debugfs_set_wakelock(void *data, u64 val)
 	int ret = 0;
 
 	if (val)
-		ret = gcip_pm_get(etdev->pm);
+		ret = edgetpu_pm_get(etdev);
 	else
-		gcip_pm_put(etdev->pm);
+		edgetpu_pm_put(etdev);
 	return ret;
 }
 DEFINE_DEBUGFS_ATTRIBUTE(fops_wakelock, NULL, edgetpu_pm_debugfs_set_wakelock,
@@ -926,9 +1149,9 @@ static void edgetpu_fs_setup_debugfs(struct edgetpu_dev *etdev)
 		etdev_warn(etdev, "Failed to setup debugfs\n");
 		return;
 	}
-	debugfs_create_file("mappings", 0440, etdev->d_entry,
+	debugfs_create_file("mappings", 0444, etdev->d_entry,
 			    etdev, &mappings_ops);
-	debugfs_create_file("syncfences", 0440, etdev->d_entry, etdev, &syncfences_ops);
+	debugfs_create_file("syncfences", 0444, etdev->d_entry, etdev, &syncfences_ops);
 	debugfs_create_file("wakelock", 0220, etdev->d_entry, etdev,
 			    &fops_wakelock);
 }
@@ -965,14 +1188,25 @@ static ssize_t clients_show(
 	mutex_lock(&etdev->clients_lock);
 	for_each_list_device_client(etdev, lc) {
 		struct edgetpu_device_group *group;
+		struct timespec64 curr;
+		struct timespec64 total_plus_curr;
 
 		mutex_lock(&lc->client->group_lock);
 		group = lc->client->group;
+		total_plus_curr = lc->client->wakelock.total_acquired_time;
+
+		if (lc->client->wakelock.req_count) {
+			ktime_get_ts64(&curr);
+			curr = timespec64_sub(curr, lc->client->wakelock.current_acquire_timestamp);
+			total_plus_curr = timespec64_add(total_plus_curr, curr);
+		}
+
 		len = scnprintf(buf, PAGE_SIZE - ret,
-				"pid %d tgid %d group %d wakelock %d\n",
-				lc->client->pid, lc->client->tgid,
-				group ? group->workload_id : -1,
-				lc->client->wakelock->req_count);
+				"pid %d tgid %d group %d wakelock %d %lu %lu\n",
+				lc->client->pid, lc->client->tgid, group ? group->workload_id : -1,
+				lc->client->wakelock.req_count,
+				(unsigned long)total_plus_curr.tv_sec,
+				lc->client->wakelock.req_count ? (unsigned long)curr.tv_sec : 0);
 		mutex_unlock(&lc->client->group_lock);
 		buf += len;
 		ret += len;

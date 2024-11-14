@@ -13,55 +13,30 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 
-#include <gcip/gcip-pm.h>
 #include <gcip/gcip-iommu.h>
-#include <gcip/iif/iif-manager.h>
+#include <iif/iif-manager.h>
 
 #include "edgetpu-config.h"
-#include "edgetpu-debug-dump.h"
+#include "edgetpu-devfreq.h"
 #include "edgetpu-dmabuf.h"
-#include "edgetpu-gsa.h"
+#include "edgetpu-firmware.h"
 #include "edgetpu-internal.h"
-#include "edgetpu-iremap-pool.h"
 #include "edgetpu-mmu.h"
 #include "edgetpu-mobile-platform.h"
+#include "edgetpu-pm.h"
 #include "edgetpu-soc.h"
 #include "edgetpu-telemetry.h"
 #include "edgetpu-thermal.h"
-#include "mobile-firmware.h"
 
 static struct edgetpu_dev *edgetpu_debug_pointer;
-
-static void set_telemetry_mem(struct edgetpu_mobile_platform_dev *etmdev,
-			      enum gcip_telemetry_type type, struct edgetpu_coherent_mem *mem)
-{
-	int i, offset = type == GCIP_TELEMETRY_TRACE ? EDGETPU_TELEMETRY_LOG_BUFFER_SIZE : 0;
-	const size_t size = type == GCIP_TELEMETRY_LOG ? EDGETPU_TELEMETRY_LOG_BUFFER_SIZE :
-							 EDGETPU_TELEMETRY_TRACE_BUFFER_SIZE;
-
-	for (i = 0; i < etmdev->edgetpu_dev.num_cores; i++) {
-		mem[i].vaddr = etmdev->shared_mem_vaddr + offset;
-		mem[i].dma_addr = etmdev->remapped_data_addr + offset;
-		mem[i].host_addr = 0;
-		mem[i].size = size;
-		offset += EDGETPU_TELEMETRY_LOG_BUFFER_SIZE + EDGETPU_TELEMETRY_TRACE_BUFFER_SIZE;
-	}
-}
-
-void edgetpu_mobile_set_telemetry_mem(struct edgetpu_mobile_platform_dev *etmdev)
-{
-	set_telemetry_mem(etmdev, GCIP_TELEMETRY_LOG, etmdev->log_mem);
-	set_telemetry_mem(etmdev, GCIP_TELEMETRY_TRACE, etmdev->trace_mem);
-}
 
 static int edgetpu_platform_setup_fw_region(struct edgetpu_mobile_platform_dev *etmdev)
 {
 	struct edgetpu_dev *etdev = &etmdev->edgetpu_dev;
-	struct platform_device *gsa_pdev;
 	struct device *dev = etdev->dev;
 	struct resource r;
 	struct device_node *np;
-	int err;
+	int ret;
 	size_t region_map_size = EDGETPU_MAX_FW_LIMIT;
 
 	np = of_parse_phandle(dev->of_node, "memory-region", 0);
@@ -70,11 +45,11 @@ static int edgetpu_platform_setup_fw_region(struct edgetpu_mobile_platform_dev *
 		return -ENODEV;
 	}
 
-	err = of_address_to_resource(np, 0, &r);
+	ret = of_address_to_resource(np, 0, &r);
 	of_node_put(np);
-	if (err) {
+	if (ret) {
 		dev_err(dev, "No memory address assigned to firmware region");
-		return err;
+		return ret;
 	}
 
 	if (resource_size(&r) < region_map_size) {
@@ -83,132 +58,17 @@ static int edgetpu_platform_setup_fw_region(struct edgetpu_mobile_platform_dev *
 		return -ENOSPC;
 	}
 
-	/* Get GSA device from device tree */
-	np = of_parse_phandle(dev->of_node, "gsa-device", 0);
-	if (!np) {
-		dev_warn(dev, "No gsa-device in device tree. Authentication not available");
-	} else {
-		gsa_pdev = of_find_device_by_node(np);
-		if (!gsa_pdev) {
-			dev_err(dev, "GSA device not found");
-			of_node_put(np);
-			return -ENODEV;
-		}
-		etmdev->gsa_dev = get_device(&gsa_pdev->dev);
-		of_node_put(np);
-	}
-
-	etmdev->fw_region_paddr = r.start;
-	etmdev->fw_region_size = EDGETPU_DEFAULT_FW_LIMIT;
-
-	etmdev->remapped_data_addr = EDGETPU_INSTRUCTION_REMAP_BASE + etmdev->fw_region_size;
-	etmdev->remapped_data_size = EDGETPU_DEFAULT_REMAPPED_DATA_SIZE;
-
-	etmdev->shared_mem_vaddr = memremap(etmdev->fw_region_paddr + etmdev->fw_region_size,
-					    etmdev->remapped_data_size, MEMREMAP_WC);
-	if (!etmdev->shared_mem_vaddr) {
-		dev_err(dev, "Shared memory remap failed");
-		if (etmdev->gsa_dev)
-			put_device(etmdev->gsa_dev);
-		return -EINVAL;
-	}
-	etmdev->shared_mem_paddr = etmdev->fw_region_paddr + etmdev->fw_region_size;
-
-	return 0;
+	ret = edgetpu_firmware_setup_fw_region(etdev, r.start);
+	if (ret)
+		dev_err(dev, "setup firmware region failed: %d", ret);
+	return ret;
 }
 
 static void edgetpu_platform_cleanup_fw_region(struct edgetpu_mobile_platform_dev *etmdev)
 {
-	if (etmdev->gsa_dev) {
-		gsa_unload_tpu_fw_image(etmdev->gsa_dev);
-		put_device(etmdev->gsa_dev);
-	}
-	if (!etmdev->shared_mem_vaddr)
-		return;
-	memunmap(etmdev->shared_mem_vaddr);
-	etmdev->shared_mem_vaddr = NULL;
-	etmdev->remapped_data_addr = 0;
-	etmdev->remapped_data_size = 0;
-}
+	struct edgetpu_dev *etdev = &etmdev->edgetpu_dev;
 
-static int mobile_check_ext_mailbox_args(const char *func, struct edgetpu_dev *etdev,
-					 struct edgetpu_ext_mailbox_ioctl *args)
-{
-	if (args->type != EDGETPU_EXT_MAILBOX_TYPE_TZ) {
-		etdev_err(etdev, "%s: Invalid type %d != %d\n", func, args->type,
-			  EDGETPU_EXT_MAILBOX_TYPE_TZ);
-		return -EINVAL;
-	}
-	if (args->count != 1) {
-		etdev_err(etdev, "%s: Invalid mailbox count: %d != 1\n", func, args->count);
-		return -EINVAL;
-	}
-	return 0;
-}
-
-int edgetpu_chip_acquire_ext_mailbox(struct edgetpu_client *client,
-				     struct edgetpu_ext_mailbox_ioctl *args)
-{
-	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(client->etdev);
-	int ret;
-
-	ret = mobile_check_ext_mailbox_args(__func__, client->etdev, args);
-	if (ret)
-		return ret;
-
-	mutex_lock(&etmdev->tz_mailbox_lock);
-	if (etmdev->secure_client) {
-		etdev_err(client->etdev, "TZ mailbox already in use by PID %d\n",
-			  etmdev->secure_client->pid);
-		mutex_unlock(&etmdev->tz_mailbox_lock);
-		return -EBUSY;
-	}
-	ret = edgetpu_mailbox_enable_ext(client, EDGETPU_TZ_MAILBOX_ID, NULL, 0);
-	if (!ret)
-		etmdev->secure_client = client;
-	mutex_unlock(&etmdev->tz_mailbox_lock);
-	return ret;
-}
-
-int edgetpu_chip_release_ext_mailbox(struct edgetpu_client *client,
-				     struct edgetpu_ext_mailbox_ioctl *args)
-{
-	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(client->etdev);
-	int ret = 0;
-
-	ret = mobile_check_ext_mailbox_args(__func__, client->etdev,
-					      args);
-	if (ret)
-		return ret;
-
-	mutex_lock(&etmdev->tz_mailbox_lock);
-	if (!etmdev->secure_client) {
-		etdev_warn(client->etdev, "TZ mailbox already released\n");
-		mutex_unlock(&etmdev->tz_mailbox_lock);
-		return 0;
-	}
-	if (etmdev->secure_client != client) {
-		etdev_err(client->etdev,
-			  "TZ mailbox owned by different client\n");
-		mutex_unlock(&etmdev->tz_mailbox_lock);
-		return -EBUSY;
-	}
-	etmdev->secure_client = NULL;
-	ret = edgetpu_mailbox_disable_ext(client, EDGETPU_TZ_MAILBOX_ID);
-	mutex_unlock(&etmdev->tz_mailbox_lock);
-	return ret;
-}
-
-void edgetpu_chip_client_remove(struct edgetpu_client *client)
-{
-	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(client->etdev);
-
-	mutex_lock(&etmdev->tz_mailbox_lock);
-	if (etmdev->secure_client == client) {
-		etmdev->secure_client = NULL;
-		edgetpu_mailbox_disable_ext(client, EDGETPU_TZ_MAILBOX_ID);
-	}
-	mutex_unlock(&etmdev->tz_mailbox_lock);
+	edgetpu_firmware_cleanup_fw_region(etdev);
 }
 
 /* Handle mailbox response doorbell IRQ for mobile platform devices. */
@@ -248,7 +108,6 @@ irqreturn_t edgetpu_mailbox_irq_handler(int irq, void *arg)
 	struct edgetpu_dev *etdev = arg;
 
 	edgetpu_telemetry_irq_handler(etdev);
-	edgetpu_debug_dump_resp_handler(etdev);
 	return edgetpu_platform_handle_mailbox_doorbell(etdev, irq);
 }
 
@@ -263,11 +122,72 @@ static inline const char *get_driver_commit(void)
 #endif
 }
 
-static int edgetpu_mobile_platform_probe(struct platform_device *pdev,
-					 struct edgetpu_mobile_platform_dev *etmdev)
+static void edgetpu_get_embedded_iif_mgr(struct edgetpu_dev *etdev)
+{
+	struct iif_manager *mgr;
+
+	etdev_info(etdev, "Try to get an embedded IIF manager");
+
+	mgr = iif_manager_init(etdev->dev->of_node);
+	if (IS_ERR(mgr)) {
+		etdev_warn(etdev, "Failed to init an embedded IIF manager: %ld", PTR_ERR(mgr));
+		return;
+	}
+
+	etdev->iif_mgr = mgr;
+}
+
+static void edgetpu_get_iif_mgr(struct edgetpu_dev *etdev)
+{
+	struct platform_device *pdev;
+	struct device_node *node;
+	struct iif_manager *mgr;
+
+	node = of_parse_phandle(etdev->dev->of_node, "iif-device", 0);
+	if (IS_ERR_OR_NULL(node)) {
+		etdev_warn(etdev, "There is no iif-device node in the device tree");
+		goto get_embed;
+	}
+
+	pdev = of_find_device_by_node(node);
+	of_node_put(node);
+	if (!pdev) {
+		etdev_warn(etdev, "Failed to find the IIF device");
+		goto get_embed;
+	}
+
+	mgr = platform_get_drvdata(pdev);
+	if (!mgr) {
+		etdev_warn(etdev, "Failed to get a manager from IIF device");
+		goto put_device;
+	}
+
+	etdev_info(etdev, "Use the IIF manager of IIF device");
+
+	/* We don't need to call `get_device` since `of_find_device_by_node` takes a refcount. */
+	etdev->iif_dev = &pdev->dev;
+	etdev->iif_mgr = iif_manager_get(mgr);
+	return;
+
+put_device:
+	put_device(&pdev->dev);
+get_embed:
+	edgetpu_get_embedded_iif_mgr(etdev);
+}
+
+static void edgetpu_put_iif_mgr(struct edgetpu_dev *etdev)
+{
+	if (etdev->iif_mgr)
+		iif_manager_put(etdev->iif_mgr);
+	/* NO-OP if `etdev->iif_dev.dev` is NULL. */
+	put_device(etdev->iif_dev);
+}
+
+static int edgetpu_mobile_platform_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	struct edgetpu_dev *etdev = &etmdev->edgetpu_dev;
+	struct edgetpu_mobile_platform_dev *etmdev;
+	struct edgetpu_dev *etdev;
 	struct resource *r;
 	struct edgetpu_mapped_resource regs;
 	int ret;
@@ -278,12 +198,19 @@ static int edgetpu_mobile_platform_probe(struct platform_device *pdev,
 		{ .name = "edgetpu-soc" },
 	};
 
+	etmdev = devm_kzalloc(dev, sizeof(*etmdev), GFP_KERNEL);
+	if (!etmdev)
+		return -ENOMEM;
 	mutex_init(&etmdev->tz_mailbox_lock);
-
+	etdev = &etmdev->edgetpu_dev;
 	platform_set_drvdata(pdev, etdev);
 	etdev->dev = dev;
 	etdev->num_cores = EDGETPU_NUM_CORES;
-
+	etdev->num_telemetry_buffers = EDGETPU_NUM_CORES;
+	etdev->log_buffer_size = EDGETPU_TELEMETRY_LOG_BUFFER_SIZE;
+#if IS_ENABLED(CONFIG_EDGETPU_TELEMETRY_TRACE)
+	etdev->trace_buffer_size = EDGETPU_TELEMETRY_TRACE_BUFFER_SIZE;
+#endif
 	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (IS_ERR_OR_NULL(r)) {
 		dev_err(dev, "failed to get memory resource");
@@ -299,9 +226,6 @@ static int edgetpu_mobile_platform_probe(struct platform_device *pdev,
 		return ret;
 	}
 
-	mutex_init(&etmdev->platform_pwr.policy_lock);
-	etmdev->platform_pwr.curr_policy = TPU_POLICY_MAX;
-
 	/* Use 36-bit DMA mask for any default DMA API paths except coherent. */
 	ret = dma_set_mask(&pdev->dev, DMA_BIT_MASK(36));
 	if (ret)
@@ -313,32 +237,15 @@ static int edgetpu_mobile_platform_probe(struct platform_device *pdev,
 	ret = edgetpu_platform_setup_fw_region(etmdev);
 	if (ret) {
 		dev_err(dev, "setup fw regions failed: %d", ret);
-		goto out_shutdown;
+		return ret;
 	}
 
-	ret = edgetpu_iremap_pool_create(etdev,
-					 /* Base virtual address (kernel address space) */
-					 etmdev->shared_mem_vaddr + EDGETPU_POOL_MEM_OFFSET,
-					 /* Base DMA address */
-					 etmdev->remapped_data_addr + EDGETPU_POOL_MEM_OFFSET,
-					 /* Base physical address */
-					 etmdev->shared_mem_paddr + EDGETPU_POOL_MEM_OFFSET,
-					 /* Size */
-					 etmdev->remapped_data_size - EDGETPU_POOL_MEM_OFFSET,
-					 /* Granularity */
-					 PAGE_SIZE);
-	if (ret) {
-		dev_err(dev, "failed to initialize remapped memory pool: %d", ret);
-		goto out_cleanup_fw;
-	}
-
-	INIT_LIST_HEAD(&etmdev->fw_ctx_list);
-	mutex_init(&etmdev->fw_ctx_list_lock);
-
+	mutex_init(&etdev->vii_format_uninitialized_lock);
+	etdev->vii_format = EDGETPU_VII_FORMAT_UNKNOWN;
 	ret = edgetpu_device_add(etdev, &regs, iface_params, ARRAY_SIZE(iface_params));
 	if (ret) {
-		dev_err(dev, "edgetpu setup failed: %d", ret);
-		goto out_destroy_iremap;
+		dev_err(dev, "edgetpu device add failed: %d", ret);
+		goto out_cleanup_fw_region;
 	}
 
 	ret = edgetpu_soc_setup_irqs(etdev);
@@ -347,35 +254,19 @@ static int edgetpu_mobile_platform_probe(struct platform_device *pdev,
 		goto out_remove_device;
 	}
 
-	etmdev->log_mem = devm_kcalloc(dev, etdev->num_cores, sizeof(*etmdev->log_mem), GFP_KERNEL);
-	if (!etmdev->log_mem) {
-		ret = -ENOMEM;
-		goto out_remove_device;
-	}
-
-#if IS_ENABLED(CONFIG_EDGETPU_TELEMETRY_TRACE)
-	etmdev->trace_mem =
-		devm_kcalloc(dev, etdev->num_cores, sizeof(*etmdev->log_mem), GFP_KERNEL);
-	if (!etmdev->trace_mem) {
-		ret = -ENOMEM;
-		goto out_remove_device;
-	}
-#endif
-
-	edgetpu_mobile_set_telemetry_mem(etmdev);
-	ret = edgetpu_telemetry_init(etdev, etmdev->log_mem, etmdev->trace_mem);
-	if (ret)
-		goto out_remove_device;
-
-	ret = edgetpu_mobile_firmware_create(etdev);
+	ret = edgetpu_firmware_create(etdev);
 	if (ret) {
 		dev_err(dev, "initialize firmware downloader failed: %d", ret);
-		goto out_tel_exit;
+		goto out_remove_device;
 	}
 
 	ret = edgetpu_thermal_create(etdev);
 	if (ret)
 		etdev_warn(etdev, "Failed to create thermal device: %d", ret);
+
+	ret = edgetpu_devfreq_create(etdev);
+	if (ret)
+		etdev_warn(etdev, "Failed to create devfreq interface: %d", ret);
 
 	ret = edgetpu_sync_fence_manager_create(etdev);
 	if (ret) {
@@ -383,46 +274,25 @@ static int edgetpu_mobile_platform_probe(struct platform_device *pdev,
 		goto out_destroy_thermal;
 	}
 
-	etdev->iif_mgr = iif_manager_init(etdev->dev->of_node);
-	if (IS_ERR(etdev->iif_mgr)) {
-		etdev_warn(etdev, "Failed to init IIF manager: %ld", PTR_ERR(etdev->iif_mgr));
-		etdev->iif_mgr = NULL;
-	}
-
-	if (etmdev->after_probe) {
-		ret = etmdev->after_probe(etmdev);
-		if (ret) {
-			dev_err(dev, "after_probe callback failed: %d", ret);
-			goto out_put_iif_mgr;
-		}
-	}
-
+	edgetpu_get_iif_mgr(etdev);
+	edgetpu_soc_post_power_on_init(etdev);
 	dev_info(dev, "%s edgetpu initialized. Build: %s", etdev->dev_name, get_driver_commit());
 
 	/* Turn the device off unless a client request is already received. */
-	gcip_pm_shutdown(etdev->pm, false);
+	edgetpu_pm_shutdown(etdev, false);
 
 	edgetpu_debug_pointer = etdev;
 
 	return 0;
 
-out_put_iif_mgr:
-	if (etdev->iif_mgr)
-		iif_manager_put(etdev->iif_mgr);
 out_destroy_thermal:
+	edgetpu_devfreq_destroy(etdev);
 	edgetpu_thermal_destroy(etdev);
-	edgetpu_mobile_firmware_destroy(etdev);
-out_tel_exit:
-	edgetpu_telemetry_exit(etdev);
+	edgetpu_firmware_destroy(etdev);
 out_remove_device:
 	edgetpu_device_remove(etdev);
-out_destroy_iremap:
-	edgetpu_iremap_pool_destroy(etdev);
-out_cleanup_fw:
+out_cleanup_fw_region:
 	edgetpu_platform_cleanup_fw_region(etmdev);
-out_shutdown:
-	dev_dbg(dev, "Probe finished with error %d, powering down", ret);
-	gcip_pm_shutdown(etdev->pm, true);
 	return ret;
 }
 
@@ -431,13 +301,11 @@ static int edgetpu_mobile_platform_remove(struct platform_device *pdev)
 	struct edgetpu_dev *etdev = platform_get_drvdata(pdev);
 	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(etdev);
 
-	if (etdev->iif_mgr)
-		iif_manager_put(etdev->iif_mgr);
+	edgetpu_put_iif_mgr(etdev);
+	edgetpu_devfreq_destroy(etdev);
 	edgetpu_thermal_destroy(etdev);
-	edgetpu_mobile_firmware_destroy(etdev);
-	edgetpu_telemetry_exit(etdev);
+	edgetpu_firmware_destroy(etdev);
 	edgetpu_device_remove(etdev);
-	edgetpu_iremap_pool_destroy(etdev);
 	edgetpu_platform_cleanup_fw_region(etmdev);
 
 	edgetpu_debug_pointer = NULL;

@@ -11,7 +11,7 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 
-#include "edgetpu-debug-dump.h"
+#include "edgetpu-debug.h"
 #include "edgetpu-device-group.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-kci.h"
@@ -30,7 +30,7 @@ static void sw_wdt_handler_work(struct work_struct *work)
 	etdev_err(etdev, "watchdog restart");
 	etdev->watchdog_timeout_count++;
 	edgetpu_debug_dump_cpu_regs(etdev);
-	edgetpu_debug_dump(etdev, NULL, DUMP_REASON_SW_WATCHDOG_TIMEOUT);
+	edgetpu_debug_dump(etdev, DUMP_REASON_SW_WATCHDOG_TIMEOUT);
 	edgetpu_fatal_error_notify(etdev, EDGETPU_ERROR_WATCHDOG_TIMEOUT);
 	edgetpu_firmware_watchdog_restart(etdev);
 }
