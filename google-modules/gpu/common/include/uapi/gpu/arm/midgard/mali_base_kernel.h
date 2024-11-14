@@ -28,6 +28,7 @@
 
 #include <linux/types.h>
 #include "mali_gpu_props.h"
+#include "mali_base_common_kernel.h"
 #include "mali_base_mem_priv.h"
 #include "gpu/mali_kbase_gpu_id.h"
 #include "gpu/mali_kbase_gpu_coherency.h"
@@ -44,11 +45,7 @@
 
 #else
 
-#if defined(MALI_PAGE_SIZE_AGNOSTIC)
 #define LOCAL_PAGE_SHIFT (__builtin_ctz((unsigned int)sysconf(_SC_PAGESIZE)))
-#else
-#define LOCAL_PAGE_SHIFT 12
-#endif
 
 #define LOCAL_PAGE_LSB ((1ul << LOCAL_PAGE_SHIFT) - 1)
 
@@ -78,7 +75,7 @@
  * More flags can be added to this list, as long as they don't clash
  * (see BASE_MEM_FLAGS_NR_BITS for the number of the first free bit).
  */
-typedef __u32 base_mem_alloc_flags;
+typedef __u64 base_mem_alloc_flags;
 
 #define BASE_MEM_FLAGS_MODIFIABLE_NATIVE (BASE_MEM_DONT_NEED)
 
@@ -93,9 +90,10 @@ typedef __u32 base_mem_alloc_flags;
 /* A mask of all the flags that can be returned via the base_mem_get_flags()
  * interface.
  */
-#define BASE_MEM_FLAGS_QUERYABLE                                                       \
-	(BASE_MEM_FLAGS_INPUT_MASK & ~(BASE_MEM_DONT_QUERY | BASE_MEM_FLAGS_RESERVED | \
-				       BASE_MEM_FLAGS_UNUSED | BASEP_MEM_FLAGS_KERNEL_ONLY))
+#define BASE_MEM_FLAGS_QUERYABLE                                                               \
+	(BASE_MEM_FLAGS_INPUT_MASK &                                                           \
+	 ~(BASE_MEM_FLAGS_RESERVED | BASE_MEM_FLAGS_UNUSED | BASE_MEM_FLAGS_ACTION_MODIFIERS | \
+	   BASE_MEM_FLAGS_KERNEL_ONLY))
 
 /**
  * enum base_mem_import_type - Memory types supported by @a base_mem_import

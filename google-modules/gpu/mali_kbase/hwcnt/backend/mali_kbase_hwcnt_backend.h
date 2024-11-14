@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  *
- * (C) COPYRIGHT 2018-2023 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2018-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -79,6 +79,18 @@ typedef int kbase_hwcnt_backend_init_fn(const struct kbase_hwcnt_backend_info *i
 typedef void kbase_hwcnt_backend_term_fn(struct kbase_hwcnt_backend *backend);
 
 /**
+ * typedef kbase_hwcnt_backend_acquire_fn - Enable counter collection.
+ * @backend: Non-NULL pointer to backend interface.
+ */
+typedef void kbase_hwcnt_backend_acquire_fn(const struct kbase_hwcnt_backend *backend);
+
+/**
+ * typedef kbase_hwcnt_backend_release_fn - Disable counter collection.
+ * @backend: Non-NULL pointer to backend interface.
+ */
+typedef void kbase_hwcnt_backend_release_fn(const struct kbase_hwcnt_backend *backend);
+
+/**
  * typedef kbase_hwcnt_backend_timestamp_ns_fn - Get the current backend
  *                                               timestamp.
  * @backend: Non-NULL pointer to backend.
@@ -154,16 +166,13 @@ typedef int kbase_hwcnt_backend_dump_clear_fn(struct kbase_hwcnt_backend *backen
  * typedef kbase_hwcnt_backend_dump_request_fn - Request an asynchronous counter
  *                                               dump.
  * @backend: Non-NULL pointer to backend.
- * @dump_time_ns: Non-NULL pointer where the timestamp of when the dump was
- *                requested will be written out to on success.
  *
  * If the backend is not enabled or another dump is already in progress,
  * returns an error.
  *
  * Return: 0 on success, else error code.
  */
-typedef int kbase_hwcnt_backend_dump_request_fn(struct kbase_hwcnt_backend *backend,
-						u64 *dump_time_ns);
+typedef int kbase_hwcnt_backend_dump_request_fn(struct kbase_hwcnt_backend *backend);
 
 /**
  * typedef kbase_hwcnt_backend_dump_wait_fn - Wait until the last requested
@@ -185,6 +194,10 @@ typedef int kbase_hwcnt_backend_dump_wait_fn(struct kbase_hwcnt_backend *backend
  * @enable_map:  Non-NULL pointer to enable map specifying enabled values.
  * @accumulate:  True if counters should be accumulated into dump_buffer, rather
  *               than copied.
+ * @dump_time_ns: Non-NULL pointer holds the timestamp captured at the request of
+ *		  dump for JM GPU. Whereas for CSF GPU, holds the timestamp converted
+ *		  from the TIMESTAMP of the dump buffer (CSF GPU).
+ *		  Will be written out to on success.
  *
  * The resultant contents of the dump buffer are only well defined if a prior
  * call to dump_wait returned successfully, and a new dump has not yet been
@@ -195,7 +208,7 @@ typedef int kbase_hwcnt_backend_dump_wait_fn(struct kbase_hwcnt_backend *backend
 typedef int kbase_hwcnt_backend_dump_get_fn(struct kbase_hwcnt_backend *backend,
 					    struct kbase_hwcnt_dump_buffer *dump_buffer,
 					    const struct kbase_hwcnt_enable_map *enable_map,
-					    bool accumulate);
+					    bool accumulate, u64 *dump_time_ns);
 
 /**
  * struct kbase_hwcnt_backend_interface - Hardware counter backend virtual
@@ -206,6 +219,10 @@ typedef int kbase_hwcnt_backend_dump_get_fn(struct kbase_hwcnt_backend *backend,
  *                      metadata.
  * @init:               Function ptr to initialise an instance of the backend.
  * @term:               Function ptr to terminate an instance of the backend.
+ * @acquire:            Callback to indicate that counter collection has
+ *                      been enabled.
+ * @release:            Callback to indicate that counter collection has
+ *                      been disabled.
  * @timestamp_ns:       Function ptr to get the current backend timestamp.
  * @dump_enable:        Function ptr to enable dumping.
  * @dump_enable_nolock: Function ptr to enable dumping while the
@@ -222,6 +239,8 @@ struct kbase_hwcnt_backend_interface {
 	kbase_hwcnt_backend_metadata_fn *metadata;
 	kbase_hwcnt_backend_init_fn *init;
 	kbase_hwcnt_backend_term_fn *term;
+	kbase_hwcnt_backend_acquire_fn *acquire;
+	kbase_hwcnt_backend_release_fn *release;
 	kbase_hwcnt_backend_timestamp_ns_fn *timestamp_ns;
 	kbase_hwcnt_backend_dump_enable_fn *dump_enable;
 	kbase_hwcnt_backend_dump_enable_nolock_fn *dump_enable_nolock;

@@ -971,6 +971,12 @@ int gpu_dvfs_init(struct kbase_device *kbdev)
 
 	pc->dvfs.table = gpu_dvfs_table;
 
+	/* override maximum GPU frequency to match DVFS */
+	kbdev->gpu_props.gpu_freq_khz_max =
+		pc->dvfs.table[pc->dvfs.level_max].clk[GPU_DVFS_CLK_SHADERS];
+	dev_info(kbdev->dev, "GPU max frequency initialized to %u KHz",
+		kbdev->gpu_props.gpu_freq_khz_max);
+
 	/* Set up initial level state */
 	pc->dvfs.level = pc->dvfs.level_min;
 	pc->dvfs.level_target = pc->dvfs.level_min;

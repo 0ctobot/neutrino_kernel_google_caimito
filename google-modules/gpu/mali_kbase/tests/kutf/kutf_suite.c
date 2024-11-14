@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2014-2023 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2014-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -700,7 +700,7 @@ void kutf_add_test_with_filters(struct kutf_suite *suite, unsigned int id, const
 	data.ptr_value = NULL;
 
 	kutf_add_test_with_filters_and_data(suite, id, name, execute,
-					    suite->suite_default_flags & filters, data);
+					    suite->suite_default_flags | filters, data);
 }
 EXPORT_SYMBOL(kutf_add_test_with_filters);
 
@@ -1072,7 +1072,7 @@ __printf(2, 3) void kutf_test_info_msg(struct kutf_context *context, char const 
 	mutex_lock(&context->output_sync);
 
 	va_start(args, msg);
-	kutf_test_info(context, kutf_dsprintf(&context->fixture_pool, msg, args));
+	kutf_test_info(context, kutf_dvsprintf(&context->fixture_pool, msg, args));
 	va_end(args);
 
 	mutex_unlock(&context->output_sync);
@@ -1098,7 +1098,7 @@ __printf(2, 3) void kutf_test_fail_msg(struct kutf_context *context, char const 
 	mutex_lock(&context->output_sync);
 
 	va_start(args, msg);
-	kutf_test_fail(context, kutf_dsprintf(&context->fixture_pool, msg, args));
+	kutf_test_fail(context, kutf_dvsprintf(&context->fixture_pool, msg, args));
 	va_end(args);
 
 	mutex_unlock(&context->output_sync);

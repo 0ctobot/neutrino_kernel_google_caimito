@@ -339,6 +339,40 @@ static ssize_t trigger_core_dump_store(struct device *dev, struct device_attribu
 	return count;
 }
 
+#if MALI_USE_CSF
+static ssize_t trigger_fw_fault_store(struct device *dev, struct device_attribute *attr,
+	const char *buf, size_t count)
+{
+	struct kbase_device *kbdev = dev->driver_data;
+	u32 addr = 0;
+	struct device_node *dpm = of_find_node_by_name(NULL, "dpm");
+	const char *variant = NULL;
+
+	/* Make this a no-op on -user builds. */
+	if ((!dpm) || of_property_read_string(dpm, "variant", &variant) ||
+	    (!strcmp(variant, "user")))
+		return count;
+
+	(void)attr, (void)buf;
+
+	/* pixel: func_call_list_va_start stores FW log callback fn address from FW
+	 * header. This is a NOP until FW logging is enabled by the kernel.
+	 */
+	kbase_csf_read_firmware_memory(kbdev, kbdev->csf.fw_log.func_call_list_va_start, &addr);
+
+	dev_warn(kbdev->dev, "pixel: patching csffw 0x%x to 0x%x\n", addr, 0xFFFFFFFF);
+	kbase_csf_update_firmware_memory_exe(kbdev, addr, 0xFFFFFFFF);
+	mdelay(1000);
+	dev_warn(kbdev->dev, "pixel: patching csffw 0x%x to 0x%x (NOP)\n",
+		addr, 0xbf00bf00 /*ARMV7_DOUBLE_NOP_INSTR*/);
+	kbase_csf_update_firmware_memory_exe(kbdev, addr,
+		0xbf00bf00 /*ARMV7_DOUBLE_NOP_INSTR*/);
+
+	return count;
+}
+DEVICE_ATTR_WO(trigger_fw_fault);
+#endif
+
 DEVICE_ATTR_RO(utilization);
 DEVICE_ATTR_RO(clock_info);
 DEVICE_ATTR_RO(dvfs_table);
@@ -855,6 +889,7 @@ static struct {
 	{ "capacity_headroom", &dev_attr_capacity_headroom },
 	{ "capacity_history_depth", &dev_attr_capacity_history_depth },
 	{ "hint_power_on", &dev_attr_hint_power_on },
+	{ "trigger_fw_fault", &dev_attr_trigger_fw_fault }
 #endif
 };
 

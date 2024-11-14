@@ -5,18 +5,10 @@
  * Author: Varad Gautam <varadgautam@google.com>
  */
 
-#include <linux/spinlock.h>
 #include "pixel_gpu_uevent.h"
+#include "mali_kbase_config_platform.h"
 
-#define GPU_UEVENT_TIMEOUT_MS (1200000U) /* 20min */
-
-static struct gpu_uevent_ctx {
-    unsigned long last_uevent_ts[GPU_UEVENT_TYPE_MAX];
-    spinlock_t lock;
-} gpu_uevent_ctx = {
-    .last_uevent_ts = {0},
-    .lock = __SPIN_LOCK_UNLOCKED(gpu_uevent_ctx.lock)
-};
+#define GPU_UEVENT_RATELIMIT_MS (1200000U) /* 20min */
 
 static bool gpu_uevent_check_valid(const struct gpu_uevent *evt)
 {
@@ -44,6 +36,7 @@ static bool gpu_uevent_check_valid(const struct gpu_uevent *evt)
         case GPU_UEVENT_INFO_PMODE_ENTRY_FAILURE:
         case GPU_UEVENT_INFO_GPU_PAGE_FAULT:
         case GPU_UEVENT_INFO_MMU_AS_ACTIVE_STUCK:
+        case GPU_UEVENT_INFO_TRACE_BUF_INVALID_SLOT:
             return true;
         default:
             return false;
@@ -65,8 +58,12 @@ static bool gpu_uevent_check_valid(const struct gpu_uevent *evt)
     return false;
 }
 
-void pixel_gpu_uevent_send(struct kbase_device *kbdev, const struct gpu_uevent *evt)
+static void pixel_gpu_uevent_send_worker(struct work_struct *data)
 {
+    struct pixel_context *pc = container_of(data, struct pixel_context,
+        gpu_uevent_ctx.gpu_uevent_work);
+    struct kbase_device *kbdev = pc->kbdev;
+    struct gpu_uevent_ctx *gpu_uevent_ctx = &pc->gpu_uevent_ctx;
     enum uevent_env_idx {
         ENV_IDX_TYPE,
         ENV_IDX_INFO,
@@ -76,32 +73,79 @@ void pixel_gpu_uevent_send(struct kbase_device *kbdev, const struct gpu_uevent *
     char *env[ENV_IDX_MAX] = {0};
     unsigned long flags, current_ts = jiffies;
     bool suppress_uevent = false;
+    struct gpu_uevent evt = {0};
 
-    if (WARN_ON(in_interrupt()))
+    if (!kfifo_initialized(&gpu_uevent_ctx->evts_fifo))
         return;
+
+    spin_lock_irqsave(&gpu_uevent_ctx->lock, flags);
+
+    if (kfifo_out(&gpu_uevent_ctx->evts_fifo, &evt, 1 /* nelems */) &&
+        gpu_uevent_check_valid(&evt) &&
+        time_after(current_ts, gpu_uevent_ctx->last_uevent_ts[evt.type]
+            + msecs_to_jiffies(GPU_UEVENT_RATELIMIT_MS))) {
+        gpu_uevent_ctx->last_uevent_ts[evt.type] = current_ts;
+    } else {
+        suppress_uevent = true;
+    }
+
+    spin_unlock_irqrestore(&gpu_uevent_ctx->lock, flags);
+
+    if (suppress_uevent)
+        return;
+
+    env[ENV_IDX_TYPE] = (char *) gpu_uevent_type_str(evt.type);
+    env[ENV_IDX_INFO] = (char *) gpu_uevent_info_str(evt.info);
+    env[ENV_IDX_NULL] = NULL;
+
+    kobject_uevent_env(&kbdev->dev->kobj, KOBJ_CHANGE, env);
+}
+
+void pixel_gpu_uevent_send(struct kbase_device *kbdev, const struct gpu_uevent *evt)
+{
+    struct pixel_context *pc = kbdev->platform_context;
+    struct gpu_uevent_ctx *gpu_uevent_ctx = &pc->gpu_uevent_ctx;
+    unsigned long flags, current_ts = jiffies;
+    bool suppress_uevent = false;
 
     if (!gpu_uevent_check_valid(evt)) {
         dev_err(kbdev->dev, "unrecognized uevent type=%u info=%u", evt->type, evt->info);
         return;
     }
 
-    env[ENV_IDX_TYPE] = (char *) gpu_uevent_type_str(evt->type);
-    env[ENV_IDX_INFO] = (char *) gpu_uevent_info_str(evt->info);
-    env[ENV_IDX_NULL] = NULL;
+    if (!kfifo_initialized(&gpu_uevent_ctx->evts_fifo))
+        return;
 
-    spin_lock_irqsave(&gpu_uevent_ctx.lock, flags);
+    spin_lock_irqsave(&gpu_uevent_ctx->lock, flags);
 
-    if (time_after(current_ts, gpu_uevent_ctx.last_uevent_ts[evt->type]
-            + msecs_to_jiffies(GPU_UEVENT_TIMEOUT_MS))) {
-        gpu_uevent_ctx.last_uevent_ts[evt->type] = current_ts;
+    if (time_after(current_ts, gpu_uevent_ctx->last_uevent_ts[evt->type]
+            + msecs_to_jiffies(GPU_UEVENT_RATELIMIT_MS))) {
+        if (!kfifo_avail(&gpu_uevent_ctx->evts_fifo)) {
+            /* Drop the oldest unprocessed uevent if the queue is full. */
+            kfifo_skip(&gpu_uevent_ctx->evts_fifo);
+        }
+
+        kfifo_in(&gpu_uevent_ctx->evts_fifo, evt, 1 /* nelems */);
     } else {
         suppress_uevent = true;
     }
 
-    spin_unlock_irqrestore(&gpu_uevent_ctx.lock, flags);
+    spin_unlock_irqrestore(&gpu_uevent_ctx->lock, flags);
 
-    if (!suppress_uevent)
-        kobject_uevent_env(&kbdev->dev->kobj, KOBJ_CHANGE, env);
+    if (suppress_uevent)
+        return;
+
+    if (in_atomic()) {
+        /*
+         * We don't intend to run on a preempt disabled kernel,
+         * so in_atomic() is fine. In the worst case, this just
+         * leads to a delayed uevent.
+         */
+        schedule_work(&gpu_uevent_ctx->gpu_uevent_work);
+        return;
+    }
+
+    pixel_gpu_uevent_send_worker(&gpu_uevent_ctx->gpu_uevent_work);
 }
 
 void pixel_gpu_uevent_kmd_error_send(struct kbase_device *kbdev, const enum gpu_uevent_info info)
@@ -112,4 +156,29 @@ void pixel_gpu_uevent_kmd_error_send(struct kbase_device *kbdev, const enum gpu_
     };
 
     pixel_gpu_uevent_send(kbdev, &evt);
+}
+
+void gpu_uevent_term(struct kbase_device *kbdev)
+{
+    struct pixel_context *pc = kbdev->platform_context;
+    struct gpu_uevent_ctx *gpu_uevent_ctx = &pc->gpu_uevent_ctx;
+
+    cancel_work_sync(&gpu_uevent_ctx->gpu_uevent_work);
+    if (kfifo_initialized(&gpu_uevent_ctx->evts_fifo))
+        kfifo_free(&gpu_uevent_ctx->evts_fifo);
+}
+
+int gpu_uevent_init(struct kbase_device *kbdev)
+{
+    struct pixel_context *pc = kbdev->platform_context;
+    struct gpu_uevent_ctx *gpu_uevent_ctx = &pc->gpu_uevent_ctx;
+
+    memset(&pc->gpu_uevent_ctx, 0, sizeof(struct gpu_uevent_ctx));
+    spin_lock_init(&gpu_uevent_ctx->lock);
+    INIT_WORK(&gpu_uevent_ctx->gpu_uevent_work, pixel_gpu_uevent_send_worker);
+
+    if (kfifo_alloc(&gpu_uevent_ctx->evts_fifo, 4 /* nelems */, GFP_KERNEL))
+        return -ENOMEM;
+
+    return 0;
 }

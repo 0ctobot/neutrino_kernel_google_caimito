@@ -164,10 +164,19 @@
  * - Re-allow child process to do supported file operations (like mmap, ioctl
  *   read, poll) on the file descriptor of mali device that was inherited
  *   from the parent process.
- */
+ * 11.46:
+ * - Remove renderpass_id from base_jd_atom_v2 to deprecate support for JM Incremental Rendering
+ * 11.47:
+ * - Reject non-protected allocations containing the BASE_MEM_PROTECTED memory flag.
+ * - Reject allocations containing the BASE_MEM_DONT_NEED memory flag (it is only settable).
+ * - Reject allocations containing the BASE_MEM_UNUSED_BIT_xx memory flags.
+ * 11.48:
+ * - Add UNUSED_BIT_5, UNUSED_BIT_7, UNUSED_BIT_27 and UNUSED_BIT_29 previously occupied by
+ *   kernel-only flags to kbase cap table.
+  */
 
 #define BASE_UK_VERSION_MAJOR 11
-#define BASE_UK_VERSION_MINOR 45
+#define BASE_UK_VERSION_MINOR 48
 
 /**
  * struct kbase_ioctl_version_check - Check version compatibility between

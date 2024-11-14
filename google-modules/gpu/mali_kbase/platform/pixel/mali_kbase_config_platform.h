@@ -233,6 +233,9 @@ struct gpu_dvfs_qos_vote;
 struct gpu_dvfs_metrics_uid_stats;
 #endif /* CONFIG_MALI_MIDGARD_DVFS */
 
+/* Forward declaration of gpu_uevent_ctx */
+struct gpu_uevent_ctx;
+
 /**
  * struct pixel_context - Pixel GPU context
  *
@@ -470,6 +473,8 @@ struct pixel_context {
 #ifndef PIXEL_GPU_SLC_ACPM_SIGNAL
 	atomic_t slc_demand;
 #endif /* PIXEL_GPU_SLC_ACPM_SIGNAL */
+
+	struct gpu_uevent_ctx gpu_uevent_ctx;
 };
 
 /**

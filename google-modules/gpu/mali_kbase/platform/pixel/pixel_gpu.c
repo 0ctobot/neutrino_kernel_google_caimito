@@ -37,6 +37,8 @@
 #define CREATE_TRACE_POINTS
 #include "pixel_gpu_trace.h"
 
+#include "pixel_gpu_uevent.h"
+
 #ifdef CONFIG_MALI_PIXEL_GPU_SECURE_RENDERING
 /**
  * GPU_SMC_TZPC_OK -  SMC CALL return value on success
@@ -248,6 +250,7 @@ static const struct kbase_device_init dev_init[] = {
 #if IS_ENABLED(CONFIG_EXYNOS_ITMON)
 	{ gpu_itmon_init, gpu_itmon_term, "ITMON notifier init failed" },
 #endif
+	{ gpu_uevent_init, gpu_uevent_term, "GPU uevent init failed"},
 };
 
 static void gpu_pixel_term_partial(struct kbase_device *kbdev,

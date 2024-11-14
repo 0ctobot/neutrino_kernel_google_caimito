@@ -52,8 +52,9 @@ enum
 	POWER_RAIL_LOG = 0x7,
 	PDC_STATUS = 0x8,
 	KTRACE = 0x9,
-	CONTEXTS = 0xA,
+	CONTEXTS = 0xA,			/* "c@tx", contains active csg slot info */
 	FW_CORE_DUMP = 0xB,
+	KCTX_INFO = 0xC,		/* "kc7x", contains kctx information */
 	NUM_SEGMENTS
 } sscd_segs;
 
@@ -316,7 +317,9 @@ static int get_contexts(struct kbase_device *kbdev,
 		entry->gpu_slot = csg_nr;
 		entry->platform_state = atomic_read(&slot->state);
 		entry->priority = slot->priority;
+		/* b/351116409 - TODO:gvamsi there is no trigger_jiffies in R50P0
 		entry->time_in_state = (jiffies - slot->trigger_jiffies) / HZ;
+		 */
 		if (slot->resident_group) {
 			entry->id = slot->resident_group->handle;
 			entry->pid = slot->resident_group->kctx->pid;
@@ -326,6 +329,116 @@ static int get_contexts(struct kbase_device *kbdev,
 
 	rt_mutex_unlock(&kbdev->csf.scheduler.lock);
 	return 0;
+}
+
+/**
+ * struct pixel_kctx_info_metadata - metadata for kctx information.
+ *
+ * @magic: always "kc7x"
+ * @version: version marker.
+ * @platform: unique id for platform reporting context.
+ * @_reserved: reserved.
+ */
+struct pixel_kctx_info_metadata {
+	char magic[4];
+	u8 version;
+	u32 platform;
+	char _reserved[27];
+} __attribute__((packed));
+_Static_assert(sizeof(struct pixel_kctx_info_metadata) == 36,
+               "Incorrect pixel_kctx_info_metadata size");
+
+struct pixel_kctx_info_entry {
+	u32 id;
+	u32 pid;
+	u32 tgid;
+	u64 fault_time_ns;
+	u64 protm_enter_time_ns;
+	u64 protm_exit_time_ns;
+} __attribute__((packed));
+_Static_assert(sizeof(struct pixel_kctx_info_entry) == 36,
+               "Incorrect pixel_kctx_info_metadata size");
+
+struct pixel_kctx_info {
+	struct pixel_kctx_info_metadata meta;
+	u32 num_entries;
+	struct pixel_kctx_info_entry entries[];
+} __attribute__((packed));
+
+/* get_kctx_info - fill the KCTX_INFO segment
+ *
+ * @kbdev: kbase_device
+ * @segment: the KCTX_INFO segment for report
+ *
+ * \returns: 0 on success.
+ */
+static int get_kctx_info(struct kbase_device *kbdev,
+			struct sscd_segment *segment)
+{
+	struct pixel_kctx_info *kctx_info;
+	struct kbase_context *kctx;
+	size_t num_entries, idx;
+	int err = 0;
+
+	if (!segment) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	if (kbase_reset_gpu_is_active(kbdev)) {
+		dev_warn(kbdev->dev, "pixel_gpu_sscd: skipping kctx dump, reset is active.");
+		err = -EINVAL;
+		goto out;
+	}
+
+	if (!mutex_trylock(&kbdev->kctx_list_lock)) {
+		dev_warn(kbdev->dev, "pixel_gpu_sscd: skipping kctx dump, kctx_list_lock busy.");
+		err = -EBUSY;
+		goto out;
+	}
+
+	num_entries = min_t(size_t, list_count_nodes(&kbdev->kctx_list), 16);
+	segment->size = sizeof(struct pixel_kctx_info) +
+		num_entries * sizeof(struct pixel_kctx_info_entry);
+	segment->addr = vzalloc(segment->size);
+	if (!segment->addr) {
+		err = -ENOMEM;
+		goto out_unlock;
+	}
+
+	kctx_info = (struct pixel_kctx_info *) segment->addr;
+	kctx_info->meta = (struct pixel_kctx_info_metadata) {
+		.magic = "kc7x",
+		.platform = kbdev->gpu_props.gpu_id.product_id,
+		.version = 1,
+	};
+	kctx_info->num_entries = num_entries;
+
+	idx = 0;
+	list_for_each_entry(kctx, &kbdev->kctx_list, kctx_list_link) {
+		struct pixel_kctx_info_entry *entry = &kctx_info->entries[idx];
+
+		entry->id = kctx->id;
+		entry->pid = kctx->pid;
+		entry->tgid = kctx->tgid;
+		entry->fault_time_ns = ktime_to_ns(kbdev->csf.glb_fatal_ts);
+		entry->protm_enter_time_ns = ktime_to_ns(kctx->protm_enter_ts);
+		entry->protm_exit_time_ns = ktime_to_ns(kctx->protm_exit_ts);
+
+		dev_info(kbdev->dev,
+			"pixel_gpu_sscd: kctx=%d_%d_%d fault=%lld pmode_enter=%lld pmode_exit=%lld comm=%s",
+			entry->tgid, entry->pid, entry->id,
+			entry->fault_time_ns, entry->protm_enter_time_ns, entry->protm_exit_time_ns,
+			kctx->comm);
+
+		if (++idx >= num_entries)
+			break;
+	}
+
+out_unlock:
+	mutex_unlock(&kbdev->kctx_list_lock);
+out:
+	return err;
 }
 
 struct pixel_fw_core_dump {
@@ -479,6 +592,7 @@ static void segments_term(struct kbase_device *kbdev, struct sscd_segment* segme
 	kfree(segments[KTRACE].addr);
 	kfree(segments[CONTEXTS].addr);
 	vfree(segments[FW_CORE_DUMP].addr);
+	vfree(segments[KCTX_INFO].addr);
 	/* Null out the pointers */
 	memset(segments, 0, sizeof(struct sscd_segment) * NUM_SEGMENTS);
 }
@@ -547,6 +661,12 @@ void gpu_sscd_dump(struct kbase_device *kbdev, const char* reason)
 	if (ec) {
 		dev_err(kbdev->dev,
 			"could not collect active contexts: rc: %i", ec);
+	}
+
+	ec = get_kctx_info(kbdev, &segs[KCTX_INFO]);
+	if (ec) {
+		dev_err(kbdev->dev,
+			"could not collect kctx info: rc: %i", ec);
 	}
 
 	if (!strcmp(reason, "Internal firmware error"))

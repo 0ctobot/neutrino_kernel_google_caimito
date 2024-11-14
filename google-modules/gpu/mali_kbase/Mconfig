@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 #
-# (C) COPYRIGHT 2012-2023 ARM Limited. All rights reserved.
+# (C) COPYRIGHT 2012-2024 ARM Limited. All rights reserved.
 #
 # This program is free software and is provided to you under the terms of the
 # GNU General Public License version 2 as published by the Free Software
@@ -65,6 +65,14 @@ config MALI_NO_MALI
 	  completed the task.
 
 endchoice
+
+config MALI_IS_FPGA
+	bool "Enable build of Mali kernel driver for FPGA"
+	depends on MALI_MIDGARD
+	default n
+	default y if PLATFORM_IS_FPGA
+	help
+	  This is the default HW backend.
 
 
 config MALI_CSF_SUPPORT
@@ -180,7 +188,7 @@ config MALI_CORESTACK
 
 config PAGE_MIGRATION_SUPPORT
 	bool "Compile with page migration support"
-	depends on BACKEND_KERNEL
+	depends on MALI_MIDGARD && MALI_EXPERT
 	default y
 	default n if ANDROID
 	help
@@ -289,7 +297,7 @@ config MALI_PWRSOFT_765
 
 
 config MALI_HW_ERRATA_1485982_NOT_AFFECTED
-	bool "Disable workaround for BASE_HW_ISSUE_GPU2017_1336"
+	bool "Disable workaround for KBASE_HW_ISSUE_GPU2017_1336"
 	depends on MALI_MIDGARD && MALI_EXPERT
 	default n
 	default y if PLATFORM_JUNO
@@ -302,7 +310,7 @@ config MALI_HW_ERRATA_1485982_NOT_AFFECTED
 	  coherency mode requires the L2 to be turned off.
 
 config MALI_HW_ERRATA_1485982_USE_CLOCK_ALTERNATIVE
-	bool "Use alternative workaround for BASE_HW_ISSUE_GPU2017_1336"
+	bool "Use alternative workaround for KBASE_HW_ISSUE_GPU2017_1336"
 	depends on MALI_MIDGARD && MALI_EXPERT && !MALI_HW_ERRATA_1485982_NOT_AFFECTED
 	default n
 	help

@@ -115,6 +115,20 @@ typedef void (*kbase_hwcnt_backend_csf_if_unlock_fn)(struct kbase_hwcnt_backend_
 						     unsigned long flags);
 
 /**
+ * typedef kbase_hwcnt_backend_csf_if_acquire_fn - Enable counter collection.
+ *
+ * @ctx:   Non-NULL pointer to a CSF context.
+ */
+typedef void (*kbase_hwcnt_backend_csf_if_acquire_fn)(struct kbase_hwcnt_backend_csf_if_ctx *ctx);
+
+/**
+ * typedef kbase_hwcnt_backend_csf_if_release_fn - Disable counter collection.
+ *
+ * @ctx:   Non-NULL pointer to a CSF context.
+ */
+typedef void (*kbase_hwcnt_backend_csf_if_release_fn)(struct kbase_hwcnt_backend_csf_if_ctx *ctx);
+
+/**
  * typedef kbase_hwcnt_backend_csf_if_get_prfcnt_info_fn - Get performance
  *                                                         counter information.
  * @ctx:          Non-NULL pointer to a CSF context.
@@ -266,12 +280,27 @@ typedef void (*kbase_hwcnt_backend_csf_if_get_gpu_cycle_count_fn)(
 	struct kbase_hwcnt_backend_csf_if_ctx *ctx, u64 *cycle_counts, u64 clk_enable_map);
 
 /**
+ * typedef kbase_hwcnt_backend_csf_if_time_convert_gpu_to_cpu_fn - Convert GPU timestamp
+ *                                                                    to CPU MONOTONIC time.
+ * @ctx:            Non-NULL pointer to a CSF interface context.
+ * @gpu_ts:         GPU timestamp.
+ *
+ * Return: The CPU timestamp.
+ */
+typedef u64 (*kbase_hwcnt_backend_csf_if_time_convert_gpu_to_cpu_fn)(
+	struct kbase_hwcnt_backend_csf_if_ctx *ctx, u64 gpu_ts);
+
+/**
  * struct kbase_hwcnt_backend_csf_if - Hardware counter backend CSF virtual
  *                                     interface.
  * @ctx:                 CSF interface context.
  * @assert_lock_held:    Function ptr to assert backend spinlock is held.
  * @lock:                Function ptr to acquire backend spinlock.
  * @unlock:              Function ptr to release backend spinlock.
+ * @acquire:             Callback to indicate that counter collection has
+ *                       been enabled.
+ * @release:             Callback to indicate that counter collection has
+ *                       been disabled.
  * @get_prfcnt_info:     Function ptr to get performance counter related
  *                       information.
  * @ring_buf_alloc:      Function ptr to allocate ring buffer for CSF HWC.
@@ -286,12 +315,15 @@ typedef void (*kbase_hwcnt_backend_csf_if_get_gpu_cycle_count_fn)(
  *                       ring buffer.
  * @set_extract_index:   Function ptr to set extract index of ring buffer.
  * @get_gpu_cycle_count: Function ptr to get the GPU cycle count.
+ * @time_convert_gpu_to_cpu: Function ptr to convert GPU to CPU timestamp.
  */
 struct kbase_hwcnt_backend_csf_if {
 	struct kbase_hwcnt_backend_csf_if_ctx *ctx;
 	kbase_hwcnt_backend_csf_if_assert_lock_held_fn assert_lock_held;
 	kbase_hwcnt_backend_csf_if_lock_fn lock;
 	kbase_hwcnt_backend_csf_if_unlock_fn unlock;
+	kbase_hwcnt_backend_csf_if_acquire_fn acquire;
+	kbase_hwcnt_backend_csf_if_release_fn release;
 	kbase_hwcnt_backend_csf_if_get_prfcnt_info_fn get_prfcnt_info;
 	kbase_hwcnt_backend_csf_if_ring_buf_alloc_fn ring_buf_alloc;
 	kbase_hwcnt_backend_csf_if_ring_buf_sync_fn ring_buf_sync;
@@ -303,6 +335,7 @@ struct kbase_hwcnt_backend_csf_if {
 	kbase_hwcnt_backend_csf_if_get_indexes_fn get_indexes;
 	kbase_hwcnt_backend_csf_if_set_extract_index_fn set_extract_index;
 	kbase_hwcnt_backend_csf_if_get_gpu_cycle_count_fn get_gpu_cycle_count;
+	kbase_hwcnt_backend_csf_if_time_convert_gpu_to_cpu_fn time_convert_gpu_to_cpu;
 };
 
 #endif /* #define _KBASE_HWCNT_BACKEND_CSF_IF_H_ */

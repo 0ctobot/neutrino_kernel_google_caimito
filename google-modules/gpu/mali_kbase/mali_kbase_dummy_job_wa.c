@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2019-2023 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2019-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -26,6 +26,7 @@
 #include <mali_kbase.h>
 #include <device/mali_kbase_device.h>
 #include <mali_kbase_dummy_job_wa.h>
+#include <mali_kbase_mem_flags.h>
 
 #include <linux/firmware.h>
 #include <linux/delay.h>
@@ -218,6 +219,9 @@ static bool wa_blob_load_needed(struct kbase_device *kbdev)
 	if (of_machine_is_compatible("arm,juno"))
 		return false;
 
+	if (kbase_hw_has_issue(kbdev, KBASE_HW_ISSUE_TTRX_3485))
+		return true;
+
 	return false;
 }
 
@@ -308,7 +312,7 @@ int kbase_dummy_job_wa_load(struct kbase_device *kbdev)
 	while (blob_offset) {
 		const struct wa_blob *blob;
 		size_t nr_pages;
-		u64 flags;
+		base_mem_alloc_flags flags;
 		u64 gpu_va;
 		struct kbase_va_region *va_region;
 
@@ -330,7 +334,7 @@ int kbase_dummy_job_wa_load(struct kbase_device *kbdev)
 			goto bad_fw;
 		}
 		nr_pages = PFN_UP(blob->size);
-		flags = blob->map_flags | BASE_MEM_FLAG_MAP_FIXED;
+		flags = blob->map_flags | BASEP_MEM_FLAG_MAP_FIXED;
 
 		va_region = kbase_mem_alloc(kctx, nr_pages, nr_pages, 0, &flags, &gpu_va,
 					    mmu_sync_info);

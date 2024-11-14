@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2019-2023 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2019-2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -495,6 +495,7 @@ static ssize_t reader_changes_copy_to_user(struct reader_changes *const changes,
 	struct kbase_kinstr_jm_atom_state_change const *src_buf = READ_ONCE(changes->data);
 	size_t const entry_size = sizeof(*src_buf);
 	size_t changes_tail, changes_count, read_size;
+	size_t copy_size;
 
 	/* Needed for the quick buffer capacity calculation below.
 	 * Note that we can't use is_power_of_2() since old compilers don't
@@ -516,13 +517,21 @@ static ssize_t reader_changes_copy_to_user(struct reader_changes *const changes,
 	do {
 		changes_tail = changes->tail;
 		changes_count = reader_changes_count_locked(changes);
-		read_size = min(changes_count * entry_size, buffer_size & ~(entry_size - 1));
+
+		if (check_mul_overflow(changes_count, entry_size, &copy_size)) {
+			ret = -EINVAL;
+			goto exit;
+		}
+
+		read_size = min(copy_size, buffer_size & ~(entry_size - 1));
 
 		if (!read_size)
 			break;
 
-		if (copy_to_user(buffer, &(src_buf[changes_tail]), read_size))
-			return -EFAULT;
+		if (copy_to_user(buffer, &(src_buf[changes_tail]), read_size)) {
+			ret = -EFAULT;
+			goto exit;
+		}
 
 		buffer += read_size;
 		buffer_size -= read_size;
@@ -530,7 +539,7 @@ static ssize_t reader_changes_copy_to_user(struct reader_changes *const changes,
 		changes_tail = (changes_tail + read_size / entry_size) & (changes->size - 1);
 		smp_store_release(&changes->tail, changes_tail);
 	} while (read_size);
-
+exit:
 	return ret;
 }
 
@@ -743,7 +752,6 @@ int kbase_kinstr_jm_get_fd(struct kbase_kinstr_jm *const ctx, union kbase_kinstr
 	size_t const change_size = sizeof(struct kbase_kinstr_jm_atom_state_change);
 	int status;
 	int fd;
-	size_t i;
 
 	if (!ctx || !jm_fd_arg)
 		return -EINVAL;
@@ -752,10 +760,6 @@ int kbase_kinstr_jm_get_fd(struct kbase_kinstr_jm *const ctx, union kbase_kinstr
 
 	if (!is_power_of_2(in->count))
 		return -EINVAL;
-
-	for (i = 0; i < sizeof(in->padding); ++i)
-		if (in->padding[i])
-			return -EINVAL;
 
 	status = reader_init(&reader, ctx, in->count);
 	if (status < 0)

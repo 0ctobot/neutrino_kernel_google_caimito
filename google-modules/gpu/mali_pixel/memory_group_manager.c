@@ -496,14 +496,14 @@ static int mgm_get_import_memory_id(
 
 static u64 mgm_update_gpu_pte(
 	struct memory_group_manager_device *const mgm_dev, unsigned int const group_id,
-	int const mmu_level, u64 pte)
+	unsigned int pbha_id, unsigned int pte_flags, int const mmu_level, u64 pte)
 {
 	struct mgm_groups *const data = mgm_dev->data;
 	u64 const old_pte = pte;
 
 	dev_dbg(data->dev,
-		"%s(mgm_dev=%p, group_id=%u, mmu_level=%d, pte=0x%llx)\n",
-		__func__, (void *)mgm_dev, group_id, mmu_level, pte);
+		"%s(mgm_dev=%p, group_id=%u, pbha_id=%u, pte_flags=%u, mmu_level=%d, pte=0x%llx)\n",
+		__func__, (void *)mgm_dev, group_id, pbha_id, pte_flags, mmu_level, pte);
 
 	if (INVALID_GROUP_ID(group_id))
 		return pte;

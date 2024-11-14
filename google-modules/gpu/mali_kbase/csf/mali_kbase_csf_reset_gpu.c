@@ -238,8 +238,6 @@ static void kbase_csf_reset_end_hw_access(struct kbase_device *kbdev, int err_du
 
 void kbase_csf_debug_dump_registers(struct kbase_device *kbdev)
 {
-	struct kbase_csf_global_iface *global_iface = &kbdev->csf.global_iface;
-
 	unsigned long flags;
 	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
 	kbase_io_history_dump(kbdev);
@@ -270,10 +268,10 @@ void kbase_csf_debug_dump_registers(struct kbase_device *kbdev)
 	}
 
 	dev_err(kbdev->dev, "  MCU DB0: %x", kbase_reg_read32(kbdev, DEBUG_MCUC_DB_VALUE_0));
-	if (global_iface && global_iface->kbdev && global_iface->input && global_iface->output)
+	if (kbdev->csf.fw_io.pages.output && kbdev->csf.fw_io.pages.input)
 		dev_err(kbdev->dev, "  MCU GLB_REQ %x GLB_ACK %x",
-				kbase_csf_firmware_global_input_read(global_iface, GLB_REQ),
-				kbase_csf_firmware_global_output(global_iface, GLB_ACK));
+				kbase_csf_fw_io_global_input_read(&kbdev->csf.fw_io, GLB_REQ),
+				kbase_csf_fw_io_global_read(&kbdev->csf.fw_io, GLB_ACK));
 
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 }
@@ -422,6 +420,10 @@ static int kbase_csf_reset_gpu_now(struct kbase_device *kbdev, bool firmware_ini
 	if (likely(firmware_inited))
 		kbase_csf_scheduler_reset(kbdev);
 
+	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
+	kbdev->csf.firmware_reload_needed = false;
+	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
+
 	cancel_work_sync(&kbdev->csf.firmware_reload_work);
 
 	dev_dbg(kbdev->dev, "Disable GPU hardware counters.\n");
@@ -523,12 +525,10 @@ static void kbase_csf_reset_gpu_worker(struct work_struct *data)
 
 bool kbase_prepare_to_reset_gpu(struct kbase_device *kbdev, unsigned int flags)
 {
-#ifdef CONFIG_MALI_ARBITER_SUPPORT
 	if (kbase_pm_is_gpu_lost(kbdev)) {
 		/* GPU access has been removed, reset will be done by Arbiter instead */
 		return false;
 	}
-#endif
 
 	if (flags & RESET_FLAGS_HWC_UNRECOVERABLE_ERROR)
 		kbase_hwcnt_backend_csf_on_unrecoverable_error(&kbdev->hwcnt_gpu_iface);

@@ -30,6 +30,7 @@
 #include "mali_kbase_csf_firmware.h"
 #include "mali_kbase_csf_event.h"
 #include <uapi/gpu/arm/midgard/csf/mali_kbase_csf_errors_dumpfault.h>
+#include "mali_kbase_csf_fw_io.h"
 
 #include <linux/version_compat_defs.h>
 
@@ -267,9 +268,11 @@ enum kbase_queue_group_priority {
  * @CSF_PM_TIMEOUT: Timeout for GPU Power Management to reach the desired
  *                  Shader, L2 and MCU state.
  * @CSF_GPU_RESET_TIMEOUT: Waiting timeout for GPU reset to complete.
- * @CSF_CSG_SUSPEND_TIMEOUT: Timeout given for a CSG to be suspended.
  * @CSF_CSG_TERM_TIMEOUT: Timeout given for a CSG to be terminated.
  * @CSF_FIRMWARE_BOOT_TIMEOUT: Maximum time to wait for firmware to boot.
+ * @CSF_FIRMWARE_WAKE_UP_TIMEOUT: Maximum time to wait for firmware to wake up from sleep.
+ * @CSF_FIRMWARE_SOI_HALT_TIMEOUT: Maximum time to wait for the MCU to become halted after FW has
+ *                                 raised the GLB_IDLE IRQ in preparation for automatic sleeping.
  * @CSF_FIRMWARE_PING_TIMEOUT: Maximum time to wait for firmware to respond
  *                             to a ping from KBase.
  * @CSF_SCHED_PROTM_PROGRESS_TIMEOUT: Timeout used to prevent protected mode execution hang.
@@ -290,9 +293,10 @@ enum kbase_timeout_selector {
 	CSF_FIRMWARE_TIMEOUT,
 	CSF_PM_TIMEOUT,
 	CSF_GPU_RESET_TIMEOUT,
-	CSF_CSG_SUSPEND_TIMEOUT,
 	CSF_CSG_TERM_TIMEOUT,
 	CSF_FIRMWARE_BOOT_TIMEOUT,
+	CSF_FIRMWARE_WAKE_UP_TIMEOUT,
+	CSF_FIRMWARE_SOI_HALT_TIMEOUT,
 	CSF_FIRMWARE_PING_TIMEOUT,
 	CSF_SCHED_PROTM_PROGRESS_TIMEOUT,
 	MMU_AS_INACTIVE_WAIT_TIMEOUT,
@@ -554,6 +558,8 @@ struct kbase_protected_suspend_buffer {
  *               returned to userspace if such an error has occurred.
  * @timer_event_work: Work item to handle the progress timeout fatal event
  *                    for the group.
+ * @progress_timer_state: Value of CSG_PROGRESS_TIMER_STATE register when progress
+ *                        timer timeout is reported for the group.
  * @deschedule_deferred_cnt: Counter keeping a track of the number of threads
  *                           that tried to deschedule the group and had to defer
  *                           the descheduling due to the dump on fault.
@@ -610,6 +616,7 @@ struct kbase_queue_group {
 	struct kbase_csf_notification error_fatal;
 
 	struct work_struct timer_event_work;
+	u32 progress_timer_state;
 
 	/**
 	 * @dvs_buf: Address and size of scratch memory.
@@ -932,13 +939,11 @@ struct kbase_csf_reset_gpu {
  *                             of CSG slots.
  * @resident_group:   pointer to the queue group that is resident on the CSG slot.
  * @state:            state of the slot as per enum @kbase_csf_csg_slot_state.
- * @trigger_jiffies:  value of jiffies when change in slot state is recorded.
  * @priority:         dynamic priority assigned to CSG slot.
  */
 struct kbase_csf_csg_slot {
 	struct kbase_queue_group *resident_group;
 	atomic_t state;
-	unsigned long trigger_jiffies;
 	u8 priority;
 };
 
@@ -1139,12 +1144,14 @@ struct kbase_csf_mcu_shared_regions {
  * @gpuq_kthread:           Dedicated thread primarily used to handle
  *                          latency-sensitive tasks such as GPU queue
  *                          submissions.
+ * @gpu_idle_timer_enabled: Tracks whether the GPU idle timer is enabled or disabled.
+ * @fw_soi_enabled:         True if FW Sleep-on-Idle is currently enabled.
  */
 struct kbase_csf_scheduler {
 	struct rt_mutex lock;
 	spinlock_t interrupt_lock;
 	enum kbase_csf_scheduler_state state;
-	DECLARE_BITMAP(doorbell_inuse_bitmap, CSF_NUM_DOORBELL);
+	DECLARE_BITMAP(doorbell_inuse_bitmap, CSF_NUM_DOORBELL_MAX);
 	DECLARE_BITMAP(csg_inuse_bitmap, MAX_SUPPORTED_CSGS);
 	struct kbase_csf_csg_slot *csg_slots;
 	struct list_head runnable_kctxs;
@@ -1217,6 +1224,8 @@ struct kbase_csf_scheduler {
 	 */
 	spinlock_t gpu_metrics_lock;
 #endif /* CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD */
+	atomic_t gpu_idle_timer_enabled;
+	atomic_t fw_soi_enabled;
 };
 
 /*
@@ -1674,8 +1683,7 @@ struct kbase_csf_user_reg {
  * @glb_init_request_pending: Flag to indicate that Global requests have been
  *                            sent to the FW after MCU was re-enabled and their
  *                            acknowledgement is pending.
- * @fw_error_work:          Work item for handling the firmware internal error
- *                          fatal event.
+ * @glb_fatal_work:         Work item for handling the firmware GLB FATAL event.
  * @coredump_work:          Work item for initiating a platform core dump.
  * @ipa_control:            IPA Control component manager.
  * @mcu_core_pwroff_dur_ns: Sysfs attribute for the glb_pwroff timeout input
@@ -1700,6 +1708,7 @@ struct kbase_csf_user_reg {
  * @gpu_idle_dur_count_no_modifier: Update csffw_glb_req_idle_enable to make the shr(10)
  *                                  modifier conditional on the new flag
  *                                  in GLB_IDLE_TIMER_CONFIG.
+ * @csg_suspend_timeout_ms: Timeout given for a CSG to be suspended.
  *                          for any request sent to the firmware.
  * @hwcnt:                  Contain members required for handling the dump of
  *                          HW counters.
@@ -1718,8 +1727,23 @@ struct kbase_csf_user_reg {
  *                                 kbase_queue.pending_kick_link.
  * @quirks_ext:             Pointer to an allocated buffer containing the firmware
  *                          workarounds configuration.
+ * @mmu_sync_sem:           RW Semaphore to defer MMU operations till the P.Mode entrance
+ *                          or DCS request has been completed.
  * @pmode_sync_sem:         RW Semaphore to prevent MMU operations during P.Mode entrance.
- * @gpu_idle_timer_enabled: Tracks whether the GPU idle timer is enabled or disabled.
+ * @page_fault_cnt_ptr_address: GPU VA of the location in FW data memory, extracted from the
+ *                              FW image header, that will store the GPU VA of FW visible
+ *                              memory location where the @page_fault_cnt value will be written to.
+ * @page_fault_cnt_ptr:         CPU VA of the FW visible memory location where the @page_fault_cnt
+ *                              value will be written to.
+ * @page_fault_cnt:             Counter that is incremented on every GPU page fault, just before the
+ *                              MMU is unblocked to retry the memory transaction that caused the GPU
+ *                              page fault. The access to counter is serialized appropriately.
+ * @mcu_halted:             Flag to inform MCU FSM that the MCU has already halted.
+ * @fw_io:                  Firmware I/O interface.
+ * @compute_progress_timeout_cc: Value of GPU cycle count register when progress
+ *                               timer timeout is reported for the compute iterator.
+ * @num_doorbells: Number of doorbells supported by the GPU.
+ * @glb_fatal_ts: Pixel: GLB_FATAL fault timestamp for SSCD.
  */
 struct kbase_csf_device {
 	struct kbase_mmu_table mcu_mmu;
@@ -1748,7 +1772,7 @@ struct kbase_csf_device {
 	bool firmware_hctl_core_pwr;
 	struct work_struct firmware_reload_work;
 	bool glb_init_request_pending;
-	struct work_struct fw_error_work;
+	struct work_struct glb_fatal_work;
 	struct work_struct coredump_work;
 	struct kbase_ipa_control ipa_control;
 	u64 mcu_core_pwroff_dur_ns;
@@ -1758,6 +1782,7 @@ struct kbase_csf_device {
 	u64 gpu_idle_hysteresis_ns;
 	u32 gpu_idle_dur_count;
 	u32 gpu_idle_dur_count_no_modifier;
+	u32 csg_suspend_timeout_ms;
 	struct kbase_csf_hwcnt hwcnt;
 	struct kbase_csf_mcu_fw fw;
 	struct kbase_csf_firmware_log fw_log;
@@ -1776,8 +1801,17 @@ struct kbase_csf_device {
 	struct list_head pending_gpuq_kick_queues[KBASE_QUEUE_GROUP_PRIORITY_COUNT];
 	spinlock_t pending_gpuq_kick_queues_lock;
 	u32 *quirks_ext;
+	struct rw_semaphore mmu_sync_sem;
 	struct rw_semaphore pmode_sync_sem;
-	bool gpu_idle_timer_enabled;
+	u32 page_fault_cnt_ptr_address;
+	u32 *page_fault_cnt_ptr;
+	u32 page_fault_cnt;
+	bool mcu_halted;
+	struct kbase_csf_fw_io fw_io;
+	u64 compute_progress_timeout_cc;
+	u32 num_doorbells;
+	/* pixel: GLB_FATAL timestamp */
+	ktime_t glb_fatal_ts;
 };
 
 /**
