@@ -901,6 +901,16 @@ err:
 	return -EIO;
 }
 
+/* Increment stats counters based off DSC and FEC support */
+static void dp_stat_fec_dsc(struct dp_device *dp, bool dp_fec, bool dp_dsc)
+{
+	if (dp_fec && dp_dsc) {
+		dp->stats.fec_dsc_supported++;
+	} else {
+		dp->stats.fec_dsc_not_supported++;
+	}
+}
+
 static int dp_link_up(struct dp_device *dp)
 {
 	u8 dpcd[DP_RECEIVER_CAP_SIZE + 1];
@@ -998,6 +1008,9 @@ static int dp_link_up(struct dp_device *dp)
 	dp_info(dp, "DP Sink: DPCD_%X Rate(%d Mbps) Lanes(%u) EF(%d) SSC(%d) FEC(%d) DSC(%d)\n",
 		dp->sink.revision, dp->sink.link_rate / 100, dp->sink.num_lanes,
 		dp->sink.enhanced_frame, dp->sink.ssc, dp->sink.fec, dp->sink.dsc);
+
+	/* Stats check if FEC/DSC is supported */
+	dp_stat_fec_dsc(dp, dp->sink.fec, dp->sink.dsc);
 
 	/* Sanity-check the sink's max link rate */
 	if (dp->sink.link_rate != drm_dp_bw_code_to_link_rate(DP_LINK_BW_1_62) &&
@@ -1536,6 +1549,43 @@ static int dp_wait_state_change(struct dp_device *dp, int max_wait_time, enum dp
 	return (wait_cnt > 0) ? wait_cnt : -ETIME;
 }
 
+/* Match the largest resolution obtained from the EDID against preset resolutions */
+static void dp_check_max_res(struct dp_device *dp, u16 h_res, u16 v_res)
+{
+	/* Check if input is void */
+	if (!h_res || !v_res) {
+		dp_warn(dp, "Null resolution found for maximum resolution stats logging\n");
+		return;
+	}
+	/* Check the obtained largest resolution against
+	 * ten preset resolutions
+	 * to increment the respective stat counter
+	 */
+	if (h_res == 1366 && v_res == 768) {
+		dp->stats.max_res_1366_768++;
+	} else if (h_res == 1440 && v_res == 900) {
+		dp->stats.max_res_1440_900++;
+	} else if (h_res == 1600 && v_res == 900) {
+		dp->stats.max_res_1600_900++;
+	} else if (h_res == 1920 && v_res == 1080) {
+		dp->stats.max_res_1920_1080++;
+	} else if (h_res == 2560 && v_res == 1080) {
+		dp->stats.max_res_2560_1080++;
+	} else if (h_res == 2560 && v_res == 1440) {
+		dp->stats.max_res_2560_1440++;
+	} else if (h_res == 3440 && v_res == 1440) {
+		dp->stats.max_res_3440_1440++;
+	} else if (h_res == 3840 && v_res == 2160) {
+		dp->stats.max_res_3840_2160++;
+	} else if (h_res == 5120 && v_res == 2880) {
+		dp->stats.max_res_5120_2880++;
+	} else if (h_res == 7680 && v_res == 4320) {
+		dp->stats.max_res_7680_4320++;
+	} else {
+		dp->stats.max_res_other++;
+	}
+}
+
 static void dp_on_by_hpd_plug(struct dp_device *dp)
 {
 	struct drm_connector *connector = &dp->connector;
@@ -1576,6 +1626,16 @@ static void dp_on_by_hpd_plug(struct dp_device *dp)
 	if (dp->num_sads > 0)
 		kfree(sads);
 	kfree(edid);
+
+	/* Sort the obtained modes so that the largest
+	 * preferred resolution is at head of the list
+	 */
+	drm_mode_sort(&connector->probed_modes);
+
+	/* Set the respective stats counters from the largest preferred resolution */
+	dp_check_max_res(
+		dp, list_first_entry(&connector->probed_modes, typeof(*fs_mode), head)->hdisplay,
+		list_first_entry(&connector->probed_modes, typeof(*fs_mode), head)->vdisplay);
 
 	dp->state = DP_STATE_ON;
 	dp_info(dp, "%s: DP State changed to ON\n", __func__);
@@ -3060,12 +3120,132 @@ static ssize_t link_unstable_failures_show(struct device *dev, struct device_att
 }
 static DEVICE_ATTR_RO(link_unstable_failures);
 
+/* Resolution Sysfs */
+static ssize_t max_res_1366_768_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.max_res_1366_768);
+}
+static DEVICE_ATTR_RO(max_res_1366_768);
+
+static ssize_t max_res_1440_900_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.max_res_1440_900);
+}
+static DEVICE_ATTR_RO(max_res_1440_900);
+
+static ssize_t max_res_1600_900_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.max_res_1600_900);
+}
+static DEVICE_ATTR_RO(max_res_1600_900);
+
+static ssize_t max_res_1920_1080_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.max_res_1920_1080);
+}
+static DEVICE_ATTR_RO(max_res_1920_1080);
+
+static ssize_t max_res_2560_1080_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.max_res_2560_1080);
+}
+static DEVICE_ATTR_RO(max_res_2560_1080);
+
+static ssize_t max_res_2560_1440_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.max_res_2560_1440);
+}
+static DEVICE_ATTR_RO(max_res_2560_1440);
+
+static ssize_t max_res_3440_1440_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.max_res_3440_1440);
+}
+static DEVICE_ATTR_RO(max_res_3440_1440);
+
+static ssize_t max_res_3840_2160_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.max_res_3840_2160);
+}
+static DEVICE_ATTR_RO(max_res_3840_2160);
+
+static ssize_t max_res_5120_2880_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.max_res_5120_2880);
+}
+static DEVICE_ATTR_RO(max_res_5120_2880);
+
+static ssize_t max_res_7680_4320_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.max_res_7680_4320);
+}
+static DEVICE_ATTR_RO(max_res_7680_4320);
+
+static ssize_t max_res_other_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.max_res_other);
+}
+static DEVICE_ATTR_RO(max_res_other);
+
+/* FEC/DSC Support Sysfs */
+static ssize_t fec_dsc_supported_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.fec_dsc_supported);
+}
+static DEVICE_ATTR_RO(fec_dsc_supported);
+
+static ssize_t fec_dsc_not_supported_show(struct device *dev, struct device_attribute *attr,
+					  char *buf)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", dp->stats.fec_dsc_not_supported);
+}
+static DEVICE_ATTR_RO(fec_dsc_not_supported);
+
 static struct attribute *dp_stats_attrs[] = { &dev_attr_link_negotiation_failures.attr,
 					      &dev_attr_edid_read_failures.attr,
 					      &dev_attr_dpcd_read_failures.attr,
 					      &dev_attr_edid_invalid_failures.attr,
 					      &dev_attr_sink_count_invalid_failures.attr,
 					      &dev_attr_link_unstable_failures.attr,
+					      &dev_attr_max_res_1366_768.attr,
+					      &dev_attr_max_res_1440_900.attr,
+					      &dev_attr_max_res_1600_900.attr,
+					      &dev_attr_max_res_1920_1080.attr,
+					      &dev_attr_max_res_2560_1080.attr,
+					      &dev_attr_max_res_2560_1440.attr,
+					      &dev_attr_max_res_3440_1440.attr,
+					      &dev_attr_max_res_3840_2160.attr,
+					      &dev_attr_max_res_5120_2880.attr,
+					      &dev_attr_max_res_7680_4320.attr,
+					      &dev_attr_max_res_other.attr,
+					      &dev_attr_fec_dsc_supported.attr,
+					      &dev_attr_fec_dsc_not_supported.attr,
 					      NULL };
 
 static const struct attribute_group dp_stats_group = {
@@ -3077,7 +3257,7 @@ static int dp_reboot_handler(struct notifier_block *nb, unsigned long state, voi
 {
 	struct dp_device *dp = get_dp_drvdata();
 
-	hdcp_dplink_connect_state(DP_DISCONNECT);
+	hdcp_dplink_connect_state(DP_SHUTDOWN);
 	dp_disable(&dp->encoder);
 	dp->restart_pending = true;
 

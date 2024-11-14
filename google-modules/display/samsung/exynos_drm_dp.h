@@ -138,6 +138,7 @@ enum dp_state_for_hdcp22 {
 	DP_DISCONNECT,
 	DP_CONNECT,
 	DP_PHYSICAL_DISCONNECT,
+	DP_SHUTDOWN,
 };
 
 enum link_training_status {
@@ -154,6 +155,21 @@ struct dp_stats_counters {
 	u32 edid_invalid_failures;
 	u32 sink_count_invalid_failures;
 	u32 link_unstable_failures;
+
+	u32 max_res_1366_768;
+	u32 max_res_1440_900;
+	u32 max_res_1600_900;
+	u32 max_res_1920_1080;
+	u32 max_res_2560_1080;
+	u32 max_res_2560_1440;
+	u32 max_res_3440_1440;
+	u32 max_res_3840_2160;
+	u32 max_res_5120_2880;
+	u32 max_res_7680_4320;
+	u32 max_res_other;
+
+	u32 fec_dsc_supported;
+	u32 fec_dsc_not_supported;
 };
 
 /* DisplayPort Device */

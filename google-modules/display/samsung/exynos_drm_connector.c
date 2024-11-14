@@ -369,10 +369,11 @@ int exynos_drm_mode_te_freq(const struct drm_display_mode *mode)
 }
 EXPORT_SYMBOL_GPL(exynos_drm_mode_te_freq);
 
-int exynos_drm_mode_bts_fps(const struct drm_display_mode *mode)
+int exynos_drm_mode_bts_fps(const struct drm_display_mode *mode, unsigned int min_bts_fps)
 {
-	/* TODO: get bts fps*/
-	return drm_mode_vrefresh(mode);
+	unsigned int bts_fps = drm_mode_vrefresh(mode);
+
+	return (min_bts_fps > bts_fps) ? min_bts_fps : bts_fps;
 }
 EXPORT_SYMBOL_GPL(exynos_drm_mode_bts_fps);
 

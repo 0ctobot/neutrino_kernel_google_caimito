@@ -54,6 +54,11 @@ struct dsim_pll_features {
 	u32 k_bits;
 };
 
+struct dsim_allowed_hs_clks {
+	unsigned int num_clks;
+	u32 *hs_clks;
+};
+
 struct dsim_pll_params {
 	unsigned int num_modes;
 	struct dsim_pll_param **params;
@@ -90,6 +95,9 @@ struct dsim_device {
 	struct dsim_resources res;
 	struct clk **clks;
 	struct dsim_pll_params *pll_params;
+
+	struct dsim_allowed_hs_clks *allowed_hs_clks;
+	bool force_set_hs_clk;
 
 #ifdef CONFIG_DEBUG_FS
         struct dentry *debugfs_entry;
@@ -186,6 +194,8 @@ dsim_get_decon(const struct dsim_device *dsim)
 
 	if (dsim->dual_dsi == DSIM_DUAL_DSI_SEC) {
 		main_dsi = exynos_get_dual_dsi(DSIM_DUAL_DSI_MAIN);
+		if (!main_dsi)
+			return NULL;
 		crtc = main_dsi->encoder.crtc;
 	}
 
@@ -194,6 +204,8 @@ dsim_get_decon(const struct dsim_device *dsim)
 
 	return to_exynos_crtc(crtc)->ctx;
 }
+
+void dsim_dump(struct dsim_device *dsim, struct drm_printer *p);
 
 inline void dsim_trace_msleep(u32 delay_ms);
 

@@ -74,3 +74,23 @@ Description:
 		behaviors.
 
 		Valid panels are 'primary-panel' or 'secondary-panel'.
+
+What:		/sys/devices/platform/exynos-drm/<panel>/power_mode
+Date:		June 2024
+KernelVersion:	6.1
+Contact:	"Attis Chen" <attis@google.com>
+Description:
+		Userspace client uses this to read the display_on, normal and sleep bits at
+		bit 2, 3, 4 respectively of power mode register.
+
+		Valid panels are 'primary-panel' or 'secondary-panel'.
+
+What:		/sys/devices/platform/exynos-drm/<panel>/power_state
+Date:		August, 2024
+KernelVersion:	6.1
+Contact:	"Kevin Ying" <kevinying@google.com>
+Description:
+		Userspace client uses this to read panel power state. This information
+		includes only if the panel is on, off, in low-power mode, or in a HBM state.
+
+		Valid panels are 'primary-panel' or 'secondary-panel'.

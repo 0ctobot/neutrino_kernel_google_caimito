@@ -856,6 +856,15 @@ void dqe_dump(struct drm_printer *p, u32 dqe_id)
 	dpu_print_hex_dump(p, dqe_regs, dqe_regs, 0x130);
 	dpu_print_hex_dump(p, dqe_regs, dqe_regs + 0x1FC, 0x4);
 
+	cal_drm_printf(p, 0, "\n=== DQE_%d RCD SFR ===\n", dqe_id);
+	dpu_print_hex_dump(p, dqe_regs, dqe_regs + 0x3000, 0x4);
+
+	cal_drm_printf(p, 0, "\n=== DQE_%d HIST SFR ===\n", dqe_id);
+	dpu_print_hex_dump(p, dqe_regs, dqe_regs + 0x3400, 0x4);
+	dpu_print_hex_dump(p, dqe_regs, dqe_regs + 0x3A00, 0x4);
+	dpu_print_hex_dump(p, dqe_regs, dqe_regs + 0x4000, 0x4);
+	dpu_print_hex_dump(p, dqe_regs, dqe_regs + 0x4600, 0x4);
+
 	cal_drm_printf(p, 0, "\n=== DQE_%d CGC SFR ===\n", dqe_id);
 	dpu_print_hex_dump(p, dqe_cgc_regs, dqe_cgc_regs, 0x30);
 	dpu_print_hex_dump(p, dqe_cgc_regs, dqe_cgc_regs + 0x1000, 0x100);

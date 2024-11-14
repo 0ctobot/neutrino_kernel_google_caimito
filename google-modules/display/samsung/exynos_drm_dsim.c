@@ -173,13 +173,20 @@ static struct drm_crtc *drm_encoder_get_old_crtc(struct drm_encoder *encoder,
 	return conn_state->crtc;
 }
 
-static void dsim_dump(struct dsim_device *dsim)
+void dsim_dump(struct dsim_device *dsim, struct drm_printer *p)
 {
 	struct dsim_regs regs;
-	struct drm_printer p = is_console_enabled() ?
-		drm_debug_printer("[drm]") : drm_info_printer(dsim->dev);
+	struct drm_printer printer, *pointer;
 
-	drm_printf(&p, "%s[%d]: === DSIM SFR DUMP ===\n",
+	if (!p) {
+		printer = is_console_enabled() ?
+			drm_debug_printer("[drm]") : drm_info_printer(dsim->dev);
+			pointer = &printer;
+	} else {
+		pointer = p;
+	}
+
+	drm_printf(pointer, "%s[%d]: === DSIM SFR DUMP ===\n",
 		dsim->dev->driver->name, dsim->id);
 
 	if (dsim->state != DSIM_STATE_HSCLKEN)
@@ -189,7 +196,7 @@ static void dsim_dump(struct dsim_device *dsim)
 	regs.ss_regs = dsim->res.ss_reg_base;
 	regs.phy_regs = dsim->res.phy_regs;
 	regs.phy_regs_ex = dsim->res.phy_regs_ex;
-	__dsim_dump(&p, dsim->id, &regs);
+	__dsim_dump(pointer, dsim->id, &regs);
 }
 
 static int dsim_phy_power_on(struct dsim_device *dsim)
@@ -335,7 +342,7 @@ static void _dsim_enable(struct dsim_device *dsim)
 
 #if defined(DSIM_BIST)
 	dsim_reg_set_bist(dsim->id, true, DSIM_GRAY_GRADATION);
-	dsim_dump(dsim);
+	dsim_dump(dsim, NULL);
 #endif
 
 	if (decon)
@@ -448,7 +455,7 @@ static void __dsim_check_pend_cmd_locked(struct dsim_device *dsim)
 	WARN_ON(!mutex_is_locked(&dsim->cmd_lock));
 
 	if (WARN_ON(dsim_reg_has_pend_cmd(dsim->id)))
-		dsim_dump(dsim);
+		dsim_dump(dsim, NULL);
 
 	if (WARN(dsim_cmd_packetgo_is_enabled(dsim), "pending packets remaining ph(%u) pl(%u)\n",
 		 dsim->total_pend_ph, dsim->total_pend_pl))
@@ -755,6 +762,53 @@ static int dsim_of_parse_modes(struct device_node *entry,
 			&pll_param->cmd_underrun_cnt);
 
 	return 0;
+}
+
+static struct dsim_allowed_hs_clks *dsim_of_get_allowed_hs_clks(struct dsim_device *dsim)
+{
+	struct device *dev = dsim->dev;
+	struct device_node *np;
+	struct dsim_allowed_hs_clks *clock_rates;
+
+	np = of_parse_phandle(dev->of_node, "clock_rates", 0);
+	if (!np) {
+		dsim_warn(dsim, "failed to get clock_rates\n");
+		return NULL;
+	}
+
+	clock_rates = devm_kzalloc(dsim->dev, sizeof(*clock_rates), GFP_KERNEL);
+	if (!clock_rates) {
+		of_node_put(np);
+		return NULL;
+	}
+
+	clock_rates->num_clks = of_property_count_u32_elems(np, "clock-rates");
+	if (clock_rates->num_clks <= 0) {
+		dsim_warn(dsim, "clock-rates empty\n");
+		goto read_node_fail;
+	}
+
+	clock_rates->hs_clks = devm_kzalloc(dsim->dev,
+				sizeof(u32) * clock_rates->num_clks, GFP_KERNEL);
+	if (!clock_rates->hs_clks)
+		goto read_node_fail;
+	if (of_property_read_u32_array(
+			np, "clock-rates", clock_rates->hs_clks, clock_rates->num_clks) < 0) {
+		dsim_err(dsim, "%s, failed to read clock-rates\n", __func__);
+		devm_kfree(dsim->dev, clock_rates->hs_clks);
+		goto read_node_fail;
+	}
+
+	for (int i = 0; i < clock_rates->num_clks; i++)
+		dsim_debug(dsim, "allowed clk #%d: %u\n", i, clock_rates->hs_clks[i]);
+
+	of_node_put(np);
+	return clock_rates;
+
+read_node_fail:
+	of_node_put(np);
+	devm_kfree(dsim->dev, clock_rates);
+	return NULL;
 }
 
 static struct dsim_pll_features *dsim_of_get_pll_features(
@@ -1107,7 +1161,8 @@ static void dsim_of_get_pll_diags(struct dsim_device * /* dsim */)
 
 static void _update_config_timing(struct dsim_reg_config *config,
 				  const struct drm_display_mode *mode, bool has_underrun_param,
-				  unsigned int te_idle_us, unsigned int te_var)
+				  unsigned int te_idle_us, unsigned int te_var,
+				  unsigned int min_bts_fps)
 {
 	struct dpu_panel_timing *p_timing = &config->p_timing;
 	struct videomode vm;
@@ -1125,7 +1180,8 @@ static void _update_config_timing(struct dsim_reg_config *config,
 	p_timing->hfp = vm.hfront_porch;
 	p_timing->hbp = vm.hback_porch;
 	p_timing->hsa = vm.hsync_len;
-	p_timing->vrefresh = exynos_drm_mode_bts_fps(mode);
+	p_timing->vrefresh = config->mode == DSIM_VIDEO_MODE ?
+		drm_mode_vrefresh(mode) : exynos_drm_mode_bts_fps(mode, min_bts_fps);
 	if (has_underrun_param) {
 		p_timing->te_idle_us = te_idle_us;
 		p_timing->te_var = te_var;
@@ -1173,7 +1229,7 @@ static void update_config_for_mode_exynos(struct dsim_reg_config *config,
 	unsigned int te_var = exynos_mode->underrun_param ? exynos_mode->underrun_param->te_var : 0;
 
 	_update_config_timing(config, mode, exynos_mode->underrun_param ? true : false, te_idle_us,
-			      te_var);
+			      te_var, exynos_mode->min_bts_fps);
 	_update_config_mode_flags(config, exynos_mode->mode_flags);
 	_update_config_dsc(config, exynos_mode->bpc, exynos_mode->dsc.enabled,
 			   exynos_mode->dsc.dsc_count, exynos_mode->dsc.slice_count,
@@ -1399,7 +1455,7 @@ static void update_config_for_mode_gs(struct dsim_reg_config *config,
 	unsigned int slice_height = 0;
 
 	_update_config_timing(config, mode, gs_mode->underrun_param ? true : false, te_idle_us,
-			      te_var);
+			      te_var, gs_mode->min_bts_fps);
 	_update_config_mode_flags(config, gs_mode->mode_flags);
 	if (gs_mode->dsc.cfg) {
 		slice_count = gs_mode->dsc.cfg->slice_count;
@@ -1888,6 +1944,7 @@ static int dsim_parse_dt(struct dsim_device *dsim)
 		return -ENODEV;
 	}
 
+	dsim->allowed_hs_clks = dsim_of_get_allowed_hs_clks(dsim);
 	dsim->pll_params = dsim_of_get_clock_mode(dsim);
 	dsim_of_get_pll_diags(dsim);
 
@@ -2256,7 +2313,7 @@ static int dsim_wait_for_cmd_fifo_empty(struct dsim_device *dsim, bool is_long)
 
 	if (ret) {
 		dsim_warn(dsim, "failed on wait for cmd fifo empty (%d)\n", ret);
-		dsim_dump(dsim);
+		dsim_dump(dsim, NULL);
 	}
 
 	DPU_ATRACE_END(__func__);
@@ -2602,7 +2659,7 @@ dsim_read_data(struct dsim_device *dsim, const struct mipi_dsi_msg *msg)
 	case MIPI_DSI_RX_ACKNOWLEDGE_AND_ERROR_REPORT:
 		ret = dsim_reg_rx_err_handler(dsim->id, rx_fifo);
 		if (ret < 0) {
-			dsim_dump(dsim);
+			dsim_dump(dsim, NULL);
 			return ret;
 		}
 		break;
@@ -2638,7 +2695,7 @@ dsim_read_data(struct dsim_device *dsim, const struct mipi_dsi_msg *msg)
 		break;
 	default:
 		dsim_err(dsim, "packet format is invalid.\n");
-		dsim_dump(dsim);
+		dsim_dump(dsim, NULL);
 		return -EBUSY;
 	}
 
@@ -2647,7 +2704,7 @@ dsim_read_data(struct dsim_device *dsim, const struct mipi_dsi_msg *msg)
 
 		dsim_warn(dsim, "RX FIFO is not empty: rx_size:%u, rx_len:%lu\n",
 			rx_size, msg->rx_len);
-		dsim_dump(dsim);
+		dsim_dump(dsim, NULL);
 		do {
 			rx_fifo = dsim_reg_get_rx_fifo(dsim->id);
 			dsim_info(dsim, "rx fifo:0x%8x, response:0x%x\n",
@@ -3018,6 +3075,23 @@ static ssize_t hs_clock_store(struct device *dev,
 
 	/* ddr hs_clock unit: MHz */
 	dsim_info(dsim, "%s: hs clock %u, apply now: %u\n", __func__, hs_clock, apply_now);
+
+	if (dsim->allowed_hs_clks && !dsim->force_set_hs_clk) {
+		bool hs_clock_allowed = false;
+
+		for (int i = 0; i < dsim->allowed_hs_clks->num_clks; i++) {
+			if (hs_clock == dsim->allowed_hs_clks->hs_clks[i]) {
+				hs_clock_allowed = true;
+				break;
+			}
+		}
+
+		if (!hs_clock_allowed) {
+			dsim_warn(dsim, "hs_clock=%u not in allowed_hs_clks\n", hs_clock);
+			rc = -EINVAL;
+			goto out;
+		}
+	}
 
 	if (dsim->state != DSIM_STATE_HSCLKEN) {
 		if (pll_param->pll_freq == hs_clock) {

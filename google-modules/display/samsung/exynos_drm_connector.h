@@ -120,6 +120,9 @@ struct exynos_display_mode {
 	/* @mode_flags: DSI mode flags from drm_mipi_dsi.h */
 	unsigned long mode_flags;
 
+	/** @min_bts_fps: minimal bts fps requirement */
+	unsigned int min_bts_fps;
+
 	/* @vblank_usec: parameter to calculate bts */
 	unsigned int vblank_usec;
 
@@ -315,6 +318,6 @@ int exynos_drm_connector_set_lhbm_hist(struct exynos_drm_connector *conn, int w,
 int exynos_drm_connector_get_lhbm_gray_level(struct exynos_drm_connector *conn);
 
 int exynos_drm_mode_te_freq(const struct drm_display_mode *mode);
-int exynos_drm_mode_bts_fps(const struct drm_display_mode *mode);
+int exynos_drm_mode_bts_fps(const struct drm_display_mode *mode, unsigned int min_bts_fps);
 int exynos_bts_fps_to_drm_mode_clock(const struct drm_display_mode *mode, int bts_fps);
 #endif /* _EXYNOS_DRM_CONNECTOR_H_ */

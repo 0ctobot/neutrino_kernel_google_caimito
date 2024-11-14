@@ -61,7 +61,7 @@ kernel_module(
         "panel/panel-samsung-s6e3hc4.ko",
         "panel/panel-samsung-sofef01.ko",
     ],
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     visibility = [
         "//private/devices/google:__subpackages__",
         "//private/google-modules/aoc/alsa:__pkg__",

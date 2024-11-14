@@ -2241,6 +2241,48 @@ static ssize_t available_disp_stats_show(struct device *dev,
 	return len;
 }
 
+static ssize_t power_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct mipi_dsi_device *dsi = to_mipi_dsi_device(dev);
+	struct exynos_panel *ctx = mipi_dsi_get_drvdata(dsi);
+	int err;
+	u8 power_mode;
+
+	if (!is_panel_active(ctx)) {
+		dev_warn(dev, "%s: panel is not enabled\n", __func__);
+		return -EPERM;
+	}
+
+	mutex_lock(&ctx->mode_lock);
+	err = mipi_dsi_dcs_read(dsi, MIPI_DCS_GET_POWER_MODE, &power_mode, sizeof(power_mode));
+	mutex_unlock(&ctx->mode_lock);
+	if (err <= 0) {
+		if (err == 0)
+			err = -ENODATA;
+		dev_warn(dev, "Unable to read power mode register (%#02x: %d)\n",
+			MIPI_DCS_GET_POWER_MODE, err);
+		return err;
+	}
+
+	power_mode &= (MIPI_DSI_DCS_POWER_MODE_DISPLAY |
+	    MIPI_DSI_DCS_POWER_MODE_NORMAL | MIPI_DSI_DCS_POWER_MODE_SLEEP);
+
+	return sysfs_emit(buf, "%#02x\n", power_mode);
+}
+
+static ssize_t power_state_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct backlight_device *bl = to_backlight_device(dev);
+	struct exynos_panel *ctx = bl_get_data(bl);
+	enum display_state state;
+
+	mutex_lock(&ctx->bl_state_lock);
+	state = get_current_display_state_locked(ctx);
+	mutex_unlock(&ctx->bl_state_lock);
+
+	return sysfs_emit(buf, "%s\n", disp_state_str[state]);
+}
+
 static DEVICE_ATTR_RO(serial_number);
 static DEVICE_ATTR_RO(panel_extinfo);
 static DEVICE_ATTR_RO(panel_name);
@@ -2263,6 +2305,8 @@ static DEVICE_ATTR_RO(error_count_unknown);
 static DEVICE_ATTR_RO(panel_pwr_vreg);
 static DEVICE_ATTR_RO(time_in_state);
 static DEVICE_ATTR_RO(available_disp_stats);
+static DEVICE_ATTR_RO(power_mode);
+static DEVICE_ATTR_RO(power_state);
 
 static const struct attribute *panel_attrs[] = {
 	&dev_attr_serial_number.attr,
@@ -2287,6 +2331,8 @@ static const struct attribute *panel_attrs[] = {
 	&dev_attr_panel_pwr_vreg.attr,
 	&dev_attr_time_in_state.attr,
 	&dev_attr_available_disp_stats.attr,
+	&dev_attr_power_mode.attr,
+	&dev_attr_power_state.attr,
 	NULL
 };
 
@@ -4200,8 +4246,10 @@ static int exynos_panel_bridge_atomic_check(struct drm_bridge *bridge,
 		struct drm_display_mode *target_mode = &new_crtc_state->adjusted_mode;
 		int current_vrefresh = drm_mode_vrefresh(current_mode);
 		int target_vrefresh = drm_mode_vrefresh(target_mode);
-		int current_bts_fps = exynos_drm_mode_bts_fps(current_mode);
-		int target_bts_fps = exynos_drm_mode_bts_fps(target_mode);
+		int current_bts_fps = exynos_drm_mode_bts_fps(current_mode,
+			ctx->current_mode->exynos_mode.min_bts_fps);
+		int target_bts_fps = exynos_drm_mode_bts_fps(target_mode,
+			exynos_conn_state->exynos_mode.min_bts_fps);
 
 		int clock;
 
@@ -4388,6 +4436,7 @@ static void exynos_panel_bridge_disable(struct drm_bridge *bridge,
 			ctx->panel_state = PANEL_STATE_BLANK;
 		} else {
 			ctx->panel_state = PANEL_STATE_OFF;
+			ctx->mode_in_progress = MODE_DONE;
 
 			if (ctx->desc->exynos_panel_func &&
 			    ctx->desc->exynos_panel_func->run_normal_mode_work) {
@@ -5545,6 +5594,7 @@ static void notify_panel_mode_changed_worker(struct work_struct *work)
 		container_of(work, struct notify_state_change, work);
 	struct exynos_panel *ctx =
 		container_of(notify_state_change, struct exynos_panel, notify_panel_mode_changed);
+	enum display_state power_state;
 
 	disp_stats_update_state(ctx);
 
@@ -5556,6 +5606,16 @@ static void notify_panel_mode_changed_worker(struct work_struct *work)
 	}
 
 	sysfs_notify(&ctx->bl->dev.kobj, NULL, "state");
+
+	mutex_lock(&ctx->bl_state_lock);
+	power_state = get_current_display_state_locked(ctx);
+	mutex_unlock(&ctx->bl_state_lock);
+
+	/* Avoid spurious notifications */
+	if (power_state != ctx->notified_power_state) {
+		sysfs_notify(&ctx->dev->kobj, NULL, "power_state");
+		ctx->notified_power_state = power_state;
+	}
 }
 
 static void notify_brightness_changed_worker(struct work_struct *work)
@@ -5678,7 +5738,8 @@ int exynos_panel_common_init(struct mipi_dsi_device *dsi,
 	for (i = 0; i < ctx->desc->num_modes; i++) {
 		const struct exynos_panel_mode *pmode = &ctx->desc->modes[i];
 		const int vrefresh = drm_mode_vrefresh(&pmode->mode);
-		const int bts_fps = exynos_drm_mode_bts_fps(&pmode->mode);
+		const int bts_fps = exynos_drm_mode_bts_fps(&pmode->mode,
+			pmode->exynos_mode.min_bts_fps);
 
 		if (ctx->peak_vrefresh < vrefresh)
 			ctx->peak_vrefresh = vrefresh;
@@ -5698,6 +5759,7 @@ int exynos_panel_common_init(struct mipi_dsi_device *dsi,
 	ctx->panel_idle_enabled = exynos_panel_func && exynos_panel_func->set_self_refresh != NULL;
 	INIT_DELAYED_WORK(&ctx->idle_work, panel_idle_work);
 
+	ctx->notified_power_state = DISPLAY_STATE_MAX;
 	INIT_WORK(&ctx->notify_panel_mode_changed.work, notify_panel_mode_changed_worker);
 	INIT_WORK(&ctx->notify_brightness_changed_work, notify_brightness_changed_worker);
 

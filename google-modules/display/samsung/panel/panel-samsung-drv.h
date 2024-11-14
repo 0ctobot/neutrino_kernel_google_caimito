@@ -938,6 +938,7 @@ struct exynos_panel {
 	bool allow_wakeup_by_state_change;
 	struct notify_state_change notify_panel_mode_changed;
 	struct work_struct notify_brightness_changed_work;
+	enum display_state notified_power_state;
 
 	/* use for display stats residence */
 	struct display_stats disp_stats;

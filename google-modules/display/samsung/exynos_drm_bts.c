@@ -743,6 +743,40 @@ static void dpu_bts_convert_config_to_info(struct bts_dpp_info *dpp,
 			dpp->dst.x1, dpp->dst.x2, dpp->dst.y1, dpp->dst.y2);
 }
 
+static inline u32 dpu_bts_find_max_dpp_read_rt_bw(void)
+{
+	u32 i, max_dpp_read_rt_bw = 0;
+	struct decon_device *decon;
+
+	for (i = 0; i < MAX_DECON_CNT; i++) {
+		decon = get_decon_drvdata(i);
+		if (decon == NULL)
+			continue;
+
+		if (max_dpp_read_rt_bw < decon->bts.max_dpp_read_rt_bw)
+			max_dpp_read_rt_bw = decon->bts.max_dpp_read_rt_bw;
+	}
+
+	return max_dpp_read_rt_bw;
+}
+
+static void dpu_bts_calc_urgent_latency(struct decon_device *decon)
+{
+	u32 i, max_dpp_read_rt_bw;
+
+	if (!decon->bts_urgent_rd_lat.enabled)
+		return;
+
+	max_dpp_read_rt_bw = dpu_bts_find_max_dpp_read_rt_bw();
+	for (i = 0; i < decon->bts_urgent_rd_lat.bw_lat_map_cnt - 1; i++) {
+		if (max_dpp_read_rt_bw <=
+				decon->bts_urgent_rd_lat.bw_lat_tbl[i].bw_kbps)
+			break;
+	}
+
+	decon->bts.urgent_rd_lat = decon->bts_urgent_rd_lat.bw_lat_tbl[i].latency_ns;
+}
+
 static void dpu_bts_calc_bw(struct decon_device *decon)
 {
 	struct drm_crtc *crtc = &decon->crtc->base;
@@ -750,7 +784,7 @@ static void dpu_bts_calc_bw(struct decon_device *decon)
 	struct dpu_bts_win_config *config;
 	struct bts_decon_info bts_info;
 	int idx, i, wb_idx = -1, rcd_idx = -1;
-	u32 read_bw = 0, write_bw, video_num = 0;
+	u32 read_bw = 0, write_bw, video_num = 0, max_dpp_read_rt_bw = 0;
 	u64 resol_clock;
 	u32 vblank_us;
 
@@ -786,6 +820,8 @@ static void dpu_bts_calc_bw(struct decon_device *decon)
 				decon->config.image_height, vblank_us,
 				config[i].dpp_id, &decon->bts);
 		read_bw += bts_info.rdma[idx].bw;
+		if (max_dpp_read_rt_bw < bts_info.rdma[idx].rt_bw)
+			max_dpp_read_rt_bw = bts_info.rdma[idx].rt_bw;
 		if (bts_info.rdma[idx].is_yuv)
 			video_num++;
 	}
@@ -810,6 +846,8 @@ static void dpu_bts_calc_bw(struct decon_device *decon)
 		dpu_bts_convert_config_to_info(&bts_info.rcddma, config);
 		dpu_bts_calc_dpp_bw(&bts_info.rcddma, decon->bts.fps, bts_info.lcd_h,
 				vblank_us, config->dpp_id, &decon->bts);
+		if (max_dpp_read_rt_bw < bts_info.rcddma.rt_bw)
+			max_dpp_read_rt_bw = bts_info.rcddma.rt_bw;
 		read_bw += bts_info.rcddma.bw;
 	} else {
 		rcd_idx = -1;
@@ -830,11 +868,12 @@ static void dpu_bts_calc_bw(struct decon_device *decon)
 	decon->bts.read_bw = read_bw;
 	decon->bts.write_bw = write_bw;
 	decon->bts.total_bw = read_bw + write_bw;
+	decon->bts.max_dpp_read_rt_bw = max_dpp_read_rt_bw;
 	decon->bts.video_num = video_num;
 
-	DPU_DEBUG_BTS("  DECON%u total bw = %u, read bw = %u, write bw = %u\n",
+	DPU_DEBUG_BTS("  DECON%u total bw = %u, read bw = %u, write bw = %u, max dpp rt_bw = %u\n",
 			decon->id, decon->bts.total_bw, decon->bts.read_bw,
-			decon->bts.write_bw);
+			decon->bts.write_bw, decon->bts.max_dpp_read_rt_bw);
 
 	if (decon->bts.total_bw) {
 		dpu_bts_find_max_disp_freq(decon);
@@ -845,6 +884,7 @@ static void dpu_bts_calc_bw(struct decon_device *decon)
 		decon->bts.max_disp_freq = dpu_bts_calc_disp_with_full_size(decon);
 	}
 
+	dpu_bts_calc_urgent_latency(decon);
 	DPU_EVENT_LOG(DPU_EVT_BTS_CALC_BW, decon->id, crtc_state);
 	DPU_DEBUG_BTS("%s -\n", __func__);
 }
@@ -907,6 +947,25 @@ static inline void dpu_bts_update_scenario(struct decon_device *decon, struct bt
 	}
 }
 
+static inline void dpu_bts_update_urgent_latency(struct decon_device *decon)
+{
+	unsigned int i;
+
+	if (!decon->bts_urgent_rd_lat.enabled ||
+		decon->bts.urgent_rd_lat == decon->bts.prev_urgent_rd_lat) {
+		return;
+	}
+
+	DPU_ATRACE_BEGIN(__func__);
+	for (i = 0; i < MAX_AXI_PORT; i++) {
+		int index = decon->bts.urgent_rd_lat_index[i];
+
+		bts_set_urgent_lat_read(index, decon->bts.urgent_rd_lat);
+	}
+	decon->bts.prev_urgent_rd_lat = decon->bts.urgent_rd_lat;
+	DPU_ATRACE_END(__func__);
+}
+
 static void dpu_bts_update_resources(struct decon_device *decon, bool shadow_updated)
 {
 	struct bts_bw bw = { 0 };
@@ -935,6 +994,7 @@ static void dpu_bts_update_resources(struct decon_device *decon, bool shadow_upd
 	}
 
 	dpu_bts_update_scenario(decon, bw);
+	dpu_bts_update_urgent_latency(decon);
 	if (shadow_updated) {
 		/* after DECON h/w configs are updated to shadow SFR */
 		if (decon->bts.total_bw < decon->bts.prev_total_bw ||
@@ -983,6 +1043,7 @@ static void dpu_bts_release_resources(struct decon_device *decon)
 
 	// clear shared decon resources
 	decon->bts.rt_avg_bw = 0;
+	decon->bts.max_dpp_read_rt_bw = 0;
 	memset(decon->bts.ch_bw, 0, sizeof(decon->bts.ch_bw));
 
 	DPU_EVENT_LOG(DPU_EVT_BTS_RELEASE_BW, decon->id, NULL);
@@ -1016,8 +1077,18 @@ static void dpu_bts_init(struct decon_device *decon)
 			(u32)cal_dfs_get_max_freq(ACPM_DVFS_DISP);
 
 	decon->bts.rt_avg_bw = 0;
-	for (i = 0; i < MAX_AXI_PORT; i++)
+	for (i = 0; i < MAX_AXI_PORT; i++) {
 		decon->bts.ch_bw[i] = 0;
+		if (decon->bts_urgent_rd_lat.enabled) {
+			snprintf(bts_idx_name, MAX_IDX_NAME_SIZE, "bts_dpu%u", i);
+			decon->bts.urgent_rd_lat_index[i] =
+				bts_get_urgent_lat_bts_index(bts_idx_name);
+			if (decon->bts.urgent_rd_lat_index[i] < 0) {
+				decon->bts_urgent_rd_lat.enabled = false;
+				break;
+			}
+		}
+	}
 
 	DPU_DEBUG_BTS("BTS_BW_TYPE(%d)\n", decon->bts.bw_idx);
 	exynos_pm_qos_add_request(&decon->bts.mif_qos,

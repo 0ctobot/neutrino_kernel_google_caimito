@@ -304,6 +304,8 @@ void DPU_EVENT_LOG(enum dpu_event_type type, int index, void *priv)
 		log->data.bts_update.prev_rt_avg_bw = decon->bts.prev_rt_avg_bw;
 		log->data.bts_update.total_bw = decon->bts.total_bw;
 		log->data.bts_update.prev_total_bw = decon->bts.prev_total_bw;
+		log->data.bts_update.urgent_rd_lat = decon->bts.urgent_rd_lat;
+		log->data.bts_update.prev_urgent_rd_lat = decon->bts.prev_urgent_rd_lat;
 		if (decon->bts_scen.enabled && decon->bts_scen.voted)
 			log->data.bts_update.dpu_scen_idx = decon->bts_scen.idx;
 		else
@@ -517,14 +519,15 @@ static void dpu_print_log_rsc(char *buf, int len, u32 decon_id, struct dpu_log_r
 	sprintf(buf + len, "\t%s\t%s", str_chs, str_wins);
 }
 
-#define LOG_BUF_SIZE	160
+#define LOG_BUF_SIZE	176
 static int dpu_print_log_bts_update(char *buf, int len, struct dpu_log_bts_update *update)
 {
 	return scnprintf(buf + len, LOG_BUF_SIZE - len,
-			"\tmif(%lu) int(%lu) disp(%lu) peak(%u,%u) rt(%u,%u) total(%u,%u) scen(%u)",
-			update->freqs.mif_freq, update->freqs.int_freq, update->freqs.disp_freq,
-			update->prev_peak, update->peak, update->prev_rt_avg_bw, update->rt_avg_bw,
-			update->prev_total_bw, update->total_bw, update->dpu_scen_idx);
+		"\tmif(%lu) int(%lu) disp(%lu) peak(%u,%u) rt(%u,%u) total(%u,%u) rd(%u,%u) scen(%u)",
+		update->freqs.mif_freq, update->freqs.int_freq, update->freqs.disp_freq,
+		update->prev_peak, update->peak, update->prev_rt_avg_bw, update->rt_avg_bw,
+		update->prev_total_bw, update->total_bw,
+		update->prev_urgent_rd_lat, update->urgent_rd_lat, update->dpu_scen_idx);
 }
 
 static int dpu_print_log_partial(char *buf, int len, struct dpu_log_partial *p)
@@ -999,11 +1002,21 @@ static const struct file_operations dpu_event_fops = {
 static int dpu_debug_reg_dump_show(struct seq_file *s, void *unused)
 {
 	struct decon_device *decon = s->private;
+	struct dsim_device *dsim;
 	struct drm_printer p = drm_seq_file_printer(s);
 
 	if (decon->state == DECON_STATE_ON &&
 		pm_runtime_get_if_in_use(decon->dev) == 1) {
 		decon_dump(decon, &p);
+		dsim = decon_get_dsim(decon);
+		if (dsim) {
+			dsim_dump(dsim, &p);
+			if (dsim->dual_dsi == DSIM_DUAL_DSI_MAIN) {
+				dsim = exynos_get_dual_dsi(DSIM_DUAL_DSI_SEC);
+				if (dsim)
+					dsim_dump(dsim, &p);
+			}
+		}
 		pm_runtime_put(decon->dev);
 	} else {
 		drm_printf(&p, "%s[%u]: DECON disabled(%d)\n",
@@ -1808,6 +1821,8 @@ int dpu_init_debug(struct decon_device *decon)
 	debugfs_create_u32("crc_cnt", 0444, crtc->debugfs_entry, &decon->d.crc_cnt);
 	debugfs_create_u32("ecc_cnt", 0444, crtc->debugfs_entry, &decon->d.ecc_cnt);
 	debugfs_create_u32("idma_err_cnt", 0444, crtc->debugfs_entry, &decon->d.idma_err_cnt);
+	debugfs_create_u32("te_count", 0444, crtc->debugfs_entry, &decon->d.te_cnt);
+	debugfs_create_u32("frame_done_count", 0444, crtc->debugfs_entry, &decon->d.framedone_cnt);
 
 	urgent_dent = debugfs_create_dir("urgent", crtc->debugfs_entry);
 	if (!urgent_dent) {
@@ -2257,11 +2272,35 @@ static ssize_t dphy_diag_reg_write(struct file *file, const char *user_buf,
 	uint32_t val;
 	struct seq_file *m = file->private_data;
 	struct dsim_dphy_diag *diag = m->private;
+	struct dsim_device *dsim = diag->private;
 
 	ret = kstrtou32_from_user(user_buf, count, 0, &val);
 	if (ret)
 		return ret;
 
+	/* config dphy of another dsim_device for dual dsi */
+	if (dsim->dual_dsi == DSIM_DUAL_DSI_MAIN) {
+		int i;
+		struct dsim_device *sec_dsi = NULL;
+		struct dsim_dphy_diag *sec_diag = NULL;
+
+		sec_dsi = exynos_get_dual_dsi(DSIM_DUAL_DSI_SEC);
+		if (sec_dsi) {
+			/* found the corresponding diag of second dsim device */
+			for (i = 0; i < sec_dsi->config.num_dphy_diags; ++i) {
+				if (!strcmp(sec_dsi->config.dphy_diags[i].name, diag->name)) {
+					sec_diag = &sec_dsi->config.dphy_diags[i];
+					break;
+				}
+			}
+
+			ret = dsim_dphy_diag_set_reg(sec_dsi, sec_diag, val);
+			if (ret)
+				return ret;
+		} else {
+			return -ENODEV;
+		}
+	}
 	ret = dsim_dphy_diag_set_reg(diag->private, diag, val);
 	if (ret)
 		return ret;
@@ -2317,6 +2356,7 @@ void dsim_diag_create_debugfs(struct dsim_device *dsim) {
 	}
 
 	debugfs_create_u32("state", 0400, dsim->debugfs_entry, &dsim->state);
+	debugfs_create_bool("force_set_hs_clk", 0600, dsim->debugfs_entry, &dsim->force_set_hs_clk);
 
 	if (dsim->config.num_dphy_diags == 0)
 		return;

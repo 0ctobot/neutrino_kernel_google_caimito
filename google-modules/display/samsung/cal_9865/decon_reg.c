@@ -675,7 +675,7 @@ static void decon_reg_config_win_channel(u32 id, u32 win_idx, int ch)
 {
 	u32 val, mask;
 
-	/* L7 layer is not present in Zuma*/
+	/* L7 layer is not present in Zuma */
 	if (ch > 6)
 		ch = ch + 1;
 
@@ -1664,6 +1664,11 @@ int decon_reg_get_win_ch(u32 id, u32 win_idx, u32 *ch)
 		return -ENOENT;
 
 	*ch = WIN_CHMAP_GET(val);
+	/* L7 layer is not present in Zuma */
+	if (*ch > 7)
+		*ch = *ch - 1;
+	else if (WARN_ON(*ch == 7))
+		cal_log_warn(id, "L7 layer is not supported\n");
 
 	return 0;
 }

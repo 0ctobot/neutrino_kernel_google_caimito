@@ -141,9 +141,12 @@ struct dpu_bts {
 	u32 write_bw;
 	u32 total_bw;
 	u32 prev_total_bw;
+	u32 urgent_rd_lat;
+	u32 prev_urgent_rd_lat;
 	u32 max_disp_freq;
 	u32 prev_max_disp_freq;
 	u32 dvfs_max_disp_freq;
+	u32 max_dpp_read_rt_bw;
 	u32 video_num;
 	u32 ppc;
 	u32 ppc_rotator;
@@ -172,6 +175,7 @@ struct dpu_bts {
 	struct dpu_bts_bw rt_bw[MAX_DPP_CNT];
 
 	u32 ch_bw[MAX_AXI_PORT];
+	int urgent_rd_lat_index[MAX_AXI_PORT];
 	int bw_idx;
 	struct dpu_bts_ops *ops;
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS) || IS_ENABLED(CONFIG_EXYNOS_PM_QOS_MODULE)
@@ -199,6 +203,17 @@ struct dpu_bts_scenario {
 	u32 max_peak_bw;
 	u32 idx;
 	const char *name;
+};
+
+struct bw_latency_map {
+	u32 bw_kbps;
+	u32 latency_ns;
+};
+
+struct dpu_bts_urgent_lat {
+	bool enabled;
+	struct bw_latency_map *bw_lat_tbl;
+	u32 bw_lat_map_cnt;
 };
 
 /**
@@ -376,6 +391,8 @@ struct dpu_log_bts_update {
 	u32 prev_rt_avg_bw;
 	u32 total_bw;
 	u32 prev_total_bw;
+	u32 urgent_rd_lat;
+	u32 prev_urgent_rd_lat;
 	u32 dpu_scen_idx;
 };
 
@@ -475,6 +492,7 @@ struct decon_debug {
 	u32 auto_refresh_frames;
 
 	u32 te_cnt;
+	u32 framedone_cnt;
 	bool force_te_on;
 	bool tout_en;
 };
@@ -497,6 +515,7 @@ struct decon_device {
 	struct decon_resources		res;
 	struct dpu_bts			bts;
 	struct dpu_bts_scenario		bts_scen;
+	struct dpu_bts_urgent_lat	bts_urgent_rd_lat;
 	struct decon_debug		d;
 	struct exynos_hibernation	*hibernation;
 	struct drm_pending_vblank_event *event;
