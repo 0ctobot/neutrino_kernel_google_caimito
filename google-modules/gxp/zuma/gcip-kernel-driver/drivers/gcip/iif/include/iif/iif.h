@@ -20,31 +20,8 @@
 /* The ioctl number for the fence FDs will start from here. */
 #define IIF_FENCE_IOCTL_NUM_BASE 0x80
 
-/*
- * The max number of fences can be created per IP.
- * Increasing this value needs to increase the size of fence table.
- */
-#define IIF_NUM_FENCES_PER_IP 1024
-
 /* The maximum number of fences can be passed to one ioctl request. */
 #define IIF_MAX_NUM_FENCES 64
-
-/*
- * Type of IPs.
- *
- * The order of IP must be matched with the firmware side because the fence ID will be assigned
- * according to the IP type.
- */
-enum iif_ip_type {
-	IIF_IP_DSP,
-	IIF_IP_TPU,
-	IIF_IP_GPU,
-	IIF_IP_AP,
-	IIF_IP_NUM,
-
-	/* Reserve the number of IP type to expand the fence table easily in the future. */
-	IIF_IP_RESERVED = 16,
-};
 
 /*
  * ioctls for /dev/iif.
@@ -137,12 +114,88 @@ struct iif_fence_get_information_ioctl {
 	__u16 signaled_signalers;
 	/* The number of outstanding waiters. */
 	__u16 outstanding_waiters;
+	/*
+	 * The signal status of fence.
+	 * - 0: The fence hasn't been unblocked yet.
+	 * - 1: The fence has been unblocked without any error.
+	 * - Negative errno: The fence has been unblocked with an error.
+	 */
+	__s16 signal_status;
 	/* Reserved. */
-	__u8 reserved[7];
+	__u8 reserved[5];
 };
 
 /* Returns the fence information. */
 #define IIF_FENCE_GET_INFORMATION \
 	_IOR(IIF_IOCTL_BASE, IIF_FENCE_IOCTL_NUM_BASE, struct iif_fence_get_information_ioctl)
+
+/*
+ * Submits a signaler to the fence.
+ *
+ * This ioctl is available only when the fence signaler is AP.
+ *
+ * The runtime should call this ioctl for every signaler command before they
+ * start processing it. Once a signaler command is done, they are also expected
+ * to call the IIF_FENCE_SIGNAL ioctl. (See IIF_FENCE_SIGNAL ioctl below.)
+ *
+ * I.e.,
+ * ...
+ * ioctl(fence_fd, IIF_FENCE_SUBMIT_SIGNALER);
+ * process(signaler_command_0);
+ * ioctl(fence_fd, IIF_FENCE_SIGNAL);
+ * ...
+ * ioctl(fence_fd, IIF_FENCE_SUBMIT_SIGNALER);
+ * process(signaler_command_1);
+ * ioctl(fence_fd, IIF_FENCE_SIGNAL);
+ * ...
+ *
+ * Return value:
+ *   0      - Succeeded in signaling the fence.
+ *   -EPERM - The signaler type of the fence is not AP or already all signalers
+ *            have been submitted to the fence.
+ */
+#define IIF_FENCE_SUBMIT_SIGNALER _IO(IIF_IOCTL_BASE, IIF_FENCE_IOCTL_NUM_BASE + 1)
+
+struct iif_fence_signal_ioctl {
+	/*
+	 * Input:
+	 * An error code to indicate that a signaler command has been processed
+	 * normally or with an error.
+	 *
+	 * If AP has failed in processing a signaler command of the fence, they
+	 * should pass an errno to here so that the IPs waiting on the fence
+	 * can notice that they may not able to proceed their waiter commands.
+	 * In this case, the number of remaining signals will become 0 which
+	 * means that the fence will be unblocked and the fence error will be
+	 * propagated to each waiting IP right away.
+	 *
+	 * If there was no error, it must be set to 0.
+	 */
+	__s32 error;
+	/*
+	 * Output:
+	 * The number of remaining signals to unblock the fence. If it is 0,
+	 * it means that the fence has been unblocked and the IPs waiting on the
+	 * fence have been notified.
+	 */
+	__u16 remaining_signals;
+};
+
+/*
+ * Signals the fence.
+ *
+ * This ioctl is available only when the fence signaler is AP.
+ *
+ * The runtime should call this ioctl for every signaler command after they
+ * have finished processing it.
+ *
+ * Return value:
+ *   0      - Succeeded in signaling the fence.
+ *   -EBUSY - The fence is already unblocked.
+ *   -EPERM - The signaler type of the fence is not AP and signaling it by the
+ *            runtime is not allowed.
+ */
+#define IIF_FENCE_SIGNAL \
+	_IOWR(IIF_IOCTL_BASE, IIF_FENCE_IOCTL_NUM_BASE + 2, struct iif_fence_signal_ioctl)
 
 #endif /* __IIF_IIF_H__ */

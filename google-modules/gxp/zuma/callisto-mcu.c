@@ -10,6 +10,7 @@
 #include "gxp-internal.h"
 #include "gxp-lpm.h"
 #include "gxp-mcu.h"
+#include "gxp-mcu-firmware.h"
 #include "gxp-mcu-platform.h"
 
 /* Setting bit 15 and 16 of GPOUT_LO_WRT register to 0 will hold MCU reset. */
@@ -27,16 +28,16 @@ int gxp_mcu_reset(struct gxp_dev *gxp, bool release_reset)
 
 	/* 1. Read gpout_lo_rd register. */
 	orig = gpout_lo_rd =
-		lpm_read_32_psm(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID), PSM_REG_GPOUT_LO_RD_OFFSET);
+		lpm_read_32_psm(gxp, CORE_TO_PSM(GXP_REG_MCU_ID), PSM_REG_GPOUT_LO_RD_OFFSET);
 
 	/* 2. Toggle bit 15 and 16 of this register to '0'. */
 	gpout_lo_rd &= ~GPOUT_LO_MCU_RESET;
 
 	/* 3. Set psm in debug mode with debug_cfg.en=1 and debug_cfg.gpout_override=1. */
-	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID), PSM_REG_DEBUG_CFG_OFFSET, 0b11);
+	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_REG_MCU_ID), PSM_REG_DEBUG_CFG_OFFSET, 0b11);
 
 	/* 4. Write the modified value from step2 to gpout_lo_wrt register. */
-	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID), PSM_REG_GPOUT_LO_WRT_OFFSET,
+	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_REG_MCU_ID), PSM_REG_GPOUT_LO_WRT_OFFSET,
 			 gpout_lo_rd);
 
 	/*
@@ -62,17 +63,17 @@ int gxp_mcu_reset(struct gxp_dev *gxp, bool release_reset)
 	 * RUN state.
 	 */
 	gpout_lo_rd = (gpout_lo_rd | GPOUT_LO_MCU_PREG) & ~GPOUT_LO_MCU_PSTATE;
-	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID), PSM_REG_GPOUT_LO_WRT_OFFSET,
+	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_REG_MCU_ID), PSM_REG_GPOUT_LO_WRT_OFFSET,
 			 gpout_lo_rd);
 
 	/* 7. Toggle bit 15 and 16 of gpout_lo_wrt register to '1' to release reset. */
 	gpout_lo_rd |= GPOUT_LO_MCU_RESET;
-	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID), PSM_REG_GPOUT_LO_WRT_OFFSET,
+	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_REG_MCU_ID), PSM_REG_GPOUT_LO_WRT_OFFSET,
 			 gpout_lo_rd);
 
 	/* 8. Poll gpin_lo_rd for one of bit 2 (paccept) and 3 (pdeny) becoming non-zero. */
 	for (i = 10000; i > 0; i--) {
-		gpin_lo_rd = lpm_read_32_psm(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID),
+		gpin_lo_rd = lpm_read_32_psm(gxp, CORE_TO_PSM(GXP_REG_MCU_ID),
 					     PSM_REG_GPIN_LO_RD_OFFSET);
 		if (gpin_lo_rd & (GPIN_LO_MCU_PACCEPT | GPIN_LO_MCU_PDENY))
 			break;
@@ -88,13 +89,56 @@ int gxp_mcu_reset(struct gxp_dev *gxp, bool release_reset)
 	}
 
 	/* 9. Write gpout_lo_wrt the same as gpout_lo_rd of step 1. */
-	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID), PSM_REG_GPOUT_LO_WRT_OFFSET, orig);
+	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_REG_MCU_ID), PSM_REG_GPOUT_LO_WRT_OFFSET, orig);
 
 	/*
 	 * 10. Move PSM back to func mode with gpout override disabled debug_cfg.en=0 and
 	 * debug_cfg.gpout=0.
 	 */
-	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID), PSM_REG_DEBUG_CFG_OFFSET, 0);
+	lpm_write_32_psm(gxp, CORE_TO_PSM(GXP_REG_MCU_ID), PSM_REG_DEBUG_CFG_OFFSET, 0);
 
 	return ret;
+}
+
+/* Time(us) to boot MCU in recovery mode. */
+#define GXP_MCU_RECOVERY_BOOT_DELAY 100
+
+bool gxp_mcu_recovery_boot_shutdown(struct gxp_dev *gxp, bool force)
+{
+	struct gxp_mcu_firmware *mcu_fw = gxp_mcu_firmware_of(gxp);
+	int try = 3, ret;
+	bool status = false;
+
+	lockdep_assert_held(&mcu_fw->lock);
+
+	do {
+		if (force) {
+			dev_dbg(gxp->dev, "Trying recovery boot");
+			gxp_mcu_set_boot_mode(mcu_fw, GXP_MCU_BOOT_MODE_RECOVERY);
+			ret = gxp_mcu_reset(gxp, true);
+			udelay(GXP_MCU_RECOVERY_BOOT_DELAY);
+			if (ret) {
+				dev_err(gxp->dev, "Failed to reset MCU (ret=%d)", ret);
+				continue;
+			}
+		}
+
+		if (gxp_lpm_wait_state_eq(gxp, CORE_TO_PSM(GXP_REG_MCU_ID), LPM_PG_STATE)) {
+			status = true;
+			break;
+		}
+
+		dev_warn(gxp->dev, "MCU PSM transition to PS3 fails, current state: %u, try: %d",
+			 gxp_lpm_get_state(gxp, CORE_TO_PSM(GXP_REG_MCU_ID)), try);
+		/*
+		 * If PG transition fails, MCU will not fall into WFI after the reset.
+		 * Therefore, we must boot into recovery to force WFI transition.
+		 */
+		force = true;
+	} while (--try > 0);
+
+	if (status)
+		gxp_mcu_firmware_shutdown(mcu_fw);
+
+	return status;
 }

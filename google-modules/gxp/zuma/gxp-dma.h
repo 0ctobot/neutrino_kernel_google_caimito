@@ -261,4 +261,12 @@ void gxp_iommu_setup_shareability(struct gxp_dev *gxp);
  */
 u64 gxp_dma_encode_gcip_map_flags(uint gxp_dma_flags, unsigned long dma_attrs);
 
+/**
+ * gxp_iommu_get_max_vd_activation() - Retrieve number of VDs can be activated.
+ * @gxp: The GXP device to activate VD
+ *
+ * Return: number of VDs that can be activated.
+ */
+int gxp_iommu_get_max_vd_activation(struct gxp_dev *gxp);
+
 #endif /* __GXP_DMA_H__ */

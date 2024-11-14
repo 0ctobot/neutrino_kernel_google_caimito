@@ -21,13 +21,13 @@
 #define GCIP_FW_PRIV_LEVEL_TZ 1
 #define GCIP_FW_PRIV_LEVEL_NS 2
 
-#define GCIP_FW_ASAN_ENABLED (1 << 0)
-#define GCIP_FW_UBSAN_ENABLED (1 << 1)
+#define GCIP_FW_ASAN_ENABLED BIT(0)
+#define GCIP_FW_UBSAN_ENABLED BIT(1)
 
 #define GCIP_IMAGE_CONFIG_SANITIZER_SHIFT 2
 #define GCIP_IMAGE_CONFIG_SANITIZER_MASK (BIT(GCIP_IMAGE_CONFIG_SANITIZER_SHIFT) - 1)
-#define GCIP_IMAGE_CONFIG_SANITIZER_STATUS(cfg) (cfg & GCIP_IMAGE_CONFIG_SANITIZER_MASK)
-#define GCIP_IMAGE_CONFIG_SANITIZER_INDEX(cfg) (cfg >> GCIP_IMAGE_CONFIG_SANITIZER_SHIFT)
+#define GCIP_IMAGE_CONFIG_SANITIZER_STATUS(cfg) ((cfg) & GCIP_IMAGE_CONFIG_SANITIZER_MASK)
+#define GCIP_IMAGE_CONFIG_SANITIZER_INDEX(cfg) ((cfg) >> GCIP_IMAGE_CONFIG_SANITIZER_SHIFT)
 
 /*
  * Mapping flags in lower 12 bits (regardless of page size in use by AP kernel) of requested
@@ -36,14 +36,14 @@
 #define GCIP_IMG_CFG_MAP_FLAGS_MASK		(SZ_4K - 1)
 
 /* The entry is for a CSR/device region and must be mapped with IOMMU_MMIO flag. */
-#define GCIP_IMAGE_CONFIG_MAP_MMIO_BIT		(BIT(0))
-#define GCIP_IMAGE_CONFIG_MAP_MMIO(flags)	(flags & GCIP_IMAGE_CONFIG_MAP_MMIO_BIT)
+#define GCIP_IMAGE_CONFIG_MAP_MMIO_BIT		BIT(0)
+#define GCIP_IMAGE_CONFIG_MAP_MMIO(flags)	((flags) & GCIP_IMAGE_CONFIG_MAP_MMIO_BIT)
 /* The mapping must be replicated for each PASID/context. */
-#define GCIP_IMAGE_CONFIG_MAP_SHARED_BIT	(BIT(1))
-#define GCIP_IMAGE_CONFIG_MAP_SHARED(flags)	(flags & GCIP_IMAGE_CONFIG_MAP_SHARED_BIT)
+#define GCIP_IMAGE_CONFIG_MAP_SHARED_BIT	BIT(1)
+#define GCIP_IMAGE_CONFIG_MAP_SHARED(flags)	((flags) & GCIP_IMAGE_CONFIG_MAP_SHARED_BIT)
 /* The mapping uses a 36-bit IOVA. The incoming value needs to be shifted left 4 bits */
-#define GCIP_IMAGE_CONFIG_MAP_36BIT_BIT		(BIT(3))
-#define GCIP_IMAGE_CONFIG_MAP_36BIT(flags)	(flags & GCIP_IMAGE_CONFIG_MAP_36BIT_BIT)
+#define GCIP_IMAGE_CONFIG_MAP_36BIT_BIT		BIT(3)
+#define GCIP_IMAGE_CONFIG_MAP_36BIT(flags)	((flags) & GCIP_IMAGE_CONFIG_MAP_36BIT_BIT)
 
 /*
  * The image configuration attached to the signed firmware.
@@ -78,7 +78,7 @@ struct gcip_image_config {
 	__u32 ns_iommu_mappings[GCIP_IMG_CFG_MAX_NS_IOMMU_MAPPINGS];
 } __packed;
 
-#define GCIP_IMAGE_CONFIG_FLAGS_SECURE (1u << 0)
+#define GCIP_IMAGE_CONFIG_FLAGS_SECURE BIT(0)
 
 struct gcip_image_config_ops {
 	/*
@@ -122,7 +122,7 @@ struct gcip_image_config_parser {
 #define GCIP_IMG_CFG_SIZE_MODE_BIT BIT(GCIP_IMG_CFG_ADDR_SHIFT - 1)
 #define GCIP_IMG_CFG_SECURE_SIZE_MASK (GCIP_IMG_CFG_SIZE_MODE_BIT - 1u)
 #define GCIP_IMG_CFG_NS_SIZE_MASK (GCIP_IMG_CFG_SIZE_MODE_BIT - 1u)
-#define GCIP_IMG_CFG_ADDR_MASK ~(BIT(GCIP_IMG_CFG_ADDR_SHIFT) - 1u)
+#define GCIP_IMG_CFG_ADDR_MASK (~(BIT(GCIP_IMG_CFG_ADDR_SHIFT) - 1u))
 
 /* For decoding the size of ns_iommu_mappings. */
 static inline u32 gcip_ns_config_to_size(u32 cfg)

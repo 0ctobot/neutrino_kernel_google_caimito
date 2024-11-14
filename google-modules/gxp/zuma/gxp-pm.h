@@ -17,20 +17,45 @@
 
 #include "gxp-internal.h"
 
-#define AUR_DVFS_MIN_RATE AUR_UUD_RATE
+#define AUR_DVFS_MIN_RATE AUR_PERCENT_FREQUENCY_5_RATE
 
 struct bcl_device;
 
+/*
+ * Kernel driver to use percentage based power states going ahead. State based power states
+ * are aliased to percentage based power states for keeping the backward compatibility.
+ */
 enum aur_power_state {
 	AUR_OFF = 0,
-	AUR_UUD = 1,
-	AUR_SUD = 2,
-	AUR_UD = 3,
-	AUR_NOM = 4,
-	AUR_READY = 5,
-	AUR_UUD_PLUS = 6,
-	AUR_SUD_PLUS = 7,
-	AUR_UD_PLUS = 8,
+	AUR_READY = 1,
+	AUR_PERCENT_FREQUENCY_5 = 2,
+	AUR_PERCENT_FREQUENCY_10 = 3,
+	AUR_PERCENT_FREQUENCY_15 = 4,
+	AUR_PERCENT_FREQUENCY_20 = 5,
+	AUR_PERCENT_FREQUENCY_25 = 6,
+	AUR_PERCENT_FREQUENCY_30 = 7,
+	AUR_PERCENT_FREQUENCY_35 = 8,
+	AUR_PERCENT_FREQUENCY_40 = 9,
+	AUR_PERCENT_FREQUENCY_45 = 10,
+	AUR_PERCENT_FREQUENCY_50 = 11,
+	AUR_PERCENT_FREQUENCY_55 = 12,
+	AUR_PERCENT_FREQUENCY_60 = 13,
+	AUR_PERCENT_FREQUENCY_65 = 14,
+	AUR_PERCENT_FREQUENCY_70 = 15,
+	AUR_PERCENT_FREQUENCY_75 = 16,
+	AUR_PERCENT_FREQUENCY_80 = 17,
+	AUR_PERCENT_FREQUENCY_85 = 18,
+	AUR_PERCENT_FREQUENCY_90 = 19,
+	AUR_PERCENT_FREQUENCY_95 = 20,
+	AUR_MAX_FREQUENCY = 21,
+	AUR_OVERDRIVE = 22,
+	AUR_UUD = AUR_PERCENT_FREQUENCY_5,
+	AUR_UUD_PLUS = AUR_PERCENT_FREQUENCY_35,
+	AUR_SUD = AUR_PERCENT_FREQUENCY_50,
+	AUR_SUD_PLUS = AUR_PERCENT_FREQUENCY_65,
+	AUR_UD = AUR_PERCENT_FREQUENCY_75,
+	AUR_UD_PLUS = AUR_PERCENT_FREQUENCY_85,
+	AUR_NOM = AUR_MAX_FREQUENCY,
 };
 
 extern const uint aur_power_state2rate[];
@@ -45,12 +70,7 @@ enum aur_memory_power_state {
 	AUR_MEM_MAX = 6,
 };
 
-enum aur_power_cmu_mux_state {
-	AUR_CMU_MUX_LOW = 0,
-	AUR_CMU_MUX_NORMAL = 1,
-};
-
-#define AUR_NUM_POWER_STATE (AUR_MAX_ALLOW_STATE + 1)
+#define AUR_NUM_POWER_STATE (AUR_OVERDRIVE + 1)
 #define AUR_NUM_MEMORY_POWER_STATE (AUR_MAX_ALLOW_MEMORY_STATE + 1)
 
 #define AUR_INIT_DVFS_STATE AUR_UUD
@@ -60,7 +80,7 @@ enum aur_power_cmu_mux_state {
  * aur_memory_power_state, not necessarily the state with the maximum power
  * level.
  */
-#define AUR_MAX_ALLOW_STATE AUR_UD_PLUS
+#define AUR_MAX_ALLOW_STATE AUR_OVERDRIVE
 #define AUR_MAX_ALLOW_MEMORY_STATE AUR_MEM_MAX
 
 #define AUR_NUM_POWER_STATE_WORKER 4
@@ -125,7 +145,7 @@ struct gxp_power_manager {
 	/* Last requested clock mux state */
 	bool last_scheduled_low_clkmux;
 	/*
-	 * Min/Max frequency limits, in kHz, requested via debugfs.
+	 * Min/Max frequency limits, in kHz, requested via devfreq.
 	 * Protected by `freq_limits_lock`.
 	 */
 	struct mutex freq_limits_lock;
@@ -249,7 +269,7 @@ int gxp_pm_init(struct gxp_dev *gxp);
 int gxp_pm_destroy(struct gxp_dev *gxp);
 
 /**
- * gxp_pm_blk_set_rate_acpm() - API for setting the block-level DVFS rate.
+ * gxp_pm_blk_set_rate() - API for setting the block-level DVFS rate.
  * This function can be called at any point after block power on.
  * @gxp: The GXP device to operate
  * @rate: Rate number in khz that need to be set.
@@ -258,20 +278,22 @@ int gxp_pm_destroy(struct gxp_dev *gxp);
  *         please refer to Lassen's ECT table.
  *
  * Return:
- * * 0       - Set finished successfully
- * * Other   - Set rate encounter issue in gxp_soc_pm_set_rate
+ * * 0       - Set finished successfully.
+ * * Other   - Set rate encounter issue in gxp_pm_blk_set_rate.
  */
-int gxp_pm_blk_set_rate_acpm(struct gxp_dev *gxp, unsigned long rate);
+int gxp_pm_blk_set_rate(struct gxp_dev *gxp, unsigned long rate);
 
 /**
- * gxp_pm_blk_get_state_acpm() - API for getting
- * the current DVFS state of the Aurora block.
+ * gxp_pm_blk_get_rate() - API for getting the block-level DVFS rate.
+ * This function can be called at any point after block power on.
  * @gxp: The GXP device to operate
  *
+ * Device should be powered on while using this function.
+ *
  * Return:
- * * State   - State number in Khz from ACPM
+ * * rate   - block-level DVFS rate in kHz.
  */
-int gxp_pm_blk_get_state_acpm(struct gxp_dev *gxp);
+int gxp_pm_blk_get_rate(struct gxp_dev *gxp);
 
 /**
  * gxp_pm_update_requested_power_states() - API for a GXP client to vote for a
@@ -372,5 +394,20 @@ static inline bool gxp_pm_is_blk_down(struct gxp_dev *gxp)
 	return gxp->power_mgr->aur_status ? !readl(gxp->power_mgr->aur_status) :
 					    gxp->power_mgr->curr_state == AUR_OFF;
 }
+
+/**
+ * gxp_pm_set_min_max_freq_limit() - Sets the [min,max] frequency range for the device.
+ * @gxp: The GXP device to operate
+ * @min_freq_khz: Minimum frequency limit.
+ * @max_freq_khz: Maximum frequency limit.
+ *
+ * Note: This function will be no op in direct mode.
+ * Return:
+ * * 0           - [Min,Max] frequency limit successfully updated.
+ * * -EOPNOTSUPP - Not supported for direct mode.
+ * * -EINVAL     - Invalid value sent to firmware via KCI in case of MCU mode.
+ * * -EIO        - Unable to communicate to the firmware via KCI.
+ */
+int gxp_pm_set_min_max_freq_limit(struct gxp_dev *gxp, uint min_freq_khz, uint max_freq_khz);
 
 #endif /* __GXP_PM_H__ */

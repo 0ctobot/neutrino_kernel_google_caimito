@@ -22,8 +22,10 @@ static GCIP_USAGE_STATS_ATTR_RW(GCIP_USAGE_STATS_METRIC_TYPE_CORE_USAGE, 0, 0, d
 static GCIP_USAGE_STATS_ATTR_RW(GCIP_USAGE_STATS_METRIC_TYPE_CORE_USAGE, 0, 1, dsp_usage_1, NULL,
 				NULL);
 
+#if GXP_NUM_CORES > 2
 static GCIP_USAGE_STATS_ATTR_RW(GCIP_USAGE_STATS_METRIC_TYPE_CORE_USAGE, 0, 2, dsp_usage_2, NULL,
 				NULL);
+#endif
 
 /* Counter. */
 static GCIP_USAGE_STATS_ATTR_RW(GCIP_USAGE_STATS_METRIC_TYPE_COUNTER,
@@ -51,7 +53,9 @@ static GCIP_USAGE_STATS_ATTR_RO(GCIP_USAGE_STATS_METRIC_TYPE_DVFS_FREQUENCY_INFO
 static struct gcip_usage_stats_attr *attrs[] = {
 	&gcip_usage_stats_attr_dsp_usage_0,
 	&gcip_usage_stats_attr_dsp_usage_1,
+#if GXP_NUM_CORES > 2
 	&gcip_usage_stats_attr_dsp_usage_2,
+#endif
 	&gcip_usage_stats_attr_dsp_workload_count,
 	&gcip_usage_stats_attr_context_switch_count,
 	&gcip_usage_stats_attr_preempt_count,

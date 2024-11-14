@@ -13,7 +13,7 @@
 
 /* Interface Version */
 #define GXP_INTERFACE_VERSION_MAJOR 1
-#define GXP_INTERFACE_VERSION_MINOR 27
+#define GXP_INTERFACE_VERSION_MINOR 28
 #define GXP_INTERFACE_VERSION_BUILD 0
 
 /* mmap offsets for MCU logging and tracing buffers */
@@ -89,9 +89,28 @@ struct gxp_map_ioctl {
 	 * the unreserved region and its device address will be returned to this
 	 * field.
 	 *
-	 * If the value is non-zero, the buffer will be mapped to the passed
-	 * specific address. The user must reserve an IOVA region which can map
-	 * the buffer to the address first. (See GXP_RESERVE_IOVA_REGION)
+	 * If the value is non-zero page-aligned device address, the buffer will
+	 * be mapped to the address. The user must reserve an IOVA region which
+	 * can cover the size of buffer from @device_address first.
+	 * (See GXP_RESERVE_IOVA_REGION)
+	 *
+	 * If @device_address is not page-aligned, the mapping will fail.
+	 *
+	 * Note that if @host_address is not page-aligned, the returned
+	 * @device_address can be different from the input since the driver maps
+	 * the buffer in the page unit. Therefore, the runtime should check the
+	 * returned value even though they passed one target address to here.
+	 * The buffer is not guaranteed to be mapped to the exactly the same
+	 * address.
+	 *
+	 * E.g., if @device_address is 0x2000, @host_address is 0x1800, @size
+	 * is 0x900 and the page size is 0x1000, the driver will allocate two
+	 * pages from the reserved region, [0x2000, 0x3000) and [0x3000, 0x4000),
+	 * and will map the buffer to [0x2800, 0x3100) since the page masked
+	 * offset of @host_address is 0x800 (0x1800 & ~PAGE_MASK = 0x800, 0x2000
+	 * + 0x800 = 0x2800). As a result, the size of occupied area in the
+	 * region will be two pages which is larger than @size and the returned
+	 * @device_address will be 0x2800 which is different from the input.
 	 *
 	 * - GXP_UNMAP_BUFFER (Input):
 	 * The device address of the buffer to be unmapped.
@@ -162,6 +181,9 @@ struct gxp_sync_ioctl {
 #define GXP_RESPONSE_ERROR_NONE (0)
 #define GXP_RESPONSE_ERROR_INTERNAL (1)
 #define GXP_RESPONSE_ERROR_TIMEOUT (2)
+#define GXP_RESPONSE_ERROR_NOENT (3)
+#define GXP_RESPONSE_ERROR_AGAIN (4)
+#define GXP_RESPONSE_ERROR_CANCELED (5)
 
 struct gxp_mailbox_response_ioctl {
 	/*
@@ -230,14 +252,13 @@ struct gxp_specs_ioctl {
 	 * The number of virtual devices can acquire wakelock at the same time.
 	 */
 	__u8 max_vd_activation;
-	/* Deprecated fields that should be ignored */
-	__u8 reserved[6];
 	/*
-	 * Amount of "tightly-coupled memory" or TCM available to each core.
-	 * The value returned will be in kB, or 0 if the value was not
-	 * specified in the device-tree.
+	 * Size of the device address space can be mapped per virtual device, in
+	 * unit MB.
 	 */
-	__u32 memory_per_core;
+	__u16 total_iova_size;
+	/* Deprecated fields that should be ignored */
+	__u8 reserved[8];
 };
 
 /* Query system specs. */
@@ -402,9 +423,12 @@ struct gxp_map_dmabuf_ioctl {
 	 * the unreserved region and its device address will be returned to this
 	 * field.
 	 *
-	 * If the value is non-zero, the dma-buf will be mapped to the passed
-	 * specific address. The user must reserve an IOVA region which can map
-	 * the dma-buf to the address first. (See GXP_RESERVE_IOVA_REGION)
+	 * If the value is non-zero page-aligned device address, the dma-buf
+	 * will be mapped to the address. The user must reserve an IOVA region
+	 * which can cover the size of dma-buf from @device_address first.
+	 * (See GXP_RESERVE_IOVA_REGION)
+	 *
+	 * If @device_address is not page-aligned, the mapping will fail.
 	 *
 	 * - GXP_UNMAP_DMABUF (Input):
 	 * The device address of the dma-buf to be unmapped.
@@ -583,7 +607,28 @@ struct gxp_mailbox_command_ioctl {
 #define GXP_POWER_STATE_UUD_PLUS 6
 #define GXP_POWER_STATE_SUD_PLUS 7
 #define GXP_POWER_STATE_UD_PLUS 8
-#define GXP_NUM_POWER_STATES (GXP_POWER_STATE_UD_PLUS + 1)
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_5 GXP_POWER_STATE_UUD
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_10 9
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_15 10
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_20 11
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_25 12
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_30 13
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_35 GXP_POWER_STATE_UUD_PLUS
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_40 14
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_45 15
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_50 GXP_POWER_STATE_SUD
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_55 16
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_60 17
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_65 GXP_POWER_STATE_SUD_PLUS
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_70 18
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_75 GXP_POWER_STATE_UD
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_80 19
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_85 GXP_POWER_STATE_UD_PLUS
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_90 20
+#define GXP_POWER_STATE_PERCENT_FREQUENCY_95 21
+#define GXP_POWER_STATE_MAX_FREQUENCY GXP_POWER_STATE_NOM
+#define GXP_POWER_STATE_OVERDRIVE 22
+#define GXP_NUM_POWER_STATES (GXP_POWER_STATE_OVERDRIVE + 1)
 
 /*
  * Memory interface power state values for use as `memory_power_state` in

@@ -17,11 +17,34 @@
 
 #define Q7_ALIVE_MAGIC	0x55555555
 
-/* Indexes same as image_config.IommuMappingIdx in the firmware side. */
+#define CORE_CFG_REGION_SIZE (SZ_8K * GXP_NUM_CORES)
+#define VD_CFG_REGION_SIZE (SZ_4K)
+
+/*
+ * Enum for specifying what information needs to be fetched from the image_config.IommuMapping
+ * array.
+ */
+enum gxp_imgcfg_type {
+	IMAGE_CONFIG_CORE_CFG_REGION,
+	IMAGE_CONFIG_VD_CFG_REGION,
+	IMAGE_CONFIG_SYS_CFG_REGION,
+};
+
+/*
+ * Indexes same as image_config.IommuMappingIdx in the firmware side.
+ *
+ * This enum is defined in header file to be shared with unit tests. For functions not in
+ * gxp-firmware.c, they should always use gxp_firmware_get_cfg_resource() instead.
+ */
 enum gxp_imgcfg_idx {
+	/* Indexes for image_config with ConfigVersion = 2. */
 	CORE_CFG_REGION_IDX,
 	VD_CFG_REGION_IDX,
 	SYS_CFG_REGION_IDX,
+
+	/* Also indexes, but for image_config with ConfigVersion >= 3. */
+	MCU_SHARED_REGION_IDX = 0,
+	SYS_CFG_REGION_IDX_V3 = 1,
 };
 
 struct gxp_firmware_manager {
@@ -152,8 +175,18 @@ void gxp_firmware_set_debug_dump_generated(struct gxp_dev *gxp, struct gxp_virtu
 					   uint core, u32 debug_dump_generated);
 
 /*
- * Disable external interrupts to core.
+ * Disables external interrupts to core.
  */
 void gxp_firmware_disable_ext_interrupts(struct gxp_dev *gxp, uint core);
+
+/*
+ * Fetches the virtual address and size specified in image config's iommu_mappings. @res's size and
+ * daddr fields are set on success, other fields remain untouched.
+ *
+ * Returns a negative errno on parsing error, such as the specified type couldn't be found in
+ * provided image config.
+ */
+int gxp_firmware_get_cfg_resource(struct gxp_dev *gxp, const struct gcip_image_config *img_cfg,
+				  enum gxp_imgcfg_type type, struct gxp_mapped_resource *res);
 
 #endif /* __GXP_FIRMWARE_H__ */

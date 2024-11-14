@@ -16,9 +16,6 @@
 
 #include "gxp-internal.h"
 
-#define GXP_MCU_BOOT_MODE_NORMAL 0
-#define GXP_MCU_BOOT_MODE_RECOVERY 1
-
 struct gxp_mcu_firmware_ns_buffer {
 	/* SG table for NS firmware buffer mappings. */
 	struct sg_table *sgt;
@@ -79,6 +76,13 @@ int gxp_mcu_firmware_run(struct gxp_mcu_firmware *mcu_fw);
 void gxp_mcu_firmware_stop(struct gxp_mcu_firmware *mcu_fw);
 
 /*
+ * Send shutdown command to GSA.
+ *
+ * Returns firmware's shutdown status from GSA.
+ */
+int gxp_mcu_firmware_shutdown(struct gxp_mcu_firmware *mcu_fw);
+
+/*
  * Loads MCU firmware into memories and parses the image config.
  *
  * Returns 0 on success, a negative errno on failure.
@@ -112,5 +116,16 @@ struct gxp_mcu_firmware *gxp_mcu_firmware_of(struct gxp_dev *gxp);
  */
 void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,
 				    enum gcip_fw_crash_type crash_type);
+
+/*
+ * Waits for the MCU LPM transition to the PG state.
+ *
+ * Must be called with holding @mcu_fw->lock.
+ *
+ * @force: force MCU to boot in recovery mode and execute WFI so that it can
+ *         go in PG state.
+ * Returns true if MCU successfully transitioned to PG state, otherwise false.
+ */
+bool gxp_mcu_recovery_boot_shutdown(struct gxp_dev *gxp, bool force);
 
 #endif /* __GXP_MCU_FIRMWARE_H__ */

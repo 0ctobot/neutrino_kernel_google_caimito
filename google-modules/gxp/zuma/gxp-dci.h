@@ -13,6 +13,8 @@
 #include "gxp-mailbox.h"
 #include "gxp-vd.h"
 
+#define DCI_CIRCULAR_QUEUE_WRAP_BIT BIT(15)
+
 /* Basic Buffer descriptor struct for message payloads. */
 struct gxp_dci_buffer_descriptor {
 	/* Address in the device's virtual address space. */

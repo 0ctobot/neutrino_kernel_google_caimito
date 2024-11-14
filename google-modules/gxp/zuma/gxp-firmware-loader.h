@@ -64,6 +64,8 @@ char *gxp_firmware_loader_get_core_fw_name(struct gxp_dev *gxp);
  * Set the core firmware name prefix to be requested in
  * `gxp_firmware_loader_load_if_needed()`.
  * It's safe for caller to release @fw_name after calling this function.
+ *
+ * If @fw_name is NULL, this function will simply unset the name.
  */
 void gxp_firmware_loader_set_core_fw_name(struct gxp_dev *gxp,
 					  const char *fw_name);

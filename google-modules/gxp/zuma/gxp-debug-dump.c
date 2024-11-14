@@ -46,8 +46,6 @@
 
 #define SSCD_MSG_LENGTH 64
 
-#define GXP_SYNC_BARRIER_STRIDE (GXP_REG_SYNC_BARRIER_1 - GXP_REG_SYNC_BARRIER_0)
-
 #define DEBUG_DUMP_MEMORY_SIZE 0x400000 /* size in bytes */
 
 /*
@@ -56,6 +54,7 @@
  */
 #define CORE_FIRMWARE_RW_STRIDE 0x200000 /* 2 MB */
 #define CORE_FIRMWARE_RW_ADDR(x) (0xFA400000 + CORE_FIRMWARE_RW_STRIDE * x)
+#define VD_PRIVATE_VIRT_ADDR 0xFAC00000
 
 #define DEBUGFS_COREDUMP "coredump"
 
@@ -96,9 +95,7 @@ static void gxp_debug_dump_cache_flush(struct gxp_dev *gxp)
 
 static u32 gxp_read_sync_barrier_shadow(struct gxp_dev *gxp, uint index)
 {
-	uint barrier_reg_offset = GXP_REG_SYNC_BARRIER_0_SHADOW + (GXP_SYNC_BARRIER_STRIDE * index);
-
-	return gxp_read_32(gxp, barrier_reg_offset);
+	return gxp_read_32(gxp, GXP_REG_SYNC_BARRIER_SHADOW(index));
 }
 
 static void gxp_get_common_registers(struct gxp_dev *gxp,
@@ -106,7 +103,6 @@ static void gxp_get_common_registers(struct gxp_dev *gxp,
 				     struct gxp_common_registers *common_regs)
 {
 	int i;
-	u32 addr;
 
 	dev_dbg(gxp->dev, "Getting common registers\n");
 
@@ -127,10 +123,8 @@ static void gxp_get_common_registers(struct gxp_dev *gxp,
 #endif /* GXP_DUMP_INTERRUPT_POLARITY_REGISTER */
 	common_regs->raw_ext_int = gxp_read_32(gxp, GXP_REG_RAW_EXT_INT);
 
-	for (i = 0; i < CORE_PD_COUNT; i++) {
-		common_regs->core_pd[i] =
-			gxp_read_32(gxp, GXP_REG_CORE_PD + CORE_PD_BASE(i));
-	}
+	for (i = 0; i < GXP_NUM_CORES; i++)
+		common_regs->core_pd[i] = gxp_read_32(gxp, GXP_REG_CORE_PD(i));
 
 	common_regs->global_counter_low =
 		gxp_read_32(gxp, GXP_REG_GLOBAL_COUNTER_LOW);
@@ -139,14 +133,10 @@ static void gxp_get_common_registers(struct gxp_dev *gxp,
 	common_regs->wdog_control = gxp_read_32(gxp, GXP_REG_WDOG_CONTROL);
 	common_regs->wdog_value = gxp_read_32(gxp, GXP_REG_WDOG_VALUE);
 
-	for (i = 0; i < TIMER_COUNT; i++) {
-		addr = GXP_REG_TIMER_COMPARATOR + TIMER_BASE(i);
-		common_regs->timer[i].comparator =
-			gxp_read_32(gxp, addr + TIMER_COMPARATOR_OFFSET);
-		common_regs->timer[i].control =
-			gxp_read_32(gxp, addr + TIMER_CONTROL_OFFSET);
-		common_regs->timer[i].value =
-			gxp_read_32(gxp, addr + TIMER_VALUE_OFFSET);
+	for (i = 0; i < GXP_REG_TIMER_COUNT; i++) {
+		common_regs->timer[i].comparator = gxp_read_32(gxp, GXP_REG_TIMER_COMPARATOR(i));
+		common_regs->timer[i].control = gxp_read_32(gxp, GXP_REG_TIMER_CONTROL(i));
+		common_regs->timer[i].value = gxp_read_32(gxp, GXP_REG_TIMER_VALUE(i));
 	}
 
 	/* Get Doorbell registers */
@@ -525,32 +515,28 @@ out:
 }
 
 /**
- * gxp_map_fw_rw_section() - Maps the fw rw section address and size to be
- *                           sent to sscd module for taking the dump.
+ * gxp_map_ns_image_config_section() - Maps the ns image config section address and size to be
+ *                                     sent to sscd module for taking the dump.
  * @gxp: The GXP device.
  * @vd: vd of the crashed client.
+ * @daddr: device address of the ns image config region.
  * @core_id: physical core_id of crashed core.
  * @virt_core_id: virtual core_id of crashed core.
  * @seg_idx: Pointer to a index that is keeping track of
  *           gxp->debug_dump_mgr->segs[] array.
- *
- * This function parses the ns_regions of the given vd to find
- * fw_rw_section details.
  *
  * Return:
  * * 0 - Successfully mapped fw_rw_section data.
  * * -EOPNOTSUPP - Operation not supported for invalid image config.
  * * -ENXIO - No IOVA found for the fw_rw_section.
  */
-static int gxp_map_fw_rw_section(struct gxp_dev *gxp,
-				 struct gxp_virtual_device *vd,
-				 uint32_t core_id, uint32_t virt_core_id,
-				 int *seg_idx)
+static int gxp_map_ns_image_config_section(struct gxp_dev *gxp, struct gxp_virtual_device *vd,
+					   dma_addr_t daddr, uint32_t core_id,
+					   uint32_t virt_core_id, int *seg_idx)
 {
 	size_t idx;
 	struct sg_table *sgt;
 	struct gxp_debug_dump_manager *mgr = gxp->debug_dump_mgr;
-	dma_addr_t fw_rw_section_daddr = CORE_FIRMWARE_RW_ADDR(virt_core_id);
 	const size_t n_reg = ARRAY_SIZE(vd->ns_regions);
 
 	for (idx = 0; idx < n_reg; idx++) {
@@ -558,7 +544,7 @@ static int gxp_map_fw_rw_section(struct gxp_dev *gxp,
 		if (!sgt)
 			break;
 
-		if (fw_rw_section_daddr != vd->ns_regions[idx].daddr)
+		if (daddr != vd->ns_regions[idx].daddr)
 			continue;
 
 		return gxp_add_seg(
@@ -567,8 +553,8 @@ static int gxp_map_fw_rw_section(struct gxp_dev *gxp,
 				gxp->fw_loader_mgr->core_img_cfg.ns_iommu_mappings[idx]));
 	}
 	dev_err(gxp->dev,
-		"fw_rw_section mapping for core %u at iova %pad does not exist",
-		core_id, &fw_rw_section_daddr);
+		"ns_image_config_section mapping for core %u at iova %pad does not exist",
+		core_id, &daddr);
 	return -ENXIO;
 }
 
@@ -613,8 +599,6 @@ void gxp_debug_dump_send_forced_debug_dump_request(struct gxp_dev *gxp,
 	uint phys_core;
 	uint generate_debug_dump;
 	uint debug_dump_generated;
-
-	lockdep_assert_held(&gxp->vd_semaphore);
 
 	for (phys_core = 0; phys_core < GXP_NUM_CORES; phys_core++) {
 		if (!(vd->core_list & BIT(phys_core)))
@@ -679,6 +663,12 @@ static int gxp_handle_debug_dump(struct gxp_dev *gxp,
 	}
 
 	/* Core Header */
+	/* TODO(b/352672371): Make kernel and tooling backward compatible when
+	 * new segments are added.
+	 * Header version is temporarily used to know the dump segments on the
+	 * tooling side.
+	 */
+	core_header->header_version = GXP_DEBUG_DUMP_HEADER_VERSION;
 	ret = gxp_add_seg(mgr, core_id, &seg_idx, core_header, sizeof(struct gxp_core_header));
 	if (ret)
 		goto out_add_seg;
@@ -716,7 +706,24 @@ static int gxp_handle_debug_dump(struct gxp_dev *gxp,
 		goto out_add_seg;
 
 	/* fw rw section */
-	ret = gxp_map_fw_rw_section(gxp, vd, core_id, virt_core, &seg_idx);
+	ret = gxp_map_ns_image_config_section(gxp, vd, CORE_FIRMWARE_RW_ADDR(virt_core), core_id,
+					      virt_core, &seg_idx);
+	if (ret)
+		goto out_add_seg;
+
+	/* fw vd section */
+	ret = gxp_map_ns_image_config_section(gxp, vd, VD_PRIVATE_VIRT_ADDR, core_id, virt_core,
+					      &seg_idx);
+	if (ret)
+		goto out_add_seg;
+
+	/* core config region */
+	ret = gxp_add_seg(mgr, core_id, &seg_idx, vd->core_cfg.vaddr, vd->core_cfg.size);
+	if (ret)
+		goto out_add_seg;
+
+	/* vd config region */
+	ret = gxp_add_seg(mgr, core_id, &seg_idx, vd->vd_cfg.vaddr, vd->vd_cfg.size);
 	if (ret)
 		goto out_add_seg;
 
@@ -1026,19 +1033,19 @@ static int gxp_add_mailbox_details_to_segments(struct gxp_dev *gxp, struct gxp_m
 	mailbox_queue_desc->resp_elem_size = mailbox->resp_elem_size;
 
 	/* Add mailbox queue descriptor details to the segment. */
-	ret = gxp_add_seg(mgr, GXP_MCU_CORE_ID, seg_idx, mailbox_queue_desc,
+	ret = gxp_add_seg(mgr, GXP_REG_MCU_ID, seg_idx, mailbox_queue_desc,
 			  sizeof(struct gxp_mailbox_queue_desc));
 	if (ret)
 		return ret;
 
 	/* Add mailbox command queue details to the segment. */
-	ret = gxp_add_seg(mgr, GXP_MCU_CORE_ID, seg_idx, mailbox->cmd_queue_buf.vaddr,
+	ret = gxp_add_seg(mgr, GXP_REG_MCU_ID, seg_idx, mailbox->cmd_queue_buf.vaddr,
 			  mailbox->cmd_queue_size * mailbox->cmd_elem_size);
 	if (ret)
 		return ret;
 
 	/* Add mailbox response queue details to the segments. */
-	ret = gxp_add_seg(mgr, GXP_MCU_CORE_ID, seg_idx, mailbox->resp_queue_buf.vaddr,
+	ret = gxp_add_seg(mgr, GXP_REG_MCU_ID, seg_idx, mailbox->resp_queue_buf.vaddr,
 			  mailbox->resp_queue_size * mailbox->resp_elem_size);
 	if (ret)
 		return ret;
@@ -1059,7 +1066,7 @@ void gxp_debug_dump_report_mcu_crash(struct gxp_dev *gxp)
 	mutex_lock(&mgr->debug_dump_lock);
 
 	/* Add MCU telemetry buffer details to be dumped. */
-	if (gxp_add_seg(mgr, GXP_MCU_CORE_ID, &seg_idx, tel->log_mem.vaddr, tel->log_mem.size))
+	if (gxp_add_seg(mgr, GXP_REG_MCU_ID, &seg_idx, tel->log_mem.vaddr, tel->log_mem.size))
 		dev_warn(gxp->dev, "Failed to dump telemetry.\n");
 
 	/* Add KCI mailbox details to be dumped. */
@@ -1079,7 +1086,7 @@ void gxp_debug_dump_report_mcu_crash(struct gxp_dev *gxp)
 	}
 
 #if HAS_COREDUMP
-	gxp_send_to_sscd(gxp, mgr->segs[GXP_MCU_CORE_ID], seg_idx, sscd_msg);
+	gxp_send_to_sscd(gxp, mgr->segs[GXP_REG_MCU_ID], seg_idx, sscd_msg);
 #endif /* HAS_COREDUMP */
 
 	mutex_unlock(&mgr->debug_dump_lock);

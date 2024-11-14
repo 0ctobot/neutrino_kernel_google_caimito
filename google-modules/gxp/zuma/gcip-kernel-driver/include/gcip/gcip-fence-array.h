@@ -12,6 +12,7 @@
 #include <linux/kref.h>
 
 #include <gcip/gcip-fence.h>
+#include <iif/iif-shared.h>
 
 /*
  * Contains multiple fences.
@@ -48,19 +49,30 @@ struct gcip_fence_array *gcip_fence_array_get(struct gcip_fence_array *fence_arr
 /*
  * Decrements the refcount of @fence_array. If it becomes 0, it will release the refcount of the
  * fences which it is referring to.
+ *
+ * If @fence_array contains inter-IP fence(s) and the caller is going to put @fence in the
+ * un-sleepable context such as IRQ context or spin lock, one should use the async one.
  */
 void gcip_fence_array_put(struct gcip_fence_array *fence_array);
-
-/* Signals the fences in @fence_array. */
-void gcip_fence_array_signal(struct gcip_fence_array *fence_array, int errno);
+void gcip_fence_array_put_async(struct gcip_fence_array *fence_array);
 
 /*
- * Notifies the fences in @fence_array that a command of @ip which waited on them has finished their
- * work.
+ * Its functionality is the same with the `gcip_fence_array_signal{_async}` function, but receives a
+ `struct gcip_fence_array` instance.
  *
- * This function is only meaningful when a fence is GCIP_INTER_IP_FENCE.
+ * See the `gcip_fence_array_signal{_async}` function for details.
+ */
+void gcip_fence_array_signal(struct gcip_fence_array *fence_array, int errno);
+void gcip_fence_array_signal_async(struct gcip_fence_array *fence_array, int errno);
+
+/*
+ * Its functionality is the same with the `gcip_fence_waited{_async}` function, but receives a
+ `struct gcip_fence_array` instance.
+ *
+ * See the `gcip_fence_waited{_async}` function for details.
  */
 void gcip_fence_array_waited(struct gcip_fence_array *fence_array, enum iif_ip_type ip);
+void gcip_fence_array_waited_async(struct gcip_fence_array *fence_array, enum iif_ip_type ip);
 
 /* Submits a signaler to the fences in @fence_array. */
 void gcip_fence_array_submit_signaler(struct gcip_fence_array *fence_array);
@@ -128,5 +140,13 @@ int gcip_fence_array_wait_signaler_submission(struct gcip_fence_array *fence_arr
  * The returned fence must be released with `dma_fence_put()`.
  */
 struct dma_fence *gcip_fence_array_merge_ikf(struct gcip_fence_array *fence_array);
+
+/*
+ * Its functionality is the same with the `gcip_fence_iif_set_propagate_unblock` function, but
+ * receives an array of fences.
+ *
+ * See the `gcip_fence_iif_set_propagate_unblock` function for the details.
+ */
+void gcip_fence_array_iif_set_propagate_unblock(struct gcip_fence_array *fence_array);
 
 #endif /* __GCIP_FENCE_ARRAY_H__ */

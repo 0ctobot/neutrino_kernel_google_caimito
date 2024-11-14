@@ -20,7 +20,6 @@
 #include <gcip/gcip-image-config.h>
 #include <gcip/gcip-pm.h>
 
-#include "gxp-bpm.h"
 #include "gxp-client.h"
 #include "gxp-config.h"
 #include "gxp-core-telemetry.h"
@@ -306,13 +305,12 @@ static void gxp_program_reset_vector(struct gxp_dev *gxp, uint core,
 {
 	u32 reset_vec;
 
-	reset_vec = gxp_read_32(gxp, GXP_CORE_REG_ALT_RESET_VECTOR(phys_core));
+	reset_vec = gxp_read_32(gxp, GXP_REG_CORE_ALT_RESET_VECTOR(phys_core));
 	if (verbose)
 		dev_notice(gxp->dev,
 			   "Current Aurora reset vector for core %u: %#x\n",
 			   phys_core, reset_vec);
-	gxp_write_32(gxp, GXP_CORE_REG_ALT_RESET_VECTOR(phys_core),
-		     gxp->fwbufs[core].daddr);
+	gxp_write_32(gxp, GXP_REG_CORE_ALT_RESET_VECTOR(phys_core), gxp->fwbufs[core].daddr);
 	if (verbose)
 		dev_notice(gxp->dev, "New Aurora reset vector for core %u: %pad\n", phys_core,
 			   &gxp->fwbufs[core].daddr);
@@ -421,14 +419,6 @@ static int gxp_firmware_handshake(struct gxp_dev *gxp,
 	}
 	dev_notice(gxp->dev, "TOP access from core %u successful!\n", phys_core);
 #endif
-
-	/* Stop bus performance monitors */
-	gxp_bpm_stop(gxp, phys_core);
-	dev_notice(gxp->dev, "Core%u Instruction read transactions: 0x%x\n",
-		   core, gxp_bpm_read_counter(gxp, phys_core, INST_BPM_OFFSET));
-	dev_notice(gxp->dev, "Core%u Data write transactions: 0x%x\n",
-		   phys_core,
-		   gxp_bpm_read_counter(gxp, phys_core, DATA_BPM_OFFSET));
 
 	return 0;
 }
@@ -575,6 +565,7 @@ static ssize_t load_dsp_firmware_store(struct device *dev,
 
 err_firmware_load:
 	kfree(name_buf);
+	gxp_firmware_loader_set_core_fw_name(gxp, NULL);
 	return ret;
 }
 
@@ -736,7 +727,7 @@ int gxp_fw_init(struct gxp_dev *gxp)
 	dev_notice(gxp->dev, "Aurora version: 0x%x\n", ver);
 
 	for (core = 0; core < GXP_NUM_CORES; core++) {
-		proc_id = gxp_read_32(gxp, GXP_CORE_REG_PROCESSOR_ID(core));
+		proc_id = gxp_read_32(gxp, GXP_REG_CORE_PROCESSOR_ID(core));
 		dev_notice(gxp->dev, "Aurora core %u processor ID: 0x%x\n",
 			   core, proc_id);
 	}
@@ -885,18 +876,18 @@ error:
 static void enable_core_interrupts(struct gxp_dev *gxp, uint core)
 {
 	/*
-	 * GXP_CORE_REG_COMMON_INT_MASK_0 is handled in doorbell module, so we
+	 * GXP_REG_CORE_COMMON_INT_MASK_0 is handled in doorbell module, so we
 	 * don't need to enable it here.
 	 */
-	gxp_write_32(gxp, GXP_CORE_REG_COMMON_INT_MASK_1(core), 0xffffffff);
-	gxp_write_32(gxp, GXP_CORE_REG_DEDICATED_INT_MASK(core), 0xffffffff);
+	gxp_write_32(gxp, GXP_REG_CORE_COMMON_INT_MASK_1(core), 0xffffffff);
+	gxp_write_32(gxp, GXP_REG_CORE_DEDICATED_INT_MASK(core), 0xffffffff);
 }
 
 void gxp_firmware_disable_ext_interrupts(struct gxp_dev *gxp, uint core)
 {
-	gxp_write_32(gxp, GXP_CORE_REG_COMMON_INT_MASK_0(core), 0);
-	gxp_write_32(gxp, GXP_CORE_REG_COMMON_INT_MASK_1(core), 0);
-	gxp_write_32(gxp, GXP_CORE_REG_DEDICATED_INT_MASK(core), 0);
+	gxp_write_32(gxp, GXP_REG_CORE_COMMON_INT_MASK_0(core), 0);
+	gxp_write_32(gxp, GXP_REG_CORE_COMMON_INT_MASK_1(core), 0);
+	gxp_write_32(gxp, GXP_REG_CORE_DEDICATED_INT_MASK(core), 0);
 }
 
 static inline uint select_core(struct gxp_virtual_device *vd, uint virt_core,
@@ -915,10 +906,6 @@ static int gxp_firmware_setup(struct gxp_dev *gxp,
 		dev_err(gxp->dev, "Firmware is already running on core %u\n", phys_core);
 		return -EBUSY;
 	}
-
-	/* Configure bus performance monitors */
-	gxp_bpm_configure(gxp, phys_core, INST_BPM_OFFSET, BPM_EVENT_READ_XFER);
-	gxp_bpm_configure(gxp, phys_core, DATA_BPM_OFFSET, BPM_EVENT_WRITE_XFER);
 
 	reset_core_config_region(gxp, vd, core);
 	ret = gxp_firmware_setup_hw_after_block_off(gxp, core, phys_core,
@@ -1023,6 +1010,73 @@ static void gxp_firmware_stop_core(struct gxp_dev *gxp,
 		gxp_firmware_disable_ext_interrupts(gxp, phys_core);
 		gxp_pm_core_off(gxp, phys_core);
 	}
+}
+
+/*
+ * Assigns @res's IOVA, size from image config.
+ */
+static void assign_resource(struct gxp_mapped_resource *res,
+			    const struct gcip_image_config *img_cfg, enum gxp_imgcfg_idx idx)
+{
+	res->daddr = img_cfg->iommu_mappings[idx].virt_address;
+	res->size = gcip_config_to_size(img_cfg->iommu_mappings[idx].image_config_value);
+}
+
+static int gxp_firmware_get_cfg_resource_v2(struct gxp_dev *gxp,
+					    const struct gcip_image_config *img_cfg,
+					    enum gxp_imgcfg_type type,
+					    struct gxp_mapped_resource *res)
+{
+	if (img_cfg->num_iommu_mappings < 3)
+		return -ENODATA;
+
+	switch (type) {
+	case IMAGE_CONFIG_CORE_CFG_REGION:
+		assign_resource(res, img_cfg, CORE_CFG_REGION_IDX);
+		return 0;
+	case IMAGE_CONFIG_VD_CFG_REGION:
+		assign_resource(res, img_cfg, VD_CFG_REGION_IDX);
+		return 0;
+	case IMAGE_CONFIG_SYS_CFG_REGION:
+		assign_resource(res, img_cfg, SYS_CFG_REGION_IDX);
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
+static int gxp_firmware_get_cfg_resource_v3(struct gxp_dev *gxp,
+					    const struct gcip_image_config *img_cfg,
+					    enum gxp_imgcfg_type type,
+					    struct gxp_mapped_resource *res)
+{
+	struct gxp_mapped_resource tmp;
+
+	if (img_cfg->num_iommu_mappings < 2)
+		return -ENODATA;
+
+	if (type == IMAGE_CONFIG_SYS_CFG_REGION) {
+		assign_resource(res, img_cfg, SYS_CFG_REGION_IDX_V3);
+		return 0;
+	}
+	if (type != IMAGE_CONFIG_CORE_CFG_REGION && type != IMAGE_CONFIG_VD_CFG_REGION)
+		return -EINVAL;
+
+	/* The MCU shared region covers both core_cfg and the VD cfg region. */
+	assign_resource(&tmp, img_cfg, MCU_SHARED_REGION_IDX);
+	if (tmp.size < CORE_CFG_REGION_SIZE + VD_CFG_REGION_SIZE) {
+		dev_err(gxp->dev, "Invalid shared region size, at least %#x, got %#llx",
+			CORE_CFG_REGION_SIZE + VD_CFG_REGION_SIZE, tmp.size);
+		return -EINVAL;
+	}
+	if (type == IMAGE_CONFIG_CORE_CFG_REGION) {
+		res->size = CORE_CFG_REGION_SIZE;
+		res->daddr = tmp.daddr;
+	} else {
+		res->size = VD_CFG_REGION_SIZE;
+		res->daddr = tmp.daddr + CORE_CFG_REGION_SIZE;
+	}
+	return 0;
 }
 
 int gxp_firmware_run(struct gxp_dev *gxp, struct gxp_virtual_device *vd,
@@ -1194,4 +1248,14 @@ u32 gxp_firmware_get_boot_status(struct gxp_dev *gxp, struct gxp_virtual_device 
 
 	core_cfg = get_scratchpad_base(gxp, vd, core);
 	return core_cfg->boot_status;
+}
+
+int gxp_firmware_get_cfg_resource(struct gxp_dev *gxp, const struct gcip_image_config *img_cfg,
+				  enum gxp_imgcfg_type type, struct gxp_mapped_resource *res)
+{
+	if (img_cfg->config_version < 2)
+		return -EINVAL;
+	if (img_cfg->config_version == 2)
+		return gxp_firmware_get_cfg_resource_v2(gxp, img_cfg, type, res);
+	return gxp_firmware_get_cfg_resource_v3(gxp, img_cfg, type, res);
 }

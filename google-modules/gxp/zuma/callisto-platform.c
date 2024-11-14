@@ -10,6 +10,8 @@
 #include <linux/mod_devicetable.h>
 #include <linux/platform_device.h>
 
+#include <gcip/gcip-iommu.h>
+
 #include "callisto-platform.h"
 #include "gxp-kci.h"
 #include "gxp-mcu-fs.h"
@@ -28,6 +30,11 @@ void gxp_iommu_setup_shareability(struct gxp_dev *gxp)
 		       addr + GXP_SYSREG_AUR0_SHAREABILITY);
 	writel_relaxed(SHAREABLE_WRITE | SHAREABLE_READ | INNER_SHAREABLE,
 		       addr + GXP_SYSREG_AUR1_SHAREABILITY);
+}
+
+int gxp_iommu_get_max_vd_activation(struct gxp_dev *gxp)
+{
+	return gcip_iommu_domain_pool_get_num_pasid(gxp->domain_pool);
 }
 
 static int callisto_platform_parse_dt(struct platform_device *pdev,

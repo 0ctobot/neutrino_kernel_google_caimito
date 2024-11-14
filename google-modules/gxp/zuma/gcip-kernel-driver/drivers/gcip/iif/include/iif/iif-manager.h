@@ -16,9 +16,11 @@
 #include <linux/idr.h>
 #include <linux/kref.h>
 #include <linux/of.h>
+#include <linux/rwsem.h>
 #include <linux/types.h>
 
 #include <iif/iif-fence-table.h>
+#include <iif/iif-shared.h>
 
 struct iif_fence;
 
@@ -26,28 +28,36 @@ struct iif_fence;
 struct iif_manager_ops {
 	/* Following callbacks are required. */
 	/*
-	 * Called when @fence is unblocked by AP.
+	 * Called when @fence is unblocked.
 	 *
-	 * This callback is meaningful only when @fence's signaler type is AP. When the runtime
-	 * signals @fence as many as the number of total signalers which was decided when the fence
-	 * was created and the fence has been unblocked eventually, this callback will be called if
-	 * the IP registered this operator is waiting on the fence to be unblocked.
+	 * When the signaler signals @fence as many times as the number of total signalers which was
+	 * decided when the fence was created and the fence has been unblocked eventually. This
+	 * callback will be called if the IP registered this operator is waiting on the fence to be
+	 * unblocked.
 	 *
-	 * If this callback is called, the IP drivers should notify their IP that the fence has been
-	 * unblocked (i.e., send @fence->id to IP) so that they will check whether they can start
-	 * processing commands which were pended by the fence. Also, the IP drivers should check
-	 * whether the fence was signaled with an error or not by checking @fence->signal_error and
-	 * decide what to do if there was an error.
+	 * If @fence->error is non-zero errno, it means that the fence has been signaled witn an
+	 * error at least once.
+	 *
+	 * If @fence->propagate is true, the IP drivers should notify their IP that the fence has
+	 * been unblocked (i.e., send @fence->id to IP). If the signaler is AP, it will be always
+	 * true. If the signaler is an IP, but it wasn't able to notify waiter IPs of the fence
+	 * unblock, it will be true. For example, if the signaler IP becomes faulty and it's not
+	 * able to inform waiter IPs that the fence has been unblocked with an error, the signaler
+	 * IP driver will notice the IP crash and ask the IIF driver to set @fence->propagate to
+	 * true to make waiter IP drivers notice that they need to inform their IP of the fence
+	 * unblock.
+	 *
+	 * Note that the timing of @fence retirement is nondeterministic since we can't decide the
+	 * timing of the runtime or IP crash. However, if @fence->propagate is true, but the fence
+	 * has been retired in the middle, it should be still safe to notify waiter IPs of the fence
+	 * unblock since they will verify the notification by checking the fence table.
 	 *
 	 * This callback returns void since the IIF driver has nothing can do when the IP driver
 	 * fails to notify their IP. It is the responsibility of the IP driver side if that happens.
 	 *
-	 * Note that if IP drivers want to poll the fence unblock in general cases, they should
-	 * utilize the `iif_fence_{add,remove}_poll_callback` functions instead.
-	 *
 	 * Context: Normal.
 	 */
-	void (*fence_unblocked_by_ap)(struct iif_fence *fence, void *data);
+	void (*fence_unblocked)(struct iif_fence *fence, void *data);
 
 	/* Following callbacks are optional. */
 	/*
@@ -79,11 +89,7 @@ struct iif_manager_ops {
 	 * wakelock of IPx will be pended until IPy processes its command normally or as timeout and
 	 * IPy driver eventually calls `iif_fence_signal`.
 	 *
-	 * Context: Depends on in which context the IPx calls the `iif_fence_waited` function or
-	 *          the IPy calls the `iif_fence_signal` function. Since this callback will be
-	 *          implemented by the IPx and IPx may not be aware of in which context IPy calls
-	 *          the `iif_fence_signal` function, it's recommended to assume the context is any
-	 *          including IRQ context.
+	 * Context: Normal.
 	 */
 	void (*release_block_wakelock)(void *data);
 };
@@ -103,6 +109,8 @@ struct iif_manager {
 	struct iif_fence_table fence_table;
 	/* Operators per IP. */
 	const struct iif_manager_ops *ops[IIF_IP_RESERVED];
+	/* Protects @ops. */
+	struct rw_semaphore ops_sema;
 	/* User-data per IP. */
 	void *data[IIF_IP_RESERVED];
 	/* Platform bus device. */
@@ -136,6 +144,9 @@ void iif_manager_put(struct iif_manager *mgr);
 int iif_manager_register_ops(struct iif_manager *mgr, enum iif_ip_type ip,
 			     const struct iif_manager_ops *ops, void *data);
 
+/* Unregisters operators of @ip. */
+void iif_manager_unregister_ops(struct iif_manager *mgr, enum iif_ip_type ip);
+
 /*
  * Acquires the block wakelock of @ip.
  *
@@ -148,10 +159,10 @@ int iif_manager_acquire_block_wakelock(struct iif_manager *mgr, enum iif_ip_type
 void iif_manager_release_block_wakelock(struct iif_manager *mgr, enum iif_ip_type ip);
 
 /*
- * Notifies @fence has been unblocked by AP to IPs waiting on the fence.
+ * Notifies @fence has been unblocked to IP drivers waiting on the fence.
  *
- * This function will be called if @fence's signaler is AP and the fence has been unblocked.
+ * This function will be called if @fence has been unblocked.
  */
-void iif_manager_broadcast_fence_unblocked_by_ap(struct iif_manager *mgr, struct iif_fence *fence);
+void iif_manager_broadcast_fence_unblocked(struct iif_manager *mgr, struct iif_fence *fence);
 
 #endif /* __IIF_IIF_MANAGER_H__ */

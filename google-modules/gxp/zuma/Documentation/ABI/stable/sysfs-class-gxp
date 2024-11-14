@@ -84,7 +84,7 @@ Description:
 		Number of times a workload was preempted on each DSP core.  Write to clear.
 Users:		GXP runtime library (libgxp)
 
-What:		/sys/class/gxp/gxp/device/fw_threads_stats
+What:		/sys/class/gxp/gxp/device/fw_thread_stats
 Date:		March 2023
 Description:
 		Maximum stack depth per thread id.  Write to clear.

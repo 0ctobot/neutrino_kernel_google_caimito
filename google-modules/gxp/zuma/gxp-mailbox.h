@@ -55,9 +55,9 @@
 
 enum gxp_mailbox_command_code {
 	/* A user-space initiated dispatch message. */
-	GXP_MBOX_CODE_DISPATCH = 0,
+	GXP_MBOX_CODE_DISPATCH,
 	/* A kernel initiated core suspend request. */
-	GXP_MBOX_CODE_SUSPEND_REQUEST = 1,
+	GXP_MBOX_CODE_SUSPEND_REQUEST,
 };
 
 enum gxp_mailbox_type {
@@ -65,18 +65,29 @@ enum gxp_mailbox_type {
 	 * Mailbox will utilize `gcip-mailbox.h` internally.
 	 * Mostly will be used for handling user commands.
 	 */
-	GXP_MBOX_TYPE_GENERAL = 0,
+	GXP_MBOX_TYPE_GENERAL,
 	/*
 	 * Mailbox will utilize `gcip-kci.h` internally.
 	 * Will be used for handling kernel commands.
 	 */
-	GXP_MBOX_TYPE_KCI = 1,
+	GXP_MBOX_TYPE_KCI,
 };
 
 enum gxp_response_status {
-	GXP_RESP_OK = 0,
-	GXP_RESP_WAITING = 1,
-	GXP_RESP_CANCELLED = 2,
+	GXP_RESP_OK,
+	GXP_RESP_WAITING,
+	/*
+	 * A request hasn't been processed until the timeout of the kernel driver side expires.
+	 * Note that if the request has been processed as timeout from the firmware perspective,
+	 * the status of the response is `GXP_RESP_OK` from the kernel driver perspective since the
+	 * response has been arrived to the driver side.
+	 */
+	GXP_RESP_TIMEDOUT,
+	/*
+	 * A request has been canceled since it cannot be processed normally. The kernel driver will
+	 * generate fake responses with this status when it detects the MCU crash.
+	 */
+	GXP_RESP_CANCELED,
 };
 
 /* Mailbox Structures */
@@ -160,7 +171,8 @@ struct gxp_mailbox {
 	void __iomem *csr_reg_base;
 	void __iomem *data_reg_base;
 
-	void (*handle_irq)(struct gxp_mailbox *mailbox);
+	void __private (*handle_irq)(struct gxp_mailbox *mailbox);
+	rwlock_t handle_irq_lock;
 	struct work_struct *interrupt_handlers[GXP_MAILBOX_INT_BIT_COUNT];
 	unsigned int interrupt_virq;
 	spinlock_t cmd_tail_resp_head_lock;
@@ -235,6 +247,17 @@ void gxp_mailbox_release(struct gxp_mailbox_manager *mgr,
 
 void gxp_mailbox_reset(struct gxp_mailbox *mailbox);
 
+/* Triggers the IRQ handler of @mailbox. */
+void gxp_mailbox_handle_irq(struct gxp_mailbox *mailbox);
+
+/*
+ * Enables / disables the IRQ handler of @mailbox.
+ *
+ * If disabled, the `gxp_mailbox_handle_irq` function will become NO-OP.
+ */
+void gxp_mailbox_enable_irq_handler(struct gxp_mailbox *mailbox);
+void gxp_mailbox_disable_irq_handler(struct gxp_mailbox *mailbox);
+
 int gxp_mailbox_register_interrupt_handler(struct gxp_mailbox *mailbox,
 					   u32 int_bit,
 					   struct work_struct *handler);
@@ -253,7 +276,8 @@ void gxp_mailbox_reinit(struct gxp_mailbox *mailbox);
  * See the `gcip_mailbox_send_cmd` of `gcip-mailbox.h` or `gcip_kci_send_cmd` of `gcip-kci.h`
  * for detail.
  */
-int gxp_mailbox_send_cmd(struct gxp_mailbox *mailbox, void *cmd, void *resp);
+int gxp_mailbox_send_cmd(struct gxp_mailbox *mailbox, void *cmd, void *resp,
+			 gcip_mailbox_cmd_flags_t flags);
 
 /*
  * Executes command asynchronously. The response will be written to @resp.

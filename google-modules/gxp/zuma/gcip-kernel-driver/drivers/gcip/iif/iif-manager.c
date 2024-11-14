@@ -8,17 +8,21 @@
  * Copyright (C) 2023-2024 Google LLC
  */
 
+#define pr_fmt(fmt) "iif: " fmt
+
 #include <linux/container_of.h>
 #include <linux/export.h>
 #include <linux/idr.h>
 #include <linux/kref.h>
 #include <linux/of.h>
+#include <linux/rwsem.h>
 #include <linux/slab.h>
 #include <linux/version.h>
 
 #include <iif/iif-fence-table.h>
 #include <iif/iif-fence.h>
 #include <iif/iif-manager.h>
+#include <iif/iif-shared.h>
 
 static void iif_manager_destroy(struct kref *kref)
 {
@@ -45,6 +49,7 @@ struct iif_manager *iif_manager_init(const struct device_node *np)
 
 	kref_init(&mgr->kref);
 	ida_init(&mgr->idp);
+	init_rwsem(&mgr->ops_sema);
 
 	return mgr;
 }
@@ -63,33 +68,67 @@ void iif_manager_put(struct iif_manager *mgr)
 int iif_manager_register_ops(struct iif_manager *mgr, enum iif_ip_type ip,
 			     const struct iif_manager_ops *ops, void *data)
 {
-	if (!ops || !ops->fence_unblocked_by_ap)
+	if (!ops || !ops->fence_unblocked)
 		return -EINVAL;
+
+	down_write(&mgr->ops_sema);
 
 	mgr->ops[ip] = ops;
 	mgr->data[ip] = data;
 
+	up_write(&mgr->ops_sema);
+
 	return 0;
+}
+
+void iif_manager_unregister_ops(struct iif_manager *mgr, enum iif_ip_type ip)
+{
+	down_write(&mgr->ops_sema);
+
+	mgr->ops[ip] = NULL;
+	mgr->data[ip] = NULL;
+
+	up_write(&mgr->ops_sema);
 }
 
 int iif_manager_acquire_block_wakelock(struct iif_manager *mgr, enum iif_ip_type ip)
 {
+	int ret = 0;
+
+	down_read(&mgr->ops_sema);
+
 	if (mgr->ops[ip] && mgr->ops[ip]->acquire_block_wakelock)
-		return mgr->ops[ip]->acquire_block_wakelock(mgr->data[ip]);
-	return 0;
+		ret = mgr->ops[ip]->acquire_block_wakelock(mgr->data[ip]);
+
+	up_read(&mgr->ops_sema);
+
+	return ret;
 }
 
 void iif_manager_release_block_wakelock(struct iif_manager *mgr, enum iif_ip_type ip)
 {
+	down_read(&mgr->ops_sema);
+
 	if (mgr->ops[ip] && mgr->ops[ip]->release_block_wakelock)
 		mgr->ops[ip]->release_block_wakelock(mgr->data[ip]);
+
+	up_read(&mgr->ops_sema);
 }
 
-void iif_manager_broadcast_fence_unblocked_by_ap(struct iif_manager *mgr, struct iif_fence *fence)
+void iif_manager_broadcast_fence_unblocked(struct iif_manager *mgr, struct iif_fence *fence)
 {
 	enum iif_ip_type ip;
 	unsigned int tmp;
 
-	for_each_waiting_ip(&mgr->fence_table, fence->id, ip, tmp)
-		mgr->ops[ip]->fence_unblocked_by_ap(fence, mgr->data[ip]);
+	down_read(&mgr->ops_sema);
+
+	for_each_waiting_ip(&mgr->fence_table, fence->id, ip, tmp) {
+		if (!mgr->ops[ip] || !mgr->ops[ip]->fence_unblocked) {
+			pr_warn("IP driver hasn't registered fence_unblocked, ip=%d", ip);
+			continue;
+		}
+		mgr->ops[ip]->fence_unblocked(fence, mgr->data[ip]);
+	}
+
+	up_read(&mgr->ops_sema);
 }

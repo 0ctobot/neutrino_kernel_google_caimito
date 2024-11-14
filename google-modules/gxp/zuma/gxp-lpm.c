@@ -10,7 +10,6 @@
 #include <linux/pm_runtime.h>
 #include <linux/types.h>
 
-#include "gxp-bpm.h"
 #include "gxp-config.h"
 #include "gxp-doorbell.h"
 #include "gxp-internal.h"
@@ -215,8 +214,6 @@ int gxp_lpm_up(struct gxp_dev *gxp, uint core)
 	if (core < GXP_NUM_CORES)
 		gxp_lpm_enable_state(gxp, CORE_TO_PSM(core), LPM_CG_STATE);
 
-	gxp_bpm_start(gxp, core);
-
 	return 0;
 }
 
@@ -236,7 +233,7 @@ void gxp_lpm_down(struct gxp_dev *gxp, uint core)
 	 * Clear the core's interrupt mask and the wakeup doorbell to ensure
 	 * the core will not wake unexpectedly.
 	 */
-	gxp_write_32(gxp, GXP_CORE_REG_COMMON_INT_MASK_0(core), 0);
+	gxp_write_32(gxp, GXP_REG_CORE_COMMON_INT_MASK_0(core), 0);
 	gxp_doorbell_clear(gxp, CORE_WAKEUP_DOORBELL(core));
 
 	/* Ensure core is in PS3 */

@@ -12,35 +12,8 @@
 #include <gcip/gcip-dma-fence.h>
 #include <gcip/gcip-fence-array.h>
 #include <gcip/gcip-fence.h>
-
-/*
- * Holds the spin locks which protect the number of signalers of each fence in @fence_array.
- *
- * The caller must use the `gcip_fence_array_submitted_signalers_unlock` function to release the
- * locks.
- */
-static void gcip_fence_array_submitted_signalers_lock(struct gcip_fence_array *fence_array)
-{
-	int i;
-
-	if (!fence_array || fence_array->size <= 0)
-		return;
-
-	for (i = 0; i < fence_array->size; i++)
-		gcip_fence_submitted_signalers_lock(fence_array->fences[i]);
-}
-
-/* Releases the spin locks held by the `gcip_fence_array_submitted_signalers_lock` function. */
-static void gcip_fence_array_submitted_signalers_unlock(struct gcip_fence_array *fence_array)
-{
-	int i;
-
-	if (!fence_array || fence_array->size <= 0)
-		return;
-
-	for (i = fence_array->size - 1; i >= 0; i--)
-		gcip_fence_submitted_signalers_unlock(fence_array->fences[i]);
-}
+#include <iif/iif-fence.h>
+#include <iif/iif-shared.h>
 
 struct gcip_fence_array *gcip_fence_array_create(int *fences, int num_fences, bool check_same_type)
 {
@@ -101,15 +74,29 @@ err_free_fence_array:
 	return ERR_PTR(ret);
 }
 
-static void gcip_fence_array_release(struct kref *kref)
+static void gcip_fence_array_do_free(struct gcip_fence_array *fence_array,
+					void (*gcip_fence_put_func)(struct gcip_fence *))
 {
-	struct gcip_fence_array *fence_array = container_of(kref, struct gcip_fence_array, kref);
 	int i;
 
 	for (i = 0; i < fence_array->size; i++)
-		gcip_fence_put(fence_array->fences[i]);
+		gcip_fence_put_func(fence_array->fences[i]);
 	kfree(fence_array->fences);
 	kfree(fence_array);
+}
+
+static void gcip_fence_array_free(struct kref *kref)
+{
+	struct gcip_fence_array *fence_array = container_of(kref, struct gcip_fence_array, kref);
+
+	gcip_fence_array_do_free(fence_array, &gcip_fence_put);
+}
+
+static void gcip_fence_array_free_async(struct kref *kref)
+{
+	struct gcip_fence_array *fence_array = container_of(kref, struct gcip_fence_array, kref);
+
+	gcip_fence_array_do_free(fence_array, &gcip_fence_put_async);
 }
 
 struct gcip_fence_array *gcip_fence_array_get(struct gcip_fence_array *fence_array)
@@ -123,7 +110,13 @@ struct gcip_fence_array *gcip_fence_array_get(struct gcip_fence_array *fence_arr
 void gcip_fence_array_put(struct gcip_fence_array *fence_array)
 {
 	if (fence_array)
-		kref_put(&fence_array->kref, gcip_fence_array_release);
+		kref_put(&fence_array->kref, gcip_fence_array_free);
+}
+
+void gcip_fence_array_put_async(struct gcip_fence_array *fence_array)
+{
+	if (fence_array)
+		kref_put(&fence_array->kref, gcip_fence_array_free_async);
 }
 
 void gcip_fence_array_signal(struct gcip_fence_array *fence_array, int errno)
@@ -137,6 +130,17 @@ void gcip_fence_array_signal(struct gcip_fence_array *fence_array, int errno)
 		gcip_fence_signal(fence_array->fences[i], errno);
 }
 
+void gcip_fence_array_signal_async(struct gcip_fence_array *fence_array, int errno)
+{
+	int i;
+
+	if (!fence_array)
+		return;
+
+	for (i = 0; i < fence_array->size; i++)
+		gcip_fence_signal_async(fence_array->fences[i], errno);
+}
+
 void gcip_fence_array_waited(struct gcip_fence_array *fence_array, enum iif_ip_type ip)
 {
 	int i;
@@ -146,6 +150,17 @@ void gcip_fence_array_waited(struct gcip_fence_array *fence_array, enum iif_ip_t
 
 	for (i = 0; i < fence_array->size; i++)
 		gcip_fence_waited(fence_array->fences[i], ip);
+}
+
+void gcip_fence_array_waited_async(struct gcip_fence_array *fence_array, enum iif_ip_type ip)
+{
+	int i;
+
+	if (!fence_array)
+		return;
+
+	for (i = 0; i < fence_array->size; i++)
+		gcip_fence_waited_async(fence_array->fences[i], ip);
 }
 
 void gcip_fence_array_submit_signaler(struct gcip_fence_array *fence_array)
@@ -174,45 +189,36 @@ int gcip_fence_array_submit_waiter_and_signaler(struct gcip_fence_array *in_fenc
 						struct gcip_fence_array *out_fences,
 						enum iif_ip_type ip)
 {
-	int i;
+	int i, ret, iif_num_in_fences = 0, iif_num_out_fences = 0;
+	struct iif_fence **iif_in_fences = NULL;
+	struct iif_fence **iif_out_fences = NULL;
 
-	gcip_fence_array_submitted_signalers_lock(in_fences);
+	if (in_fences)
+		iif_in_fences = kcalloc(in_fences->size, sizeof(*iif_in_fences), GFP_KERNEL);
 
-	/* Checks whether we can submit a waiter to @in_fences. */
+	if (out_fences)
+		iif_out_fences = kcalloc(out_fences->size, sizeof(*iif_out_fences), GFP_KERNEL);
+
 	for (i = 0; in_fences && i < in_fences->size; i++) {
-		if (!gcip_fence_is_waiter_submittable_locked(in_fences->fences[i])) {
-			gcip_fence_array_submitted_signalers_unlock(in_fences);
-			return -EAGAIN;
+		if (in_fences->fences[i]->type == GCIP_INTER_IP_FENCE) {
+			iif_in_fences[iif_num_in_fences] = in_fences->fences[i]->fence.iif;
+			iif_num_in_fences++;
 		}
 	}
 
-	/*
-	 * We can release the lock of @in_fences because once they are able to submit a waiter, it
-	 * means that all signalers have been submitted to @in_fences and the fact won't be changed.
-	 * Will submit a waiter to @in_fences if @out_fences are able to submit a signaler.
-	 */
-	gcip_fence_array_submitted_signalers_unlock(in_fences);
-	gcip_fence_array_submitted_signalers_lock(out_fences);
-
-	/* Checks whether we can submit a signaler to @out_fences. */
 	for (i = 0; out_fences && i < out_fences->size; i++) {
-		if (!gcip_fence_is_signaler_submittable_locked(out_fences->fences[i])) {
-			gcip_fence_array_submitted_signalers_unlock(out_fences);
-			return -EPERM;
+		if (out_fences->fences[i]->type == GCIP_INTER_IP_FENCE) {
+			iif_out_fences[iif_num_out_fences] = out_fences->fences[i]->fence.iif;
+			iif_num_out_fences++;
 		}
 	}
 
-	/* Submits a signaler to @out_fences. */
-	for (i = 0; out_fences && i < out_fences->size; i++)
-		gcip_fence_submit_signaler_locked(out_fences->fences[i]);
+	ret = iif_fence_submit_signaler_and_waiter(iif_in_fences, iif_num_in_fences, iif_out_fences,
+						   iif_num_out_fences, ip);
+	kfree(iif_out_fences);
+	kfree(iif_in_fences);
 
-	gcip_fence_array_submitted_signalers_unlock(out_fences);
-
-	/* Submits a waiter to @in_fences. */
-	for (i = 0; in_fences && i < in_fences->size; i++)
-		gcip_fence_submit_waiter(in_fences->fences[i], ip);
-
-	return 0;
+	return ret;
 }
 
 uint16_t *gcip_fence_array_get_iif_id(struct gcip_fence_array *fence_array, int *num_iif,
@@ -285,4 +291,12 @@ struct dma_fence *gcip_fence_array_merge_ikf(struct gcip_fence_array *fence_arra
 	kfree(fences);
 
 	return merged;
+}
+
+void gcip_fence_array_iif_set_propagate_unblock(struct gcip_fence_array *fence_array)
+{
+	int i;
+
+	for (i = 0; i < fence_array->size; i++)
+		gcip_fence_iif_set_propagate_unblock(fence_array->fences[i]);
 }

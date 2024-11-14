@@ -29,6 +29,19 @@
 #define BPM_EVENT_WRITE_XFER	0x2
 #define BPM_EVENT_READ_XFER	0x3
 
+#define BPM_EVENT_TYPE_BIT	2
+#define BPM_EVENT_TYPE_MASK	0x1F
+
+#define BPM_START_BIT	10
+#define BPM_STOP_BIT	11
+
+#define BPM_CONFIG_OFFSET		0x00
+#define BPM_CNTR_CONFIG_OFFSET		0x18
+#define BPM_SNAPSHOT_CNTR_OFFSET	0x98
+
+#define BPM_DISABLE	0x0
+#define BPM_ENABLE	0x1
+
 void gxp_bpm_configure(struct gxp_dev *gxp, u8 core, u32 bpm_offset, u32 event);
 void gxp_bpm_start(struct gxp_dev *gxp, u8 core);
 void gxp_bpm_stop(struct gxp_dev *gxp, u8 core);

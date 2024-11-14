@@ -13,7 +13,7 @@
 
 #include <iif/iif-fence.h>
 #include <iif/iif-manager.h>
-#include <iif/iif.h>
+#include <iif/iif-shared.h>
 
 #define GCIP_FENCE_REMAINING_SIGNALERS_NO_REGISTER_EVENTFD (~0u)
 
@@ -70,8 +70,15 @@ struct gcip_fence *gcip_fence_fdget(int fd);
 /* Increments the reference count of @fence. */
 struct gcip_fence *gcip_fence_get(struct gcip_fence *fence);
 
-/* Puts the fence and decrements its reference count. */
+/*
+ * Puts the fence and decrements its reference count.
+ *
+ * If @fence is inter-IP fence and the caller is going to put @fence in the un-sleepable context
+ * such as IRQ context or spin lock, one should use the async one. If @fence is DMA fence, the async
+ * function will work the same with the sync one.
+ */
 void gcip_fence_put(struct gcip_fence *fence);
+void gcip_fence_put_async(struct gcip_fence *fence);
 
 /*
  * Submits a signaler.
@@ -82,12 +89,6 @@ void gcip_fence_put(struct gcip_fence *fence);
  * Returns 0 if the submission succeeds. Otherwise, returns a negative errno.
  */
 int gcip_fence_submit_signaler(struct gcip_fence *fence);
-
-/*
- * Its functionality is the same with the `gcip_fence_submit_signaler` function, but the caller
- * is holding the submitted_signalers lock. (See `gcip_fence_submitted_signalers_lock`)
- */
-int gcip_fence_submit_signaler_locked(struct gcip_fence *fence);
 
 /*
  * Submits a waiter of @ip.
@@ -106,15 +107,29 @@ int gcip_fence_submit_waiter(struct gcip_fence *fence, enum iif_ip_type ip);
  * Signals @fence. If all signalers have signaled the fence, it will notify polling FDs.
  *
  * If @fence is going to signaled with an error, one can pass @errno to let @fence notice it.
+ *
+ * If @fence is inter-IP fence and the caller is going to signal @fence in the un-sleepable context
+ * such as IRQ context or spin lock, one should use the async one. It will notify waiters of the
+ * fence unblock asynchronously. If @fence is DMA fence, it is still possible to call the async one,
+ * but it will be the same with the sync one.
+ *
+ * Returns the number of remaining signals on success (0 means the fence has been unblocked).
+ * Otherwise, returns a negative errno.
  */
-void gcip_fence_signal(struct gcip_fence *fence, int errno);
+int gcip_fence_signal(struct gcip_fence *fence, int errno);
+int gcip_fence_signal_async(struct gcip_fence *fence, int errno);
 
 /*
  * Notifies @fence that a command of @ip which waited the fence has finished their work.
  *
  * This function is only meaningful when the fence type is GCIP_INTER_IP_FENCE.
+ *
+ * If the caller is going to stop waiting on @fence in the un-sleepable context such as IRQ context
+ * or spin lock, one should use the async one. It will release the block wakelock of the waiter
+ * asynchronously.
  */
 void gcip_fence_waited(struct gcip_fence *fence, enum iif_ip_type ip);
+void gcip_fence_waited_async(struct gcip_fence *fence, enum iif_ip_type ip);
 
 /*
  * Registers a callback which will be called when all signalers are submitted for @fence and
@@ -168,22 +183,17 @@ int gcip_fence_wait_signaler_submission(struct gcip_fence **fences, int num_fenc
 int gcip_fence_get_status(struct gcip_fence *fence);
 
 /*
- * Returns true if a waiter or a signaler is submittable to @fence.
+ * Sets the propagate flag of @fence which lets IP kernel drivers engage in propagating the fence
+ * unblock.
  *
- * These functions are only meaningful when the fence type is GCIP_INTER_IP_FENCE. For other type of
- * fences, they will always return true.
+ * This function should be called when signaler IP becomes faulty and it cannot propagate the fence
+ * unblock to waiter IPs by itself anymore and it requires the support of the kernel side.
  *
- * The caller must hold the submitted_signalers lock. (See `gcip_fence_submitted_signalers_lock`)
+ * Once @fence has been unblocked after this function call, the IP kernel drivers waiting on it will
+ * notice the fence unblock and notify their IP.
+ *
+ * This function is meaningful only when @fence is IIF.
  */
-bool gcip_fence_is_waiter_submittable_locked(struct gcip_fence *fence);
-bool gcip_fence_is_signaler_submittable_locked(struct gcip_fence *fence);
-
-/*
- * Holds/releases the lock protecting the number of submitted signalers of @fence.
- *
- * These functions are only meaningful when the fence type is GCIP_INTER_IP_FENCE.
- */
-void gcip_fence_submitted_signalers_lock(struct gcip_fence *fence);
-void gcip_fence_submitted_signalers_unlock(struct gcip_fence *fence);
+void gcip_fence_iif_set_propagate_unblock(struct gcip_fence *fence);
 
 #endif /* __GCIP_FENCE_H__ */

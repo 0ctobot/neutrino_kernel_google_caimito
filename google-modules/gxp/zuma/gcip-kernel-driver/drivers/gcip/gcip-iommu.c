@@ -901,7 +901,7 @@ void gcip_iommu_dmabuf_map_show(struct gcip_iommu_mapping *mapping, struct seq_f
 		container_of(mapping, struct gcip_iommu_dma_buf_mapping, mapping);
 
 	seq_printf(s, "  %pad %lu %s %s %pad", &mapping->device_address,
-		   DIV_ROUND_UP(mapping->size, PAGE_SIZE), dma_dir_tbl[mapping->orig_dir],
+		   DIV_ROUND_UP(mapping->size, PAGE_SIZE), dma_dir_tbl[mapping->dir],
 		   dmabuf_mapping->dma_buf->exp_name,
 		   &sg_dma_address(dmabuf_mapping->sgt_default->sgl));
 	entry_show_dma_addrs(mapping, s);
@@ -1066,7 +1066,6 @@ static struct gcip_iommu_mapping *gcip_iommu_domain_map_buffer_sgt(struct gcip_i
 	mapping->domain = domain;
 	mapping->sgt = sgt;
 	mapping->type = GCIP_IOMMU_MAPPING_BUFFER;
-	mapping->orig_dir = orig_dir;
 	mapping->user_specified_daddr = iova;
 
 	ret = gcip_iommu_domain_map_sgt_to_iova(domain, sgt, iova, &gcip_map_flags);
@@ -1130,7 +1129,6 @@ gcip_iommu_domain_map_dma_buf_sgt(struct gcip_iommu_domain *domain, struct dma_b
 	mapping->domain = domain;
 	mapping->size = dmabuf->size;
 	mapping->type = GCIP_IOMMU_MAPPING_DMA_BUF;
-	mapping->orig_dir = orig_dir;
 	mapping->user_specified_daddr = iova;
 
 	if (domain->default_domain) {
@@ -1402,3 +1400,5 @@ void gcip_iommu_unmap(struct gcip_iommu_domain *domain, dma_addr_t iova, size_t 
 		dev_warn(domain->dev, "Unmapping IOVA %pad, size (%#zx) only unmapped %#zx", &iova,
 			 size, unmapped);
 }
+
+MODULE_IMPORT_NS(DMA_BUF);

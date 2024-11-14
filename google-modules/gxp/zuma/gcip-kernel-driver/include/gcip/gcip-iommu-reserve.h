@@ -161,6 +161,19 @@ int gcip_iommu_reserve_region_retire(struct gcip_iommu_reserve_manager *mgr, dma
  * receives @mgr managing reserved regions and @iova address to be mapped. @mgr will find a proper
  * reserved region to map the buffer internally.
  *
+ * Note that @iova must be page-aligned.
+ *
+ * If @host_address or @size is not page-aligned, the address and size of the area actually mapped
+ * can be different from @iova and @size accordingly. It is because the kernel performs mapping in
+ * the page unit. The caller can check both values by reading @device_address and @size fields of
+ * the returned mapping object.
+ *
+ * E.g., if @iova is 0x2000, @host_address is 0x1800, @size is 0x900 and the page size is 0x1000,
+ * it will allocate two pages from the reserved region, [0x2000, 0x3000) and [0x3000, 0x4000), and
+ * will map the buffer to [0x2800, 0x3100) since the page masked offset of @host_address is 0x800
+ * (0x1800 & ~PAGE_MASK = 0x800, 0x2000 + 0x800 = 0x2800). Therefore, @device_address and @size of
+ * the returned mapping object will be 0x2800 and 0x2000 which are different from the inputs.
+ *
  * To unmap the mapped buffer, use the `gcip_iommu_mapping_unmap` function.
  *
  * @data is the IP driver data which is nullable and will be passed to the operators of the
@@ -178,6 +191,14 @@ struct gcip_iommu_mapping *gcip_iommu_reserve_map_buffer(struct gcip_iommu_reser
  * This function basically works the same with the `gcip_iommu_domain_map_dma_buf` function, but
  * receives @mgr managing reserved regions and @iova address to be mapped. @mgr will find a proper
  * reserved region to map the dma-buf internally.
+ *
+ * Note that @iova must be page-aligned.
+ *
+ * Likewise the buffer mapping above, if the host address or size of any buffer in @dmabuf is not
+ * page-aligned, the address and size of the area actually mapped can be different from @iova and
+ * the buffer size accordingly. (See the `gcip_iommu_reserve_map_buffer` function above for the
+ * details.) However, it will unlikely happen since @dmabuf is expected to be page-aligned and the
+ * mapping itself would fail depending on the implementation of the Linux kernel and dma-buf module.
  *
  * To unmap the mapped dma-buf, use the `gcip_iommu_mapping_unmap` function.
  *

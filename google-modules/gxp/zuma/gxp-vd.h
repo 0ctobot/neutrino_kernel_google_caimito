@@ -24,6 +24,7 @@
 
 #include "gxp-host-device-structs.h"
 #include "gxp-internal.h"
+#include "gxp-mailbox-manager.h"
 #include "gxp-mapping.h"
 
 #define GXP_COMMAND_CREDIT_PER_VD 16
@@ -537,6 +538,17 @@ static inline void gxp_vd_unlink_offload_vmbox(struct gxp_dev *gxp, struct gxp_v
 static inline uint gxp_vd_hw_slot_id(struct gxp_virtual_device *vd)
 {
 	return ffs(vd->core_list) - 1;
+}
+
+/*
+ * Flushes pending DCI/UCI commands or unconsumed responses.
+ *
+ * This function shouldn't be called while holding @gxp->vd_seamphore to prevent potential deadlock.
+ */
+static inline void gxp_vd_release_unconsumed_async_resps(struct gxp_dev *gxp,
+							 struct gxp_virtual_device *vd)
+{
+	gxp->mailbox_mgr->release_unconsumed_async_resps(vd);
 }
 
 #endif /* __GXP_VD_H__ */

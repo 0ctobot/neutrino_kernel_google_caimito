@@ -74,7 +74,7 @@ static int gcip_thermal_set_cur_state(struct thermal_cooling_device *cdev, unsig
 
 	if (!gcip_pm_get_if_powered(thermal->pm, false)) {
 		ret = thermal->set_rate(thermal->data, state_map[state].rate);
-		gcip_pm_put(thermal->pm);
+		gcip_pm_put_async(thermal->pm);
 	}
 
 	if (ret)
@@ -121,7 +121,7 @@ static int gcip_thermal_get_requested_power(struct thermal_cooling_device *cdev,
 	ret = thermal->get_rate(thermal->data, &rate);
 
 	mutex_unlock(&thermal->lock);
-	gcip_pm_put(thermal->pm);
+	gcip_pm_put_async(thermal->pm);
 
 	if (ret)
 		return ret;
@@ -326,7 +326,7 @@ static int gcip_thermal_enable_set(void *data, u64 val)
 		 */
 		if (!gcip_pm_get_if_powered(thermal->pm, false)) {
 			ret = thermal->control(thermal->data, val);
-			gcip_pm_put(thermal->pm);
+			gcip_pm_put_async(thermal->pm);
 		}
 
 		if (!ret) {
@@ -400,9 +400,12 @@ static int gcip_thermal_cooling_register(struct gcip_thermal *thermal, const cha
 	if (node_name)
 		node = of_find_node_by_name(NULL, node_name);
 	if (!node)
-		dev_warn(thermal->dev, "Failed to find thermal cooling node\n");
+		dev_warn(thermal->dev, "Failed to find thermal cooling node: %s\n",
+			 node_name ? node_name : "");
 
 	thermal->cdev = thermal_of_cooling_device_register(node, type, thermal, &gcip_thermal_ops);
+	/* OK to call it even if @node is NULL. */
+	of_node_put(node);
 	if (IS_ERR(thermal->cdev))
 		return PTR_ERR(thermal->cdev);
 
@@ -474,7 +477,7 @@ int gcip_thermal_suspend_device(struct gcip_thermal *thermal)
 	thermal->device_suspended = true;
 	if (!gcip_pm_get_if_powered(thermal->pm, false)) {
 		ret = thermal->set_rate(thermal->data, 0);
-		gcip_pm_put(thermal->pm);
+		gcip_pm_put_async(thermal->pm);
 	}
 
 	mutex_unlock(&thermal->lock);
@@ -493,7 +496,7 @@ int gcip_thermal_resume_device(struct gcip_thermal *thermal)
 
 	if (!gcip_pm_get_if_powered(thermal->pm, false)) {
 		ret = thermal->set_rate(thermal->data, state_map[thermal->state].rate);
-		gcip_pm_put(thermal->pm);
+		gcip_pm_put_async(thermal->pm);
 	}
 
 	/*

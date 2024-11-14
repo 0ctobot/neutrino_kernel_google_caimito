@@ -13,9 +13,11 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 
+#include <iif/iif-fence.h>
 #include <iif/iif-manager.h>
 
 #include "gxp-config.h"
+#include "gxp-devfreq.h"
 #include "gxp-internal.h"
 #include "gxp-mcu-fs.h"
 #include "gxp-mcu-platform.h"
@@ -48,11 +50,15 @@ static int allocate_vmbox(struct gxp_dev *gxp, struct gxp_virtual_device *vd)
 	else
 		client_id = vd->domain->pasid;
 
-	ret = gxp_kci_allocate_vmbox(kci, client_id, vd->num_cores,
-				     vd->slice_index, vd->first_open);
+	ret = gxp_kci_allocate_vmbox(kci, client_id, vd->num_cores, vd->slice_index,
+				     vd->first_open);
 	if (ret) {
-		dev_err(gxp->dev,
-			"Failed to allocate VMBox for client %d, TPU client %d: %d",
+		if (ret > 0) {
+			dev_err(gxp->dev, "Received GCIP_KCI_CODE_ALLOCATE_VMBOX error code: %u.",
+				ret);
+			ret = gcip_kci_error_to_errno(gxp->dev, ret);
+		}
+		dev_err(gxp->dev, "Failed to allocate VMBox for client %d, TPU client %d: %d.",
 			client_id, vd->tpu_client_id, ret);
 		return ret;
 	}
@@ -275,6 +281,23 @@ enum gxp_chip_revision gxp_get_chip_revision(struct gxp_dev *gxp)
 	return GXP_CHIP_ANY;
 }
 
+static void gxp_iif_unblocked(struct iif_fence *fence, void *data)
+{
+	struct gxp_dev *gxp = data;
+	struct gxp_mcu *mcu = gxp_mcu_of(gxp);
+
+	if (fence->signal_error)
+		dev_warn(gxp->dev, "IIF has been unblocked with an error, id=%d, error=%d",
+			 fence->id, fence->signal_error);
+
+	if (fence->propagate)
+		gxp_uci_send_iif_unblock_noti(&mcu->uci, fence->id);
+}
+
+static const struct iif_manager_ops iif_mgr_ops = {
+	.fence_unblocked = gxp_iif_unblocked,
+};
+
 static void gxp_get_embedded_iif_mgr(struct gxp_dev *gxp)
 {
 	struct iif_manager *mgr;
@@ -344,10 +367,35 @@ get_embed:
 
 static void gxp_put_iif_mgr(struct gxp_dev *gxp)
 {
-	if (gxp->iif_mgr)
+	if (gxp->iif_mgr) {
 		iif_manager_put(gxp->iif_mgr);
+		gxp->iif_mgr = NULL;
+	}
 	/* NO-OP if `gxp->iif_dev` is NULL. */
 	put_device(gxp->iif_dev);
+}
+
+/* Registers IIF operators of @gxp to IIF manager. */
+static void gxp_register_iif_mgr_ops(struct gxp_dev *gxp)
+{
+	int ret;
+
+	if (!gxp->iif_mgr)
+		return;
+
+	ret = iif_manager_register_ops(gxp->iif_mgr, IIF_IP_DSP, &iif_mgr_ops, gxp);
+	if (ret) {
+		dev_warn(gxp->dev, "Failed to register IIF ops, disable IIF (ret=%d)", ret);
+		gxp_put_iif_mgr(gxp);
+	}
+}
+
+/* Unregisters IIF operators of @gxp from IIF manager. */
+static void gxp_unregister_iif_mgr_ops(struct gxp_dev *gxp)
+{
+	if (!gxp->iif_mgr)
+		return;
+	iif_manager_unregister_ops(gxp->iif_mgr, IIF_IP_DSP);
 }
 
 int gxp_mcu_platform_after_probe(struct gxp_dev *gxp)
@@ -361,9 +409,23 @@ int gxp_mcu_platform_after_probe(struct gxp_dev *gxp)
 	if (ret)
 		return ret;
 
+	ret = gxp_devfreq_init(gxp);
+	if (ret)
+		dev_warn(gxp->dev, "Failed to init devfreq framework: %d\n", ret);
+
 	gxp_get_iif_mgr(gxp);
 	gxp_usage_stats_init(gxp);
-	return gxp_mcu_init(gxp, gxp_mcu_of(gxp));
+	ret = gxp_mcu_init(gxp, gxp_mcu_of(gxp));
+	if (ret)
+		return ret;
+
+	/*
+	 * We should call this after UCI is initialized since fence_unblocked operator will try to
+	 * send commands to the UCI mailbox.
+	 */
+	gxp_register_iif_mgr_ops(gxp);
+
+	return 0;
 }
 
 void gxp_mcu_platform_before_remove(struct gxp_dev *gxp)
@@ -371,9 +433,11 @@ void gxp_mcu_platform_before_remove(struct gxp_dev *gxp)
 	if (gxp_is_direct_mode(gxp))
 		return;
 
+	gxp_unregister_iif_mgr_ops(gxp);
 	gxp_mcu_exit(gxp_mcu_of(gxp));
 	gxp_usage_stats_exit(gxp);
 	gxp_put_iif_mgr(gxp);
+	gxp_devfreq_exit(gxp);
 }
 
 void gxp_mcu_dev_init(struct gxp_mcu_dev *mcu_dev)

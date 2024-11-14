@@ -62,7 +62,7 @@ static void gxp_mailbox_consume_responses_work(struct kthread_work *work)
  *
  * Puts the gxp_mailbox_consume_responses_work() into the system work queue.
  */
-static void gxp_mailbox_handle_irq(struct gxp_mailbox *mailbox)
+static void gxp_mailbox_irq_handler(struct gxp_mailbox *mailbox)
 {
 	if (gxp_is_direct_mode(mailbox->gxp)) {
 		kthread_queue_work(&mailbox->response_worker, &mailbox->response_work);
@@ -324,7 +324,8 @@ static int enable_mailbox(struct gxp_mailbox *mailbox)
 	if (ret)
 		return ret;
 
-	mailbox->handle_irq = gxp_mailbox_handle_irq;
+	ACCESS_PRIVATE(mailbox, handle_irq) = gxp_mailbox_irq_handler;
+	rwlock_init(&mailbox->handle_irq_lock);
 	spin_lock_init(&mailbox->wait_list_lock);
 	kthread_init_work(&mailbox->response_work,
 			  gxp_mailbox_consume_responses_work);
@@ -442,6 +443,34 @@ void gxp_mailbox_reset(struct gxp_mailbox *mailbox)
 	mailbox->resp_queue_head = 0;
 }
 
+void gxp_mailbox_handle_irq(struct gxp_mailbox *mailbox)
+{
+	unsigned long flags;
+
+	read_lock_irqsave(&mailbox->handle_irq_lock, flags);
+	if (ACCESS_PRIVATE(mailbox, handle_irq))
+		ACCESS_PRIVATE(mailbox, handle_irq)(mailbox);
+	read_unlock_irqrestore(&mailbox->handle_irq_lock, flags);
+}
+
+void gxp_mailbox_enable_irq_handler(struct gxp_mailbox *mailbox)
+{
+	unsigned long flags;
+
+	write_lock_irqsave(&mailbox->handle_irq_lock, flags);
+	ACCESS_PRIVATE(mailbox, handle_irq) = gxp_mailbox_irq_handler;
+	write_unlock_irqrestore(&mailbox->handle_irq_lock, flags);
+}
+
+void gxp_mailbox_disable_irq_handler(struct gxp_mailbox *mailbox)
+{
+	unsigned long flags;
+
+	write_lock_irqsave(&mailbox->handle_irq_lock, flags);
+	ACCESS_PRIVATE(mailbox, handle_irq) = NULL;
+	write_unlock_irqrestore(&mailbox->handle_irq_lock, flags);
+}
+
 int gxp_mailbox_register_interrupt_handler(struct gxp_mailbox *mailbox,
 					   u32 int_bit,
 					   struct work_struct *handler)
@@ -467,11 +496,12 @@ int gxp_mailbox_unregister_interrupt_handler(struct gxp_mailbox *mailbox,
 	return 0;
 }
 
-int gxp_mailbox_send_cmd(struct gxp_mailbox *mailbox, void *cmd, void *resp)
+int gxp_mailbox_send_cmd(struct gxp_mailbox *mailbox, void *cmd, void *resp,
+			 gcip_mailbox_cmd_flags_t flags)
 {
 	switch (mailbox->type) {
 	case GXP_MBOX_TYPE_GENERAL:
-		return gcip_mailbox_send_cmd(mailbox->mbx_impl.gcip_mbx, cmd, resp, 0);
+		return gcip_mailbox_send_cmd(mailbox->mbx_impl.gcip_mbx, cmd, resp, flags);
 #if GXP_HAS_MCU
 	case GXP_MBOX_TYPE_KCI:
 		return gcip_kci_send_cmd(mailbox->mbx_impl.gcip_kci, cmd);

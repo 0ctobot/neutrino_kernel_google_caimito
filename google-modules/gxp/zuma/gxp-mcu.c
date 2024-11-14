@@ -164,3 +164,8 @@ void gxp_mcu_reset_mailbox(struct gxp_mcu *mcu)
 	gxp_uci_reinit(&mcu->uci);
 	gxp_kci_reinit(&mcu->kci);
 }
+
+void gxp_mcu_set_boot_mode(struct gxp_mcu_firmware *mcu_fw, enum gxp_mcu_boot_mode mode)
+{
+	writel(mode, GXP_MCU_BOOT_MODE_OFFSET + mcu_fw->image_buf.vaddr);
+}

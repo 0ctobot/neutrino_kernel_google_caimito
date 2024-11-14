@@ -132,9 +132,6 @@ struct gcip_iommu_mapping_ops {
  *       This value is the real one that was used for mapping and should be the same as the one
  *       encoded in gcip_map_flags.
  *       This field should be used in revert functions and dma sync functions.
- * @orig_dir: The data direction that the user originally tried to map.
- *            This value may be different from the one encoded in gcip_map_flags.
- *            This field should be used for logging to user to hide the underlying mechanisms
  * @gcip_map_flags: The flags used to create the mapping, which can be encoded with
  *                  gcip_iommu_encode_gcip_map_flags() or `GCIP_MAP_FLAGS_DMA_*_TO_FLAGS` macros.
  * @owning_mm: For holding a reference to MM.
@@ -152,7 +149,6 @@ struct gcip_iommu_mapping {
 	uint num_pages;
 	struct sg_table *sgt;
 	enum dma_data_direction dir;
-	enum dma_data_direction orig_dir;
 	u64 gcip_map_flags;
 	/*
 	 * TODO(b/302510715): Use another wrapper struct to contain this because it is used in
@@ -325,6 +321,16 @@ void gcip_iommu_domain_pool_set_pasid_range(struct gcip_iommu_domain_pool *pool,
 static inline int gcip_iommu_domain_pool_get_num_pasid(struct gcip_iommu_domain_pool *pool)
 {
 	return pool->max_pasid - pool->min_pasid + 1;
+}
+
+/*
+ * Returns the size of IOVA space of this pool. Does not consider reserved size.
+ *
+ * @pool: IOMMU domain pool.
+ */
+static inline size_t gcip_iommu_domain_pool_get_size(struct gcip_iommu_domain_pool *pool)
+{
+	return pool->size;
 }
 
 /*

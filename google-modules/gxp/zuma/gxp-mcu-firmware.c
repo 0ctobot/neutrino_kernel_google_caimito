@@ -24,7 +24,6 @@
 #include <gcip/gcip-pm.h>
 #include <gcip/gcip-thermal.h>
 
-#include "gxp-bpm.h"
 #include "gxp-config.h"
 #include "gxp-core-telemetry.h"
 #include "gxp-debug-dump.h"
@@ -38,7 +37,9 @@
 #include "gxp-mcu-firmware.h"
 #include "gxp-mcu-platform.h"
 #include "gxp-mcu.h"
+#include "gxp-monitor.h"
 #include "gxp-pm.h"
+#include "gxp-uci.h"
 #include "mobile-soc.h"
 
 #if IS_GXP_TEST
@@ -58,8 +59,6 @@
 /* The number of times trying to rescue MCU. */
 #define MCU_RESCUE_TRY 3
 
-/* Time(us) to boot MCU in recovery mode. */
-#define GXP_MCU_RECOVERY_BOOT_DELAY 100
 /*
  * Programs instruction remap CSRs.
  */
@@ -107,11 +106,6 @@ static bool is_signed_firmware(const struct firmware *fw,
 	return true;
 }
 
-static void gxp_mcu_set_boot_mode(struct gxp_mcu_firmware *mcu_fw, uint32_t mode)
-{
-	writel(mode, GXP_MCU_BOOT_MODE_OFFSET + mcu_fw->image_buf.vaddr);
-}
-
 static int gxp_mcu_firmware_handshake(struct gxp_mcu_firmware *mcu_fw)
 {
 	struct gxp_dev *gxp = mcu_fw->gxp;
@@ -143,9 +137,9 @@ static int gxp_mcu_firmware_handshake(struct gxp_mcu_firmware *mcu_fw)
 	dev_info(gxp->dev, "loaded %s MCU firmware (%u)",
 		 gcip_fw_flavor_str(fw_flavor), mcu_fw->fw_info.fw_changelist);
 
-	gxp_bpm_stop(gxp, GXP_MCU_CORE_ID);
-	dev_notice(gxp->dev, "MCU Instruction read transactions: 0x%x\n",
-		   gxp_bpm_read_counter(gxp, GXP_MCU_CORE_ID, INST_BPM_OFFSET));
+	gxp_monitor_stop(gxp);
+	dev_notice(gxp->dev, "MCU Read Data Transactions: %#x",
+		   gxp_monitor_get_count_read_data(gxp));
 
 	ret = gxp_mcu_telemetry_kci(mcu);
 	if (ret)
@@ -162,119 +156,11 @@ static int gxp_mcu_firmware_handshake(struct gxp_mcu_firmware *mcu_fw)
 	return 0;
 }
 
-/*
- * Waits for the MCU LPM transition to the PG state.
- *
- * Must be called with holding @mcu_fw->lock.
- *
- * @force: force MCU to boot in recovery mode and execute WFI so that it can
- *         go in PG state.
- * Returns true if MCU successfully transited to PG state, otherwise false.
- */
-static bool gxp_pg_by_recovery_boot(struct gxp_dev *gxp, bool force)
+/* Shutdowns the MCU firmware and ensure the MCU is in PG state. */
+static bool wait_for_pg_state_shutdown_locked(struct gxp_dev *gxp, bool force)
 {
-	struct gxp_mcu_firmware *mcu_fw = gxp_mcu_firmware_of(gxp);
-	int try = MCU_RESCUE_TRY, ret;
-
-	lockdep_assert_held(&mcu_fw->lock);
-
-	do {
-		if (force) {
-			gxp_mcu_set_boot_mode(mcu_fw, GXP_MCU_BOOT_MODE_RECOVERY);
-			ret = gxp_mcu_reset(gxp, true);
-			udelay(GXP_MCU_RECOVERY_BOOT_DELAY);
-			if (ret) {
-				dev_err(gxp->dev, "Failed to reset MCU (ret=%d)", ret);
-				continue;
-			}
-		}
-
-		if (gxp_lpm_wait_state_eq(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID), LPM_PG_STATE))
-			return true;
-
-		dev_warn(gxp->dev, "MCU PSM transition to PS3 fails, current state: %u, try: %d",
-			 gxp_lpm_get_state(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID)), try);
-		/*
-		 * If PG transition fails, MCU will not fall into WFI after the reset.
-		 * Therefore, we must boot into recovery to force WFI transition.
-		 */
-		force = true;
-	} while (--try > 0);
-
-	return false;
-}
-
-/*
- * Waits for the MCU LPM transition to the PG state.
- *
- * Must be called with holding @mcu_fw->lock.
- *
- * @ring_doorbell: If the situation is that the MCU cannot execute the transition by itself such
- *                 as HW watchdog timeout, it must be passed as true to trigger the doorbell and
- *                 let the MCU do that forcefully.
- *
- * Returns true if MCU successfully transited to PG state, otherwise false.
- */
-static bool gxp_pg_by_doorbell(struct gxp_dev *gxp, bool ring_doorbell)
-{
-	struct gxp_mcu *mcu = &to_mcu_dev(gxp)->mcu;
-	struct gxp_mcu_firmware *mcu_fw = gxp_mcu_firmware_of(gxp);
-	int try = MCU_RESCUE_TRY, ret;
-
-	lockdep_assert_held(&mcu_fw->lock);
-
-	do {
-		if (ring_doorbell) {
-			gxp_mailbox_set_control(mcu->kci.mbx, GXP_MBOX_CONTROL_MAGIC_POWER_DOWN);
-			gxp_doorbell_enable_for_core(gxp, CORE_WAKEUP_DOORBELL(GXP_MCU_CORE_ID),
-						     GXP_MCU_CORE_ID);
-			gxp_doorbell_set(gxp, CORE_WAKEUP_DOORBELL(GXP_MCU_CORE_ID));
-		}
-
-		if (gxp_lpm_wait_state_eq(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID), LPM_PG_STATE))
-			return true;
-
-		dev_warn(gxp->dev, "MCU PSM transition to PS3 fails, current state: %u, try: %d",
-			 gxp_lpm_get_state(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID)), try);
-
-		/*
-		 * If PG transition fails, MCU will not fall into WFI after the reset below.
-		 * Therefore, we must ring doorbell to let it fall into WFI from the next try.
-		 */
-		ring_doorbell = true;
-
-		ret = gxp_mcu_reset(gxp, true);
-		if (ret) {
-			dev_err(gxp->dev, "Failed to reset MCU after PG transition fails (ret=%d)",
-				ret);
-			continue;
-		}
-
-		/*
-		 * We should give enough time to MCU to register doorbell handler. We hope MCU
-		 * successfully registers the handler after the reset even if the handshake fails.
-		 */
-		ret = gxp_mcu_firmware_handshake(mcu_fw);
-		if (ret)
-			dev_err(gxp->dev,
-				"Failed to handshake with MCU after PG transition fails (ret=%d)",
-				ret);
-	} while (--try > 0);
-
-	return false;
-}
-
-static bool wait_for_pg_state_locked(struct gxp_dev *gxp, bool force)
-{
-	bool ret;
-
-	/* TODO(b/317756665): Remove when recovery mode boot is supported in firmware. */
-	ret = gxp_pg_by_doorbell(gxp, force);
-	if (ret)
-		return ret;
-
 	/* For firmwares that supports recovery mode. */
-	return gxp_pg_by_recovery_boot(gxp, force);
+	return gxp_mcu_recovery_boot_shutdown(gxp, force);
 }
 
 static struct gxp_mcu_firmware_ns_buffer *map_ns_buffer(struct gxp_dev *gxp, dma_addr_t daddr,
@@ -461,6 +347,9 @@ void gxp_mcu_firmware_unload(struct gxp_dev *gxp, const struct firmware *fw)
 	gcip_image_config_clear(&mcu_fw->cfg_parser);
 	mcu_fw->status = GCIP_FW_INVALID;
 	mutex_unlock(&mcu_fw->lock);
+
+	if (fw)
+		release_firmware(fw);
 }
 
 /*
@@ -472,34 +361,33 @@ static int gxp_mcu_firmware_start(struct gxp_mcu_firmware *mcu_fw)
 	struct gxp_dev *gxp = mcu_fw->gxp;
 	int ret, state;
 
-	gxp_bpm_configure(gxp, GXP_MCU_CORE_ID, INST_BPM_OFFSET,
-			  BPM_EVENT_READ_XFER);
-
-	ret = gxp_lpm_up(gxp, GXP_MCU_CORE_ID);
+	ret = gxp_lpm_up(gxp, GXP_REG_MCU_ID);
 	if (ret)
 		return ret;
+
+	gxp_monitor_set_count_read_data(gxp);
+	gxp_monitor_start(gxp);
 
 	gxp_write_32(gxp, GXP_REG_MCU_BOOT_STAGE, 0);
 	gxp_mcu_set_boot_mode(mcu_fw, GXP_MCU_BOOT_MODE_NORMAL);
 	if (mcu_fw->is_secure) {
 		state = gsa_send_dsp_cmd(gxp->gsa_dev, GSA_DSP_START);
 		if (state != GSA_DSP_STATE_RUNNING) {
-			gxp_lpm_down(gxp, GXP_MCU_CORE_ID);
+			gxp_lpm_down(gxp, GXP_REG_MCU_ID);
 			return -EIO;
 		}
 	} else {
 		ret = program_iremap_csr(gxp, &mcu_fw->image_buf);
 		if (ret) {
-			gxp_lpm_down(gxp, GXP_MCU_CORE_ID);
+			gxp_lpm_down(gxp, GXP_REG_MCU_ID);
 			return ret;
 		}
 		/* Raise wakeup doorbell */
 		dev_dbg(gxp->dev, "Raising doorbell %d interrupt\n",
-			CORE_WAKEUP_DOORBELL(GXP_MCU_CORE_ID));
-		gxp_doorbell_enable_for_core(
-			gxp, CORE_WAKEUP_DOORBELL(GXP_MCU_CORE_ID),
-			GXP_MCU_CORE_ID);
-		gxp_doorbell_set(gxp, CORE_WAKEUP_DOORBELL(GXP_MCU_CORE_ID));
+			CORE_WAKEUP_DOORBELL(GXP_REG_MCU_ID));
+		gxp_doorbell_enable_for_core(gxp, CORE_WAKEUP_DOORBELL(GXP_REG_MCU_ID),
+					     GXP_REG_MCU_ID);
+		gxp_doorbell_set(gxp, CORE_WAKEUP_DOORBELL(GXP_REG_MCU_ID));
 	}
 
 	return 0;
@@ -517,13 +405,16 @@ static int gxp_mcu_firmware_start(struct gxp_mcu_firmware *mcu_fw)
  * 2. When we are going to shutdown MCU which is in abnormal state even after trying to rescue it.
  *    : We can't decide the state of MCU PSM or the AUR_BLOCK and accessing LPM CSRs might not be
  *      a good idea.
+ *
+ * Returns negative error on failure.
  */
-static void gxp_mcu_firmware_shutdown(struct gxp_mcu_firmware *mcu_fw)
+int gxp_mcu_firmware_shutdown(struct gxp_mcu_firmware *mcu_fw)
 {
 	struct gxp_dev *gxp = mcu_fw->gxp;
 
 	if (mcu_fw->is_secure)
-		gsa_send_dsp_cmd(gxp->gsa_dev, GSA_DSP_SHUTDOWN);
+		return gsa_send_dsp_cmd(gxp->gsa_dev, GSA_DSP_SHUTDOWN);
+	return 0;
 }
 
 /*
@@ -538,6 +429,7 @@ static void gxp_mcu_firmware_shutdown(struct gxp_mcu_firmware *mcu_fw)
 static int gxp_mcu_firmware_rescue(struct gxp_dev *gxp)
 {
 	struct gxp_mcu_firmware *mcu_fw = gxp_mcu_firmware_of(gxp);
+	struct gxp_mcu *mcu = container_of(mcu_fw, struct gxp_mcu, fw);
 	int try = MCU_RESCUE_TRY, ret = 0;
 
 	gcip_pm_lockdep_assert_held(gxp->power_mgr->pm);
@@ -546,21 +438,12 @@ static int gxp_mcu_firmware_rescue(struct gxp_dev *gxp)
 	do {
 		dev_warn(gxp->dev, "Try to rescue MCU (try=%d)", try);
 
-		if (!wait_for_pg_state_locked(gxp, true)) {
+		if (!wait_for_pg_state_shutdown_locked(gxp, true)) {
 			dev_err(gxp->dev,
 				"Cannot proceed MCU rescue because it is not in PG state");
 			ret = -EAGAIN;
 			continue;
 		}
-
-		/* Try power cycle after resetting the MCU and still holding the reset bits. */
-		ret = gxp_mcu_reset(gxp, false);
-		if (ret) {
-			dev_err(gxp->dev, "Failed to reset MCU (ret=%d)", ret);
-			continue;
-		}
-
-		gxp_mcu_firmware_shutdown(mcu_fw);
 
 		ret = gxp_pm_blk_reboot(gxp, 5000);
 		if (ret) {
@@ -568,18 +451,7 @@ static int gxp_mcu_firmware_rescue(struct gxp_dev *gxp)
 			continue;
 		}
 
-#if GXP_LPM_IN_AON
-		/*
-		 * MCU reset mechanisms are chip specific. For some chips, reset assert bits may
-		 * belong to LPM csr space which doesn't get reset on block power cycle and still be
-		 * held. Release reset bits to arm MCU for a run.
-		 */
-		ret = gxp_mcu_reset(gxp, true);
-		if (ret) {
-			dev_err(gxp->dev, "Failed to reset MCU after blk reboot (ret=%d)", ret);
-			continue;
-		}
-#endif
+		gxp_mcu_reset_mailbox(mcu);
 		/* Try booting MCU up again and handshaking with it. */
 		ret = gxp_mcu_firmware_start(mcu_fw);
 		if (ret) {
@@ -607,10 +479,18 @@ static void gxp_mcu_firmware_stop_locked(struct gxp_mcu_firmware *mcu_fw)
 
 	lockdep_assert_held(&mcu_fw->lock);
 
-	gxp_lpm_enable_state(gxp, CORE_TO_PSM(GXP_MCU_CORE_ID), LPM_PG_STATE);
+	gxp_lpm_enable_state(gxp, CORE_TO_PSM(GXP_REG_MCU_ID), LPM_PG_STATE);
 
 	/* Clear doorbell to refuse non-expected interrupts */
-	gxp_doorbell_clear(gxp, CORE_WAKEUP_DOORBELL(GXP_MCU_CORE_ID));
+	gxp_doorbell_clear(gxp, CORE_WAKEUP_DOORBELL(GXP_REG_MCU_ID));
+
+	/*
+	 * As the RKCI requests are processed asynchronously, the driver may return RKCI ACK
+	 * responses after the MCU transits to the PG state which will wake it up again. That will
+	 * eventually cause the MCU boot failure at the next run. To prevent the race condition,
+	 * disable sending RKCI ACK responses before sending SHUTDOWN KCI.
+	 */
+	gxp_kci_disable_rkci_ack(&mcu->kci);
 
 	ret = gxp_kci_shutdown(&mcu->kci);
 	if (ret)
@@ -624,12 +504,18 @@ static void gxp_mcu_firmware_stop_locked(struct gxp_mcu_firmware *mcu_fw)
 	 * Waits for MCU transiting to PG state. If KCI shutdown was failed above (ret != 0), it
 	 * will force to PG state.
 	 */
-	if (!wait_for_pg_state_locked(gxp, /*force=*/ret))
+	if (!wait_for_pg_state_shutdown_locked(gxp, /*force=*/ret))
 		dev_warn(gxp->dev, "Failed to transit MCU to PG state after KCI shutdown");
 #endif /* IS_ENABLED(CONFIG_GXP_GEM5) */
 
 	/* To test the case of the MCU FW sending FW_CRASH RKCI in the middle. */
 	TEST_FLUSH_KCI_WORKERS(mcu->kci);
+
+	/*
+	 * We should disable the IRQ handler before canceling the KCI works to prevent a potential
+	 * race condition that the works are scheduled while canceling them.
+	 */
+	gxp_kci_disable_irq_handler(&mcu->kci);
 
 	gxp_kci_cancel_work_queues(&mcu->kci);
 	/*
@@ -638,7 +524,16 @@ static void gxp_mcu_firmware_stop_locked(struct gxp_mcu_firmware *mcu_fw)
 	 */
 	gxp_mcu_reset_mailbox(mcu);
 
-	gxp_mcu_firmware_shutdown(mcu_fw);
+	/*
+	 * Since the KCI mailbox has been flushed, it is safe to enable sending RKCI ACK responses
+	 * and the IRQ handler again.
+	 *
+	 * Unlike disabling, enable sending RKCI ACK responses first since the driver should do that
+	 * if the MCU firmware sends RKCI requests and IRQ has been triggered. However, this should
+	 * not happen theoretically unless the MCU has been failed to be turned off normally.
+	 */
+	gxp_kci_enable_rkci_ack(&mcu->kci);
+	gxp_kci_enable_irq_handler(&mcu->kci);
 }
 
 /*
@@ -683,8 +578,7 @@ static int gxp_mcu_firmware_run_locked(struct gxp_mcu_firmware *mcu_fw)
 		if (ret) {
 			dev_err(gxp->dev, "Failed to run MCU even after trying to rescue it: %d",
 				ret);
-			gxp_mcu_firmware_shutdown(mcu_fw);
-			wait_for_pg_state_locked(gxp, true);
+			wait_for_pg_state_shutdown_locked(gxp, true);
 			return ret;
 		}
 	}
@@ -1020,6 +914,7 @@ void gxp_mcu_firmware_stop(struct gxp_mcu_firmware *mcu_fw)
 void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,
 				    enum gcip_fw_crash_type crash_type)
 {
+	struct gxp_mcu *mcu = &to_mcu_dev(gxp)->mcu;
 	struct gxp_mcu_firmware *mcu_fw = gxp_mcu_firmware_of(gxp);
 	struct gxp_client *client;
 	struct gcip_pm *pm = gxp->power_mgr->pm;
@@ -1107,6 +1002,9 @@ void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,
 	 * being allocated.
 	 */
 
+	/* We should consume all arrived responses first before canceling pending commands. */
+	gxp_uci_consume_responses(&mcu->uci);
+
 	/*
 	 * Discard all pending/unconsumed UCI responses and change the state of all virtual devices
 	 * to GXP_VD_UNAVAILABLE. From now on, all clients cannot request new UCI commands.
@@ -1115,6 +1013,7 @@ void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,
 		if (client->has_block_wakelock && client->vd) {
 			gxp_vd_invalidate(gxp, client->vd, GXP_INVALIDATED_MCU_CRASH);
 			client->vd->mcu_crashed = true;
+			gxp_uci_cancel(client->vd);
 		}
 	}
 
@@ -1122,7 +1021,7 @@ void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,
 	gxp_debug_dump_report_mcu_crash(gxp);
 
 	/* Waits for the MCU transiting to PG state and restart the MCU firmware. */
-	if (!wait_for_pg_state_locked(gxp, crash_type == GCIP_FW_CRASH_HW_WDG_TIMEOUT)) {
+	if (!wait_for_pg_state_shutdown_locked(gxp, crash_type == GCIP_FW_CRASH_HW_WDG_TIMEOUT)) {
 		dev_warn(gxp->dev, "Failed to transit MCU LPM state to PG");
 		goto out;
 	}

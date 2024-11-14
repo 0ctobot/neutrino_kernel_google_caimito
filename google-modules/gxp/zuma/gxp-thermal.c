@@ -23,8 +23,9 @@
 
 static int gxp_thermal_get_rate(void *data, unsigned long *rate)
 {
-	*rate = gxp_soc_pm_get_rate(AUR_DVFS_DOMAIN, 0);
+	struct gxp_dev *gxp = data;
 
+	*rate = gxp_soc_pm_get_rate(gxp, AUR_DVFS_DOMAIN, 0);
 	return 0;
 }
 
@@ -39,11 +40,15 @@ static int gxp_thermal_set_rate(void *data, unsigned long rate)
 		struct gxp_mcu *mcu = gxp_mcu_of(gxp);
 
 		ret = gxp_kci_notify_throttling(&mcu->kci, rate);
+		if (ret > 0) {
+			dev_err(gxp->dev,
+				"Received GCIP_KCI_CODE_NOTIFY_THROTTLING error code: %u.", ret);
+			ret = gcip_kci_error_to_errno(gxp->dev, ret);
+		}
 #endif /* GXP_HAS_MCU */
 	} else {
-		rate = max_t(unsigned long, rate,
-			     aur_power_state2rate[AUR_UUD]);
-		ret = gxp_pm_blk_set_rate_acpm(gxp, rate);
+		rate = max_t(unsigned long, rate, aur_power_state2rate[AUR_UUD]);
+		ret = gxp_pm_blk_set_rate(gxp, rate);
 	}
 
 	if (ret) {
@@ -66,9 +71,15 @@ static int gxp_thermal_control(void *data, bool enable)
 	dev_warn(gxp->dev, "Received request to %s thermal throttling.\n",
 		 enable ? "enable" : "disable");
 	ret = gxp_kci_thermal_control(&mcu->kci, enable);
-	if (ret)
+	if (ret) {
+		if (ret > 0) {
+			dev_err(gxp->dev, "Received GCIP_KCI_CODE_THERMAL_CONTROL error code: %u.",
+				ret);
+			ret = gcip_kci_error_to_errno(gxp->dev, ret);
+		}
 		dev_err(gxp->dev, "Error on %s thermal throttling: %d.\n",
 			enable ? "enabling" : "disabling", ret);
+	}
 #endif /* GXP_HAS_MCU */
 	return ret;
 }

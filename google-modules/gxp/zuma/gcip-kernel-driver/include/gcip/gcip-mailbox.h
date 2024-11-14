@@ -16,10 +16,10 @@
 #include <linux/wait.h>
 #include <linux/workqueue.h>
 
-#define CIRC_QUEUE_WRAPPED(idx, wrap_bit) ((idx)&wrap_bit)
+#define CIRC_QUEUE_WRAPPED(idx, wrap_bit) ((idx) & wrap_bit)
 #define CIRC_QUEUE_INDEX_MASK(wrap_bit) (wrap_bit - 1)
 #define CIRC_QUEUE_VALID_MASK(wrap_bit) (CIRC_QUEUE_INDEX_MASK(wrap_bit) | wrap_bit)
-#define CIRC_QUEUE_REAL_INDEX(idx, wrap_bit) ((idx)&CIRC_QUEUE_INDEX_MASK(wrap_bit))
+#define CIRC_QUEUE_REAL_INDEX(idx, wrap_bit) ((idx) & CIRC_QUEUE_INDEX_MASK(wrap_bit))
 
 #define CIRC_QUEUE_MAX_SIZE(wrap_bit) (wrap_bit - 1)
 
@@ -345,15 +345,15 @@ struct gcip_mailbox_ops {
 					struct gcip_mailbox_resp_awaiter *awaiter);
 	/*
 	 * Cleans up asynchronous response which is not arrived yet, but also not timed out.
-	 * The @awaiter should be marked as unprocessable to make it not to be processed by
-	 * the `handle_awaiter_arrived` or `handle_awaiter_timedout` callbacks in race
-	 * conditions. Don't have to release @awaiter of this function by calling the
-	 * `gcip_mailbox_release_awaiter` function. It will be released internally.
+	 * The @awaiter should be marked as canceled to make it not to be processed by the
+	 * `handle_awaiter_arrived` or `handle_awaiter_timedout` callbacks in race conditions.
+	 * @awaiter should be released by calling the `gcip_mailbox_release_awaiter` function when
+	 * the kernel driver doesn't need it anymore. This is called without holding any locks.
 	 *
-	 * Context: wait_list_lock.
+	 * Context: normal and in_interrupt().
 	 */
-	void (*flush_awaiter)(struct gcip_mailbox *mailbox,
-			      struct gcip_mailbox_resp_awaiter *awaiter);
+	void (*handle_awaiter_flushed)(struct gcip_mailbox *mailbox,
+				       struct gcip_mailbox_resp_awaiter *awaiter);
 	/*
 	 * Releases the @data which was passed to the `gcip_mailbox_put_cmd` function. This is
 	 * called without holding any locks.
@@ -449,6 +449,21 @@ void gcip_mailbox_release(struct gcip_mailbox *mailbox);
 void gcip_mailbox_consume_responses_work(struct gcip_mailbox *mailbox);
 
 /*
+ * The role of this function is the same with the `gcip_mailbox_consume_responses_work` function
+ * above, but expected to be called from the non-deferred work. The function guarantees that all
+ * responses in the mailbox at the moment have been processed when the function returns.
+ *
+ * If the purpose of calling this function is to handle un-processed arrived responses when a client
+ * is going to stop using the mailbox, the caller should guarantee that the IP won't return
+ * responses for the client anymore first.
+ *
+ * Note that it is recommended to call this function in the normal context only. Otherwise, please
+ * keep in mind that if the `handle_awaiter_arrived`, `before_handle_resp` or `after_fetch_resps`
+ * operators can sleep, this function shouldn't be called in the IRQ context.
+ */
+void gcip_mailbox_consume_responses(struct gcip_mailbox *mailbox);
+
+/*
  * Pushes an element to cmd queue and waits for the response (synchronous).
  * Returns -ETIMEDOUT if no response is received within mailbox->timeout msecs.
  *
@@ -472,8 +487,8 @@ int gcip_mailbox_send_cmd(struct gcip_mailbox *mailbox, void *cmd, void *resp,
  * the `gcip_mailbox_release_awaiter` function when it is not needed anymore.
  *
  * If the mailbox is released before the response arrives, all the waiting asynchronous responses
- * will be flushed. In this case, the `flush_awaiter` callback will be called for that response
- * and @awaiter don't have to be released by the implementation side.
+ * will be flushed. In this case, the `handle_awaiter_flushed` callback will be called for that
+ * response and @awaiter don't have to be released by the implementation side.
  * (i.e, the `gcip_mailbox_release_awaiter` function will be called internally.)
  *
  * The caller defines the way of cleaning up the @data to the `release_awaiter_data` callback.
@@ -510,7 +525,7 @@ struct gcip_mailbox_resp_awaiter *gcip_mailbox_put_cmd(struct gcip_mailbox *mail
  * not be called for @awaiter.
  *
  * However, by the race condition, you must note that arrived or timedout callback can be executed
- * BEFORE this function returns. (i.e, this function and arrived/timedout callback is called at the
+ * BEFORE this function returns. (i.e, this function and arrived/timedout callback are called at the
  * same time but the callback acquired the lock earlier.)
  *
  * Note: this function will cancel or wait for the completion of arrived or timedout callbacks
@@ -519,8 +534,11 @@ struct gcip_mailbox_resp_awaiter *gcip_mailbox_put_cmd(struct gcip_mailbox *mail
  *
  * If you already got a response of @awaiter and want to ensure that timedout handler is finished,
  * you can use the `gcip_mailbox_cancel_awaiter_timeout` function instead.
+ *
+ * Returns true if @awaiter was pending. If it was already processed or was being processed, returns
+ * false.
  */
-void gcip_mailbox_cancel_awaiter(struct gcip_mailbox_resp_awaiter *awaiter);
+bool gcip_mailbox_cancel_awaiter(struct gcip_mailbox_resp_awaiter *awaiter);
 
 /*
  * Cancels the timeout work of the asynchronous response. In normally, the response arrives and

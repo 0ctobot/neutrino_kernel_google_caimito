@@ -7,6 +7,7 @@
 
 #include <linux/delay.h>
 #include <linux/mutex.h>
+#include <linux/rwsem.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
@@ -29,8 +30,6 @@
 #include "mobile-soc.h"
 
 #define GXP_MCU_USAGE_BUFFER_SIZE 4096
-
-#define CIRCULAR_QUEUE_WRAP_BIT BIT(15)
 
 #define MBOX_CMD_QUEUE_NUM_ENTRIES 1024
 #define MBOX_RESP_QUEUE_NUM_ENTRIES 1024
@@ -62,9 +61,9 @@ static void gxp_kci_inc_cmd_queue_tail(struct gcip_kci *kci, u32 inc)
 {
 	struct gxp_mailbox *mbx = gcip_kci_get_data(kci);
 
-	gxp_mailbox_inc_cmd_queue_tail_nolock(mbx, inc,
-					      CIRCULAR_QUEUE_WRAP_BIT);
+	gxp_mailbox_inc_cmd_queue_tail_nolock(mbx, inc, KCI_CIRCULAR_QUEUE_WRAP_BIT);
 }
+
 
 static u32 gxp_kci_get_resp_queue_size(struct gcip_kci *kci)
 {
@@ -91,8 +90,7 @@ static void gxp_kci_inc_resp_queue_head(struct gcip_kci *kci, u32 inc)
 {
 	struct gxp_mailbox *mbx = gcip_kci_get_data(kci);
 
-	gxp_mailbox_inc_resp_queue_head_nolock(mbx, inc,
-					       CIRCULAR_QUEUE_WRAP_BIT);
+	gxp_mailbox_inc_resp_queue_head_nolock(mbx, inc, KCI_CIRCULAR_QUEUE_WRAP_BIT);
 }
 
 static void gxp_kci_handle_rkci(struct gxp_kci *gkci,
@@ -104,9 +102,13 @@ static void gxp_kci_handle_rkci(struct gxp_kci *gkci,
 	case GXP_RKCI_CODE_PM_QOS_BTS:
 		/* FW indicates to ignore the request by setting them to undefined values. */
 		if (resp->retval != (typeof(resp->retval))~0ull)
-			gxp_soc_pm_set_request(gxp, resp->retval);
+			gxp_soc_pm_set_request(gxp, MEMORY_INT_QOS_REQ, resp->retval);
 		if (resp->status != (typeof(resp->status))~0ull)
 			dev_warn_once(gxp->dev, "BTS is not supported");
+		gxp_kci_resp_rkci_ack(gkci, resp);
+		break;
+	case GCIP_RKCI_COHERENT_FABRIC_QOS_REQUEST:
+		gxp_soc_pm_set_request(gxp, COHERENT_FABRIC_QOS_REQ, resp->retval);
 		gxp_kci_resp_rkci_ack(gkci, resp);
 		break;
 	case GXP_RKCI_CODE_CORE_TELEMETRY_READ: {
@@ -311,7 +313,7 @@ static inline int gxp_kci_send_cmd(struct gxp_mailbox *mailbox,
 	int ret;
 
 	gxp_pm_busy(mailbox->gxp);
-	ret = gxp_mailbox_send_cmd(mailbox, cmd, NULL);
+	ret = gxp_mailbox_send_cmd(mailbox, cmd, NULL, 0);
 	gxp_pm_idle(mailbox->gxp);
 
 	return ret;
@@ -355,7 +357,7 @@ int gxp_kci_init(struct gxp_mcu *mcu)
 	struct gxp_mailbox_args mbx_args = {
 		.type = GXP_MBOX_TYPE_KCI,
 		.ops = &mbx_ops,
-		.queue_wrap_bit = CIRCULAR_QUEUE_WRAP_BIT,
+		.queue_wrap_bit = KCI_CIRCULAR_QUEUE_WRAP_BIT,
 		.cmd_elem_size = sizeof(struct gcip_kci_command_element),
 		.resp_elem_size = sizeof(struct gcip_kci_response_element),
 		.data = gkci,
@@ -368,6 +370,9 @@ int gxp_kci_init(struct gxp_mcu *mcu)
 	if (IS_ERR(gkci->mbx))
 		return PTR_ERR(gkci->mbx);
 
+	gkci->enable_rkci_ack = true;
+	init_rwsem(&gkci->enable_rkci_ack_lock);
+
 	return 0;
 }
 
@@ -376,7 +381,33 @@ int gxp_kci_reinit(struct gxp_kci *gkci)
 	struct gxp_mailbox *mailbox = gkci->mbx;
 
 	gxp_mailbox_reinit(mailbox);
+	gcip_kci_reinit(mailbox->mbx_impl.gcip_kci);
+
 	return 0;
+}
+
+void gxp_kci_enable_irq_handler(struct gxp_kci *gkci)
+{
+	gxp_mailbox_enable_irq_handler(gkci->mbx);
+}
+
+void gxp_kci_disable_irq_handler(struct gxp_kci *gkci)
+{
+	gxp_mailbox_disable_irq_handler(gkci->mbx);
+}
+
+void gxp_kci_enable_rkci_ack(struct gxp_kci *gkci)
+{
+	down_write(&gkci->enable_rkci_ack_lock);
+	gkci->enable_rkci_ack = true;
+	up_write(&gkci->enable_rkci_ack_lock);
+}
+
+void gxp_kci_disable_rkci_ack(struct gxp_kci *gkci)
+{
+	down_write(&gkci->enable_rkci_ack_lock);
+	gkci->enable_rkci_ack = false;
+	up_write(&gkci->enable_rkci_ack_lock);
 }
 
 void gxp_kci_cancel_work_queues(struct gxp_kci *gkci)
@@ -461,7 +492,7 @@ int gxp_kci_update_usage(struct gxp_kci *gkci)
 
 	/* Quick return if device is already powered down. */
 	if (power_mgr->curr_state == AUR_OFF ||
-	    !gxp_lpm_is_powered(gkci->gxp, CORE_TO_PSM(GXP_MCU_CORE_ID)))
+	    !gxp_lpm_is_powered(gkci->gxp, CORE_TO_PSM(GXP_REG_MCU_ID)))
 		return -EAGAIN;
 
 	/*
@@ -484,7 +515,7 @@ int gxp_kci_update_usage(struct gxp_kci *gkci)
 		goto fw_unlock;
 
 	if (power_mgr->curr_state != AUR_OFF &&
-	    gxp_lpm_is_powered(gkci->gxp, CORE_TO_PSM(GXP_MCU_CORE_ID)))
+	    gxp_lpm_is_powered(gkci->gxp, CORE_TO_PSM(GXP_REG_MCU_ID)))
 		ret = gxp_kci_update_usage_locked(gkci);
 	mutex_unlock(&power_mgr->pm_lock);
 
@@ -645,10 +676,19 @@ void gxp_kci_resp_rkci_ack(struct gxp_kci *gkci,
 	struct gxp_dev *gxp = gkci->gxp;
 	int ret;
 
+	down_read(&gkci->enable_rkci_ack_lock);
+
+	if (!gkci->enable_rkci_ack) {
+		dev_warn_ratelimited(gxp->dev, "Skip sending RKCI ACK");
+		goto out;
+	}
+
 	ret = gxp_kci_send_cmd(gkci->mbx, &cmd);
 	if (ret)
 		dev_err(gxp->dev, "failed to send rkci resp %llu (%d)",
 			rkci_cmd->seq, ret);
+out:
+	up_read(&gkci->enable_rkci_ack_lock);
 }
 
 int gxp_kci_set_device_properties(struct gxp_kci *gkci,

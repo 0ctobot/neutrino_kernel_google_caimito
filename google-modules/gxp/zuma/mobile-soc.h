@@ -11,6 +11,11 @@
 #include "gxp-internal.h"
 #include "gxp-pm.h"
 
+enum gxp_soc_qos_request {
+	MEMORY_INT_QOS_REQ,
+	COHERENT_FABRIC_QOS_REQ,
+};
+
 /**
  * gxp_soc_init() - Initialization function for SoC-dependent code.
  * @gxp: The GXP device to be initialized.
@@ -45,15 +50,17 @@ void gxp_soc_pm_exit(struct gxp_dev *gxp);
 /**
  * gxp_soc_pm_set_request() - Updates the pm requests.
  * @gxp: The GXP device which is the container of target pm.
+ * @qos_request: SOC QoS request enum.
  * @value: A 64-bit encoded value.
  */
-void gxp_soc_pm_set_request(struct gxp_dev *gxp, u64 value);
+void gxp_soc_pm_set_request(struct gxp_dev *gxp, enum gxp_soc_qos_request qos_request, u64 value);
 
 /**
  * gxp_soc_pm_get_request() - Retrieves the pm requests.
  * @gxp: The GXP device which is the container of target pm.
+ * @qos_request: SOC QoS request enum.
  */
-u64 gxp_soc_pm_get_request(struct gxp_dev *gxp);
+u64 gxp_soc_pm_get_request(struct gxp_dev *gxp, enum gxp_soc_qos_request qos_request);
 
 /**
  * gxp_soc_pm_reset() - Resets the pm requests.
@@ -67,7 +74,7 @@ void gxp_soc_pm_reset(struct gxp_dev *gxp);
 int gxp_soc_pm_set_rate(unsigned int id, unsigned long rate);
 
 /* The get function of pm rate. */
-unsigned long gxp_soc_pm_get_rate(unsigned int id, unsigned long dbg_val);
+unsigned long gxp_soc_pm_get_rate(struct gxp_dev *gxp, unsigned int id, unsigned long dbg_val);
 
 /**
  * gxp_soc_set_pm_arg_from_state() - Set gxp_req_pm_qos_work according to the given state.

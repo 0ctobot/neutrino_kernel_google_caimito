@@ -19,7 +19,7 @@
 #include <linux/of.h>
 #include <linux/types.h>
 
-#include <iif/iif.h>
+#include <iif/iif-shared.h>
 
 #define IIF_CLEAR_LSB(b) ((b) & ((b) - 1))
 
@@ -34,18 +34,6 @@
 #define for_each_waiting_ip(fence_table, fence_id, waiting_ip, tmp)                               \
 	for (tmp = (fence_table)->wait_table[fence_id].waiting_ips, waiting_ip = __ffs(tmp); tmp; \
 	     tmp = IIF_CLEAR_LSB(tmp), waiting_ip = __ffs(tmp))
-
-/* Entry of the wait table. */
-struct iif_wait_table_entry {
-	uint8_t waiting_ips;
-	uint8_t reserved[7];
-} __packed;
-
-/* Entry of the signal table. */
-struct iif_signal_table_entry {
-	uint16_t remaining_signals;
-	uint8_t reserved[6];
-} __packed;
 
 /* The fence table which will be shared with the firmware side. */
 struct iif_fence_table {
@@ -66,24 +54,70 @@ int iif_fence_table_init(const struct device_node *np, struct iif_fence_table *f
  * Since this function will be called only when the fence is initialized, we don't need any locks
  * to protect the entry.
  */
-static inline void iif_fence_table_init_fence_entry(struct iif_fence_table *fence_table,
-						    unsigned int fence_id,
-						    unsigned int total_signalers)
-{
-	fence_table->wait_table[fence_id].waiting_ips = 0;
-	fence_table->signal_table[fence_id].remaining_signals = total_signalers;
-}
-
+void iif_fence_table_init_fence_entry(struct iif_fence_table *fence_table, unsigned int fence_id,
+				      unsigned int total_signalers);
 /*
  * Sets waiting IP bit of the wait table entry of @fence_id.
  *
  * Since this function will be called by the `iif_fence_submit_waiter` function which protects the
  * entry by itself with holding its lock, we don't have to hold any locks here.
  */
-static inline void iif_fence_table_set_waiting_ip(struct iif_fence_table *fence_table,
-						  unsigned int fence_id, enum iif_ip_type ip)
-{
-	fence_table->wait_table[fence_id].waiting_ips |= BIT(ip);
-}
+void iif_fence_table_set_waiting_ip(struct iif_fence_table *fence_table, unsigned int fence_id,
+				    enum iif_ip_type ip);
+
+/*
+ * Sets the number of remaining signalers to the signal table entry of @fence_id.
+ *
+ * This function should be called when either
+ * - the signaler of the fence is AP, or
+ * - the signaler is an IP but the IP is under the situation that it can't update the table by
+ *   itself.
+ *
+ * Since this function will be called by the `iif_fence_signal{_with_status}` function which
+ * protects the entry by itself with holding its lock, we don't have to hold any locks here.
+ */
+void iif_fence_table_set_remaining_signals(struct iif_fence_table *fence_table,
+					   unsigned int fence_id, unsigned int remaining_signalers);
+
+/*
+ * Gets the number of remaining signalers from the signal table entry of @fence_id.
+ *
+ * This function should be called when either
+ * - the signaler of the fence is AP, or
+ * - the signaler is an IP but the IP is under the situation that it can't update the table by
+ *   itself.
+ *
+ * Since this function will be called by the `iif_fence_signal{_with_status}` function which
+ * protects the entry by itself with holding its lock, we don't have to hold any locks here.
+ */
+unsigned int iif_fence_table_get_remaining_signals(struct iif_fence_table *fence_table,
+						   unsigned int fence_id);
+
+/*
+ * Sets the fence flag to the signal table entry of @fence_id.
+ * See `enum iif_flag_bits` to understand meaning of each bit of @flags.
+ *
+ * This function should be called when either
+ * - the signaler of the fence is AP, or
+ * - the signaler is an IP but the IP is under the situation that it can't update the table by
+ *   itself.
+ *
+ * Since this function will be called by the `iif_fence_signal{_with_status}` function which
+ * protects the entry by itself with holding its lock, we don't have to hold any locks here.
+ */
+void iif_fence_table_set_flag(struct iif_fence_table *fence_table, unsigned int fence_id, u8 flag);
+
+/*
+ * Gets the fence flag from the signal table entry of @fence_id.
+ *
+ * This function should be called when either
+ * - the signaler of the fence is AP, or
+ * - the signaler is an IP but the IP is under the situation that it can't update the table by
+ *   itself.
+ *
+ * Since this function will be called by the `iif_fence_signal{_with_status}` function which
+ * protects the entry by itself with holding its lock, we don't have to hold any locks here.
+ */
+u8 iif_fence_table_get_flag(struct iif_fence_table *fence_table, unsigned int fence_id);
 
 #endif /* __IIF_IIF_FENCE_TABLE_H__ */

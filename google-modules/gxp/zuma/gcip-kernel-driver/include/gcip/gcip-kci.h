@@ -52,7 +52,7 @@ struct gcip_kci_response_element {
 	 */
 	u16 status;
 	/*
-	 * Return value is not currently needed by KCI command responses.
+	 * Return value is used by some KCI command responses.
 	 * For reverse KCI commands this is set as value2.
 	 */
 	u32 retval;
@@ -90,6 +90,8 @@ enum gcip_kci_code {
 	GCIP_KCI_CODE_SET_DEVICE_PROPERTIES = 22,
 	GCIP_KCI_CODE_FAULT_INJECTION = 23,
 	GCIP_KCI_CODE_SET_FREQ_LIMITS = 24,
+	GCIP_KCI_CODE_DEBUG_CMD = 25,
+	GCIP_KCI_CODE_DEBUG_RESET = 26,
 
 	GCIP_KCI_CODE_RKCI_ACK = 256,
 };
@@ -109,10 +111,12 @@ enum gcip_reverse_kci_code {
 	GCIP_RKCI_PM_QOS_BTS_REQUEST,
 	GCIP_RKCI_DSP_CORE_TELEMETRY_TRY_READ,
 	GCIP_RKCI_CLIENT_FATAL_ERROR_NOTIFY,
+	GCIP_RKCI_COHERENT_FABRIC_QOS_REQUEST,
 	GCIP_RKCI_CHIP_CODE_LAST = 0x7FFF,
 	GCIP_RKCI_GENERIC_CODE_FIRST = 0x8000,
 	GCIP_RKCI_FIRMWARE_CRASH = GCIP_RKCI_GENERIC_CODE_FIRST + 0,
 	GCIP_RKCI_JOB_LOCKUP = GCIP_RKCI_GENERIC_CODE_FIRST + 1,
+	GCIP_RKCI_DEBUG_ASYNC_RESP = GCIP_RKCI_GENERIC_CODE_FIRST + 2,
 	GCIP_RKCI_GENERIC_CODE_LAST = 0xFFFF,
 };
 
@@ -300,6 +304,9 @@ struct gcip_kci_args {
 /* Initializes a KCI object. */
 int gcip_kci_init(struct gcip_kci *kci, const struct gcip_kci_args *args);
 
+/* Reinitializes the KCI mailbox. */
+void gcip_kci_reinit(struct gcip_kci *kci);
+
 /* Cancels KCI and reverse KCI workers and workers that may send KCIs. */
 void gcip_kci_cancel_work_queues(struct gcip_kci *kci);
 
@@ -340,6 +347,20 @@ void gcip_kci_handle_irq(struct gcip_kci *kci);
  * of update_usage in struct gcip_kci_ops.
  */
 void gcip_kci_update_usage_async(struct gcip_kci *kci);
+
+/**
+ * gcip_kci_error_to_errno() - Converts the firmware returned kci error code to the kernel
+ *                             equivalent error code.
+ *
+ * IP driver should use this function internally to convert KCI errors received from the
+ * firmware to the kernel error to be propagated as a IOCTL or any other system call error.
+ *
+ * @dev: Reference to the device struct.
+ * @code: GCIP KCI error code.
+ *
+ * Return: Negative error code.
+ */
+int gcip_kci_error_to_errno(struct device *dev, enum gcip_kci_error code);
 
 /* Gets the KCI private data. */
 static inline void *gcip_kci_get_data(struct gcip_kci *kci)

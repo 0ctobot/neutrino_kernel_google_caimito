@@ -66,4 +66,11 @@ int gxp_mcu_telemetry_mmap_buffer(struct gxp_mcu *mcu,
 				  enum gcip_telemetry_type type,
 				  struct vm_area_struct *vma);
 
+/*
+ * Increments or decrements the refcount count of private data of telemetry mapping.
+ * @vma must be mmap'ed by the `gxp_mcu_telemetry_mmap_buffer` function above.
+ */
+void gxp_mcu_telemetry_vma_get(struct vm_area_struct *vma);
+void gxp_mcu_telemetry_vma_put(struct vm_area_struct *vma);
+
 #endif /* __GXP_MCU_TELEMETRY_H__ */

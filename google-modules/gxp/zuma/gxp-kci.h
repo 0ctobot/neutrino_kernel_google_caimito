@@ -9,6 +9,7 @@
 #define __GXP_KCI_H__
 
 #include <linux/bits.h>
+#include <linux/rwsem.h>
 
 #include <gcip/gcip-fault-injection.h>
 #include <gcip/gcip-kci.h>
@@ -49,6 +50,8 @@
  */
 #define KCI_ALLOCATE_VMBOX_OFFLOAD_TYPE_TPU 0
 
+#define KCI_CIRCULAR_QUEUE_WRAP_BIT BIT(15)
+
 /*
  * Chip specific reverse KCI request codes.
  */
@@ -67,6 +70,11 @@ struct gxp_kci {
 	struct gxp_mapped_resource cmd_queue_mem;
 	struct gxp_mapped_resource resp_queue_mem;
 	struct gxp_mapped_resource descriptor_mem;
+
+	/* If false, the kernel driver won't send RKCI ACK responses. */
+	bool enable_rkci_ack;
+	/* Protects @enable_rkci_ack. */
+	struct rw_semaphore enable_rkci_ack_lock;
 };
 
 /* Used when sending the details about allocate_vmbox KCI command. */
@@ -125,6 +133,29 @@ int gxp_kci_init(struct gxp_mcu *mcu);
  * Returns 0 on success, -errno on error.
  */
 int gxp_kci_reinit(struct gxp_kci *gkci);
+
+/*
+ * Enables / disables the IRQ handler of the KCI mailbox.
+ *
+ * The driver should disable the IRQ handler before calling the `gxp_kci_cancel_work_queues`
+ * function to prevent a race condition that KCI works are scheduled while canceling them.
+ */
+void gxp_kci_enable_irq_handler(struct gxp_kci *gkci);
+void gxp_kci_disable_irq_handler(struct gxp_kci *gkci);
+
+/*
+ * Enables / disables sending RKCI ACK responses to the MCU firmware.
+ *
+ * Since the RKCI requests are processed asynchronously, if the MCU sends RKCI requests right before
+ * the SHUTDOWN KCI, the kernel driver may handle them after the MCU transits to the PG state and
+ * sending RKCI ACK responses will cause waking the MCU up. It will eventually lead to the MCU boot
+ * failure at the next run.
+ *
+ * To prevent those situations, the driver should control the timing of disabling / enabling sending
+ * RKCI responses properly utilizing these functions.
+ */
+void gxp_kci_enable_rkci_ack(struct gxp_kci *gkci);
+void gxp_kci_disable_rkci_ack(struct gxp_kci *gkci);
 
 /* Cancel work queues or wait until they're done */
 void gxp_kci_cancel_work_queues(struct gxp_kci *gkci);

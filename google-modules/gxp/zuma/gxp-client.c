@@ -136,6 +136,10 @@ void gxp_client_destroy(struct gxp_client *client)
 	struct gxp_dev *gxp = client->gxp;
 	int core;
 
+	/*
+	 * It is safe to clean up UCI works without holding any locks since the user already closed
+	 * the gxp device and won't be able to submit commands to @client.
+	 */
 	cleanup_uci_cmd_work(client);
 
 	down_write(&client->semaphore);
@@ -152,6 +156,17 @@ void gxp_client_destroy(struct gxp_client *client)
 		gxp_vd_block_unready(client->vd);
 		up_write(&gxp->vd_semaphore);
 	}
+
+	/*
+	 * We should flush unprocessed UCI commands after the `RELEASE_VMBOX` KCI command which will
+	 * be sent to the MCU in the `gxp_vd_block_unready` function above. The KCI guarantees that
+	 * the MCU cancels all pending commands and won't access the commands sent by the client
+	 * anymore. That says it is safe to flush pending UCI commands and release any resources
+	 * allocated for the commands after the KCI. Otherwise, the MCU can access freed resources
+	 * by the race condition.
+	 */
+	if (client->vd)
+		gxp_vd_release_unconsumed_async_resps(gxp, client->vd);
 
 	for (core = 0; core < GXP_NUM_CORES; core++) {
 		if (client->mb_eventfds[core])

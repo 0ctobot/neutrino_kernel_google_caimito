@@ -55,8 +55,7 @@
 
 static inline void hold_core_in_reset(struct gxp_dev *gxp, uint core)
 {
-	gxp_write_32(gxp, GXP_CORE_REG_ETM_PWRCTL(core),
-		     BIT(GXP_REG_ETM_PWRCTL_CORE_RESET_SHIFT));
+	gxp_write_32(gxp, GXP_REG_CORE_ETM_PWRCTL(core), BIT(GXP_REG_ETM_PWRCTL_CORE_RESET_SHIFT));
 }
 
 void gxp_vd_init(struct gxp_dev *gxp)
@@ -203,16 +202,30 @@ static int map_sys_cfg_resource(struct gxp_virtual_device *vd,
 	return 0;
 }
 
-/*
- * Assigns @res's IOVA, size from image config.
- */
-static void assign_resource(struct gxp_mapped_resource *res,
-			    struct gcip_image_config *img_cfg,
-			    enum gxp_imgcfg_idx idx)
+/* Properly assigns the resources according to @img_cfg's config version. */
+static int get_resources_from_imgcfg(struct gxp_dev *gxp, struct gcip_image_config *img_cfg,
+				     struct gxp_mapped_resource *core_cfg,
+				     struct gxp_mapped_resource *vd_cfg,
+				     struct gxp_mapped_resource *sys_cfg)
 {
-	res->daddr = img_cfg->iommu_mappings[idx].virt_address;
-	res->size = gcip_config_to_size(
-		img_cfg->iommu_mappings[idx].image_config_value);
+	int ret;
+
+	ret = gxp_firmware_get_cfg_resource(gxp, img_cfg, IMAGE_CONFIG_CORE_CFG_REGION, core_cfg);
+	if (ret)
+		return ret;
+	ret = gxp_firmware_get_cfg_resource(gxp, img_cfg, IMAGE_CONFIG_VD_CFG_REGION, vd_cfg);
+	if (ret)
+		return ret;
+	ret = gxp_firmware_get_cfg_resource(gxp, img_cfg, IMAGE_CONFIG_SYS_CFG_REGION, sys_cfg);
+	if (ret)
+		return ret;
+
+	if (core_cfg->size + vd_cfg->size > GXP_SHARED_SLICE_SIZE) {
+		dev_err(gxp->dev, "Core CFG (%#llx) + VD CFG (%#llx) exceeds %#x", core_cfg->size,
+			vd_cfg->size, GXP_SHARED_SLICE_SIZE);
+		return -ENOSPC;
+	}
+	return 0;
 }
 
 /*
@@ -243,57 +256,50 @@ static int map_cfg_regions(struct gxp_virtual_device *vd, struct gcip_image_conf
 {
 	struct gxp_dev *gxp = vd->gxp;
 	struct gxp_mapped_resource pool;
-	struct gxp_mapped_resource res;
+	struct gxp_mapped_resource core_cfg, vd_cfg, sys_cfg;
 	size_t offset;
 	int ret;
 
-	if (img_cfg->num_iommu_mappings < 3)
+	if (!img_cfg->num_iommu_mappings)
 		return map_core_shared_buffer(vd);
+
+	ret = get_resources_from_imgcfg(gxp, img_cfg, &core_cfg, &vd_cfg, &sys_cfg);
+	if (ret)
+		return ret;
 	pool = gxp_fw_data_resource(gxp);
 
-	assign_resource(&res, img_cfg, CORE_CFG_REGION_IDX);
 	offset = vd->slice_index * GXP_SHARED_SLICE_SIZE;
-	res.vaddr = pool.vaddr + offset;
-	res.paddr = pool.paddr + offset;
-	ret = map_resource(vd, &res);
+	core_cfg.vaddr = pool.vaddr + offset;
+	core_cfg.paddr = pool.paddr + offset;
+	ret = map_resource(vd, &core_cfg);
 	if (ret) {
-		dev_err(gxp->dev, "map core config %pad -> offset %#zx failed",
-			&res.daddr, offset);
+		dev_err(gxp->dev, "map core config %pad -> offset %#zx failed", &core_cfg.daddr,
+			offset);
 		return ret;
 	}
-	vd->core_cfg = res;
+	vd->core_cfg = core_cfg;
 
-	assign_resource(&res, img_cfg, VD_CFG_REGION_IDX);
 	offset += vd->core_cfg.size;
-	res.vaddr = pool.vaddr + offset;
-	res.paddr = pool.paddr + offset;
-	ret = map_resource(vd, &res);
+	vd_cfg.vaddr = pool.vaddr + offset;
+	vd_cfg.paddr = pool.paddr + offset;
+	ret = map_resource(vd, &vd_cfg);
 	if (ret) {
-		dev_err(gxp->dev, "map VD config %pad -> offset %#zx failed",
-			&res.daddr, offset);
+		dev_err(gxp->dev, "map VD config %pad -> offset %#zx failed", &vd_cfg.daddr,
+			offset);
 		goto err_unmap_core;
 	}
-	vd->vd_cfg = res;
-	/* image config correctness check */
-	if (vd->core_cfg.size + vd->vd_cfg.size > GXP_SHARED_SLICE_SIZE) {
-		dev_err(gxp->dev,
-			"Core CFG (%#llx) + VD CFG (%#llx) exceeds %#x",
-			vd->core_cfg.size, vd->vd_cfg.size,
-			GXP_SHARED_SLICE_SIZE);
-		ret = -ENOSPC;
-		goto err_unmap_vd;
-	}
-	assign_resource(&res, img_cfg, SYS_CFG_REGION_IDX);
-	res.vaddr = gxp_fw_data_system_cfg(gxp);
-	offset = res.vaddr - pool.vaddr;
-	res.paddr = pool.paddr + offset;
-	ret = map_sys_cfg_resource(vd, &res);
+	vd->vd_cfg = vd_cfg;
+
+	sys_cfg.vaddr = gxp_fw_data_system_cfg(gxp);
+	offset = sys_cfg.vaddr - pool.vaddr;
+	sys_cfg.paddr = pool.paddr + offset;
+	ret = map_sys_cfg_resource(vd, &sys_cfg);
 	if (ret) {
-		dev_err(gxp->dev, "map sys config %pad -> offset %#zx failed",
-			&res.daddr, offset);
+		dev_err(gxp->dev, "map sys config %pad -> offset %#zx failed", &sys_cfg.daddr,
+			offset);
 		goto err_unmap_vd;
 	}
-	vd->sys_cfg = res;
+	vd->sys_cfg = sys_cfg;
 
 	return 0;
 
@@ -573,7 +579,7 @@ static inline void debug_dump_unlock(struct gxp_virtual_device *vd)
 #if GXP_MMU_REQUIRE_ATTACH
 static int gxp_attach_mmu_domain(struct gxp_dev *gxp, struct gxp_virtual_device *vd)
 {
-	int ret;
+	int ret, err;
 
 	/*
 	 * Domain attach requires block to be in on state.
@@ -588,9 +594,11 @@ static int gxp_attach_mmu_domain(struct gxp_dev *gxp, struct gxp_virtual_device 
 	ret = gxp_dma_domain_attach_device(gxp, vd->domain, vd->core_list);
 	if (ret)
 		dev_err(gxp->dev, "Failed to attach domain: %d", ret);
-	ret = pm_runtime_put_sync(gxp->dev);
-	if (ret)
-		dev_err(gxp->dev, "Failed to power off during domain attach: %d", ret);
+
+	/* Ignore the return value of this put function, just print messages on error. */
+	err = pm_runtime_put_sync(gxp->dev);
+	if (err)
+		dev_err(gxp->dev, "Failed to power off during domain attach: %d", err);
 
 	return ret;
 }
@@ -804,8 +812,6 @@ void gxp_vd_release(struct gxp_virtual_device *vd)
 	gxp_detach_mmu_domain(gxp, vd);
 #endif
 	unassign_cores(vd);
-
-	vd->gxp->mailbox_mgr->release_unconsumed_async_resps(vd);
 
 	/*
 	 * Release any un-mapped mappings
@@ -1652,7 +1658,9 @@ void gxp_vd_generate_debug_dump(struct gxp_dev *gxp,
 #if GXP_HAS_MCU
 void gxp_vd_release_vmbox(struct gxp_dev *gxp, struct gxp_virtual_device *vd)
 {
-	struct gxp_kci *kci = &(gxp_mcu_of(gxp)->kci);
+	struct gxp_mcu *mcu = gxp_mcu_of(gxp);
+	struct gxp_kci *kci = &mcu->kci;
+	struct gxp_uci *uci = &mcu->uci;
 	uint core_list;
 	int ret;
 
@@ -1662,6 +1670,15 @@ void gxp_vd_release_vmbox(struct gxp_dev *gxp, struct gxp_virtual_device *vd)
 	gxp_vd_unlink_offload_vmbox(gxp, vd, vd->tpu_client_id, GCIP_KCI_OFFLOAD_CHIP_TYPE_TPU);
 
 	ret = gxp_kci_release_vmbox(kci, vd->client_id);
+
+	/*
+	 * Ensures consuming all responses from the MCU to prevent a race condition that commands
+	 * were processed by the MCU and their responses were pushed to the UCI mailbox, but the
+	 * kernel driver considers those commands haven't been processed so that cancels or flushes
+	 * them later.
+	 */
+	gxp_uci_consume_responses(uci);
+
 	if (!ret)
 		goto out;
 	if (ret > 0 && KCI_RETURN_GET_ERROR_CODE(ret) == GCIP_KCI_ERROR_ABORTED) {
@@ -1672,6 +1689,23 @@ void gxp_vd_release_vmbox(struct gxp_dev *gxp, struct gxp_virtual_device *vd)
 		gxp_vd_invalidate_locked(gxp, vd, GXP_INVALIDATED_VMBOX_RELEASE_FAILED);
 		gxp_vd_generate_debug_dump(gxp, vd, core_list);
 	} else {
+		/*
+		 * If the KCI response arrived well or its error code is ABORTED, it means that the
+		 * MCU firmware guarantees that it canceled all pending UCI commands, signaled their
+		 * out-fences and returned responses of them to the kernel driver. Therefore, the
+		 * arrived handler of the UCI mailbox will process the responses.
+		 *
+		 * If @ret is negative, it's apparent that the MCU firmware didn't process the KCI
+		 * well somehow. If @ret is positive and the error code is set, but not ABORTED,
+		 * it's likely a bug that @vd is not invalid from the firmware perspective or its
+		 * VMBox was already released. That says the firmware wouldn't cancel any pending
+		 * UCI commands.
+		 *
+		 * Therefore, the meaning of this else-branch has been reached is that the kernel
+		 * driver should take care of canceling all pending commands and signaling
+		 * out-fences of them with an error.
+		 */
+		gxp_uci_cancel(vd);
 		dev_err(gxp->dev, "Failed to request releasing VMBox for client %d: %d",
 			vd->client_id, ret);
 	}

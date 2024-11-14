@@ -15,6 +15,11 @@
 #include "gxp-mcu-telemetry.h"
 #include "gxp-uci.h"
 
+enum gxp_mcu_boot_mode {
+	GXP_MCU_BOOT_MODE_NORMAL,
+	GXP_MCU_BOOT_MODE_RECOVERY,
+};
+
 struct gxp_dev;
 struct gxp_mapped_resource;
 
@@ -71,5 +76,10 @@ void gxp_mcu_mem_free_data(struct gxp_mcu *mcu, struct gxp_mapped_resource *mem)
  * *-platform.c as a chip-dependent implementation.
  */
 struct gxp_mcu *gxp_mcu_of(struct gxp_dev *gxp);
+
+/*
+ * Set boot mode for MCU.
+ */
+void gxp_mcu_set_boot_mode(struct gxp_mcu_firmware *mcu_fw, enum gxp_mcu_boot_mode mode);
 
 #endif /* __GXP_MCU_H__ */

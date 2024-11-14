@@ -19,6 +19,7 @@
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/sched.h>
+#include <linux/sizes.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
 #include <linux/uidgid.h>
@@ -55,7 +56,6 @@
 #if HAS_TPU_EXT
 #include <soc/google/tpu-ext.h>
 #endif
-
 
 /* We will only have one gxp device */
 #define GXP_DEV_COUNT 1
@@ -132,10 +132,68 @@ static void gxp_common_platform_unreg_sscd(void)
 #endif /* CONFIG_SUBSYSTEM_COREDUMP */
 
 /* Mapping from GXP_POWER_STATE_* to enum aur_power_state in gxp-pm.h */
-static const uint aur_state_array[GXP_NUM_POWER_STATES] = {
-	AUR_OFF,   AUR_UUD,	 AUR_SUD,      AUR_UD,	   AUR_NOM,
-	AUR_READY, AUR_UUD_PLUS, AUR_SUD_PLUS, AUR_UD_PLUS
-};
+static uint gxp_power_state_to_aur_state(struct gxp_dev *gxp, uint gxp_power_state)
+{
+	switch (gxp_power_state) {
+	case GXP_POWER_STATE_OFF:
+		return AUR_OFF;
+	case GXP_POWER_STATE_READY:
+		return AUR_PERCENT_FREQUENCY_5;
+	/* GXP_POWER_STATE_PERCENT_FREQUENCY_5 a.k.a. GXP_POWER_STATE_UUD. */
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_5:
+		return AUR_PERCENT_FREQUENCY_5;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_10:
+		return AUR_PERCENT_FREQUENCY_10;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_15:
+		return AUR_PERCENT_FREQUENCY_15;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_20:
+		return AUR_PERCENT_FREQUENCY_20;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_25:
+		return AUR_PERCENT_FREQUENCY_25;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_30:
+		return AUR_PERCENT_FREQUENCY_30;
+	/* GXP_POWER_STATE_PERCENT_FREQUENCY_35 a.k.a. GXP_POWER_STATE_UUD_PLUS. */
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_35:
+		return AUR_PERCENT_FREQUENCY_35;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_40:
+		return AUR_PERCENT_FREQUENCY_40;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_45:
+		return AUR_PERCENT_FREQUENCY_45;
+	/* GXP_POWER_STATE_PERCENT_FREQUENCY_50 a.k.a. GXP_POWER_STATE_SUD. */
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_50:
+		return AUR_PERCENT_FREQUENCY_50;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_55:
+		return AUR_PERCENT_FREQUENCY_55;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_60:
+		return AUR_PERCENT_FREQUENCY_60;
+	/* GXP_POWER_STATE_PERCENT_FREQUENCY_65 a.k.a. GXP_POWER_STATE_SUD_PLUS. */
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_65:
+		return AUR_PERCENT_FREQUENCY_65;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_70:
+		return AUR_PERCENT_FREQUENCY_70;
+	/* GXP_POWER_STATE_PERCENT_FREQUENCY_75 a.k.a. GXP_POWER_STATE_UD. */
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_75:
+		return AUR_PERCENT_FREQUENCY_75;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_80:
+		return AUR_PERCENT_FREQUENCY_80;
+	/* GXP_POWER_STATE_PERCENT_FREQUENCY_85 a.k.a. GXP_POWER_STATE_UD_PLUS. */
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_85:
+		return AUR_PERCENT_FREQUENCY_85;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_90:
+		return AUR_PERCENT_FREQUENCY_90;
+	case GXP_POWER_STATE_PERCENT_FREQUENCY_95:
+		return AUR_PERCENT_FREQUENCY_95;
+	/* GXP_POWER_STATE_MAX_FREQUENCY a.k.a. GXP_POWER_STATE_NOM. */
+	case GXP_POWER_STATE_MAX_FREQUENCY:
+		return AUR_MAX_FREQUENCY;
+	case GXP_POWER_STATE_OVERDRIVE:
+		return AUR_OVERDRIVE;
+	default:
+		dev_warn(gxp->dev, "Invalid GXP power state received: %u.", gxp_power_state);
+		return AUR_MAX_FREQUENCY;
+	}
+}
+
 /* Mapping from MEMORY_POWER_STATE_* to enum aur_memory_power_state in gxp-pm.h */
 static const uint aur_memory_state_array[MEMORY_POWER_STATE_MAX + 1] = {
 	AUR_MEM_UNDEFINED, AUR_MEM_MIN,	      AUR_MEM_VERY_LOW, AUR_MEM_LOW,
@@ -449,7 +507,7 @@ static int gxp_ioctl_mailbox_command(struct gxp_client *client,
 		goto out;
 	}
 
-	power_states.power = aur_state_array[ibuf.gxp_power_state];
+	power_states.power = gxp_power_state_to_aur_state(gxp, ibuf.gxp_power_state);
 	power_states.memory = aur_memory_state_array[ibuf.memory_power_state];
 	power_states.low_clkmux = (ibuf.power_flags & GXP_POWER_LOW_FREQ_CLKMUX) != 0;
 
@@ -533,8 +591,8 @@ static int gxp_ioctl_get_specs(struct gxp_client *client, struct gxp_specs_ioctl
 			(u8)(SECURE_CORE_TELEMETRY_BUFFER_SIZE /
 			     GXP_CORE_TELEMETRY_BUFFER_UNIT_SIZE),
 		.max_vd_allocation = GXP_NUM_SHARED_SLICES,
-		.max_vd_activation = gcip_iommu_domain_pool_get_num_pasid(gxp->domain_pool),
-		.memory_per_core = client->gxp->memory_per_core,
+		.max_vd_activation = gxp_iommu_get_max_vd_activation(gxp),
+		.total_iova_size = gcip_iommu_domain_pool_get_size(gxp->domain_pool) / SZ_1M,
 	};
 
 	if (!IS_ERR_OR_NULL(gxp->core_telemetry_mgr)) {
@@ -955,7 +1013,7 @@ static int gxp_ioctl_acquire_wake_lock(struct gxp_client *client,
 
 	/* Acquire a VIRTUAL_DEVICE wakelock if requested */
 	if (ibuf.components_to_wake & WAKELOCK_VIRTUAL_DEVICE) {
-		power_states.power = aur_state_array[ibuf.gxp_power_state];
+		power_states.power = gxp_power_state_to_aur_state(gxp, ibuf.gxp_power_state);
 		power_states.memory = aur_memory_state_array[ibuf.memory_power_state];
 		power_states.low_clkmux = requested_low_clkmux;
 		ret = gxp_client_acquire_vd_wakelock(client, power_states);
@@ -1635,72 +1693,6 @@ static const struct file_operations gxp_fops = {
 	.unlocked_ioctl = gxp_ioctl,
 };
 
-static int debugfs_cmu_mux1_set(void *data, u64 val)
-{
-	struct gxp_dev *gxp = (struct gxp_dev *)data;
-
-	if (IS_ERR_OR_NULL(gxp->cmu.vaddr)) {
-		dev_err(gxp->dev, "CMU registers are not mapped");
-		return -ENODEV;
-	}
-	if (val > 1) {
-		dev_err(gxp->dev,
-			"Incorrect val for cmu_mux1, only 0 and 1 allowed\n");
-		return -EINVAL;
-	}
-
-	writel(val << 4, gxp->cmu.vaddr + PLL_CON0_PLL_AUR);
-	return 0;
-}
-
-static int debugfs_cmu_mux1_get(void *data, u64 *val)
-{
-	struct gxp_dev *gxp = (struct gxp_dev *)data;
-
-	if (IS_ERR_OR_NULL(gxp->cmu.vaddr)) {
-		dev_err(gxp->dev, "CMU registers are not mapped");
-		return -ENODEV;
-	}
-	*val = readl(gxp->cmu.vaddr + PLL_CON0_PLL_AUR);
-	return 0;
-}
-
-DEFINE_DEBUGFS_ATTRIBUTE(debugfs_cmu_mux1_fops, debugfs_cmu_mux1_get,
-			 debugfs_cmu_mux1_set, "%llu\n");
-
-static int debugfs_cmu_mux2_set(void *data, u64 val)
-{
-	struct gxp_dev *gxp = (struct gxp_dev *)data;
-
-	if (IS_ERR_OR_NULL(gxp->cmu.vaddr)) {
-		dev_err(gxp->dev, "CMU registers are not mapped");
-		return -ENODEV;
-	}
-	if (val > 1) {
-		dev_err(gxp->dev,
-			"Incorrect val for cmu_mux2, only 0 and 1 allowed\n");
-		return -EINVAL;
-	}
-
-	writel(val << 4, gxp->cmu.vaddr + PLL_CON0_NOC_USER);
-	return 0;
-}
-
-static int debugfs_cmu_mux2_get(void *data, u64 *val)
-{
-	struct gxp_dev *gxp = (struct gxp_dev *)data;
-
-	if (IS_ERR_OR_NULL(gxp->cmu.vaddr)) {
-		dev_err(gxp->dev, "CMU registers are not mapped");
-		return -ENODEV;
-	}
-	*val = readl(gxp->cmu.vaddr + PLL_CON0_NOC_USER);
-	return 0;
-}
-
-DEFINE_DEBUGFS_ATTRIBUTE(debugfs_cmu_mux2_fops, debugfs_cmu_mux2_get,
-			 debugfs_cmu_mux2_set, "%llu\n");
-
 static int gxp_set_reg_resources(struct platform_device *pdev, struct gxp_dev *gxp)
 {
 	struct device *dev = gxp->dev;
@@ -1723,29 +1715,6 @@ static int gxp_set_reg_resources(struct platform_device *pdev, struct gxp_dev *g
 
 	if (!IS_ERR_OR_NULL(gxp->resource_accessor))
 		gcip_register_accessible_resource(gxp->resource_accessor, r);
-
-	r = platform_get_resource_byname(pdev, IORESOURCE_MEM, "cmu");
-	if (!IS_ERR_OR_NULL(r)) {
-		gxp->cmu.paddr = r->start;
-		gxp->cmu.size = resource_size(r);
-		gxp->cmu.vaddr = devm_ioremap_resource(dev, r);
-		if (IS_ERR_OR_NULL(gxp->cmu.vaddr))
-			dev_warn(dev, "Failed to map CMU registers\n");
-	}
-	/*
-	 * TODO (b/224685748): Remove this block after CMU CSR is supported
-	 * in device tree config.
-	 */
-#ifdef GXP_CMU_OFFSET
-	if (IS_ERR_OR_NULL(r) || IS_ERR_OR_NULL(gxp->cmu.vaddr)) {
-		gxp->cmu.paddr = gxp->regs.paddr - GXP_CMU_OFFSET;
-		gxp->cmu.size = GXP_CMU_SIZE;
-		gxp->cmu.vaddr =
-			devm_ioremap(dev, gxp->cmu.paddr, gxp->cmu.size);
-		if (IS_ERR_OR_NULL(gxp->cmu.vaddr))
-			dev_warn(dev, "Failed to map CMU registers\n");
-	}
-#endif
 
 #ifdef GXP_SEPARATE_LPM_OFFSET
 	r = platform_get_resource_byname(pdev, IORESOURCE_MEM, "lpm");
@@ -1782,12 +1751,6 @@ static int gxp_set_reg_resources(struct platform_device *pdev, struct gxp_dev *g
 		}
 	}
 
-	/* Will be removed by gxp_remove_debugdir. */
-	debugfs_create_file("cmumux1", 0600, gxp->d_entry, gxp,
-			    &debugfs_cmu_mux1_fops);
-	debugfs_create_file("cmumux2", 0600, gxp->d_entry, gxp,
-			    &debugfs_cmu_mux2_fops);
-
 	return 0;
 }
 
@@ -1819,18 +1782,21 @@ static void gxp_get_tpu_dev(struct gxp_dev *gxp)
 	of_node_put(np);
 	if (ret) {
 		dev_warn(dev, "Unable to get tpu-device base address\n");
-		goto out_not_found;
+		goto out_put_tpu_dev;
 	}
 	/* get gxp-tpu mailbox register offset */
 	ret = of_property_read_u64(dev->of_node, "gxp-tpu-mbx-offset", &offset);
 	if (ret) {
 		dev_warn(dev, "Unable to get tpu-device mailbox offset\n");
-		goto out_not_found;
+		goto out_put_tpu_dev;
 	}
-	gxp->tpu_dev.dev = get_device(&tpu_pdev->dev);
+	gxp->tpu_dev.dev = &tpu_pdev->dev;
 	gxp->tpu_dev.mbx_paddr = base_addr + offset;
 	return;
 
+out_put_tpu_dev:
+	/* Decrements the refcount took by `of_find_device_by_node()`. */
+	put_device(&tpu_pdev->dev);
 out_not_found:
 	dev_warn(dev, "TPU will not be available for interop\n");
 	gxp->tpu_dev.dev = NULL;
@@ -1864,7 +1830,8 @@ static void gxp_get_gsa_dev(struct gxp_dev *gxp)
 		of_node_put(np);
 		return;
 	}
-	gxp->gsa_dev = get_device(&gsa_pdev->dev);
+	/* get_device() is not required since `of_find_device_by_node` takes a refcount. */
+	gxp->gsa_dev = &gsa_pdev->dev;
 	of_node_put(np);
 	dev_info(dev, "GSA device found, Firmware authentication available\n");
 }
@@ -1975,7 +1942,6 @@ static int gxp_common_platform_probe(struct platform_device *pdev, struct gxp_de
 {
 	struct device *dev = &pdev->dev;
 	int ret;
-	u64 prop;
 
 	dev_notice(dev, "Probing gxp driver with commit %s\n", get_driver_commit());
 
@@ -2069,15 +2035,6 @@ static int gxp_common_platform_probe(struct platform_device *pdev, struct gxp_de
 	}
 	gxp_dma_init_default_resources(gxp);
 	gxp_vd_init(gxp);
-
-	ret = of_property_read_u64(dev->of_node, "gxp-memory-per-core",
-				   &prop);
-	if (ret) {
-		dev_err(dev, "Unable to get memory-per-core from device tree\n");
-		gxp->memory_per_core = 0;
-	} else {
-		gxp->memory_per_core = (u32)prop;
-	}
 
 	ret = gxp_fw_data_init(gxp);
 	if (ret) {
@@ -2261,3 +2218,11 @@ static const struct dev_pm_ops gxp_pm_ops = {
 };
 
 #endif /* IS_ENABLED(CONFIG_PM_SLEEP) */
+
+#if IS_GXP_TEST
+void gxp_set_fake_tpu_dev(struct gxp_dev *gxp, struct device *tpu_dev, phys_addr_t tpu_mbx_paddr)
+{
+	gxp->tpu_dev.dev = get_device(tpu_dev);
+	gxp->tpu_dev.mbx_paddr = tpu_mbx_paddr;
+}
+#endif
