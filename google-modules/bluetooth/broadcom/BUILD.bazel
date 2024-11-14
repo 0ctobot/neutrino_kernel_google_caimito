@@ -15,7 +15,7 @@ kernel_module(
     outs = [
         "nitrous.ko",
     ],
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     visibility = [
         "//private/devices/google:__subpackages__",
         "//private/google-modules/soc/gs:__pkg__",
