@@ -17,7 +17,6 @@
   alarm_start_relative
   alarm_try_to_cancel
   alloc_chrdev_region
-  alloc_contig_range
   alloc_etherdev_mqs
   alloc_io_pgtable_ops
   alloc_netdev_mqs
@@ -32,8 +31,6 @@
   android_rvh_probe_register
   anon_inode_getfd
   anon_inode_getfile
-  arc4_crypt
-  arc4_setkey
   __arch_clear_user
   __arch_copy_from_user
   __arch_copy_to_user
@@ -596,7 +593,6 @@
   dev_pm_opp_put_opp_table
   dev_pm_opp_register_notifier
   dev_pm_opp_remove_all_dynamic
-  dev_pm_opp_remove_table
   dev_pm_opp_set_config
   dev_pm_opp_unregister_notifier
   dev_pm_qos_add_notifier
@@ -968,7 +964,6 @@
   frame_vector_destroy
   frame_vector_to_pages
   frame_vector_to_pfns
-  free_contig_range
   free_io_pgtable_ops
   free_irq
   free_netdev
