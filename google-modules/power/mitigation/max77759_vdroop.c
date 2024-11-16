@@ -50,11 +50,11 @@ int max77759_clr_irq(struct bcl_device *bcl_dev, int idx)
 			return IRQ_NONE;
 	}
 	if (irq_val == UVLO2)
-		chg_int = MAX77759_CHG_INT2_SYS_UVLO2_I;
+		chg_int = MAX77759_CHG_INT2_SYS_UVLO2_I | MAX77759_CHG_INT2_BAT_OILO_I;
 	else if (irq_val == UVLO1)
 		chg_int = MAX77759_CHG_INT2_SYS_UVLO1_I;
 	else if (irq_val == BATOILO)
-		chg_int = MAX77759_CHG_INT2_BAT_OILO_I;
+		chg_int = MAX77759_CHG_INT2_SYS_UVLO2_I | MAX77759_CHG_INT2_BAT_OILO_I;
 
 	ret = max77759_external_reg_write(bcl_dev->intf_pmic_dev, MAX77759_CHG_INT2,
 		                          chg_int);

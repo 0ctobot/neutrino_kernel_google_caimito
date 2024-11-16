@@ -51,9 +51,15 @@ static void bin_incr_ifpmic(struct bcl_device *bcl_dev, enum BCL_BATT_IRQ batt,
 		atomic_inc(&bcl_dev->ifpmic_irq_bins[batt][pwrwarn].bt_5ms_10ms_count);
 	else {
 		atomic_inc(&bcl_dev->ifpmic_irq_bins[batt][pwrwarn].gt_10ms_count);
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 		if (bcl_dev->rffe_mitigation_enable &&
 		    (pwrwarn == RFFE_BCL_BIN || pwrwarn == MMWAVE_BCL_BIN) &&
 		    (batt == BATOILO_IRQ_BIN || batt == BATOILO2_IRQ_BIN)) {
+#else
+		if (bcl_dev->rffe_mitigation_enable &&
+		    (pwrwarn == RFFE_BCL_BIN || pwrwarn == MMWAVE_BCL_BIN) &&
+		    batt == BATOILO_IRQ_BIN) {
+#endif
 			pmic_sel = pwrwarn == RFFE_BCL_BIN ? CORE_PMIC_MAIN : CORE_PMIC_SUB;
 			if (meter_read(pmic_sel, bcl_dev, PWRWARN_LPF_RFFE_MMWAVE_DATA_0,
 				       &lsb)) {
@@ -75,7 +81,9 @@ static void bin_incr_ifpmic(struct bcl_device *bcl_dev, enum BCL_BATT_IRQ batt,
 				goto end_bin_incr_ifpmic;
 			scnprintf(buf, sizeof(buf), "BCL: %s ODPM pwr: %i, thresh: %i trig crash",
 				  pwrwarn == RFFE_BCL_BIN ? "RFFE" : "MMWAVE", odpm_pwr, thr);
+#if IS_ENABLED(CONFIG_EXYNOS_MODEM_IF)
 			modem_force_crash_exit_ext(buf);
+#endif
 			dev_err(bcl_dev->device, buf);
 		}
 	}

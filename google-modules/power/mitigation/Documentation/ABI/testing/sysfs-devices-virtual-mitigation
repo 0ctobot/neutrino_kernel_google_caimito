@@ -308,6 +308,13 @@ Contact:	"George Lee" <geolee@google.com>
 Description:
 		stats: brownout information (see uapi/brownout_stats.h)
 
+What:		/sys/devices/virtual/pmic/mitigation/br_stats/meter_channels
+Date:		Aug, 2024
+Contact:	"Sam Ou" <samou@google.com>
+Description:
+		meter_channels:
+		The reported value indicates the meter channel number.
+
 What:		/sys/devices/virtual/pmic/mitigation/mitigation/<PMIC>_mitigation_threshold
 Date:		Dec, 2023
 Contact:	"George Lee" <geolee@google.com>

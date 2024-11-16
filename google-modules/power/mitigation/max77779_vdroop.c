@@ -84,13 +84,19 @@ int max77779_clr_irq(struct bcl_device *bcl_dev, int idx)
 			return IRQ_NONE;
 	}
 	if (irq_val == UVLO2)
-		chg_int = MAX77779_PMIC_VDROOP_INT_SYS_UVLO2_INT_MASK;
+		chg_int = MAX77779_PMIC_VDROOP_INT_SYS_UVLO2_INT_MASK |
+				MAX77779_PMIC_VDROOP_INT_BAT_OILO1_INT_MASK |
+				MAX77779_PMIC_VDROOP_INT_BAT_OILO2_INT_MASK;
 	else if (irq_val == UVLO1)
 		chg_int = MAX77779_PMIC_VDROOP_INT_SYS_UVLO1_INT_MASK;
 	else if (irq_val == BATOILO1)
-		chg_int = MAX77779_PMIC_VDROOP_INT_BAT_OILO1_INT_MASK;
+		chg_int = MAX77779_PMIC_VDROOP_INT_SYS_UVLO2_INT_MASK |
+				MAX77779_PMIC_VDROOP_INT_BAT_OILO1_INT_MASK |
+				MAX77779_PMIC_VDROOP_INT_BAT_OILO2_INT_MASK;
 	else if (irq_val == BATOILO2)
-		chg_int = MAX77779_PMIC_VDROOP_INT_BAT_OILO2_INT_MASK;
+		chg_int = MAX77779_PMIC_VDROOP_INT_SYS_UVLO2_INT_MASK |
+				MAX77779_PMIC_VDROOP_INT_BAT_OILO1_INT_MASK |
+				MAX77779_PMIC_VDROOP_INT_BAT_OILO2_INT_MASK;
 
 	ret = max77779_external_pmic_reg_write(bcl_dev->irq_pmic_dev,
 		                               MAX77779_PMIC_VDROOP_INT, chg_int);
@@ -102,8 +108,7 @@ int max77779_clr_irq(struct bcl_device *bcl_dev, int idx)
 int max77779_vimon_read(struct bcl_device *bcl_dev)
 {
 	int ret = 0;
-
-#if IS_ENABLED(CONFIG_SOC_ZUMA)
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	ret = max77779_external_vimon_read_buffer(bcl_dev->vimon_dev, bcl_dev->vimon_intf.data,
 						  &bcl_dev->vimon_intf.count, VIMON_BUF_SIZE);
 	if (ret == 0)

@@ -14,6 +14,9 @@
 #if IS_ENABLED(CONFIG_REGULATOR_S2MPG14)
 #include <linux/mfd/samsung/s2mpg1415.h>
 #include <linux/mfd/samsung/s2mpg1415-register.h>
+#elif IS_ENABLED(CONFIG_REGULATOR_S2MPG12) || IS_ENABLED(CONFIG_REGULATOR_S2MPG10)
+#include <linux/mfd/samsung/s2mpg1x.h>
+#include <linux/mfd/samsung/s2mpg1x-register.h>
 #endif
 #include "bcl.h"
 
@@ -22,13 +25,11 @@
 
 static void trace_qos(bool throttle, const char *devname)
 {
-#if IS_ENABLED(CONFIG_SOC_ZUMA)
 	char buf[64];
 	if (!trace_clock_set_rate_enabled())
 		return;
 	snprintf(buf, sizeof(buf), "BCL_ZONE_%s_QOS", devname);
 	trace_clock_set_rate(buf, throttle ? 1 : 0, raw_smp_processor_id());
-#endif
 }
 
 void google_bcl_qos_update(struct bcl_zone *zone, bool throttle)
@@ -74,7 +75,6 @@ void google_bcl_qos_update(struct bcl_zone *zone, bool throttle)
 	trace_qos(throttle, zone->devname);
 }
 
-#if IS_ENABLED(CONFIG_REGULATOR_S2MPG14)
 static int init_freq_qos(struct bcl_device *bcl_dev, struct qos_throttle_limit *throttle)
 {
 	struct cpufreq_policy *policy = NULL;
@@ -120,12 +120,10 @@ fail1:
 	freq_qos_remove_request(&throttle->cpu0_max_qos_req);
 	return ret;
 }
-#endif
 
 int google_bcl_setup_qos(struct bcl_device *bcl_dev)
 {
 	int ret = 0;
-#if IS_ENABLED(CONFIG_REGULATOR_S2MPG14)
 	int i;
 	struct bcl_zone *zone;
 
@@ -150,13 +148,11 @@ int google_bcl_setup_qos(struct bcl_device *bcl_dev)
 	return 0;
 fail:
 	google_bcl_remove_qos(bcl_dev);
-#endif
 	return ret;
 }
 
 void google_bcl_remove_qos(struct bcl_device *bcl_dev)
 {
-#if IS_ENABLED(CONFIG_REGULATOR_S2MPG14)
 	int i;
 	struct bcl_zone *zone;
 
@@ -178,5 +174,4 @@ void google_bcl_remove_qos(struct bcl_device *bcl_dev)
 		}
 	}
 	mutex_destroy(&bcl_dev->qos_update_lock);
-#endif
 }

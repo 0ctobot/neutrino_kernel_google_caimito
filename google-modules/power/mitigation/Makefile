@@ -3,20 +3,25 @@
 subdir-ccflags-y += \
 		-I$(KERNEL_SRC)/../private/google-modules/bms
 
-ccflags-$(CONFIG_RADIO_S5300) += -I$(KERNEL_SRC)/../private/google-modules/radio/samsung/s5300
-ccflags-$(CONFIG_RADIO_S5400) += -I$(KERNEL_SRC)/../private/google-modules/radio/samsung/s5400
+ifneq ($(filter m, $(CONFIG_SOC_ZUMAPRO)),)
+# Only one of them exists at build time, depending on :radio flag.
+ccflags-y += -I$(KERNEL_SRC)/../private/google-modules/radio/samsung/s5300
+ccflags-y += -I$(KERNEL_SRC)/../private/google-modules/radio/samsung/s5400
+endif
 
 obj-$(CONFIG_GOOGLE_BCL) += google_bcl.o
 google_bcl-y			+= google_bcl_core.o
+google_bcl-y			+= google_bcl_irq_mon.o
 google_bcl-y			+= google_bcl_sysfs.o
 google_bcl-y			+= google_bcl_util.o
 google_bcl-y			+= google_bcl_qos.o
 google_bcl-y			+= google_bcl_debugfs.o
-google_bcl-y			+= google_bcl_irq_mon.o
 google_bcl-y			+= max77759_vdroop.o
 google_bcl-y			+= max77779_vdroop.o
-google_bcl-y			+= google_bcl_votable.o
 google_bcl-y			+= google_bcl_data_logging.o
+ifneq ($(filter y, $(CONFIG_SOC_ZUMAPRO)),)
+google_bcl-y			+= google_bcl_votable.o
+endif
 
 KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
 M ?= $(shell pwd)

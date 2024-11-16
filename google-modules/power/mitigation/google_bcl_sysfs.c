@@ -48,7 +48,11 @@ const unsigned int clk_stats_offset[] = {
 };
 
 static const char * const batt_irq_names[] = {
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	"uvlo1", "uvlo2", "batoilo", "batoilo2"
+#else
+	"uvlo1", "uvlo2", "batoilo"
+#endif
 };
 
 static const char * const concurrent_pwrwarn_irq_names[] = {
@@ -92,6 +96,7 @@ static ssize_t batoilo_count_show(struct device *dev, struct device_attribute *a
 
 static DEVICE_ATTR_RO(batoilo_count);
 
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 static ssize_t batoilo2_count_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
@@ -100,6 +105,7 @@ static ssize_t batoilo2_count_show(struct device *dev, struct device_attribute *
 }
 
 static DEVICE_ATTR_RO(batoilo2_count);
+#endif
 
 static ssize_t vdroop2_count_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -213,6 +219,7 @@ static ssize_t batoilo_cap_show(struct device *dev, struct device_attribute *att
 
 static DEVICE_ATTR_RO(batoilo_cap);
 
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 static ssize_t batoilo2_cap_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
@@ -221,6 +228,7 @@ static ssize_t batoilo2_cap_show(struct device *dev, struct device_attribute *at
 }
 
 static DEVICE_ATTR_RO(batoilo2_cap);
+#endif
 
 static ssize_t vdroop2_cap_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -333,6 +341,7 @@ static ssize_t batoilo_volt_show(struct device *dev, struct device_attribute *at
 
 static DEVICE_ATTR_RO(batoilo_volt);
 
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 static ssize_t batoilo2_volt_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
@@ -341,6 +350,7 @@ static ssize_t batoilo2_volt_show(struct device *dev, struct device_attribute *a
 }
 
 static DEVICE_ATTR_RO(batoilo2_volt);
+#endif
 
 static ssize_t vdroop2_volt_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -453,6 +463,7 @@ static ssize_t batoilo_time_show(struct device *dev, struct device_attribute *at
 
 static DEVICE_ATTR_RO(batoilo_time);
 
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 static ssize_t batoilo2_time_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
@@ -461,6 +472,7 @@ static ssize_t batoilo2_time_show(struct device *dev, struct device_attribute *a
 }
 
 static DEVICE_ATTR_RO(batoilo2_time);
+#endif
 
 static ssize_t vdroop2_time_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -571,10 +583,6 @@ static ssize_t db_settings_store(struct device *dev, struct device_attribute *at
 	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
 	int value;
 
-#if IS_ENABLED(CONFIG_REGULATOR_S2MPG12) || IS_ENABLED(CONFIG_REGULATOR_S2MPG10)
-	return -ENODEV;
-#endif
-
 	if (kstrtouint(buf, 16, &value) < 0)
 		return -EINVAL;
 
@@ -591,10 +599,6 @@ static ssize_t db_settings_show(struct device *dev, struct device_attribute *att
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
 	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
-
-#if IS_ENABLED(CONFIG_REGULATOR_S2MPG12) || IS_ENABLED(CONFIG_REGULATOR_S2MPG10)
-	return -ENODEV;
-#endif
 
 	if ((!bcl_dev->sysreg_cpucl0) || (src == LITTLE) || (src == MPMMEN))
 		return -EIO;
@@ -764,6 +768,7 @@ static ssize_t sub_offsrc2_show(struct device *dev, struct device_attribute *att
 
 static DEVICE_ATTR_RO(sub_offsrc2);
 
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 static ssize_t evt_cnt_uvlo1_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
@@ -847,6 +852,7 @@ static ssize_t evt_cnt_latest_batoilo2_show(struct device *dev, struct device_at
 }
 
 static DEVICE_ATTR_RO(evt_cnt_latest_batoilo2);
+#endif
 
 static ssize_t pwronsrc_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -858,6 +864,7 @@ static ssize_t pwronsrc_show(struct device *dev, struct device_attribute *attr, 
 
 static DEVICE_ATTR_RO(pwronsrc);
 
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 static ssize_t last_current_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
@@ -893,6 +900,7 @@ static ssize_t vimon_buff_show(struct device *dev, struct device_attribute *attr
 	return count;
 }
 static DEVICE_ATTR_RO(vimon_buff);
+#endif
 
 static ssize_t ready_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -903,6 +911,15 @@ static ssize_t ready_show(struct device *dev, struct device_attribute *attr, cha
 }
 static DEVICE_ATTR_RO(ready);
 
+static ssize_t ifpmic_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+
+	return sysfs_emit(buf, "%s\n", bcl_dev->ifpmic == MAX77779 ? "max77779" : "max77759");
+}
+static DEVICE_ATTR_RO(ifpmic);
+
 static struct attribute *instr_attrs[] = {
 	&dev_attr_mid_db_settings.attr,
 	&dev_attr_big_db_settings.attr,
@@ -912,6 +929,7 @@ static struct attribute *instr_attrs[] = {
 	&dev_attr_main_offsrc2.attr,
 	&dev_attr_sub_offsrc1.attr,
 	&dev_attr_sub_offsrc2.attr,
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	&dev_attr_evt_cnt_uvlo1.attr,
 	&dev_attr_evt_cnt_uvlo2.attr,
 	&dev_attr_evt_cnt_batoilo1.attr,
@@ -920,10 +938,14 @@ static struct attribute *instr_attrs[] = {
 	&dev_attr_evt_cnt_latest_uvlo2.attr,
 	&dev_attr_evt_cnt_latest_batoilo1.attr,
 	&dev_attr_evt_cnt_latest_batoilo2.attr,
+#endif
 	&dev_attr_pwronsrc.attr,
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	&dev_attr_last_current.attr,
 	&dev_attr_vimon_buff.attr,
+#endif
 	&dev_attr_ready.attr,
+	&dev_attr_ifpmic.attr,
 	NULL,
 };
 
@@ -1234,6 +1256,7 @@ static ssize_t batoilo_lvl_store(struct device *dev,
 
 static DEVICE_ATTR_RW(batoilo_lvl);
 
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 static ssize_t batoilo2_lvl_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
@@ -1288,6 +1311,7 @@ static ssize_t batoilo2_lvl_store(struct device *dev,
 }
 
 static DEVICE_ATTR_RW(batoilo2_lvl);
+#endif
 
 static ssize_t smpl_lvl_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -1674,7 +1698,9 @@ static struct attribute *triggered_lvl_attrs[] = {
 	&dev_attr_uvlo1_lvl.attr,
 	&dev_attr_uvlo2_lvl.attr,
 	&dev_attr_batoilo_lvl.attr,
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	&dev_attr_batoilo2_lvl.attr,
+#endif
 	&dev_attr_smpl_lvl.attr,
 	&dev_attr_ocp_cpu1_lvl.attr,
 	&dev_attr_ocp_cpu2_lvl.attr,
@@ -2630,7 +2656,9 @@ static struct attribute *triggered_count_attrs[] = {
 	&dev_attr_vdroop1_count.attr,
 	&dev_attr_vdroop2_count.attr,
 	&dev_attr_batoilo_count.attr,
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	&dev_attr_batoilo2_count.attr,
+#endif
 	NULL,
 };
 
@@ -2652,7 +2680,9 @@ static struct attribute *triggered_time_attrs[] = {
 	&dev_attr_vdroop1_time.attr,
 	&dev_attr_vdroop2_time.attr,
 	&dev_attr_batoilo_time.attr,
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	&dev_attr_batoilo2_time.attr,
+#endif
 	NULL,
 };
 
@@ -2674,7 +2704,9 @@ static struct attribute *triggered_cap_attrs[] = {
 	&dev_attr_vdroop1_cap.attr,
 	&dev_attr_vdroop2_cap.attr,
 	&dev_attr_batoilo_cap.attr,
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	&dev_attr_batoilo2_cap.attr,
+#endif
 	NULL,
 };
 
@@ -2696,7 +2728,9 @@ static struct attribute *triggered_volt_attrs[] = {
 	&dev_attr_vdroop1_volt.attr,
 	&dev_attr_vdroop2_volt.attr,
 	&dev_attr_batoilo_volt.attr,
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	&dev_attr_batoilo2_volt.attr,
+#endif
 	NULL,
 };
 
@@ -3043,10 +3077,6 @@ static ssize_t qos_show(struct bcl_device *bcl_dev, int idx, char *buf)
 {
 	struct bcl_zone *zone;
 
-#if IS_ENABLED(CONFIG_REGULATOR_S2MPG12) || IS_ENABLED(CONFIG_REGULATOR_S2MPG10)
-	return -ENODEV;
-#endif
-
 	if (!bcl_dev)
 		return -EIO;
 	zone = bcl_dev->zone[idx];
@@ -3066,10 +3096,6 @@ static ssize_t qos_store(struct bcl_device *bcl_dev, int idx, const char *buf, s
 	unsigned int cpu0, cpu1, cpu2, gpu, tpu;
 	struct bcl_zone *zone;
 
-#if IS_ENABLED(CONFIG_REGULATOR_S2MPG12) || IS_ENABLED(CONFIG_REGULATOR_S2MPG10)
-	return -ENODEV;
-#endif
-
 	if (sscanf(buf, "%d,%d,%d,%d,%d", &cpu0, &cpu1, &cpu2, &gpu, &tpu) != 5)
 		return -EINVAL;
 	if (!bcl_dev)
@@ -3086,6 +3112,7 @@ static ssize_t qos_store(struct bcl_device *bcl_dev, int idx, const char *buf, s
 	return size;
 }
 
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 static ssize_t qos_batoilo2_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
@@ -3102,6 +3129,7 @@ static ssize_t qos_batoilo2_store(struct device *dev, struct device_attribute *a
 
 	return qos_store(bcl_dev, BATOILO2, buf, size);
 }
+#endif
 
 static ssize_t qos_batoilo_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -3239,7 +3267,9 @@ static ssize_t qos_ocp_gpu_store(struct device *dev, struct device_attribute *at
 	return qos_store(bcl_dev, OCP_WARN_GPU, buf, size);
 }
 
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 static DEVICE_ATTR_RW(qos_batoilo2);
+#endif
 static DEVICE_ATTR_RW(qos_batoilo);
 static DEVICE_ATTR_RW(qos_vdroop1);
 static DEVICE_ATTR_RW(qos_vdroop2);
@@ -3250,7 +3280,9 @@ static DEVICE_ATTR_RW(qos_ocp_gpu);
 static DEVICE_ATTR_RW(qos_ocp_tpu);
 
 static struct attribute *qos_attrs[] = {
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	&dev_attr_qos_batoilo2.attr,
+#endif
 	&dev_attr_qos_batoilo.attr,
 	&dev_attr_qos_vdroop1.attr,
 	&dev_attr_qos_vdroop2.attr,
@@ -3503,6 +3535,7 @@ static ssize_t batoilo_disabled_store(struct device *dev, struct device_attribut
 	return disabled_store(bcl_dev->zone[BATOILO], value, size);
 }
 
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 static ssize_t batoilo2_disabled_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
@@ -3528,6 +3561,7 @@ static ssize_t batoilo2_disabled_store(struct device *dev, struct device_attribu
 		return ret;
 	return disabled_store(bcl_dev->zone[BATOILO2], value, size);
 }
+#endif
 
 static ssize_t smpl_disabled_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -3770,7 +3804,9 @@ static ssize_t soft_ocp_gpu_disabled_store(struct device *dev, struct device_att
 static DEVICE_ATTR_RW(uvlo1_disabled);
 static DEVICE_ATTR_RW(uvlo2_disabled);
 static DEVICE_ATTR_RW(batoilo_disabled);
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 static DEVICE_ATTR_RW(batoilo2_disabled);
+#endif
 static DEVICE_ATTR_RW(smpl_disabled);
 static DEVICE_ATTR_RW(ocp_cpu1_disabled);
 static DEVICE_ATTR_RW(ocp_cpu2_disabled);
@@ -3785,7 +3821,9 @@ static struct attribute *irq_config_attrs[] = {
 	&dev_attr_uvlo1_disabled.attr,
 	&dev_attr_uvlo2_disabled.attr,
 	&dev_attr_batoilo_disabled.attr,
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	&dev_attr_batoilo2_disabled.attr,
+#endif
 	&dev_attr_smpl_disabled.attr,
 	&dev_attr_ocp_cpu1_disabled.attr,
 	&dev_attr_ocp_cpu2_disabled.attr,
@@ -4048,7 +4086,6 @@ static struct attribute *mitigation_attrs[] = {
 	NULL,
 };
 
-
 static struct attribute *triggered_state_sq_attrs[] = {
 	&dev_attr_oilo1_triggered.attr,
 	&dev_attr_uvlo1_triggered.attr,
@@ -4106,9 +4143,45 @@ static ssize_t enable_br_stats_store(struct device *dev, struct device_attribute
 
 static DEVICE_ATTR_RW(enable_br_stats);
 
+static ssize_t trigger_br_stats_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "");
+}
+
+static ssize_t trigger_br_stats_store(struct device *dev, struct device_attribute *attr,
+				                          const char *buf, size_t size)
+{
+	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+	int value;
+
+	if (!bcl_dev->data_logging_initialized)
+		return -EINVAL;
+
+	if (kstrtouint(buf, 16, &value) < 0)
+		return -EINVAL;
+
+	if (value > -1 && value < TRIGGERED_SOURCE_MAX) {
+		dev_info(bcl_dev->device, "Triggered: %d\n", value);
+		google_bcl_start_data_logging(bcl_dev, value);
+	}
+
+	return size;
+}
+
+static DEVICE_ATTR_RW(trigger_br_stats);
+
+static ssize_t meter_channels_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sysfs_emit(buf, "%d\n", METER_CHANNEL_MAX);
+}
+static DEVICE_ATTR_RO(meter_channels);
+
 static struct attribute *br_stats_attrs[] = {
 	&dev_attr_triggered_idx.attr,
 	&dev_attr_enable_br_stats.attr,
+	&dev_attr_trigger_br_stats.attr,
+	&dev_attr_meter_channels.attr,
 	NULL,
 };
 
@@ -4177,6 +4250,7 @@ const struct attribute_group mitigation_group = {
 	.name = "mitigation",
 };
 
+
 const struct attribute_group *mitigation_mw_groups[] = {
 	&instr_group,
 	&triggered_lvl_group,
@@ -4194,8 +4268,8 @@ const struct attribute_group *mitigation_mw_groups[] = {
 	&qos_group,
 	&br_stats_group,
 	&last_triggered_mode_group,
-	&irq_config_group,
 	&triggered_state_mw_group,
+	&irq_config_group,
 	NULL,
 };
 
@@ -4216,8 +4290,8 @@ const struct attribute_group *mitigation_sq_groups[] = {
 	&qos_group,
 	&br_stats_group,
 	&last_triggered_mode_group,
-	&irq_config_group,
 	&triggered_state_sq_group,
 	&mitigation_group,
+	&irq_config_group,
 	NULL,
 };
