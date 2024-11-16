@@ -761,12 +761,7 @@ static int syna_spi_parse_dt(struct syna_hw_interface *hw_if,
 			return retval;
 		}
 
-		hw_if->compression_threhsold = value;
-	} else {
-		/*
-		 * Set default as 15.
-		 */
-		hw_if->compression_threhsold = 15;
+		hw_if->compression_threshold = value;
 	}
 
 	prop = of_find_property(np, "synaptics,grip-delta-threshold", NULL);

@@ -191,7 +191,7 @@ struct syna_hw_interface {
 	char pt_tag_moisture_limit_name[LIMIT_NAME_LEN];
 	int pixels_per_mm;
 	int test_algo;
-	u16 compression_threhsold;
+	u16 compression_threshold;
 	u16 grip_delta_threshold;
 	u16 grip_border_threshold;
 	bool dma_mode;
