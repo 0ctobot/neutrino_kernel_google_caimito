@@ -111,6 +111,7 @@ struct st33spi_data {
 	int nfcc_needs_poweron;
 	int sehal_needs_poweron;
 	int se_is_poweron;
+	int esereset_state;
 
 	/* GPIO for SPI_CS */
 	struct s3c64xx_spi_csinfo *st33spi_csinfo;
@@ -130,7 +131,7 @@ MODULE_PARM_DESC(bufsiz, "data bytes in biggest supported SPI message");
 
 #define VERBOSE 0
 
-#define DRIVER_VERSION "2.2.0"
+#define DRIVER_VERSION "2.3.0"
 
 /*-------------------------------------------------------------------------*/
 static int st33spi_pinctrl_configure(struct st33spi_data *st33spi, bool enable)
@@ -523,11 +524,19 @@ static void st33spi_power_on(struct st33spi_data *st33spi)
 
 	if (st33spi->power_gpio_mode == POWER_MODE_ST33) {
 		/* Just a pulse on SPI_nRESET */
-		gpiod_set_value_cansleep(st33spi->gpiod_se_reset, 1);
-		usleep_range(5000, 5500);
-		gpiod_set_value_cansleep(st33spi->gpiod_se_reset, 0);
-		dev_info(&st33spi->spi->dev, "%s : st33 set nReset to Low\n",
-			 __func__);
+		if(st33spi->esereset_state) {
+			gpiod_set_value_cansleep(st33spi->gpiod_se_reset, 0);
+			usleep_range(5000, 5500);
+			gpiod_set_value_cansleep(st33spi->gpiod_se_reset, 1);
+			dev_info(&st33spi->spi->dev, "st33 set nReset to High\n");
+		} else {
+			gpiod_set_value_cansleep(st33spi->gpiod_se_reset, 1);
+			usleep_range(5000, 5500);
+			gpiod_set_value_cansleep(st33spi->gpiod_se_reset, 0);
+			dev_info(&st33spi->spi->dev, "st33 set nReset to Low\n");
+		}
+
+
 		usleep_range(3000, 4000);
 	}
 	st33spi->se_is_poweron = 1;
@@ -995,6 +1004,7 @@ static int st33spi_parse_dt(struct device *dev, struct st33spi_data *pdata)
 	struct device_node *data_np;
 	const char *power_mode;
 	int st33spi_state;
+	int esereset_state;
 
 #ifndef GKI_MODULE
 	np = of_find_compatible_node(NULL, NULL, "st,st33spi");
@@ -1003,6 +1013,13 @@ static int st33spi_parse_dt(struct device *dev, struct st33spi_data *pdata)
 	if (!np) {
 		return -ENODEV;
 	}
+
+	if (!of_property_read_u32(np, "esereset-init-state", &esereset_state)) {
+		pdata->esereset_state = esereset_state;
+	} else {
+		pdata->esereset_state = 0;
+	}
+	dev_info(dev, "Default esereset state: %d\n", pdata->esereset_state);
 
 	/* Read power mode. */
 	power_mode = of_get_property(np, "power_mode", NULL);
@@ -1022,8 +1039,13 @@ static int st33spi_parse_dt(struct device *dev, struct st33spi_data *pdata)
 
 	/* Get the Gpio */
 	if (pdata->power_gpio_mode == POWER_MODE_ST33) {
-		pdata->gpiod_se_reset =
-			devm_gpiod_get(dev, "esereset", GPIOD_OUT_LOW);
+		if(pdata->esereset_state) {
+			pdata->gpiod_se_reset =
+				devm_gpiod_get(dev, "esereset", GPIOD_OUT_HIGH);
+		} else {
+			pdata->gpiod_se_reset =
+				devm_gpiod_get(dev, "esereset", GPIOD_OUT_LOW);
+		}
 		if (IS_ERR(pdata->gpiod_se_reset)) {
 			dev_err(dev, "Unable to request esereset %d\n",
 					IS_ERR(pdata->gpiod_se_reset));
@@ -1223,7 +1245,7 @@ static int __init st33spi_init(void)
 {
 	int status;
 
-	pr_info("Loading st33spi driver\n");
+	pr_info("Loading st33spi driver version: %s\n", DRIVER_VERSION);
 
 	/* Claim our 256 reserved device numbers.  Then register a class
 	 * that will key udev/mdev to add/remove /dev nodes.  Last, register
