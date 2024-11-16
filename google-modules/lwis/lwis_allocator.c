@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 */
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Google LWIS Recycling Memory Allocator
  *
@@ -38,10 +38,9 @@ static void allocator_block_pool_free_locked(struct lwis_device *lwis_dev,
 		int i;
 
 		curr = block_pool->free;
-		hash_for_each_safe (block_mgr->allocated_blocks, i, n, block, node) {
-			if (block->ptr == curr->ptr) {
+		hash_for_each_safe(block_mgr->allocated_blocks, i, n, block, node) {
+			if (block->ptr == curr->ptr)
 				hash_del(&block->node);
-			}
 		}
 		block_pool->free = curr->next;
 		block_pool->free_count--;
@@ -59,21 +58,20 @@ allocator_free_block_get_locked(struct lwis_allocator_block_pool *block_pool)
 		pr_err("block_pool is NULL\n");
 		return NULL;
 	}
-	if (block_pool->free == NULL) {
+	if (block_pool->free == NULL)
 		return NULL;
-	}
 
 	head = block_pool->free;
 	block_pool->free = head->next;
-	if (block_pool->free != NULL) {
+	if (block_pool->free != NULL)
 		block_pool->free->prev = NULL;
-	}
+
 	block_pool->free_count--;
 
 	head->next = block_pool->in_use;
-	if (head->next != NULL) {
+	if (head->next != NULL)
 		head->next->prev = head;
-	}
+
 	block_pool->in_use = head;
 	block_pool->in_use_count++;
 
@@ -92,19 +90,19 @@ static void allocator_free_block_put_locked(struct lwis_allocator_block_pool *bl
 		return;
 	}
 
-	if (block->next != NULL) {
+	if (block->next != NULL)
 		block->next->prev = block->prev;
-	}
-	if (block->prev != NULL) {
+
+	if (block->prev != NULL)
 		block->prev->next = block->next;
-	} else {
+	else
 		block_pool->in_use = block->next;
-	}
+
 	block_pool->in_use_count--;
 
-	if (block_pool->free != NULL) {
+	if (block_pool->free != NULL)
 		block_pool->free->prev = block;
-	}
+
 	block->next = block_pool->free;
 	block->prev = NULL;
 	block_pool->free = block;
@@ -153,9 +151,8 @@ int lwis_allocator_init(struct lwis_device *lwis_dev)
 {
 	struct lwis_allocator_block_mgr *block_mgr;
 
-	if (lwis_dev == NULL) {
+	if (lwis_dev == NULL)
 		return -EINVAL;
-	}
 
 	mutex_lock(&lwis_dev->client_lock);
 
@@ -199,9 +196,8 @@ void lwis_allocator_release(struct lwis_device *lwis_dev)
 	struct lwis_allocator_block_mgr *block_mgr;
 	unsigned long flags;
 
-	if (lwis_dev == NULL) {
+	if (lwis_dev == NULL)
 		return;
-	}
 
 	mutex_lock(&lwis_dev->client_lock);
 
@@ -243,9 +239,9 @@ void *lwis_allocator_allocate(struct lwis_device *lwis_dev, size_t size, gfp_t g
 	size_t block_size;
 	unsigned long flags;
 
-	if (lwis_dev == NULL) {
+	if (lwis_dev == NULL)
 		return NULL;
-	}
+
 	block_mgr = lwis_dev->block_mgr;
 	if (block_mgr == NULL) {
 		dev_err(lwis_dev->dev, "block_mgr is NULL\n");
@@ -253,40 +249,39 @@ void *lwis_allocator_allocate(struct lwis_device *lwis_dev, size_t size, gfp_t g
 	}
 
 	/*
-	   fls() has better performance profile, it's currently used to mimic the
-	   behavior of kmalloc_index().
-
-	   kmalloc_index() return value as following:
-	     if (size <=          8) return 3;
-	     if (size <=         16) return 4;
-	     if (size <=         32) return 5;
-	     if (size <=         64) return 6;
-	     if (size <=        128) return 7;
-	     if (size <=        256) return 8;
-	     if (size <=        512) return 9;
-	     if (size <=       1024) return 10;
-	     if (size <=   2 * 1024) return 11;
-	     if (size <=   4 * 1024) return 12;
-	     if (size <=   8 * 1024) return 13;
-	     if (size <=  16 * 1024) return 14;
-	     if (size <=  32 * 1024) return 15;
-	     if (size <=  64 * 1024) return 16;
-	     if (size <= 128 * 1024) return 17;
-	     if (size <= 256 * 1024) return 18;
-	     if (size <= 512 * 1024) return 19;
-	     if (size <= 1024 * 1024) return 20;
-	     if (size <=  2 * 1024 * 1024) return 21;
-	     if (size <=  4 * 1024 * 1024) return 22;
-	     if (size <=  8 * 1024 * 1024) return 23;
-	     if (size <=  16 * 1024 * 1024) return 24;
-	     if (size <=  32 * 1024 * 1024) return 25;
-	*/
+	 * fls() has better performance profile, it's currently used to mimic the
+	 * behavior of kmalloc_index().
+	 *
+	 * kmalloc_index() return value as following:
+	 *   if (size <=          8) return 3;
+	 *   if (size <=         16) return 4;
+	 *   if (size <=         32) return 5;
+	 *   if (size <=         64) return 6;
+	 *   if (size <=        128) return 7;
+	 *   if (size <=        256) return 8;
+	 *   if (size <=        512) return 9;
+	 *   if (size <=       1024) return 10;
+	 *   if (size <=   2 * 1024) return 11;
+	 *   if (size <=   4 * 1024) return 12;
+	 *   if (size <=   8 * 1024) return 13;
+	 *   if (size <=  16 * 1024) return 14;
+	 *   if (size <=  32 * 1024) return 15;
+	 *   if (size <=  64 * 1024) return 16;
+	 *   if (size <= 128 * 1024) return 17;
+	 *   if (size <= 256 * 1024) return 18;
+	 *   if (size <= 512 * 1024) return 19;
+	 *   if (size <= 1024 * 1024) return 20;
+	 *   if (size <=  2 * 1024 * 1024) return 21;
+	 *   if (size <=  4 * 1024 * 1024) return 22;
+	 *   if (size <=  8 * 1024 * 1024) return 23;
+	 *   if (size <=  16 * 1024 * 1024) return 24;
+	 *   if (size <=  32 * 1024 * 1024) return 25;
+	 */
 	idx = fls(size - 1);
 
 	/* Set 4K as the minimal block size */
-	if (idx < 12) {
+	if (idx < 12)
 		idx = 12;
-	}
 
 	/*
 	 * For the large size memory allocation, we usually use kvmalloc() to allocate
@@ -298,9 +293,9 @@ void *lwis_allocator_allocate(struct lwis_device *lwis_dev, size_t size, gfp_t g
 	 */
 	if (idx > 19) {
 		block = kmalloc(sizeof(struct lwis_allocator_block), gfp_flags);
-		if (block == NULL) {
+		if (block == NULL)
 			return NULL;
-		}
+
 		block->type = idx;
 		block->next = NULL;
 		block->prev = NULL;
@@ -317,23 +312,21 @@ void *lwis_allocator_allocate(struct lwis_device *lwis_dev, size_t size, gfp_t g
 	}
 
 	block_pool = allocator_get_block_pool(block_mgr, idx);
-	if (block_pool == NULL) {
+	if (block_pool == NULL)
 		return NULL;
-	}
 
 	/* Try to get free block from recycling block pool */
 	spin_lock_irqsave(&lwis_dev->allocator_lock, flags);
 	block = allocator_free_block_get_locked(block_pool);
 	spin_unlock_irqrestore(&lwis_dev->allocator_lock, flags);
-	if (block != NULL) {
+	if (block != NULL)
 		return block->ptr;
-	}
 
 	/* Allocate new block */
 	block = kmalloc(sizeof(struct lwis_allocator_block), gfp_flags);
-	if (block == NULL) {
+	if (block == NULL)
 		return NULL;
-	}
+
 	block->type = idx;
 	block->next = NULL;
 	block->prev = NULL;
@@ -346,9 +339,9 @@ void *lwis_allocator_allocate(struct lwis_device *lwis_dev, size_t size, gfp_t g
 
 	spin_lock_irqsave(&lwis_dev->allocator_lock, flags);
 	block->next = block_pool->in_use;
-	if (block->next != NULL) {
+	if (block->next != NULL)
 		block->next->prev = block;
-	}
+
 	block_pool->in_use = block;
 	block_pool->in_use_count++;
 	hash_add(block_mgr->allocated_blocks, &block->node, (unsigned long long)block->ptr);
@@ -365,9 +358,8 @@ void lwis_allocator_free(struct lwis_device *lwis_dev, void *ptr)
 	struct lwis_allocator_block *blk;
 	unsigned long flags;
 
-	if (lwis_dev == NULL || ptr == NULL) {
+	if (lwis_dev == NULL || ptr == NULL)
 		return;
-	}
 
 	spin_lock_irqsave(&lwis_dev->allocator_lock, flags);
 
@@ -377,7 +369,7 @@ void lwis_allocator_free(struct lwis_device *lwis_dev, void *ptr)
 		spin_unlock_irqrestore(&lwis_dev->allocator_lock, flags);
 		return;
 	}
-	hash_for_each_possible (block_mgr->allocated_blocks, blk, node, (unsigned long long)ptr) {
+	hash_for_each_possible(block_mgr->allocated_blocks, blk, node, (unsigned long long)ptr) {
 		if (blk->ptr == ptr) {
 			block = blk;
 			break;
@@ -394,8 +386,8 @@ void lwis_allocator_free(struct lwis_device *lwis_dev, void *ptr)
 		struct lwis_allocator_block *b;
 		struct hlist_node *n;
 
-		hash_for_each_possible_safe (block_mgr->allocated_blocks, b, n, node,
-					     (unsigned long long)ptr) {
+		hash_for_each_possible_safe(block_mgr->allocated_blocks, b, n, node,
+					    (unsigned long long)ptr) {
 			if (b->ptr == block->ptr) {
 				hash_del(&b->node);
 				break;
@@ -418,6 +410,4 @@ void lwis_allocator_free(struct lwis_device *lwis_dev, void *ptr)
 	allocator_free_block_put_locked(block_pool, block);
 
 	spin_unlock_irqrestore(&lwis_dev->allocator_lock, flags);
-
-	return;
 }

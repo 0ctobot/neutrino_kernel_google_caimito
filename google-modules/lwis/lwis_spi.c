@@ -24,8 +24,7 @@
 #include <linux/spi/spi.h>
 #include <linux/spi/spidev.h>
 
-/* Max bit width for register and data that is supported by this
-   driver currently */
+/* Max bit width for register and data that is supported by this driver currently */
 #define MIN_OFFSET_BITS 8
 #define MAX_OFFSET_BITS 16
 #define MIN_DATA_BITS 8
@@ -178,9 +177,8 @@ static int lwis_spi_write(struct lwis_spi_device *spi_dev, uint64_t offset, uint
 	ret = spi_sync(spi_dev->spi, &msg);
 	mutex_unlock(&spi_dev->spi_lock);
 	LWIS_ATRACE_FUNC_END(&spi_dev->base_dev, trace_name);
-	if (ret < 0) {
+	if (ret < 0)
 		dev_err(spi_dev->base_dev.dev, "spi_sync() error:%d\n", ret);
-	}
 
 	return ret;
 }
@@ -284,9 +282,8 @@ static int lwis_spi_write_batch(struct lwis_spi_device *spi_dev, uint64_t offset
 
 	msg_bytes = offset_bytes + write_buf_size;
 	buf = kmalloc(msg_bytes, GFP_KERNEL);
-	if (!buf) {
+	if (!buf)
 		return -ENOMEM;
-	}
 
 	spi_message_init(&msg);
 
@@ -306,9 +303,8 @@ static int lwis_spi_write_batch(struct lwis_spi_device *spi_dev, uint64_t offset
 	ret = spi_sync(spi_dev->spi, &msg);
 	mutex_unlock(&spi_dev->spi_lock);
 	LWIS_ATRACE_FUNC_END(&spi_dev->base_dev, trace_name);
-	if (ret < 0) {
+	if (ret < 0)
 		dev_err(spi_dev->base_dev.dev, "spi_sync() error:%d\n", ret);
-	}
 
 	kfree(buf);
 	return ret;
@@ -325,19 +321,20 @@ int lwis_spi_io_entry_rw(struct lwis_spi_device *spi_dev, struct lwis_io_entry *
 		return -EINVAL;
 	}
 
-	if (entry->type == LWIS_IO_ENTRY_READ) {
+	if (entry->type == LWIS_IO_ENTRY_READ)
 		return lwis_spi_read(spi_dev, entry->rw.offset, &entry->rw.val, /*speed_hz=*/0);
-	}
-	if (entry->type == LWIS_IO_ENTRY_WRITE) {
+
+	if (entry->type == LWIS_IO_ENTRY_WRITE)
 		return lwis_spi_write(spi_dev, entry->rw.offset, entry->rw.val, /*speed_hz=*/0);
-	}
+
 	if (entry->type == LWIS_IO_ENTRY_MODIFY) {
 		int ret;
 		uint64_t reg_value;
+
 		ret = lwis_spi_read(spi_dev, entry->mod.offset, &reg_value, /*speed_hz=*/0);
-		if (ret) {
+		if (ret)
 			return ret;
-		}
+
 		reg_value &= ~entry->mod.val_mask;
 		reg_value |= entry->mod.val_mask & entry->mod.val;
 		return lwis_spi_write(spi_dev, entry->mod.offset, reg_value, /*speed_hz=*/0);

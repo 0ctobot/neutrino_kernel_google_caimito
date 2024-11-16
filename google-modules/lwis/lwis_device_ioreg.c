@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Google LWIS I/O Mapped Device Driver
  *
@@ -78,12 +79,11 @@ static int ioreg_device_setup(struct lwis_ioreg_device *ioreg_dev)
 #ifdef CONFIG_OF
 	/* Parse device tree for device configurations */
 	ret = lwis_ioreg_device_parse_dt(ioreg_dev);
-	if (ret) {
+	if (ret)
 		dev_err(ioreg_dev->base_dev.dev, "Failed to parse device tree\n");
-	}
 #else
 	/* Non-device-tree init: Save for future implementation */
-	ret = -ENOSYS;
+	ret = -EINVAL;
 #endif
 
 	return ret;
@@ -97,9 +97,8 @@ static int lwis_ioreg_device_probe(struct platform_device *plat_dev)
 
 	/* Allocate IOREG device specific data construct */
 	ioreg_dev = devm_kzalloc(dev, sizeof(struct lwis_ioreg_device), GFP_KERNEL);
-	if (!ioreg_dev) {
+	if (!ioreg_dev)
 		return -ENOMEM;
-	}
 
 	ioreg_dev->base_dev.type = DEVICE_TYPE_IOREG;
 	ioreg_dev->base_dev.vops = ioreg_vops;
@@ -165,8 +164,7 @@ static const struct of_device_id lwis_id_match[] = {
 
 static struct platform_driver lwis_driver = {
 	.probe = lwis_ioreg_device_probe,
-	.driver =
-		{
+	.driver = {
 			.name = LWIS_DRIVER_NAME,
 			.owner = THIS_MODULE,
 			.of_match_table = lwis_id_match,
@@ -202,9 +200,8 @@ int __init lwis_ioreg_device_init(void)
 	pr_info("IOREG device initialization\n");
 
 	ret = platform_driver_register(&lwis_driver);
-	if (ret) {
+	if (ret)
 		pr_err("platform_driver_register failed: %d\n", ret);
-	}
 
 	return ret;
 }

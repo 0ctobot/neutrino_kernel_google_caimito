@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Google LWIS PHY Interface
  *
@@ -20,16 +21,14 @@ struct lwis_phy_list *lwis_phy_list_alloc(int count)
 	struct lwis_phy_list *list;
 
 	/* No need to allocate if count is invalid */
-	if (count <= 0) {
+	if (count <= 0)
 		return ERR_PTR(-EINVAL);
-	}
 
 	list = kmalloc(sizeof(struct lwis_phy_list), GFP_KERNEL);
-	if (!list) {
+	if (!list)
 		return ERR_PTR(-ENOMEM);
-	}
 
-	list->phy = kzalloc(count * sizeof(struct phy), GFP_KERNEL);
+	list->phy = kcalloc(count, sizeof(struct phy), GFP_KERNEL);
 	if (!list->phy) {
 		kfree(list);
 		return ERR_PTR(-ENOMEM);
@@ -42,14 +41,10 @@ struct lwis_phy_list *lwis_phy_list_alloc(int count)
 
 void lwis_phy_list_free(struct lwis_phy_list *list)
 {
-	if (!list) {
+	if (!list)
 		return;
-	}
 
-	if (list->phy) {
-		kfree(list->phy);
-	}
-
+	kfree(list->phy);
 	kfree(list);
 }
 
@@ -59,9 +54,8 @@ int lwis_phy_get(struct lwis_phy_list *list, char *name, struct device *dev)
 	int i;
 	int index = -1;
 
-	if (!list || !dev) {
+	if (!list || !dev)
 		return -EINVAL;
-	}
 
 	/* Look for empty slot and duplicate entries */
 	for (i = 0; i < list->count; ++i) {
@@ -94,13 +88,11 @@ int lwis_phy_get(struct lwis_phy_list *list, char *name, struct device *dev)
 
 int lwis_phy_put_by_idx(struct lwis_phy_list *list, int index, struct device *dev)
 {
-	if (!list || index < 0 || index >= list->count) {
+	if (!list || index < 0 || index >= list->count)
 		return -EINVAL;
-	}
 
-	if (IS_ERR_OR_NULL(list->phy[index].phy)) {
+	if (IS_ERR_OR_NULL(list->phy[index].phy))
 		return -EINVAL;
-	}
 
 	devm_phy_put(dev, list->phy[index].phy);
 	memset(list->phy + index, 0, sizeof(struct lwis_phy));
@@ -110,18 +102,15 @@ int lwis_phy_put_by_idx(struct lwis_phy_list *list, int index, struct device *de
 
 int lwis_phy_put_by_name(struct lwis_phy_list *list, char *name, struct device *dev)
 {
-	int i;
-
-	if (!dev || !list) {
+	if (!dev || !list)
 		return -EINVAL;
-	}
 
 	/* Find entry by name */
-	for (i = 0; i < list->count; ++i) {
+	for (int i = 0; i < list->count; ++i) {
 		if (!strcmp(list->phy[i].name, name)) {
-			if (IS_ERR_OR_NULL(list->phy[i].phy)) {
+			if (IS_ERR_OR_NULL(list->phy[i].phy))
 				return -EINVAL;
-			}
+
 			devm_phy_put(dev, list->phy[i].phy);
 			memset(list->phy + i, 0, sizeof(struct lwis_phy));
 			return 0;
@@ -134,30 +123,24 @@ int lwis_phy_put_by_name(struct lwis_phy_list *list, char *name, struct device *
 
 int lwis_phy_set_power_by_idx(struct lwis_phy_list *list, int index, bool power_on)
 {
-	if (!list || index < 0 || index >= list->count) {
+	if (!list || index < 0 || index >= list->count)
 		return -EINVAL;
-	}
 
-	if (power_on) {
+	if (power_on)
 		return phy_power_on(list->phy[index].phy);
-	}
 
 	return phy_power_off(list->phy[index].phy);
 }
 
 int lwis_phy_set_power_by_name(struct lwis_phy_list *list, char *name, bool power_on)
 {
-	int i;
-
-	if (!list) {
+	if (!list)
 		return -EINVAL;
-	}
 
 	/* Find entry by name */
-	for (i = 0; i < list->count; ++i) {
-		if (!strcmp(list->phy[i].name, name)) {
+	for (int i = 0; i < list->count; ++i) {
+		if (!strcmp(list->phy[i].name, name))
 			return lwis_phy_set_power_by_idx(list, i, power_on);
-		}
 	}
 
 	/* Entry not found */
@@ -170,9 +153,8 @@ int lwis_phy_set_power_all(struct lwis_phy_list *list, bool power_on)
 	int i;
 	int ret;
 
-	if (!list) {
+	if (!list)
 		return -EINVAL;
-	}
 
 	for (i = 0; i < list->count; ++i) {
 		ret = lwis_phy_set_power_by_idx(list, i, power_on);
@@ -187,9 +169,6 @@ int lwis_phy_set_power_all(struct lwis_phy_list *list, bool power_on)
 
 void lwis_phy_print(struct lwis_phy_list *list)
 {
-	int i;
-
-	for (i = 0; i < list->count; ++i) {
+	for (int i = 0; i < list->count; ++i)
 		pr_info("%s: PHY: %s\n", __func__, list->phy[i].name);
-	}
 }

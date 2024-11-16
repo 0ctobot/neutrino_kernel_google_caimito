@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-2.0-only
-
 /*
  * Google LWIS Casablanca Platform-Specific Functions
  *
@@ -27,23 +26,21 @@ int lwis_platform_probe(struct lwis_device *lwis_dev)
 	struct lwis_platform *platform;
 	int i;
 
-	if (!lwis_dev) {
+	if (!lwis_dev)
 		return -ENODEV;
-	}
 
 	platform = kzalloc(sizeof(struct lwis_platform), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(platform)) {
+	if (IS_ERR_OR_NULL(platform))
 		return -ENOMEM;
-	}
+
 	lwis_dev->platform = platform;
 
 	/* Enable runtime power management for the platform device */
 	pm_runtime_enable(lwis_dev->k_dev);
 
 	/* Only IOREG devices will access DMA resources */
-	if (lwis_dev->type != DEVICE_TYPE_IOREG) {
+	if (lwis_dev->type != DEVICE_TYPE_IOREG)
 		return 0;
-	}
 
 	/* Register to bts */
 	for (i = 0; i < lwis_dev->bts_block_num; i++) {
@@ -67,10 +64,11 @@ static int lwis_iommu_fault_handler(struct iommu_fault *fault, void *param)
 
 	pr_err("############ LWIS IOMMU PAGE FAULT ############\n");
 	pr_err("\n");
-	of_for_each_phandle (&it, ret, lwis_dev->k_dev->of_node, "iommus", 0, 0) {
+	of_for_each_phandle(&it, ret, lwis_dev->k_dev->of_node, "iommus", 0, 0) {
 		u64 iommus_reg;
 		const char *port_name = NULL;
 		struct device_node *iommus_info = of_node_get(it.node);
+
 		of_property_read_u64(iommus_info, "reg", &iommus_reg);
 		of_property_read_string(iommus_info, "port-name", &port_name);
 		pr_info("Device [%s] registered IOMMUS :[%s] %#010llx.sysmmu\n", lwis_dev->name,
@@ -104,12 +102,9 @@ static int lwis_iommu_fault_handler(struct iommu_fault *fault, void *param)
 
 static bool device_support_bts(struct lwis_device *lwis_dev)
 {
-	int i;
-
-	for (i = 0; i < lwis_dev->bts_block_num; i++) {
-		if (lwis_dev->bts_indexes[i] != BTS_UNSUPPORTED) {
+	for (int i = 0; i < lwis_dev->bts_block_num; i++) {
+		if (lwis_dev->bts_indexes[i] != BTS_UNSUPPORTED)
 			return true;
-		}
 	}
 	return false;
 }
@@ -120,16 +115,12 @@ int lwis_platform_device_enable(struct lwis_device *lwis_dev)
 	int iommus_len = 0;
 	struct lwis_platform *platform;
 
-	/* const int hpg_qos = 1; */
-
-	if (!lwis_dev) {
+	if (!lwis_dev)
 		return -ENODEV;
-	}
 
 	platform = lwis_dev->platform;
-	if (!platform) {
+	if (!platform)
 		return -ENODEV;
-	}
 
 	/* Upref the runtime power management controls for the platform dev */
 	ret = pm_runtime_get_sync(lwis_dev->k_dev);
@@ -164,21 +155,19 @@ int lwis_platform_device_disable(struct lwis_device *lwis_dev)
 	int iommus_len = 0;
 	struct lwis_platform *platform;
 
-	if (!lwis_dev) {
+	if (!lwis_dev)
 		return -ENODEV;
-	}
 
 	platform = lwis_dev->platform;
-	if (!platform) {
+	if (!platform)
 		return -ENODEV;
-	}
 
-	if (device_support_bts(lwis_dev) && lwis_dev->bts_scenario_name) {
+	if (device_support_bts(lwis_dev) && lwis_dev->bts_scenario_name)
 		bts_del_scenario(lwis_dev->bts_scenario);
-	}
 
 	/* We can't remove fault handlers, so there's no call corresponding
-	 * to the iommu_register_device_fault_handler above */
+	 * to the iommu_register_device_fault_handler above
+	 */
 
 	lwis_platform_remove_qos(lwis_dev);
 
@@ -197,14 +186,12 @@ int lwis_platform_update_qos(struct lwis_device *lwis_dev, int value, int32_t cl
 	struct exynos_pm_qos_request __maybe_unused *qos_req;
 	int __maybe_unused qos_class;
 
-	if (!lwis_dev) {
+	if (!lwis_dev)
 		return -ENODEV;
-	}
 
 	platform = lwis_dev->platform;
-	if (!platform) {
+	if (!platform)
 		return -ENODEV;
-	}
 
 	switch (clock_family) {
 	case CLOCK_FAMILY_INTCAM:
@@ -234,11 +221,10 @@ int lwis_platform_update_qos(struct lwis_device *lwis_dev, int value, int32_t cl
 	}
 
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS) || IS_ENABLED(CONFIG_EXYNOS_PM_QOS_MODULE)
-	if (!exynos_pm_qos_request_active(qos_req)) {
+	if (!exynos_pm_qos_request_active(qos_req))
 		exynos_pm_qos_add_request(qos_req, qos_class, value);
-	} else {
+	else
 		exynos_pm_qos_update_request(qos_req, value);
-	}
 #endif
 
 	dev_info(lwis_dev->dev, "Updating clock for clock_family %d, freq to %u\n", clock_family,
@@ -248,7 +234,7 @@ int lwis_platform_update_qos(struct lwis_device *lwis_dev, int value, int32_t cl
 }
 
 static int find_bts_block(struct lwis_device *lwis_dev, struct lwis_device *target_dev,
-		   struct lwis_qos_setting_v3 *qos_setting)
+			  struct lwis_qos_setting_v3 *qos_setting)
 {
 	int i;
 
@@ -261,22 +247,21 @@ static int find_bts_block(struct lwis_device *lwis_dev, struct lwis_device *targ
 			return -EINVAL;
 		}
 		return 0;
-	} else {
-		for (i = 0; i < target_dev->bts_block_num; i++) {
-			if (!strcmp(target_dev->bts_block_names[i], qos_setting->bts_block_name)) {
-				return i;
-			}
-		}
-		dev_err(lwis_dev->dev, "Failed to find block name matching %s for device %s\n",
-			qos_setting->bts_block_name, target_dev->name);
-		return -EINVAL;
 	}
+	for (i = 0; i < target_dev->bts_block_num; i++) {
+		if (!strcmp(target_dev->bts_block_names[i], qos_setting->bts_block_name))
+			return i;
+	}
+	dev_err(lwis_dev->dev, "Failed to find block name matching %s for device %s\n",
+		qos_setting->bts_block_name, target_dev->name);
+	return -EINVAL;
 }
 
 int lwis_platform_dpm_update_qos(struct lwis_device *lwis_dev, struct lwis_device *target_dev,
 				 struct lwis_qos_setting_v3 *qos_setting)
 {
 	int ret = 0;
+
 	switch (qos_setting->clock_family) {
 	case CLOCK_FAMILY_MIF:
 	case CLOCK_FAMILY_INT:
@@ -298,10 +283,10 @@ int lwis_platform_dpm_update_qos(struct lwis_device *lwis_dev, struct lwis_devic
 			int64_t read_bw = 0;
 			int64_t write_bw = 0;
 			int64_t rt_bw = 0;
+
 			bts_block = find_bts_block(lwis_dev, target_dev, qos_setting);
-			if (bts_block < 0) {
+			if (bts_block < 0)
 				return bts_block;
-			}
 
 			read_bw = qos_setting->read_bw;
 			write_bw = qos_setting->write_bw;
@@ -341,32 +326,28 @@ int lwis_platform_remove_qos(struct lwis_device *lwis_dev)
 {
 	struct lwis_platform *platform;
 
-	if (!lwis_dev) {
+	if (!lwis_dev)
 		return -ENODEV;
-	}
 
 	platform = lwis_dev->platform;
-	if (!platform) {
+	if (!platform)
 		return -ENODEV;
-	}
 
 #if IS_ENABLED(CONFIG_EXYNOS_PM_QOS) || IS_ENABLED(CONFIG_EXYNOS_PM_QOS_MODULE)
-	if (exynos_pm_qos_request_active(&platform->pm_qos_int)) {
+	if (exynos_pm_qos_request_active(&platform->pm_qos_int))
 		exynos_pm_qos_remove_request(&platform->pm_qos_int);
-	}
-	if (exynos_pm_qos_request_active(&platform->pm_qos_mem)) {
-		exynos_pm_qos_remove_request(&platform->pm_qos_mem);
-	}
 
-	if (exynos_pm_qos_request_active(&platform->pm_qos_int_cam)) {
+	if (exynos_pm_qos_request_active(&platform->pm_qos_mem))
+		exynos_pm_qos_remove_request(&platform->pm_qos_mem);
+
+	if (exynos_pm_qos_request_active(&platform->pm_qos_int_cam))
 		exynos_pm_qos_remove_request(&platform->pm_qos_int_cam);
-	}
-	if (exynos_pm_qos_request_active(&platform->pm_qos_cam)) {
+
+	if (exynos_pm_qos_request_active(&platform->pm_qos_cam))
 		exynos_pm_qos_remove_request(&platform->pm_qos_cam);
-	}
-	if (exynos_pm_qos_request_active(&platform->pm_qos_tnr)) {
+
+	if (exynos_pm_qos_request_active(&platform->pm_qos_tnr))
 		exynos_pm_qos_remove_request(&platform->pm_qos_tnr);
-	}
 #endif
 	return 0;
 }
@@ -410,5 +391,6 @@ int lwis_platform_update_bts(struct lwis_device *lwis_dev, int block, unsigned i
 int lwis_plaform_set_default_irq_affinity(unsigned int irq)
 {
 	const int cpu = 0x2;
+
 	return irq_set_affinity_hint(irq, cpumask_of(cpu));
 }

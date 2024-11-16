@@ -65,12 +65,13 @@ static int lwis_spi_register_io(struct lwis_device *lwis_dev, struct lwis_io_ent
 				int access_size)
 {
 	struct lwis_spi_device *spi_dev;
+
 	spi_dev = container_of(lwis_dev, struct lwis_spi_device, base_dev);
 
 	/* Running in interrupt context is not supported as spi driver might sleep */
-	if (in_interrupt()) {
+	if (in_interrupt())
 		return -EAGAIN;
-	}
+
 	lwis_save_register_io_info(lwis_dev, entry, access_size);
 
 	return lwis_spi_io_entry_rw(spi_dev, entry);
@@ -89,7 +90,7 @@ static int spi_device_setup(struct lwis_spi_device *spi_dev)
 	}
 #else
 	/* Non-device-tree init: Save for future implementation */
-	return -ENOSYS;
+	return -EINVAL;
 #endif
 
 	ret = spi_setup(spi_dev->spi);
@@ -109,9 +110,8 @@ static int lwis_spi_device_probe(struct spi_device *spi)
 
 	/* Allocate SPI device specific data construct */
 	spi_dev = devm_kzalloc(dev, sizeof(*spi_dev), GFP_KERNEL);
-	if (!spi_dev) {
+	if (!spi_dev)
 		return -ENOMEM;
-	}
 
 	spi_dev->base_dev.type = DEVICE_TYPE_SPI;
 	spi_dev->base_dev.vops = spi_vops;
@@ -168,9 +168,8 @@ static int lwis_spi_device_suspend(struct device *dev)
 {
 	struct lwis_device *lwis_dev = dev_get_drvdata(dev);
 
-	if (lwis_dev->pm_hibernation == 0) {
+	if (lwis_dev->pm_hibernation == 0)
 		return 0;
-	}
 
 	if (lwis_dev->enabled != 0) {
 		dev_warn(lwis_dev->dev, "Can't suspend because %s is in use!\n", lwis_dev->name);
@@ -233,9 +232,8 @@ int __init lwis_spi_device_init(void)
 	pr_info("SPI device initialization\n");
 
 	ret = spi_register_driver(&lwis_driver);
-	if (ret) {
+	if (ret)
 		pr_err("spi_register_driver failed: %d\n", ret);
-	}
 
 	return ret;
 }

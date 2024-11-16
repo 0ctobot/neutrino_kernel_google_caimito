@@ -12,11 +12,14 @@
 
 #include "lwis_ioctl.h"
 
+#include <linux/err.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
+#include <linux/compiler_types.h>
 #include <linux/uaccess.h>
 
+#include "lwis_ioctl_past.h"
 #include "lwis_allocator.h"
 #include "lwis_buffer.h"
 #include "lwis_commands.h"
@@ -29,13 +32,9 @@
 #include "lwis_device_top.h"
 #include "lwis_event.h"
 #include "lwis_fence.h"
-#include "lwis_i2c.h"
 #include "lwis_io_buffer.h"
 #include "lwis_io_entry.h"
-#include "lwis_ioreg.h"
 #include "lwis_periodic_io.h"
-#include "lwis_platform.h"
-#include "lwis_regulator.h"
 #include "lwis_transaction.h"
 #include "lwis_util.h"
 #include "lwis_bus_manager.h"
@@ -1406,286 +1405,14 @@ static int cmd_fake_event_inject(struct lwis_client *lwis_client, struct lwis_cm
 	return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
 }
 
-static int construct_transaction_from_cmd(struct lwis_client *client, uint32_t cmd_id,
-					  struct lwis_cmd_pkt __user *u_msg,
-					  struct lwis_transaction **transaction)
-{
-	int ret;
-	struct lwis_cmd_transaction_info_v2 k_info_v2;
-	struct lwis_cmd_transaction_info_v3 k_info_v3;
-	struct lwis_cmd_transaction_info_v4 k_info_v4;
-	struct lwis_transaction *k_transaction;
-	struct lwis_device *lwis_dev = client->lwis_dev;
-	int i;
-
-	k_transaction = kzalloc(sizeof(struct lwis_transaction), GFP_KERNEL);
-	if (!k_transaction) {
-		return -ENOMEM;
-	}
-
-	if (cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V4 ||
-	    cmd_id == LWIS_CMD_ID_TRANSACTION_REPLACE_V4) {
-		if (copy_from_user((void *)&k_info_v4, (void __user *)u_msg, sizeof(k_info_v4))) {
-			dev_err(lwis_dev->dev, "Failed to copy transaction info from user\n");
-			ret = -EFAULT;
-			goto error_free_transaction;
-		}
-		memcpy(&k_transaction->info, &k_info_v4.info, sizeof(k_transaction->info));
-	} else if (cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V3 ||
-		   cmd_id == LWIS_CMD_ID_TRANSACTION_REPLACE_V3) {
-		if (copy_from_user((void *)&k_info_v3, (void __user *)u_msg, sizeof(k_info_v3))) {
-			dev_err(lwis_dev->dev, "Failed to copy transaction info from user\n");
-			ret = -EFAULT;
-			goto error_free_transaction;
-		}
-		k_transaction->info.trigger_event_id = k_info_v3.info.trigger_event_id;
-		k_transaction->info.trigger_event_counter = k_info_v3.info.trigger_event_counter;
-		k_transaction->info.num_io_entries = k_info_v3.info.num_io_entries;
-		k_transaction->info.io_entries = k_info_v3.info.io_entries;
-		k_transaction->info.run_in_event_context = k_info_v3.info.run_in_event_context;
-		k_transaction->info.reserved = k_info_v3.info.reserved;
-		k_transaction->info.emit_success_event_id = k_info_v3.info.emit_success_event_id;
-		k_transaction->info.emit_error_event_id = k_info_v3.info.emit_error_event_id;
-		k_transaction->info.is_level_triggered = k_info_v3.info.is_level_triggered;
-		k_transaction->info.id = k_info_v3.info.id;
-		k_transaction->info.current_trigger_event_counter =
-			k_info_v3.info.current_trigger_event_counter;
-		k_transaction->info.submission_timestamp_ns =
-			k_info_v3.info.submission_timestamp_ns;
-		k_transaction->info.trigger_condition.num_nodes =
-			k_info_v3.info.trigger_condition.num_nodes;
-		k_transaction->info.trigger_condition.operator_type =
-			k_info_v3.info.trigger_condition.operator_type;
-
-		for (i = 0; i < k_info_v3.info.trigger_condition.num_nodes; i++) {
-			k_transaction->info.trigger_condition.trigger_nodes[i].type =
-				k_info_v3.info.trigger_condition.trigger_nodes[i].type;
-			if (k_info_v3.info.trigger_condition.trigger_nodes[i].type ==
-			    LWIS_TRIGGER_EVENT) {
-				k_transaction->info.trigger_condition.trigger_nodes[i].event.id =
-					k_info_v3.info.trigger_condition.trigger_nodes[i].event.id;
-				k_transaction->info.trigger_condition.trigger_nodes[i]
-					.event.precondition_fence_fd =
-					k_info_v3.info.trigger_condition.trigger_nodes[i]
-						.event.precondition_fence_fd;
-				k_transaction->info.trigger_condition.trigger_nodes[i]
-					.event.counter =
-					k_info_v3.info.trigger_condition.trigger_nodes[i]
-						.event.counter;
-			} else {
-				/* LWIS_TRIGGER_FENCE or LWIS_TRIGGER_FENCE_PLACEHOLDER */
-				k_transaction->info.trigger_condition.trigger_nodes[i].fence_fd =
-					k_info_v3.info.trigger_condition.trigger_nodes[i].fence_fd;
-			}
-		}
-		k_transaction->info.completion_fence_fd = k_info_v3.info.completion_fence_fd;
-
-		k_transaction->info.is_high_priority_transaction =
-			k_info_v3.info.is_high_priority_transaction;
-		memcpy(k_transaction->info.transaction_name, k_info_v3.info.transaction_name,
-		       sizeof(k_transaction->info.transaction_name));
-
-		k_transaction->info.num_nested_transactions = 0;
-	} else if (cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V2 ||
-		   cmd_id == LWIS_CMD_ID_TRANSACTION_REPLACE_V2) {
-		if (copy_from_user((void *)&k_info_v2, (void __user *)u_msg, sizeof(k_info_v2))) {
-			dev_err(lwis_dev->dev, "Failed to copy transaction info from user\n");
-			ret = -EFAULT;
-			goto error_free_transaction;
-		}
-		k_transaction->info.trigger_event_id = k_info_v2.info.trigger_event_id;
-		k_transaction->info.trigger_event_counter = k_info_v2.info.trigger_event_counter;
-		k_transaction->info.num_io_entries = k_info_v2.info.num_io_entries;
-		k_transaction->info.io_entries = k_info_v2.info.io_entries;
-		k_transaction->info.run_in_event_context = k_info_v2.info.run_in_event_context;
-		k_transaction->info.reserved = k_info_v2.info.reserved;
-		k_transaction->info.emit_success_event_id = k_info_v2.info.emit_success_event_id;
-		k_transaction->info.emit_error_event_id = k_info_v2.info.emit_error_event_id;
-		k_transaction->info.is_level_triggered = k_info_v2.info.is_level_triggered;
-		k_transaction->info.id = k_info_v2.info.id;
-		k_transaction->info.current_trigger_event_counter =
-			k_info_v2.info.current_trigger_event_counter;
-		k_transaction->info.submission_timestamp_ns =
-			k_info_v2.info.submission_timestamp_ns;
-		k_transaction->info.trigger_condition.num_nodes =
-			k_info_v2.info.trigger_condition.num_nodes;
-		k_transaction->info.trigger_condition.operator_type =
-			k_info_v2.info.trigger_condition.operator_type;
-
-		for (i = 0; i < k_info_v2.info.trigger_condition.num_nodes; i++) {
-			k_transaction->info.trigger_condition.trigger_nodes[i].type =
-				k_info_v2.info.trigger_condition.trigger_nodes[i].type;
-			if (k_info_v2.info.trigger_condition.trigger_nodes[i].type ==
-			    LWIS_TRIGGER_EVENT) {
-				k_transaction->info.trigger_condition.trigger_nodes[i].event.id =
-					k_info_v2.info.trigger_condition.trigger_nodes[i].event.id;
-				k_transaction->info.trigger_condition.trigger_nodes[i]
-					.event.precondition_fence_fd =
-					k_info_v2.info.trigger_condition.trigger_nodes[i]
-						.event.precondition_fence_fd;
-				k_transaction->info.trigger_condition.trigger_nodes[i]
-					.event.counter =
-					k_info_v2.info.trigger_condition.trigger_nodes[i]
-						.event.counter;
-			} else {
-				/* LWIS_TRIGGER_FENCE or LWIS_TRIGGER_FENCE_PLACEHOLDER */
-				k_transaction->info.trigger_condition.trigger_nodes[i].fence_fd =
-					k_info_v2.info.trigger_condition.trigger_nodes[i].fence_fd;
-			}
-		}
-		k_transaction->info.completion_fence_fd = k_info_v2.info.completion_fence_fd;
-
-		k_transaction->info.is_high_priority_transaction = false;
-		k_transaction->info.transaction_name[0] = '\0';
-	} else {
-		dev_err(lwis_dev->dev, "Invalid command id for transaction\n");
-		ret = -EINVAL;
-		goto error_free_transaction;
-	}
-
-	if (k_transaction->info.trigger_condition.num_nodes < 0) {
-		dev_err(lwis_dev->dev, "Invalid trigger condition node count %lu\n",
-			k_transaction->info.trigger_condition.num_nodes);
-		ret = -EINVAL;
-		goto error_free_transaction;
-	}
-
-	if (k_transaction->info.trigger_condition.num_nodes > LWIS_TRIGGER_NODES_MAX_NUM) {
-		dev_err(lwis_dev->dev,
-			"Trigger condition contains %lu node, more than the limit of %d\n",
-			k_transaction->info.trigger_condition.num_nodes,
-			LWIS_TRIGGER_NODES_MAX_NUM);
-		return -EINVAL;
-	}
-
-	ret = construct_io_entry(client, k_transaction->info.io_entries,
-				 k_transaction->info.num_io_entries,
-				 &k_transaction->info.io_entries);
-	if (ret) {
-		dev_err(lwis_dev->dev, "Failed to prepare lwis io entries for transaction\n");
-		goto error_free_transaction;
-	}
-
-	k_transaction->resp = NULL;
-	k_transaction->is_weak_transaction = false;
-	k_transaction->remaining_entries_to_process = k_transaction->info.num_io_entries;
-	k_transaction->starting_read_buf = NULL;
-	INIT_LIST_HEAD(&k_transaction->event_list_node);
-	INIT_LIST_HEAD(&k_transaction->process_queue_node);
-	INIT_LIST_HEAD(&k_transaction->completion_fence_list);
-
-	*transaction = k_transaction;
-	return 0;
-
-error_free_transaction:
-	kfree(k_transaction);
-	return ret;
-}
-
-static int copy_transaction_info_v4_to_v3_locked(struct lwis_transaction_info_v4 *info_v4,
-						 struct lwis_transaction_info_v3 *info_v3)
-{
-	int i;
-	if (!info_v4 || !info_v3) {
-		return -EINVAL;
-	}
-
-	info_v3->trigger_event_id = info_v4->trigger_event_id;
-	info_v3->trigger_event_counter = info_v4->trigger_event_counter;
-	info_v3->num_io_entries = info_v4->num_io_entries;
-	info_v3->io_entries = info_v4->io_entries;
-	info_v3->run_in_event_context = info_v4->run_in_event_context;
-	info_v3->reserved = info_v4->reserved;
-	info_v3->emit_success_event_id = info_v4->emit_success_event_id;
-	info_v3->emit_error_event_id = info_v4->emit_error_event_id;
-	info_v3->is_level_triggered = info_v4->is_level_triggered;
-	info_v3->id = info_v4->id;
-	info_v3->current_trigger_event_counter = info_v4->current_trigger_event_counter;
-	info_v3->submission_timestamp_ns = info_v4->submission_timestamp_ns;
-	info_v3->trigger_condition.num_nodes = info_v4->trigger_condition.num_nodes;
-	info_v3->trigger_condition.operator_type = info_v4->trigger_condition.operator_type;
-
-	for (i = 0; i < info_v4->trigger_condition.num_nodes; i++) {
-		info_v3->trigger_condition.trigger_nodes[i].type =
-			info_v4->trigger_condition.trigger_nodes[i].type;
-		if (info_v4->trigger_condition.trigger_nodes[i].type == LWIS_TRIGGER_EVENT) {
-			info_v3->trigger_condition.trigger_nodes[i].event.id =
-				info_v4->trigger_condition.trigger_nodes[i].event.id;
-			info_v3->trigger_condition.trigger_nodes[i].event.precondition_fence_fd =
-				info_v4->trigger_condition.trigger_nodes[i]
-					.event.precondition_fence_fd;
-			info_v3->trigger_condition.trigger_nodes[i].event.counter =
-				info_v4->trigger_condition.trigger_nodes[i].event.counter;
-		} else {
-			/* LWIS_TRIGGER_FENCE or LWIS_TRIGGER_FENCE_PLACEHOLDER */
-			info_v3->trigger_condition.trigger_nodes[i].fence_fd =
-				info_v4->trigger_condition.trigger_nodes[i].fence_fd;
-		}
-	}
-
-	info_v3->completion_fence_fd = info_v4->completion_fence_fd;
-	info_v3->is_high_priority_transaction = info_v4->is_high_priority_transaction;
-	memcpy(info_v3->transaction_name, info_v4->transaction_name,
-	       sizeof(info_v3->transaction_name));
-
-	return 0;
-}
-
-static int copy_transaction_info_v4_to_v2_locked(struct lwis_transaction_info_v4 *info_v4,
-						 struct lwis_transaction_info_v2 *info_v2)
-{
-	int i;
-	if (!info_v4 || !info_v2) {
-		return -EINVAL;
-	}
-
-	info_v2->trigger_event_id = info_v4->trigger_event_id;
-	info_v2->trigger_event_counter = info_v4->trigger_event_counter;
-	info_v2->num_io_entries = info_v4->num_io_entries;
-	info_v2->io_entries = info_v4->io_entries;
-	info_v2->run_in_event_context = info_v4->run_in_event_context;
-	info_v2->reserved = info_v4->reserved;
-	info_v2->emit_success_event_id = info_v4->emit_success_event_id;
-	info_v2->emit_error_event_id = info_v4->emit_error_event_id;
-	info_v2->is_level_triggered = info_v4->is_level_triggered;
-	info_v2->id = info_v4->id;
-	info_v2->current_trigger_event_counter = info_v4->current_trigger_event_counter;
-	info_v2->submission_timestamp_ns = info_v4->submission_timestamp_ns;
-	info_v2->trigger_condition.num_nodes = info_v4->trigger_condition.num_nodes;
-	info_v2->trigger_condition.operator_type = info_v4->trigger_condition.operator_type;
-
-	for (i = 0; i < info_v4->trigger_condition.num_nodes; i++) {
-		info_v2->trigger_condition.trigger_nodes[i].type =
-			info_v4->trigger_condition.trigger_nodes[i].type;
-		if (info_v4->trigger_condition.trigger_nodes[i].type == LWIS_TRIGGER_EVENT) {
-			info_v2->trigger_condition.trigger_nodes[i].event.id =
-				info_v4->trigger_condition.trigger_nodes[i].event.id;
-			info_v2->trigger_condition.trigger_nodes[i].event.precondition_fence_fd =
-				info_v4->trigger_condition.trigger_nodes[i]
-					.event.precondition_fence_fd;
-			info_v2->trigger_condition.trigger_nodes[i].event.counter =
-				info_v4->trigger_condition.trigger_nodes[i].event.counter;
-		} else {
-			/* LWIS_TRIGGER_FENCE or LWIS_TRIGGER_FENCE_PLACEHOLDER */
-			info_v2->trigger_condition.trigger_nodes[i].fence_fd =
-				info_v4->trigger_condition.trigger_nodes[i].fence_fd;
-		}
-	}
-
-	info_v2->completion_fence_fd = info_v4->completion_fence_fd;
-
-	return 0;
-}
-
 static int cmd_transaction_submit(struct lwis_client *client, struct lwis_cmd_pkt *header,
-				  struct lwis_cmd_pkt __user *u_msg)
+				  struct lwis_cmd_pkt __user *u_msg,
+				  struct cmd_transaction_submit_ops *ops)
 {
 	struct lwis_transaction *k_transaction = NULL;
-	struct lwis_cmd_transaction_info_v2 k_cmd_transaction_info_v2;
-	struct lwis_cmd_transaction_info_v3 k_cmd_transaction_info_v3;
-	struct lwis_cmd_transaction_info_v4 k_cmd_transaction_info_v4;
 	struct lwis_cmd_pkt *resp_header = NULL;
 	struct lwis_device *lwis_dev = client->lwis_dev;
+	void *cmd;
 	int ret = 0;
 	unsigned long flags;
 
@@ -1695,15 +1422,65 @@ static int cmd_transaction_submit(struct lwis_client *client, struct lwis_cmd_pk
 		goto err_exit;
 	}
 
-	ret = construct_transaction_from_cmd(client, header->cmd_id, u_msg, &k_transaction);
-	if (ret) {
+	cmd = kmalloc(ops->cmd_size, GFP_KERNEL);
+	if (cmd == NULL) {
+		ret = -ENOMEM;
 		goto err_exit;
 	}
+
+	if (copy_from_user(cmd, (void __user *)u_msg, ops->cmd_size)) {
+		dev_err(client->lwis_dev->dev, "Failed to copy transaction info from user\n");
+		ret = -EFAULT;
+		goto err_free_cmd;
+	}
+
+	k_transaction = kzalloc(sizeof(struct lwis_transaction), GFP_KERNEL);
+	if (!k_transaction) {
+		ret = -ENOMEM;
+		goto err_free_cmd;
+	}
+
+	ops->populate_transaction_info_from_cmd(cmd, k_transaction);
+
+	if (k_transaction->info.trigger_condition.num_nodes < 0) {
+		dev_err(lwis_dev->dev, "Invalid trigger condition node count %lu\n",
+			k_transaction->info.trigger_condition.num_nodes);
+		ret = -EINVAL;
+		goto err_free_cmd;
+	}
+
+	if (k_transaction->info.trigger_condition.num_nodes > LWIS_TRIGGER_NODES_MAX_NUM) {
+		dev_err(lwis_dev->dev,
+			"Trigger condition contains %lu node, more than the limit of %d\n",
+			k_transaction->info.trigger_condition.num_nodes,
+			LWIS_TRIGGER_NODES_MAX_NUM);
+		ret = -EINVAL;
+		goto err_free_cmd;
+	}
+
+	ret = construct_io_entry(client, k_transaction->info.io_entries,
+				 k_transaction->info.num_io_entries,
+				 &k_transaction->info.io_entries);
+	if (ret) {
+		dev_err(lwis_dev->dev, "Failed to prepare lwis io entries for transaction\n");
+		goto err_free_cmd;
+	}
+
+	k_transaction->legacy_lwis_fence = (header->cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V5 ||
+					    header->cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V4);
+	k_transaction->resp = NULL;
+	k_transaction->is_weak_transaction = false;
+	k_transaction->remaining_entries_to_process = k_transaction->info.num_io_entries;
+	k_transaction->starting_read_buf = NULL;
+	INIT_LIST_HEAD(&k_transaction->event_list_node);
+	INIT_LIST_HEAD(&k_transaction->process_queue_node);
+	INIT_LIST_HEAD(&k_transaction->trigger_fences);
+	INIT_LIST_HEAD(&k_transaction->completion_fence_list);
 
 	ret = lwis_initialize_transaction_fences(client, k_transaction);
 	if (ret) {
 		lwis_transaction_free(lwis_dev, &k_transaction);
-		goto err_exit;
+		goto err_free_cmd;
 	}
 
 	/*
@@ -1718,52 +1495,53 @@ static int cmd_transaction_submit(struct lwis_client *client, struct lwis_cmd_pk
 
 	spin_lock_irqsave(&client->transaction_lock, flags);
 	ret = lwis_transaction_submit_locked(client, k_transaction);
-	if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V4) {
-		resp_header = &k_cmd_transaction_info_v4.header;
-		k_cmd_transaction_info_v4.info = k_transaction->info;
-	} else if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V3) {
-		resp_header = &k_cmd_transaction_info_v2.header;
-		if (copy_transaction_info_v4_to_v3_locked(&k_transaction->info,
-							  &k_cmd_transaction_info_v3.info)) {
-			dev_err(lwis_dev->dev, "Failed to copy transaction info");
-			ret = -EFAULT;
-		}
-	} else if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V2) {
-		resp_header = &k_cmd_transaction_info_v2.header;
-		if (copy_transaction_info_v4_to_v2_locked(&k_transaction->info,
-							  &k_cmd_transaction_info_v2.info)) {
-			dev_err(lwis_dev->dev, "Failed to copy transaction info");
-			ret = -EFAULT;
-		}
-	}
+	ops->populate_cmd_info_from_transaction(cmd, k_transaction, ret);
 	spin_unlock_irqrestore(&client->transaction_lock, flags);
+
 	if (ret) {
-		k_cmd_transaction_info_v2.info.id = LWIS_ID_INVALID;
-		k_cmd_transaction_info_v3.info.id = LWIS_ID_INVALID;
-		k_cmd_transaction_info_v4.info.id = LWIS_ID_INVALID;
 		lwis_transaction_free(lwis_dev, &k_transaction);
 	}
 
+	resp_header = cmd;
 	resp_header->cmd_id = header->cmd_id;
 	resp_header->next = header->next;
 	resp_header->ret_code = ret;
-	if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V4) {
-		return copy_pkt_to_user(lwis_dev, u_msg, (void *)&k_cmd_transaction_info_v4,
-					sizeof(k_cmd_transaction_info_v4));
-	} else if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V3) {
-		return copy_pkt_to_user(lwis_dev, u_msg, (void *)&k_cmd_transaction_info_v3,
-					sizeof(k_cmd_transaction_info_v3));
-	} else if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V2) {
-		return copy_pkt_to_user(lwis_dev, u_msg, (void *)&k_cmd_transaction_info_v2,
-					sizeof(k_cmd_transaction_info_v2));
+	ret = copy_pkt_to_user(lwis_dev, u_msg, cmd, ops->cmd_size);
+	if (ret) {
+		goto err_free_cmd;
 	}
 
-	ret = -EINVAL;
+	kfree(cmd);
+	return 0;
+
+err_free_cmd:
+	kfree(cmd);
 
 err_exit:
 	header->ret_code = ret;
 	return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
 }
+
+static void populate_transaction_info_from_cmd(void *_cmd, struct lwis_transaction *k_transaction)
+{
+	struct lwis_cmd_transaction_info *cmd = _cmd;
+	k_transaction->info = cmd->info;
+}
+
+static void populate_cmd_info_from_transaction(void *_cmd, struct lwis_transaction *k_transaction,
+					       int error)
+{
+	struct lwis_cmd_transaction_info *cmd = _cmd;
+	cmd->info = k_transaction->info;
+	if (error != 0)
+		cmd->info.id = LWIS_ID_INVALID;
+}
+
+struct cmd_transaction_submit_ops current_version_cmd_transaction_ops = {
+	.cmd_size = sizeof(struct lwis_cmd_transaction_info),
+	.populate_transaction_info_from_cmd = populate_transaction_info_from_cmd,
+	.populate_cmd_info_from_transaction = populate_cmd_info_from_transaction,
+};
 
 static int cmd_transaction_cancel(struct lwis_client *client, struct lwis_cmd_pkt *header,
 				  struct lwis_cmd_transaction_cancel __user *u_msg)
@@ -1785,78 +1563,6 @@ static int cmd_transaction_cancel(struct lwis_client *client, struct lwis_cmd_pk
 			k_msg.id, ret);
 	}
 
-	header->ret_code = ret;
-	return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
-}
-
-static int cmd_transaction_replace(struct lwis_client *client, struct lwis_cmd_pkt *header,
-				   struct lwis_cmd_pkt __user *u_msg)
-{
-	struct lwis_transaction *k_transaction = NULL;
-	struct lwis_cmd_transaction_info_v2 k_cmd_transaction_info_v2;
-	struct lwis_cmd_transaction_info_v3 k_cmd_transaction_info_v3;
-	struct lwis_cmd_transaction_info_v4 k_cmd_transaction_info_v4;
-	struct lwis_cmd_pkt *resp_header = NULL;
-	struct lwis_device *lwis_dev = client->lwis_dev;
-	int ret = 0;
-	unsigned long flags;
-
-	ret = construct_transaction_from_cmd(client, header->cmd_id, u_msg, &k_transaction);
-	if (ret) {
-		goto err_exit;
-	}
-
-	ret = lwis_initialize_transaction_fences(client, k_transaction);
-	if (ret) {
-		lwis_transaction_free(lwis_dev, &k_transaction);
-		goto err_exit;
-	}
-
-	spin_lock_irqsave(&client->transaction_lock, flags);
-	ret = lwis_transaction_replace_locked(client, k_transaction);
-	if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_REPLACE_V4) {
-		resp_header = &k_cmd_transaction_info_v4.header;
-		k_cmd_transaction_info_v4.info = k_transaction->info;
-	} else if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_REPLACE_V3) {
-		resp_header = &k_cmd_transaction_info_v3.header;
-		if (copy_transaction_info_v4_to_v3_locked(&k_transaction->info,
-							  &k_cmd_transaction_info_v3.info)) {
-			dev_err(lwis_dev->dev, "Failed to copy transaction info");
-			ret = -EFAULT;
-		}
-	} else if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_REPLACE_V2) {
-		resp_header = &k_cmd_transaction_info_v2.header;
-		if (copy_transaction_info_v4_to_v2_locked(&k_transaction->info,
-							  &k_cmd_transaction_info_v2.info)) {
-			dev_err(lwis_dev->dev, "Failed to copy transaction info");
-			ret = -EFAULT;
-		}
-	}
-	spin_unlock_irqrestore(&client->transaction_lock, flags);
-	if (ret) {
-		k_cmd_transaction_info_v2.info.id = LWIS_ID_INVALID;
-		k_cmd_transaction_info_v3.info.id = LWIS_ID_INVALID;
-		k_cmd_transaction_info_v4.info.id = LWIS_ID_INVALID;
-		lwis_transaction_free(lwis_dev, &k_transaction);
-	}
-
-	resp_header->cmd_id = header->cmd_id;
-	resp_header->next = header->next;
-	resp_header->ret_code = ret;
-	if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_REPLACE_V4) {
-		return copy_pkt_to_user(lwis_dev, u_msg, (void *)&k_cmd_transaction_info_v4,
-					sizeof(k_cmd_transaction_info_v4));
-	} else if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_REPLACE_V3) {
-		return copy_pkt_to_user(lwis_dev, u_msg, (void *)&k_cmd_transaction_info_v3,
-					sizeof(k_cmd_transaction_info_v3));
-	} else if (header->cmd_id == LWIS_CMD_ID_TRANSACTION_REPLACE_V2) {
-		return copy_pkt_to_user(lwis_dev, u_msg, (void *)&k_cmd_transaction_info_v2,
-					sizeof(k_cmd_transaction_info_v2));
-	}
-
-	ret = -EINVAL;
-
-err_exit:
 	header->ret_code = ret;
 	return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
 }
@@ -2213,10 +1919,32 @@ err_exit:
 	return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
 }
 
+static int cmd_fence_create_v0(struct lwis_device *lwis_dev, struct lwis_cmd_pkt *header,
+			       struct lwis_cmd_fence_create_v0 __user *u_msg)
+{
+	struct lwis_fence_fds fence_fds;
+	struct lwis_cmd_fence_create_v0 fence_create;
+
+	if (copy_from_user((void *)&fence_create, (void __user *)u_msg, sizeof(fence_create))) {
+		dev_err(lwis_dev->dev, "failed to copy from user\n");
+		return -EFAULT;
+	}
+
+	fence_fds = lwis_fence_legacy_create(lwis_dev);
+	if (fence_fds.error != 0) {
+		header->ret_code = fence_fds.error;
+		return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
+	}
+
+	fence_create.fd = fence_fds.fd;
+	fence_create.header.ret_code = 0;
+	return copy_pkt_to_user(lwis_dev, u_msg, (void *)&fence_create, sizeof(fence_create));
+}
+
 static int cmd_fence_create(struct lwis_device *lwis_dev, struct lwis_cmd_pkt *header,
 			    struct lwis_cmd_fence_create __user *u_msg)
 {
-	int32_t fd_or_err;
+	struct lwis_fence_fds fence_fds;
 	struct lwis_cmd_fence_create fence_create;
 
 	if (copy_from_user((void *)&fence_create, (void __user *)u_msg, sizeof(fence_create))) {
@@ -2224,13 +1952,14 @@ static int cmd_fence_create(struct lwis_device *lwis_dev, struct lwis_cmd_pkt *h
 		return -EFAULT;
 	}
 
-	fd_or_err = lwis_fence_create(lwis_dev);
-	if (fd_or_err < 0) {
-		header->ret_code = fd_or_err;
+	fence_fds = lwis_fence_create(lwis_dev);
+	if (fence_fds.error != 0) {
+		header->ret_code = fence_fds.error;
 		return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
 	}
 
-	fence_create.fd = fd_or_err;
+	fence_create.fd = fence_fds.fd;
+	fence_create.signal_fd = fence_fds.signal_fd;
 	fence_create.header.ret_code = 0;
 	return copy_pkt_to_user(lwis_dev, u_msg, (void *)&fence_create, sizeof(fence_create));
 }
@@ -2345,20 +2074,24 @@ static int handle_cmd_pkt(struct lwis_client *lwis_client, struct lwis_cmd_pkt *
 		ret = cmd_event_dequeue(lwis_client, header,
 					(struct lwis_cmd_event_dequeue __user *)user_msg);
 		break;
-	case LWIS_CMD_ID_TRANSACTION_SUBMIT_V2:
-	case LWIS_CMD_ID_TRANSACTION_SUBMIT_V3:
 	case LWIS_CMD_ID_TRANSACTION_SUBMIT_V4:
 		ret = cmd_transaction_submit(lwis_client, header,
-					     (struct lwis_cmd_pkt __user *)user_msg);
+					     (struct lwis_cmd_pkt __user *)user_msg,
+					     &transaction_cmd_v4_ops);
+		break;
+	case LWIS_CMD_ID_TRANSACTION_SUBMIT_V5:
+		ret = cmd_transaction_submit(lwis_client, header,
+					     (struct lwis_cmd_pkt __user *)user_msg,
+					     &transaction_cmd_v5_ops);
+		break;
+	case LWIS_CMD_ID_TRANSACTION_SUBMIT:
+		ret = cmd_transaction_submit(lwis_client, header,
+					     (struct lwis_cmd_pkt __user *)user_msg,
+					     &current_version_cmd_transaction_ops);
 		break;
 	case LWIS_CMD_ID_TRANSACTION_CANCEL:
 		ret = cmd_transaction_cancel(lwis_client, header,
 					     (struct lwis_cmd_transaction_cancel __user *)user_msg);
-		break;
-	case LWIS_CMD_ID_TRANSACTION_REPLACE_V2:
-	case LWIS_CMD_ID_TRANSACTION_REPLACE_V3:
-		ret = cmd_transaction_replace(lwis_client, header,
-					      (struct lwis_cmd_pkt __user *)user_msg);
 		break;
 	case LWIS_CMD_ID_PERIODIC_IO_SUBMIT:
 		mutex_lock(&lwis_client->lock);
@@ -2402,6 +2135,10 @@ static int handle_cmd_pkt(struct lwis_client *lwis_client, struct lwis_cmd_pkt *
 					(struct lwis_cmd_dpm_clk_get __user *)user_msg);
 		mutex_unlock(&lwis_client->lock);
 		break;
+	case LWIS_CMD_ID_FENCE_CREATE_V0:
+		ret = cmd_fence_create_v0(lwis_dev, header,
+					  (struct lwis_cmd_fence_create_v0 __user *)user_msg);
+		break;
 	case LWIS_CMD_ID_FENCE_CREATE:
 		ret = cmd_fence_create(lwis_dev, header,
 				       (struct lwis_cmd_fence_create __user *)user_msg);
@@ -2443,10 +2180,9 @@ static int ioctl_handle_cmd_pkt(struct lwis_client *lwis_client,
 		if (lwis_dev->type != DEVICE_TYPE_TOP && device_disabled &&
 		    (header.cmd_id == LWIS_CMD_ID_DMA_BUFFER_ALLOC ||
 		     header.cmd_id == LWIS_CMD_ID_REG_IO ||
-		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V2 ||
-		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V3 ||
-		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_REPLACE_V2 ||
-		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_REPLACE_V3 ||
+		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V4 ||
+		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V5 ||
+		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT ||
 		     header.cmd_id == LWIS_CMD_ID_PERIODIC_IO_SUBMIT ||
 		     header.cmd_id == LWIS_CMD_ID_EVENT_CONTROL_SET)) {
 			dev_err_ratelimited(lwis_dev->dev,

@@ -93,7 +93,8 @@ struct lwis_bus_manager {
 	/* List of LWIS devices using this bus */
 	struct list_head connected_devices;
 	/* Total number of physically connected devices to the bus
-	 * This count is set while probe/unprobe sequence */
+	 * This count is set while probe/unprobe sequence
+	 */
 	int number_of_connected_devices;
 	/* Control access to the high priority transaction queue for this bus */
 	spinlock_t transaction_queue_lock;

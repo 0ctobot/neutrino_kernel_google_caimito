@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Google LWIS Debug Utilities
  *
@@ -29,11 +30,12 @@ static void print_to_log(struct lwis_device *lwis_dev, char *buffer)
 	char tmpbuf[PRINT_BUFFER_SIZE + 1];
 	char *start = buffer;
 	char *end = strchr(buffer, '\n');
+
 	while (end != NULL) {
 		size = end - start + 1;
-		if (size > PRINT_BUFFER_SIZE) {
+		if (size > PRINT_BUFFER_SIZE)
 			size = PRINT_BUFFER_SIZE;
-		}
+
 		memcpy(tmpbuf, start, size);
 		tmpbuf[size] = '\0';
 		dev_info(lwis_dev->dev, "%s", tmpbuf);
@@ -59,14 +61,14 @@ static int list_transactions(struct lwis_client *client, char *buffer, size_t bu
 		goto exit;
 	}
 	count = scnprintf(buffer, buffer_size, "Pending Transactions:\n");
-	hash_for_each (client->transaction_list, i, transaction_list, node) {
+	hash_for_each(client->transaction_list, i, transaction_list, node) {
 		if (list_empty(&transaction_list->list)) {
 			count += scnprintf(buffer + count, buffer_size - count,
 					   "No pending transaction for event %#llx\n",
 					   transaction_list->event_id);
 			continue;
 		}
-		list_for_each (it_tran, &transaction_list->list) {
+		list_for_each(it_tran, &transaction_list->list) {
 			transaction = list_entry(it_tran, struct lwis_transaction, event_list_node);
 			count += scnprintf(
 				buffer + count, buffer_size - count,
@@ -109,9 +111,8 @@ static int list_transactions(struct lwis_client *client, char *buffer, size_t bu
 			}
 		}
 		++hist_idx;
-		if (hist_idx >= TRANSACTION_DEBUG_HISTORY_SIZE) {
+		if (hist_idx >= TRANSACTION_DEBUG_HISTORY_SIZE)
 			hist_idx = 0;
-		}
 	}
 exit:
 	spin_unlock_irqrestore(&client->transaction_lock, flags);
@@ -125,12 +126,11 @@ static int list_allocated_buffers(struct lwis_client *client, char *buffer, size
 	int idx = 0;
 	int count;
 
-	if (hash_empty(client->allocated_buffers)) {
+	if (hash_empty(client->allocated_buffers))
 		return scnprintf(buffer, buffer_size, "Allocated buffers: None\n");
-	}
 
 	count = scnprintf(buffer, buffer_size, "Allocated buffers:\n");
-	hash_for_each (client->allocated_buffers, i, alloc_buffer, node) {
+	hash_for_each(client->allocated_buffers, i, alloc_buffer, node) {
 		count += scnprintf(buffer + count, buffer_size - count, "[%2d] FD: %d Size: %zu\n",
 				   ++idx, alloc_buffer->fd, alloc_buffer->size);
 	}
@@ -147,13 +147,12 @@ static int list_enrolled_buffers(struct lwis_client *client, char *buffer, size_
 	int idx = 0;
 	int count;
 
-	if (hash_empty(client->enrolled_buffers)) {
+	if (hash_empty(client->enrolled_buffers))
 		return scnprintf(buffer, buffer_size, "Enrolled buffers: None\n");
-	}
 
 	count = scnprintf(buffer, buffer_size, "Enrolled buffers:\n");
-	hash_for_each (client->enrolled_buffers, i, enrollment_list, node) {
-		list_for_each (it_enrollment, &enrollment_list->list) {
+	hash_for_each(client->enrolled_buffers, i, enrollment_list, node) {
+		list_for_each(it_enrollment, &enrollment_list->list) {
 			enrolled_buffer =
 				list_entry(it_enrollment, struct lwis_enrolled_buffer, list_node);
 			if (IS_ERR_VALUE(enrolled_buffer->info.dma_vaddr)) {
@@ -206,11 +205,10 @@ static int generate_event_states_info(struct lwis_device *lwis_dev, char *buffer
 
 	count = scnprintf(buffer, buffer_size, "=== LWIS EVENT STATES INFO: %s ===\n",
 			  lwis_dev->name);
-	if (lwis_event_dump_cnt >= 0 && lwis_event_dump_cnt <= EVENT_DEBUG_HISTORY_SIZE) {
+	if (lwis_event_dump_cnt >= 0 && lwis_event_dump_cnt <= EVENT_DEBUG_HISTORY_SIZE)
 		traverse_last_events_size = lwis_event_dump_cnt;
-	} else {
+	else
 		traverse_last_events_size = EVENT_DEBUG_HISTORY_SIZE;
-	}
 
 	spin_lock_irqsave(&lwis_dev->lock, flags);
 	if (hash_empty(lwis_dev->event_states)) {
@@ -219,7 +217,7 @@ static int generate_event_states_info(struct lwis_device *lwis_dev, char *buffer
 		goto exit;
 	}
 	count += scnprintf(buffer + count, buffer_size - count, "Event Counts:\n");
-	hash_for_each (lwis_dev->event_states, i, state, node) {
+	hash_for_each(lwis_dev->event_states, i, state, node) {
 		if (state->event_counter > 0) {
 			count += scnprintf(buffer + count, buffer_size - count,
 					   "[%2d] ID: %#llx Counter: %#llx\n", ++idx,
@@ -227,17 +225,16 @@ static int generate_event_states_info(struct lwis_device *lwis_dev, char *buffer
 			enabled_event_present = true;
 		}
 	}
-	if (!enabled_event_present) {
+	if (!enabled_event_present)
 		count += scnprintf(buffer + count, buffer_size - count, "  No enabled events\n");
-	}
 
 	count += scnprintf(buffer + count, buffer_size - count, "Last Events:\n");
 	idx = lwis_dev->debug_info.cur_event_hist_idx;
 	for (i = 0; i < traverse_last_events_size; ++i) {
 		--idx;
-		if (idx < 0) {
+		if (idx < 0)
 			idx = EVENT_DEBUG_HISTORY_SIZE - 1;
-		}
+
 		state = &lwis_dev->debug_info.event_hist[idx].state;
 		/* Skip uninitialized entries */
 		if (state->event_id != 0) {
@@ -271,7 +268,7 @@ static int generate_transaction_info(struct lwis_device *lwis_dev, char *buffer,
 
 	count = scnprintf(buffer, buffer_size, "=== LWIS TRANSACTION INFO: %s ===\n",
 			  lwis_dev->name);
-	list_for_each_entry (client, &lwis_dev->clients, node) {
+	list_for_each_entry(client, &lwis_dev->clients, node) {
 		count += scnprintf(buffer + count, buffer_size - count, "Client %d:\n", idx);
 		count += list_transactions(client, buffer + count, buffer_size - count);
 		++idx;
@@ -297,7 +294,7 @@ static int generate_buffer_info(struct lwis_device *lwis_dev, char *buffer, size
 	}
 
 	count = scnprintf(buffer, buffer_size, "=== LWIS BUFFER INFO: %s ===\n", lwis_dev->name);
-	list_for_each_entry (client, &lwis_dev->clients, node) {
+	list_for_each_entry(client, &lwis_dev->clients, node) {
 		count += scnprintf(buffer + count, buffer_size - count, "Client %d:\n", idx);
 		count += list_allocated_buffers(client, buffer + count, buffer_size - count);
 		count += list_enrolled_buffers(client, buffer + count, buffer_size - count);
@@ -399,9 +396,8 @@ static int generate_register_io_history(struct lwis_device *lwis_dev, char *buff
 			}
 		}
 		++hist_idx;
-		if (hist_idx >= IO_ENTRY_DEBUG_HISTORY_SIZE) {
+		if (hist_idx >= IO_ENTRY_DEBUG_HISTORY_SIZE)
 			hist_idx = 0;
-		}
 	}
 
 	return 0;
@@ -413,9 +409,9 @@ int lwis_debug_print_register_io_history(struct lwis_device *lwis_dev)
 	/* Buffer to store information */
 	const size_t buffer_size = 10240;
 	char *buffer = kmalloc(buffer_size, GFP_KERNEL);
-	if (!buffer) {
+
+	if (!buffer)
 		return -ENOMEM;
-	}
 
 	ret = generate_register_io_history(lwis_dev, buffer, buffer_size);
 	if (ret) {
@@ -451,9 +447,9 @@ int lwis_debug_print_event_states_info(struct lwis_device *lwis_dev, int lwis_ev
 	/* Buffer to store information */
 	const size_t buffer_size = 8192;
 	char *buffer = kmalloc(buffer_size, GFP_KERNEL);
-	if (!buffer) {
+
+	if (!buffer)
 		return -ENOMEM;
-	}
 
 	ret = generate_event_states_info(lwis_dev, buffer, buffer_size, lwis_event_dump_cnt);
 	if (ret) {
@@ -472,9 +468,9 @@ int lwis_debug_print_transaction_info(struct lwis_device *lwis_dev)
 	/* Buffer to store information */
 	const size_t buffer_size = 10240;
 	char *buffer = kmalloc(buffer_size, GFP_KERNEL);
-	if (!buffer) {
+
+	if (!buffer)
 		return -ENOMEM;
-	}
 
 	ret = generate_transaction_info(lwis_dev, buffer, buffer_size);
 	if (ret) {
@@ -493,9 +489,9 @@ int lwis_debug_print_buffer_info(struct lwis_device *lwis_dev)
 	/* Buffer to store information */
 	const size_t buffer_size = 2048;
 	char *buffer = kmalloc(buffer_size, GFP_KERNEL);
-	if (!buffer) {
+
+	if (!buffer)
 		return -ENOMEM;
-	}
 
 	ret = generate_buffer_info(lwis_dev, buffer, buffer_size);
 	if (ret) {
@@ -513,9 +509,8 @@ void lwis_debug_crash_info_dump(struct lwis_device *lwis_dev)
 	const int event_dump_count = 5;
 
 	/* State dump is only meaningful for I2C and IOREG devices */
-	if (lwis_dev->type != DEVICE_TYPE_I2C && lwis_dev->type != DEVICE_TYPE_IOREG) {
+	if (lwis_dev->type != DEVICE_TYPE_I2C && lwis_dev->type != DEVICE_TYPE_IOREG)
 		return;
-	}
 
 	dev_info(lwis_dev->dev, "LWIS Device (%s) Crash Info Dump:\n", lwis_dev->name);
 
@@ -551,9 +546,9 @@ static ssize_t event_states_read(struct file *fp, char __user *user_buf, size_t 
 	const size_t buffer_size = 8192;
 	struct lwis_device *lwis_dev = fp->f_inode->i_private;
 	char *buffer = kmalloc(buffer_size, GFP_KERNEL);
-	if (!buffer) {
+
+	if (!buffer)
 		return -ENOMEM;
-	}
 
 	ret = generate_event_states_info(lwis_dev, buffer, buffer_size, /*lwis_event_dump_cnt=*/-1);
 	if (ret) {
@@ -574,9 +569,9 @@ static ssize_t transaction_info_read(struct file *fp, char __user *user_buf, siz
 	const size_t buffer_size = 10240;
 	struct lwis_device *lwis_dev = fp->f_inode->i_private;
 	char *buffer = kmalloc(buffer_size, GFP_KERNEL);
-	if (!buffer) {
+
+	if (!buffer)
 		return -ENOMEM;
-	}
 
 	ret = generate_transaction_info(lwis_dev, buffer, buffer_size);
 	if (ret) {
@@ -598,9 +593,9 @@ static ssize_t buffer_info_read(struct file *fp, char __user *user_buf, size_t c
 	const size_t buffer_size = 2048;
 	struct lwis_device *lwis_dev = fp->f_inode->i_private;
 	char *buffer = kmalloc(buffer_size, GFP_KERNEL);
-	if (!buffer) {
+
+	if (!buffer)
 		return -ENOMEM;
-	}
 
 	ret = generate_buffer_info(lwis_dev, buffer, buffer_size);
 	if (ret) {
@@ -622,9 +617,9 @@ static ssize_t register_io_history_read(struct file *fp, char __user *user_buf, 
 	const size_t buffer_size = 10240;
 	struct lwis_device *lwis_dev = fp->f_inode->i_private;
 	char *buffer = kmalloc(buffer_size, GFP_KERNEL);
-	if (!buffer) {
+
+	if (!buffer)
 		return -ENOMEM;
-	}
 
 	ret = generate_register_io_history(lwis_dev, buffer, buffer_size);
 	if (ret) {
@@ -638,27 +633,27 @@ exit:
 	return ret;
 }
 
-static struct file_operations dev_info_fops = {
+static const struct file_operations dev_info_fops = {
 	.owner = THIS_MODULE,
 	.read = dev_info_read,
 };
 
-static struct file_operations event_states_fops = {
+static const struct file_operations event_states_fops = {
 	.owner = THIS_MODULE,
 	.read = event_states_read,
 };
 
-static struct file_operations transaction_info_fops = {
+static const struct file_operations transaction_info_fops = {
 	.owner = THIS_MODULE,
 	.read = transaction_info_read,
 };
 
-static struct file_operations buffer_info_fops = {
+static const struct file_operations buffer_info_fops = {
 	.owner = THIS_MODULE,
 	.read = buffer_info_read,
 };
 
-static struct file_operations register_io_history_fops = {
+static const struct file_operations register_io_history_fops = {
 	.owner = THIS_MODULE,
 	.read = register_io_history_read,
 };
@@ -673,9 +668,8 @@ int lwis_device_debugfs_setup(struct lwis_device *lwis_dev, struct dentry *dbg_r
 	struct dentry *dbg_reg_io_file;
 
 	/* DebugFS not present, just return */
-	if (dbg_root == NULL) {
+	if (dbg_root == NULL)
 		return 0;
-	}
 
 	dbg_dir = debugfs_create_dir(lwis_dev->name, dbg_root);
 	if (IS_ERR_OR_NULL(dbg_dir)) {
@@ -737,9 +731,9 @@ int lwis_device_debugfs_setup(struct lwis_device *lwis_dev, struct dentry *dbg_r
 int lwis_device_debugfs_cleanup(struct lwis_device *lwis_dev)
 {
 	/* DebugFS not present, just return */
-	if (lwis_dev->dbg_dir == NULL) {
+	if (lwis_dev->dbg_dir == NULL)
 		return 0;
-	}
+
 	debugfs_remove_recursive(lwis_dev->dbg_dir);
 	lwis_dev->dbg_dir = NULL;
 	lwis_dev->dbg_dev_info_file = NULL;

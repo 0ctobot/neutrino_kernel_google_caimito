@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Google LWIS GPIO Interface
  *
@@ -22,15 +23,12 @@
 /* debug function */
 void lwis_gpio_list_print(char *name, struct gpio_descs *gpios)
 {
-	int i;
-
 	if (IS_ERR_OR_NULL(gpios)) {
 		pr_info("name: %s error: %ld\n", name, PTR_ERR(gpios));
 	} else {
 		pr_info("name: %s, count: %d\n", name, gpios->ndescs);
-		for (i = 0; i < gpios->ndescs; i++) {
+		for (int i = 0; i < gpios->ndescs; i++)
 			pr_info("gpio number: %d\n", desc_to_gpio(gpios->desc[i]));
-		}
 	}
 }
 
@@ -50,9 +48,8 @@ int lwis_gpio_list_set_output_value(struct gpio_descs *gpios, int value)
 	int i;
 	int ret;
 
-	if (!gpios) {
+	if (!gpios)
 		return -EINVAL;
-	}
 
 	for (i = 0; i < gpios->ndescs; ++i) {
 		ret = gpiod_direction_output(gpios->desc[i], value);
@@ -70,9 +67,8 @@ int lwis_gpio_list_set_output_value_raw(struct gpio_descs *gpios, int value)
 	int i;
 	int ret;
 
-	if (!gpios) {
+	if (!gpios)
 		return -EINVAL;
-	}
 
 	for (i = 0; i < gpios->ndescs; ++i) {
 		ret = gpiod_direction_output_raw(gpios->desc[i], value);
@@ -90,9 +86,8 @@ int lwis_gpio_list_set_input(struct gpio_descs *gpios)
 	int i;
 	int ret;
 
-	if (!gpios) {
+	if (!gpios)
 		return -EINVAL;
-	}
 
 	for (i = 0; i < gpios->ndescs; ++i) {
 		ret = gpiod_direction_input(gpios->desc[i]);
@@ -112,9 +107,8 @@ int lwis_gpios_list_add_info_by_name(struct device *dev, struct list_head *list,
 
 	/* Check gpio already exist or not */
 	gpios_info = lwis_gpios_get_info_by_name(list, name);
-	if (!IS_ERR_OR_NULL(gpios_info)) {
+	if (!IS_ERR_OR_NULL(gpios_info))
 		return 0;
-	}
 
 	gpios_info = kmalloc(sizeof(struct lwis_gpios_info), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(gpios_info)) {
@@ -131,25 +125,24 @@ int lwis_gpios_list_add_info_by_name(struct device *dev, struct list_head *list,
 	gpios_info->id = desc_to_gpio(descs->desc[0]);
 	gpios_info->hold_dev = dev;
 	/*
-	* The GPIO pins are valid, release the list as we do not need to hold
-	* on to the pins yet
-	*/
+	 * The GPIO pins are valid, release the list as we do not need to hold
+	 * on to the pins yet
+	 */
 	lwis_gpio_list_put(descs, dev);
 
 	gpios_info->gpios = NULL;
 	gpios_info->irq_list = NULL;
 	strscpy(gpios_info->name, name, LWIS_MAX_NAME_STRING_LEN);
 
-	if (strncmp(SHARED_STRING, name, strlen(SHARED_STRING)) == 0) {
+	if (strncmp(SHARED_STRING, name, strlen(SHARED_STRING)) == 0)
 		gpios_info->is_shared = true;
-	} else {
+	else
 		gpios_info->is_shared = false;
-	}
-	if (strncmp(PULSE_STRING, name, strlen(PULSE_STRING)) == 0) {
+
+	if (strncmp(PULSE_STRING, name, strlen(PULSE_STRING)) == 0)
 		gpios_info->is_pulse = true;
-	} else {
+	else
 		gpios_info->is_pulse = false;
-	}
 
 	list_add(&gpios_info->node, list);
 	return 0;
@@ -160,16 +153,14 @@ void lwis_gpios_list_free(struct list_head *list)
 	struct lwis_gpios_info *gpio_node;
 	struct list_head *it_node, *it_tmp;
 
-	if (!list || list_empty(list)) {
+	if (!list || list_empty(list))
 		return;
-	}
 
-	list_for_each_safe (it_node, it_tmp, list) {
+	list_for_each_safe(it_node, it_tmp, list) {
 		gpio_node = list_entry(it_node, struct lwis_gpios_info, node);
 		list_del(&gpio_node->node);
-		if (gpio_node->irq_list) {
+		if (gpio_node->irq_list)
 			lwis_interrupt_list_free(gpio_node->irq_list);
-		}
 		kfree(gpio_node);
 	}
 }
@@ -179,15 +170,13 @@ struct lwis_gpios_info *lwis_gpios_get_info_by_name(struct list_head *list, cons
 	struct lwis_gpios_info *gpio_node;
 	struct list_head *it_node, *it_tmp;
 
-	if (!list || !name || list_empty(list)) {
+	if (!list || !name || list_empty(list))
 		return ERR_PTR(-EINVAL);
-	}
 
-	list_for_each_safe (it_node, it_tmp, list) {
+	list_for_each_safe(it_node, it_tmp, list) {
 		gpio_node = list_entry(it_node, struct lwis_gpios_info, node);
-		if (!strcmp(gpio_node->name, name)) {
+		if (!strcmp(gpio_node->name, name))
 			return gpio_node;
-		}
 	}
 
 	return ERR_PTR(-EINVAL);

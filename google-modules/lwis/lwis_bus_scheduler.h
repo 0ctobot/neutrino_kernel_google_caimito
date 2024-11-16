@@ -15,7 +15,8 @@ struct lwis_process_queue;
 /*
  * lwis_process_request:
  * This maintains the node to identify the devices that
- * have a request to be processed on a given bus */
+ * have a request to be processed on a given bus
+ */
 struct lwis_process_request {
 	struct lwis_client *requesting_client;
 	struct list_head request_node;

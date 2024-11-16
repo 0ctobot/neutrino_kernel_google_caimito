@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Google LWIS Dynamic Power Managerment
  *
@@ -37,6 +38,7 @@ int lwis_dpm_update_qos(struct lwis_device *lwis_dev, struct lwis_qos_setting_v3
 {
 	int ret = 0;
 	struct lwis_device *target_dev = lwis_find_dev_by_id(qos_setting->device_id);
+
 	if (!target_dev) {
 		dev_err(lwis_dev->dev, "Can't find device by id: %d\n", qos_setting->device_id);
 		return -ENOENT;
@@ -121,9 +123,8 @@ static int lwis_dpm_device_probe(struct platform_device *plat_dev)
 
 	/* Allocate top device specific data construct */
 	dpm_dev = devm_kzalloc(dev, sizeof(struct lwis_dpm_device), GFP_KERNEL);
-	if (!dpm_dev) {
+	if (!dpm_dev)
 		return -ENOMEM;
-	}
 
 	dpm_dev->base_dev.type = DEVICE_TYPE_DPM;
 	dpm_dev->base_dev.vops = dpm_vops;
@@ -132,9 +133,9 @@ static int lwis_dpm_device_probe(struct platform_device *plat_dev)
 
 	/* Call the base device probe function */
 	ret = lwis_base_probe(&dpm_dev->base_dev);
-	if (ret) {
+	if (ret)
 		dev_err(dev, "Error in lwis base probe, ret: %d\n", ret);
-	}
+
 	platform_set_drvdata(plat_dev, &dpm_dev->base_dev);
 
 	return ret;

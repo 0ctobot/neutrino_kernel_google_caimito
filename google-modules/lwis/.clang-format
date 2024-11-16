@@ -529,7 +529,7 @@ SpaceAfterTemplateKeyword: true
 SpaceBeforeAssignmentOperators: true
 #SpaceBeforeCtorInitializerColon: true # Unknown to clang-format-5.0
 #SpaceBeforeInheritanceColon: true # Unknown to clang-format-5.0
-SpaceBeforeParens: ControlStatements
+SpaceBeforeParens: ControlStatementsExceptForEachMacros
 #SpaceBeforeRangeBasedForLoopColon: true # Unknown to clang-format-5.0
 SpaceInEmptyParentheses: false
 SpacesBeforeTrailingComments: 1

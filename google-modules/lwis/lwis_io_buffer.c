@@ -1,4 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * LWIS Buffer I/O Implementation
  *
@@ -21,11 +21,11 @@ int lwis_io_buffer_write(struct lwis_device *lwis_dev, struct lwis_io_entry *ent
 	void *kernel_address;
 	struct iosys_map *sys_map = entry->write_to_buffer.buffer->io_sys_map;
 
-	if (sys_map->is_iomem) {
+	if (sys_map->is_iomem)
 		kernel_address = sys_map->vaddr_iomem;
-	} else {
+	else
 		kernel_address = sys_map->vaddr;
-	}
+
 	memcpy(kernel_address + entry->write_to_buffer.offset, entry->write_to_buffer.bytes,
 	       entry->write_to_buffer.size_in_bytes);
 	return 0;

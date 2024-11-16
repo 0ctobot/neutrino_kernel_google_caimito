@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Google LWIS SLC Device Driver
  *
@@ -27,7 +28,7 @@
 
 #define LWIS_DRIVER_NAME "lwis-slc"
 
-#define SIZE_TO_KB(x) x / 1024
+#define SIZE_TO_KB(x) ((x) / 1024)
 
 static const struct file_operations pt_file_ops = {
 	.owner = THIS_MODULE,
@@ -177,15 +178,16 @@ int lwis_slc_buffer_alloc(struct lwis_device *lwis_dev, struct lwis_alloc_buffer
 				alloc_info->partition_id = slc_dev->pt[i].partition_id;
 
 				if (slc_dev->pt[i].size_kb > SIZE_TO_KB(alloc_info->size)) {
-					dev_warn(lwis_dev->dev,
+					dev_warn(
+						lwis_dev->dev,
 						"Size of SLC Partition is more than what was requested\n");
 				}
 				return 0;
-			} else {
-				dev_err(lwis_dev->dev, "Failed to enable partition id %d\n",
-					slc_dev->pt[i].id);
-				return -EPROTO;
 			}
+
+			dev_err(lwis_dev->dev, "Failed to enable partition id %d\n",
+				slc_dev->pt[i].id);
+			return -EPROTO;
 		}
 	}
 	dev_err(lwis_dev->dev,
@@ -210,9 +212,8 @@ int lwis_slc_buffer_free(struct lwis_device *lwis_dev, int fd)
 	}
 
 	fp = fget(fd);
-	if (fp == NULL) {
+	if (fp == NULL)
 		return -EBADF;
-	}
 
 	if (fp->f_op != &pt_file_ops) {
 		dev_err(lwis_dev->dev, "SLC file ops is not equal to pt_file_ops\n");
@@ -247,9 +248,8 @@ static int lwis_slc_device_probe(struct platform_device *plat_dev)
 
 	/* Allocate SLC device specific data construct */
 	slc_dev = devm_kzalloc(dev, sizeof(struct lwis_slc_device), GFP_KERNEL);
-	if (!slc_dev) {
+	if (!slc_dev)
 		return -ENOMEM;
-	}
 
 	slc_dev->base_dev.type = DEVICE_TYPE_SLC;
 	slc_dev->base_dev.vops = slc_vops;
@@ -311,9 +311,8 @@ int __init lwis_slc_device_init(void)
 	pr_info("SLC device initialization\n");
 
 	ret = platform_driver_register(&lwis_driver);
-	if (ret) {
+	if (ret)
 		pr_err("platform_driver_register failed: %d\n", ret);
-	}
 
 	return ret;
 }

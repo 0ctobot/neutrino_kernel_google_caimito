@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Google LWIS I2C Interface
  *
@@ -24,7 +25,8 @@
 #define I2C_DEVICE_NAME "LWIS_I2C"
 
 /* Max bit width for register and data that is supported by this
-   driver currently */
+ * driver currently
+ */
 #define MIN_OFFSET_BITS 8
 #define MAX_OFFSET_BITS 16
 #define MIN_DATA_BITS 8
@@ -45,8 +47,8 @@ static int perform_read_transfer(struct i2c_client *client, struct i2c_msg *msg,
 	u8 *wbuf = msg[0].buf;
 
 	const int num_msg = 2;
-
 	char trace_name[LWIS_MAX_NAME_STRING_LEN];
+
 	scnprintf(trace_name, LWIS_MAX_NAME_STRING_LEN, "i2c_read_%s", lwis_dev->name);
 
 	lwis_value_to_be_buf(offset, wbuf, offset_size_bytes);
@@ -66,8 +68,8 @@ static int perform_write_transfer(struct i2c_client *client, struct i2c_msg *msg
 	u8 *buf = msg->buf;
 
 	const int num_msg = 1;
-
 	char trace_name[LWIS_MAX_NAME_STRING_LEN];
+
 	scnprintf(trace_name, LWIS_MAX_NAME_STRING_LEN, "i2c_write_%s", lwis_dev->name);
 
 	lwis_value_to_be_buf(offset, buf, offset_size_bytes);
@@ -89,8 +91,8 @@ static int perform_write_batch_transfer(struct i2c_client *client, struct i2c_ms
 	u8 *buf = msg->buf;
 
 	const int num_msg = 1;
-
 	char trace_name[LWIS_MAX_NAME_STRING_LEN];
+
 	scnprintf(trace_name, LWIS_MAX_NAME_STRING_LEN, "i2c_write_batch_%s", lwis_dev->name);
 
 	lwis_value_to_be_buf(offset, buf, offset_size_bytes);
@@ -165,9 +167,8 @@ static int i2c_read(struct lwis_i2c_device *i2c, uint64_t offset, uint64_t *valu
 	}
 
 	wbuf = kmalloc(offset_bytes, GFP_KERNEL);
-	if (!wbuf) {
+	if (!wbuf)
 		return -ENOMEM;
-	}
 
 	rbuf = kmalloc(value_bytes, GFP_KERNEL);
 	if (!rbuf) {
@@ -241,9 +242,8 @@ static int i2c_write(struct lwis_i2c_device *i2c, uint64_t offset, uint64_t valu
 
 	msg_bytes = offset_bytes + value_bytes;
 	buf = kmalloc(msg_bytes, GFP_KERNEL);
-	if (!buf) {
+	if (!buf)
 		return -ENOMEM;
-	}
 
 	msg.addr = client->addr;
 	msg.flags = 0;
@@ -287,9 +287,8 @@ static int i2c_read_batch(struct lwis_i2c_device *i2c, uint64_t start_offset, ui
 	}
 
 	wbuf = kmalloc(offset_bytes, GFP_KERNEL);
-	if (!wbuf) {
+	if (!wbuf)
 		return -ENOMEM;
-	}
 
 	msg[0].addr = client->addr;
 	msg[0].flags = 0;
@@ -343,9 +342,8 @@ static int i2c_write_batch(struct lwis_i2c_device *i2c, uint64_t start_offset, u
 
 	msg_bytes = offset_bytes + write_buf_size;
 	buf = kmalloc(msg_bytes, GFP_KERNEL);
-	if (!buf) {
+	if (!buf)
 		return -ENOMEM;
-	}
 
 	msg.addr = client->addr;
 	msg.flags = 0;
@@ -375,17 +373,17 @@ int lwis_i2c_io_entry_rw(struct lwis_i2c_device *i2c, struct lwis_io_entry *entr
 		return -EINVAL;
 	}
 
-	if (entry->type == LWIS_IO_ENTRY_READ) {
+	if (entry->type == LWIS_IO_ENTRY_READ)
 		return i2c_read(i2c, entry->rw.offset, &entry->rw.val);
-	}
-	if (entry->type == LWIS_IO_ENTRY_WRITE) {
+
+	if (entry->type == LWIS_IO_ENTRY_WRITE)
 		return i2c_write(i2c, entry->rw.offset, entry->rw.val);
-	}
+
 	if (entry->type == LWIS_IO_ENTRY_MODIFY) {
 		ret = i2c_read(i2c, entry->mod.offset, &reg_value);
-		if (ret) {
+		if (ret)
 			return ret;
-		}
+
 		reg_value &= ~entry->mod.val_mask;
 		reg_value |= entry->mod.val_mask & entry->mod.val;
 		return i2c_write(i2c, entry->mod.offset, reg_value);

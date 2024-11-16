@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Google LWIS Event Utilities
  *
@@ -27,7 +28,7 @@
 
 #define lwis_dev_err_ratelimited(dev, fmt, ...)                                                    \
 	{                                                                                          \
-		static int64_t timestamp = 0;                                                      \
+		static int64_t timestamp;                                                          \
 		if (ktime_to_ns(lwis_get_time()) - timestamp > 2000000000LL) {                     \
 			dev_err(dev, fmt, ##__VA_ARGS__);                                          \
 			timestamp = ktime_to_ns(lwis_get_time());                                  \
@@ -54,11 +55,10 @@ client_event_state_find_locked(struct lwis_client *lwis_client, int64_t event_id
 			       (event_id ^ LWIS_OVERFLOW_IRQ_EVENT_FLAG) :
 			       event_id;
 	/* Iterate through the hash bucket for this event_id */
-	hash_for_each_possible (lwis_client->event_states, p, node, new_event_id) {
+	hash_for_each_possible(lwis_client->event_states, p, node, new_event_id) {
 		/* If it's indeed the right one, return it */
-		if (p->event_control.event_id == new_event_id) {
+		if (p->event_control.event_id == new_event_id)
 			return p;
-		}
 	}
 
 	return NULL;
@@ -115,9 +115,9 @@ lwis_client_event_state_find_or_create(struct lwis_client *lwis_client, int64_t 
 		/* Allocate a new state object */
 		new_state = kmalloc(sizeof(struct lwis_client_event_state), GFP_ATOMIC);
 		/* Oh no, ENOMEM */
-		if (!new_state) {
+		if (!new_state)
 			return ERR_PTR(-ENOMEM);
-		}
+
 		/* Set the event_id and initialize flags to 0 which pretty much
 		 * means everything is disabled. Overall it's expected that
 		 * having no client event state entry is equivalent to having
@@ -171,11 +171,10 @@ static struct lwis_device_event_state *device_event_state_find_locked(struct lwi
 			       (event_id ^ LWIS_OVERFLOW_IRQ_EVENT_FLAG) :
 			       event_id;
 	/* Iterate through the hash bucket for this event_id */
-	hash_for_each_possible (lwis_dev->event_states, p, node, new_event_id) {
+	hash_for_each_possible(lwis_dev->event_states, p, node, new_event_id) {
 		/* If it's indeed the right one, return it */
-		if (p->event_id == new_event_id) {
+		if (p->event_id == new_event_id)
 			return p;
-		}
 	}
 
 	return NULL;
@@ -197,9 +196,8 @@ static void save_device_event_state_to_history_locked(struct lwis_device *lwis_d
 	lwis_dev->debug_info.event_hist[lwis_dev->debug_info.cur_event_hist_idx].timestamp =
 		timestamp;
 	lwis_dev->debug_info.cur_event_hist_idx++;
-	if (lwis_dev->debug_info.cur_event_hist_idx >= EVENT_DEBUG_HISTORY_SIZE) {
+	if (lwis_dev->debug_info.cur_event_hist_idx >= EVENT_DEBUG_HISTORY_SIZE)
 		lwis_dev->debug_info.cur_event_hist_idx = 0;
-	}
 }
 
 /*
@@ -236,9 +234,8 @@ struct lwis_device_event_state *lwis_device_event_state_find_or_create(struct lw
 	unsigned long flags;
 	struct lwis_device_event_state *state;
 
-	if (unlikely(event_id == LWIS_EVENT_ID_NONE)) {
+	if (unlikely(event_id == LWIS_EVENT_ID_NONE))
 		return ERR_PTR(-EINVAL);
-	}
 
 	/* Try to find a state first, if it already exists */
 	state = lwis_device_event_state_find(lwis_dev, event_id);
@@ -248,9 +245,9 @@ struct lwis_device_event_state *lwis_device_event_state_find_or_create(struct lw
 		/* Allocate a new state object */
 		new_state = kmalloc(sizeof(struct lwis_device_event_state), GFP_ATOMIC);
 		/* Oh no, ENOMEM */
-		if (!new_state) {
+		if (!new_state)
 			return ERR_PTR(-ENOMEM);
-		}
+
 		/* Set the event_id and initialize ref counter  to 0 which means
 		 * off by default
 		 */
@@ -346,9 +343,8 @@ static int client_event_unsubscribe(struct lwis_client *lwis_client, int64_t eve
 
 	top_dev = container_of(lwis_dev->top_dev, struct lwis_top_device, base_dev);
 	ret = top_dev->subscribe_ops.unsubscribe_event(lwis_dev->top_dev, event_id, lwis_dev->id);
-	if (ret < 0) {
+	if (ret < 0)
 		dev_err(lwis_dev->dev, "Failed to unsubscribe event: 0x%llx\n", event_id);
-	}
 
 	/* Reset event counter */
 	event_state = lwis_device_event_state_find(lwis_dev, event_id);
@@ -404,9 +400,8 @@ int lwis_client_event_control_set(struct lwis_client *lwis_client,
 	if (old_flags != new_flags) {
 		ret = check_event_control_flags(lwis_client, control->event_id, old_flags,
 						new_flags);
-		if (ret) {
+		if (ret)
 			return ret;
-		}
 
 		state->event_control.flags = new_flags;
 		ret = lwis_device_event_flags_updated(lwis_client->lwis_dev, control->event_id,
@@ -482,7 +477,8 @@ static int event_queue_get_front(struct lwis_client *lwis_client, struct list_he
 	} else if (should_remove_entry) {
 		/* The caller did not request ownership of the event,
 		 * and this is a "pop" operation, we can just free the
-		 * event here. */
+		 * event here.
+		 */
 		kfree(event);
 	}
 	spin_unlock_irqrestore(&lwis_client->event_lock, flags);
@@ -498,7 +494,7 @@ static void event_queue_clear(struct lwis_client *lwis_client, struct list_head 
 	unsigned long flags;
 
 	spin_lock_irqsave(&lwis_client->event_lock, flags);
-	list_for_each_safe (it_event, it_tmp, event_queue) {
+	list_for_each_safe(it_event, it_tmp, event_queue) {
 		event = list_entry(it_event, struct lwis_event_entry, node);
 		list_del(&event->node);
 		kfree(event);
@@ -653,7 +649,7 @@ int lwis_client_event_states_clear(struct lwis_client *lwis_client)
 	/* Disable IRQs and lock the event lock */
 	spin_lock_irqsave(&lwis_client->event_lock, flags);
 	/* Iterate over the entire hash table */
-	hash_for_each_safe (lwis_client->event_states, i, n, state, node) {
+	hash_for_each_safe(lwis_client->event_states, i, n, state, node) {
 		/* Delete the node from the client's hash table */
 		hash_del(&state->node);
 		/* Add the node to to-clear events hash table */
@@ -663,7 +659,7 @@ int lwis_client_event_states_clear(struct lwis_client *lwis_client)
 	spin_unlock_irqrestore(&lwis_client->event_lock, flags);
 
 	/* Clear the individual events */
-	list_for_each_safe (it_event, it_tmp, &events_to_clear) {
+	list_for_each_safe(it_event, it_tmp, &events_to_clear) {
 		state = list_entry(it_event, struct lwis_client_event_state, clearance_node);
 		list_del(&state->clearance_node);
 		/* Update the device state with zero flags */
@@ -692,7 +688,7 @@ int lwis_device_event_states_clear_locked(struct lwis_device *lwis_dev)
 	struct hlist_node *n;
 	int i;
 
-	hash_for_each_safe (lwis_dev->event_states, i, n, state, node) {
+	hash_for_each_safe(lwis_dev->event_states, i, n, state, node) {
 		hash_del(&state->node);
 		kfree(state);
 	}
@@ -747,9 +743,8 @@ int lwis_device_event_flags_updated(struct lwis_device *lwis_dev, int64_t event_
 		}
 
 		/* Reset hw event counter if hw event has been disabled */
-		if (!event_enabled) {
+		if (!event_enabled)
 			state->event_counter = 0;
-		}
 	}
 
 	/* Reset sw event counter when it's going to disable */
@@ -785,16 +780,16 @@ int lwis_device_event_enable(struct lwis_device *lwis_dev, int64_t event_id, boo
 		ret = 0;
 		switch (generic_event_id) {
 		case LWIS_EVENT_ID_HEARTBEAT: {
-			if (enabled) {
+			if (enabled)
 				mod_timer(&lwis_dev->heartbeat_timer, jiffies);
-			} else {
+			else
 				del_timer(&lwis_dev->heartbeat_timer);
-			}
 			break;
 		}
 		default: {
 			/* We treat this as a real error because there really
-			 * shouldn't be anything else handling generic events */
+			 * shouldn't be anything else handling generic events
+			 */
 			ret = err = -ENOENT;
 			dev_err(lwis_dev->dev, "Unknown generic event: %lld\n", event_id);
 		}
@@ -883,14 +878,14 @@ static int device_event_emit_impl(struct lwis_device *lwis_dev, int64_t event_id
 	/* Run internal handler if any */
 	if (lwis_dev->vops.event_emitted) {
 		ret = lwis_dev->vops.event_emitted(lwis_dev, event_id, &payload, &payload_size);
-		if (ret) {
+		if (ret)
 			dev_warn(lwis_dev->dev, "Warning: vops.event_emitted returned %d\n", ret);
-		}
 	}
 
 	/* Notify clients */
-	list_for_each_safe (p, n, &lwis_dev->clients) {
+	list_for_each_safe(p, n, &lwis_dev->clients) {
 		bool emit = false;
+
 		lwis_client = list_entry(p, struct lwis_client, node);
 
 		/* Lock the event lock instead */
@@ -908,9 +903,8 @@ static int device_event_emit_impl(struct lwis_device *lwis_dev, int64_t event_id
 		spin_unlock_irqrestore(&lwis_client->event_lock, flags);
 		if (emit) {
 			event = kmalloc(sizeof(struct lwis_event_entry) + payload_size, GFP_ATOMIC);
-			if (!event) {
+			if (!event)
 				return -ENOMEM;
-			}
 
 			event->event_info.event_id = event_id;
 			event->event_info.event_counter = event_counter;
@@ -936,7 +930,8 @@ static int device_event_emit_impl(struct lwis_device *lwis_dev, int64_t event_id
 		}
 
 		/* Trigger transactions, if there's any that matches this event
-		   ID and counter */
+		 * ID and counter
+		 */
 		if (lwis_transaction_event_trigger(lwis_client, event_id, event_counter, timestamp,
 						   pending_events)) {
 			dev_warn(lwis_dev->dev,
@@ -954,8 +949,7 @@ int lwis_device_event_emit(struct lwis_device *lwis_dev, int64_t event_id, void 
 	int ret;
 	struct list_head pending_events;
 
-	/* Container to store events that are triggered as a result of this
-	   event. */
+	/* Container to store events that are triggered as a result of this event. */
 	INIT_LIST_HEAD(&pending_events);
 
 	/* Emit the original event */
@@ -977,9 +971,9 @@ int lwis_pending_event_push(struct list_head *pending_events, int64_t event_id, 
 	struct lwis_event_entry *event;
 
 	event = kzalloc(sizeof(struct lwis_event_entry) + payload_size, GFP_ATOMIC);
-	if (!event) {
+	if (!event)
 		return -ENOMEM;
-	}
+
 	event->event_info.event_id = event_id;
 	event->event_info.payload_size = payload_size;
 	if (payload_size > 0) {
@@ -1073,7 +1067,7 @@ void lwis_device_external_event_emit(struct lwis_device *lwis_dev, int64_t event
 	spin_unlock_irqrestore(&lwis_dev->lock, flags);
 
 	/* Notify clients */
-	list_for_each_safe (p, n, &lwis_dev->clients) {
+	list_for_each_safe(p, n, &lwis_dev->clients) {
 		emit = false;
 		lwis_client = list_entry(p, struct lwis_client, node);
 
@@ -1092,9 +1086,8 @@ void lwis_device_external_event_emit(struct lwis_device *lwis_dev, int64_t event
 
 		if (emit) {
 			event = kmalloc(sizeof(struct lwis_event_entry), GFP_ATOMIC);
-			if (!event) {
+			if (!event)
 				return;
-			}
 
 			event->event_info.event_id = event_id;
 			event->event_info.event_counter = event_counter;
@@ -1140,13 +1133,13 @@ void lwis_device_error_event_emit(struct lwis_device *lwis_dev, int64_t event_id
 	timestamp = ktime_to_ns(lwis_get_time());
 
 	/* Notify clients */
-	list_for_each_safe (p, n, &lwis_dev->clients) {
+	list_for_each_safe(p, n, &lwis_dev->clients) {
 		lwis_client = list_entry(p, struct lwis_client, node);
 
 		event = kmalloc(sizeof(struct lwis_event_entry) + payload_size, GFP_ATOMIC);
-		if (!event) {
+		if (!event)
 			return;
-		}
+
 		event->event_info.event_id = event_id;
 		event->event_info.event_counter = 0;
 		event->event_info.timestamp_ns = timestamp;

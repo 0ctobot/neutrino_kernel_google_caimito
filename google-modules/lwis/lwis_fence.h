@@ -13,54 +13,88 @@
 
 #include <linux/hashtable.h>
 #include <linux/list.h>
+#include <linux/dma-fence.h>
 
 #include "lwis_device.h"
 
 #define LWIS_CLIENTS_HASH_BITS 8
 
-/* Randomly generated number used to identify lwis_fence objects */
-#define LWIS_FENCE_IDENTIFIER 0x75A2C6BC
-
 extern bool lwis_fence_debug;
+#define lwis_debug_info(fmt, ...)                                                                  \
+	({                                                                                         \
+		if (unlikely(lwis_fence_debug)) {                                                  \
+			pr_info(fmt, ##__VA_ARGS__);                                               \
+		}                                                                                  \
+	})
 
+#define lwis_debug_dev_info(dev, fmt, ...)                                                         \
+	({                                                                                         \
+		if (unlikely(lwis_fence_debug)) {                                                  \
+			dev_info(dev, fmt, ##__VA_ARGS__);                                         \
+		}                                                                                  \
+	})
+
+/*
+ * LWIS fences are an extension of DMA fences. These fences are created from user space
+ * request. Unlike DMA fences, these can be signaled from user space writing to the `signal_fd`
+ * file descriptor. LWIS fences should only be used at creation time. The management of fences
+ * should be done using the generic DMA fences interface. Once created, user space will submit
+ * trigger expressions with the DMA fence file descriptor and we won't even know the fence is a
+ * LWIS fence. In the LWIS driver, all the fence management should be done using the DMA fence
+ * API, and only use this one when creating a fence with signaling support from user space.
+ */
 struct lwis_fence {
-	/* Used to identify the structure when casting from void pointer */
-	int struct_id;
-	int fd;
-	int status;
+	/* Most of the LWIS fence functionality is covered by the dma_fence structure.
+	 * This effectively "inherits" from dma_fence and means that LWIS fences can be
+	 * used as DMA fences too. */
+	struct dma_fence dma_fence;
+
+	/* Lock to protect the whole structure. */
 	spinlock_t lock;
+
+	/* Whether this fence should follow the old LWIS fence API. */
+	bool legacy_lwis_fence;
+
 	/* Top device for printing logs */
 	struct lwis_device *lwis_top_dev;
+
 	/* Status wait queue for waking up userspace */
 	wait_queue_head_t status_wait_queue;
-	/* Hash table of transactions that's triggered by this fence */
-	DECLARE_HASHTABLE(transaction_list, LWIS_CLIENTS_HASH_BITS);
-};
-
-struct lwis_fence_trigger_transaction_list {
-	struct lwis_client *owner;
-	struct list_head list;
-	struct hlist_node node;
 };
 
 struct lwis_fence_pending_signal {
-	struct file *fp;
-	struct lwis_fence *fence;
+	struct dma_fence *fence;
 	int pending_status;
 	struct list_head node;
 };
 
 /*
- *  lwis_fence_create: Create a new lwis_fence.
+ * lwis_fence_create: Create a new lwis_fence. Returns `lwis_fence_fds` with new
+ * file descriptors and error information.
  */
-int lwis_fence_create(struct lwis_device *lwis_dev);
-
-int ioctl_lwis_fence_create(struct lwis_device *lwis_dev, int32_t __user *msg);
+struct lwis_fence_fds {
+	/* Return error. Zero on success, negative errno otherwise. */
+	int error;
+	/*
+	 * New fence file descriptors:
+	 * (1) `fd` can be used as a `dma_fence` and
+	 * (2) `signal_fd` can be used to signal the fence from user space with a
+	 *     `write` syscall.
+	 */
+	int fd;
+	int signal_fd;
+};
+struct lwis_fence_fds lwis_fence_create(struct lwis_device *lwis_dev);
+/* Create a fence with the legacy LWIS Fence API */
+struct lwis_fence_fds lwis_fence_legacy_create(struct lwis_device *lwis_dev);
 
 /*
- *  lwis_fence_get: Get the file pointer for the lwis_fence associated with the fd.
+ * Helper function to signal a `dma_fence` with a specific status value.
  */
-struct file *lwis_fence_get(struct lwis_client *client, int fd);
+int lwis_dma_fence_signal_with_status(struct dma_fence *fence, int errno);
+
+/* Gets the DMA fence of a LWIS fence with a fd. */
+struct dma_fence *lwis_dma_fence_get(int fd);
 
 /* Creates all fences that do not currently exist */
 int lwis_initialize_transaction_fences(struct lwis_client *client,
@@ -81,18 +115,10 @@ bool lwis_fence_triggered_condition_ready(struct lwis_transaction *transaction, 
 int lwis_parse_trigger_condition(struct lwis_client *client, struct lwis_transaction *transaction);
 
 /*
- *  lwis_fence_signal: Signals the lwis_fence with the provided error code.
+ *  lwis_add_completion_fences_to_transaction: Prepares the transaction completion fence list.
  */
-int lwis_fence_signal(struct lwis_fence *lwis_fence, int status);
-
-/*
- *  lwis_add_completion_fence: Adds the fence with the given fd as a completion fence to this transaction.
- */
-int lwis_add_completion_fence(struct lwis_client *client, struct lwis_transaction *transaction);
-
-/* lwis_fence_pending_signal_create: Creates and returns a lwis_fence_pending_signal list entry */
-struct lwis_fence_pending_signal *lwis_fence_pending_signal_create(struct lwis_fence *fence,
-								   struct file *fp);
+int lwis_add_completion_fences_to_transaction(struct lwis_client *client,
+					      struct lwis_transaction *transaction);
 
 /*
  *  lwis_fences_pending_signal_emit: Signal all lwis_fence_pending_signals in the pending_fences list

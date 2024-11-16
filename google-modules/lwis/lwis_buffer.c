@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * Google LWIS DMA Buffer Utilities
  *
@@ -26,10 +27,10 @@ static struct lwis_buffer_enrollment_list *enrollment_list_find(struct lwis_clie
 								dma_addr_t dma_vaddr)
 {
 	struct lwis_buffer_enrollment_list *list;
-	hash_for_each_possible (client->enrolled_buffers, list, node, dma_vaddr) {
-		if (list->vaddr == dma_vaddr) {
+
+	hash_for_each_possible(client->enrolled_buffers, list, node, dma_vaddr) {
+		if (list->vaddr == dma_vaddr)
 			return list;
-		}
 	}
 	return NULL;
 }
@@ -39,9 +40,9 @@ static struct lwis_buffer_enrollment_list *enrollment_list_create(struct lwis_cl
 {
 	struct lwis_buffer_enrollment_list *enrollment_list =
 		kmalloc(sizeof(struct lwis_buffer_enrollment_list), GFP_KERNEL);
-	if (!enrollment_list) {
+	if (!enrollment_list)
 		return NULL;
-	}
+
 	enrollment_list->vaddr = dma_vaddr;
 	INIT_LIST_HEAD(&enrollment_list->list);
 	hash_add(client->enrolled_buffers, &enrollment_list->node, dma_vaddr);
@@ -52,6 +53,7 @@ static struct lwis_buffer_enrollment_list *
 enrollment_list_find_or_create(struct lwis_client *client, dma_addr_t dma_vaddr)
 {
 	struct lwis_buffer_enrollment_list *list = enrollment_list_find(client, dma_vaddr);
+
 	return (list == NULL) ? enrollment_list_create(client, dma_vaddr) : list;
 }
 
@@ -66,11 +68,11 @@ static void dump_total_enrolled_buffer_size(struct lwis_device *lwis_dev)
 	int num_enrolled_buffers = 0;
 
 	spin_lock_irqsave(&lwis_dev->lock, flags);
-	list_for_each_entry (client, &lwis_dev->clients, node) {
-		if (hash_empty(client->enrolled_buffers)) {
+	list_for_each_entry(client, &lwis_dev->clients, node) {
+		if (hash_empty(client->enrolled_buffers))
 			continue;
-		}
-		hash_for_each (client->enrolled_buffers, i, enrollment_list, node) {
+
+		hash_for_each(client->enrolled_buffers, i, enrollment_list, node) {
 			buffer = list_first_entry(&enrollment_list->list,
 						  struct lwis_enrolled_buffer, list_node);
 			total_enrolled_size += buffer->dma_buf->size;
@@ -103,9 +105,9 @@ int lwis_buffer_alloc(struct lwis_client *lwis_client, struct lwis_alloc_buffer_
 	if (alloc_info->flags & LWIS_DMA_SYSTEM_CACHE_RESERVATION) {
 		if (lwis_client->lwis_dev->type == DEVICE_TYPE_SLC) {
 			ret = lwis_slc_buffer_alloc(lwis_client->lwis_dev, alloc_info);
-			if (ret) {
+			if (ret)
 				return ret;
-			}
+
 			dma_buf = NULL;
 		} else {
 			pr_err("Can't allocate system cache buffer on non-slc device\n");
@@ -188,15 +190,14 @@ int lwis_buffer_enroll(struct lwis_client *lwis_client, struct lwis_enrolled_buf
 		return -EINVAL;
 	}
 
-	if (buffer->info.dma_read && buffer->info.dma_write) {
+	if (buffer->info.dma_read && buffer->info.dma_write)
 		buffer->dma_direction = DMA_BIDIRECTIONAL;
-	} else if (buffer->info.dma_read) {
+	else if (buffer->info.dma_read)
 		buffer->dma_direction = DMA_TO_DEVICE;
-	} else if (buffer->info.dma_write) {
+	else if (buffer->info.dma_write)
 		buffer->dma_direction = DMA_FROM_DEVICE;
-	} else {
+	else
 		buffer->dma_direction = DMA_NONE;
-	}
 
 	if (!valid_dma_direction(buffer->dma_direction)) {
 		dev_err(lwis_client->lwis_dev->dev, "Enroll: buffer->dma_direction is invalid\n");
@@ -256,7 +257,7 @@ int lwis_buffer_enroll(struct lwis_client *lwis_client, struct lwis_enrolled_buf
 	}
 
 	// Check if there was duplicated identical enrollment.
-	list_for_each (it_enrollment, &enrollment_list->list) {
+	list_for_each(it_enrollment, &enrollment_list->list) {
 		old_buffer = list_entry(it_enrollment, struct lwis_enrolled_buffer, list_node);
 		if (old_buffer->info.fd == buffer->info.fd &&
 		    old_buffer->info.dma_vaddr == buffer->info.dma_vaddr) {
@@ -322,20 +323,18 @@ struct lwis_enrolled_buffer *lwis_client_enrolled_buffer_find(struct lwis_client
 	struct list_head *it_enrollment;
 
 	if (!lwis_client) {
-		pr_err("lwis_client_enrolled_buffer_find: LWIS client is NULL\n");
+		pr_err("%s: LWIS client is NULL\n", __func__);
 		return NULL;
 	}
 
 	enrollment_list = enrollment_list_find(lwis_client, dma_vaddr);
-	if (!enrollment_list || list_empty(&enrollment_list->list)) {
+	if (!enrollment_list || list_empty(&enrollment_list->list))
 		return NULL;
-	}
 
-	list_for_each (it_enrollment, &enrollment_list->list) {
+	list_for_each(it_enrollment, &enrollment_list->list) {
 		buffer = list_entry(it_enrollment, struct lwis_enrolled_buffer, list_node);
-		if (buffer->info.fd == fd && buffer->info.dma_vaddr == dma_vaddr) {
+		if (buffer->info.fd == fd && buffer->info.dma_vaddr == dma_vaddr)
 			return buffer;
-		}
 	}
 
 	return NULL;
@@ -352,15 +351,15 @@ int lwis_buffer_cpu_access(struct lwis_client *lwis_client, struct lwis_buffer_c
 		return -ENODEV;
 	}
 
-	if (op->read && op->write) {
+	if (op->read && op->write)
 		dma_direction = DMA_BIDIRECTIONAL;
-	} else if (op->read) {
+	else if (op->read)
 		dma_direction = DMA_FROM_DEVICE;
-	} else if (op->write) {
+	else if (op->write)
 		dma_direction = DMA_TO_DEVICE;
-	} else {
+	else
 		dma_direction = DMA_NONE;
-	}
+
 	if (!valid_dma_direction(dma_direction)) {
 		dev_err(lwis_client->lwis_dev->dev, "BufferCpuAccess: dma_direction is invalid\n");
 		return -EINVAL;
@@ -372,11 +371,11 @@ int lwis_buffer_cpu_access(struct lwis_client *lwis_client, struct lwis_buffer_c
 		return -EINVAL;
 	}
 
-	if (op->start) {
+	if (op->start)
 		ret = dma_buf_begin_cpu_access_partial(dma_buf, dma_direction, op->offset, op->len);
-	} else {
+	else
 		ret = dma_buf_end_cpu_access_partial(dma_buf, dma_direction, op->offset, op->len);
-	}
+
 	dma_buf_put(dma_buf);
 	return ret;
 }
@@ -393,13 +392,13 @@ int lwis_client_enrolled_buffers_clear(struct lwis_client *lwis_client)
 	struct lwis_enrolled_buffer *buffer;
 
 	if (!lwis_client) {
-		pr_err("lwis_client_enrolled_buffers_clear: LWIS client is NULL\n");
+		pr_err("%s: LWIS client is NULL\n", __func__);
 		return -ENODEV;
 	}
 
 	/* Iterate over the entire hash table */
-	hash_for_each_safe (lwis_client->enrolled_buffers, i, n, enrollment_list, node) {
-		list_for_each_safe (it_enrollment, it_enrollment_tmp, &enrollment_list->list) {
+	hash_for_each_safe(lwis_client->enrolled_buffers, i, n, enrollment_list, node) {
+		list_for_each_safe(it_enrollment, it_enrollment_tmp, &enrollment_list->list) {
 			buffer = list_entry(it_enrollment, struct lwis_enrolled_buffer, list_node);
 			/* Disenroll the buffer */
 			lwis_buffer_disenroll(lwis_client, buffer);
@@ -417,14 +416,13 @@ struct lwis_allocated_buffer *lwis_client_allocated_buffer_find(struct lwis_clie
 	struct lwis_allocated_buffer *p;
 
 	if (!lwis_client) {
-		pr_err("lwis_client_allocated_buffer_find: LWIS client is NULL\n");
+		pr_err("%s: LWIS client is NULL\n", __func__);
 		return NULL;
 	}
 
-	hash_for_each_possible (lwis_client->allocated_buffers, p, node, fd) {
-		if (p->fd == fd) {
+	hash_for_each_possible(lwis_client->allocated_buffers, p, node, fd) {
+		if (p->fd == fd)
 			return p;
-		}
 	}
 	return NULL;
 }
@@ -436,16 +434,16 @@ int lwis_client_allocated_buffers_clear(struct lwis_client *lwis_client)
 	int i;
 
 	if (!lwis_client) {
-		pr_err("lwis_client_allocated_buffers_clear: LWIS client is NULL\n");
+		pr_err("%s: LWIS client is NULL\n", __func__);
 		return -ENODEV;
 	}
 
-	hash_for_each_safe (lwis_client->allocated_buffers, i, n, buffer, node) {
-		if (lwis_client->lwis_dev->type != DEVICE_TYPE_SLC) {
+	hash_for_each_safe(lwis_client->allocated_buffers, i, n, buffer, node) {
+		if (lwis_client->lwis_dev->type != DEVICE_TYPE_SLC)
 			lwis_buffer_free(lwis_client, buffer);
-		} else {
+		else
 			hash_del(&buffer->node);
-		}
+
 		kfree(buffer);
 	}
 	return 0;

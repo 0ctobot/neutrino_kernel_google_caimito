@@ -1,5 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0-only
- *
+/* SPDX-License-Identifier: GPL-2.0-only */
+/*
  * Google LWIS Casablanca Platform-Specific Functions
  *
  * Copyright (c) 2022 Google, LLC
