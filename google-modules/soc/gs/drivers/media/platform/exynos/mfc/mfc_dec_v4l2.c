@@ -772,7 +772,7 @@ static int mfc_dec_reqbufs(struct file *file, void *priv,
 
 	mfc_debug_enter();
 
-	if (reqbufs->memory == V4L2_MEMORY_MMAP) {
+	if (reqbufs->memory != V4L2_MEMORY_DMABUF) {
 		mfc_ctx_err("Not supported memory type (%d)\n", reqbufs->memory);
 		return -EINVAL;
 	}

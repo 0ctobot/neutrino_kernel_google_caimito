@@ -340,6 +340,7 @@ struct exynos_pcie {
 	bool l1ss_force;
 	bool l11_enable;
 	bool l12_enable;
+	bool l1_enable;
 
 	struct pinctrl		*pcie_pinctrl;
 	struct pinctrl_state	*pin_state[MAX_PCIE_PIN_STATE];

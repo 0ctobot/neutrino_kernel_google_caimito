@@ -267,8 +267,15 @@ int mfc_core_pm_power_off(struct mfc_core *core)
 	struct mfc_platdata *pdata = dev->pdata;
 #endif
 	int ret;
+	int state = atomic_read(&core->clk_ref);
 
 	MFC_TRACE_CORE("++ Power off\n");
+
+	while (state > 0) {
+		mfc_core_info("MFC clock is still enabled (%d)\n", state);
+		mfc_core_pm_clock_off(core);
+		state = atomic_read(&core->clk_ref);
+	}
 
 	if (!IS_ERR(core->pm.clock)) {
 		clk_unprepare(core->pm.clock);

@@ -62,15 +62,94 @@ static unsigned int bus1_to_int_freq(unsigned int freq)
 		dev_err(btsdev->dev, "bus1_int_tbl unavailable\n");
 		return freq;
 	}
+
 	/* The bus1_int_tbl stores frequencies from high to low */
-	for (i = 0; i < btsdev->map_row_cnt; i++) {
-		if (freq > btsdev->bus1_int_tbl[i].bus1_freq)
+	i = btsdev->map_row_cnt;
+	while (--i > 0) {
+		if (freq <= btsdev->bus1_int_tbl[i].bus1_freq)
 			break;
 	}
-	i = i ? i - 1 : i;
 
 	return btsdev->bus1_int_tbl[i].int_freq;
 }
+
+#if IS_ENABLED(CONFIG_SOC_ZUMA)
+static inline unsigned int bus1_freq_to_mhz(unsigned int freq)
+{
+	unsigned int i;
+
+	if (!btsdev->bus1_int_tbl) {
+		dev_err(btsdev->dev, "bus1_int_tbl unavailable\n");
+		return freq;
+	}
+
+	i = btsdev->map_row_cnt;
+	while (--i > 0) {
+		if (freq <= btsdev->bus1_int_tbl[i].bus1_freq)
+			break;
+	}
+
+	return btsdev->bus1_int_tbl[i].bus1_freq / 1000;
+}
+
+static unsigned int bts_cal_urgent_lat_threshold(unsigned int bus1_mhz, unsigned int latency_ns)
+{
+	return latency_ns * bus1_mhz / URGENT_TIMEOUT_EPOCH / 1000;
+}
+
+static void bts_update_urgent_lat_req(unsigned int bus1_freq)
+{
+	struct bts_info *info = btsdev->bts_list;
+	struct bts_urgent_lat *urgent_lat = btsdev->urgent_lat_list;
+	unsigned int i, scen, threshold, bts_index;
+	struct bts_stat stat;
+	char trace_name[32];
+
+	if (!bus1_freq || !btsdev->num_urgent_lat)
+		return;
+
+	bus1_freq = bus1_freq_to_mhz(bus1_freq);
+
+	spin_lock(&btsdev->lock);
+
+	scen = btsdev->top_scen;
+	for (i = 0; i < btsdev->num_urgent_lat; i++) {
+		if (urgent_lat[i].lat_read) {
+			bts_index = urgent_lat[i].bts_index;
+			if (!info[bts_index].pd_on || !info[bts_index].ops->get_urgent ||
+			    !info[bts_index].ops->set_urgent)
+				continue;
+			threshold = bts_cal_urgent_lat_threshold(bus1_freq, urgent_lat[i].lat_read);
+			if (!info[bts_index].stat[scen].stat_on)
+				scen = ID_DEFAULT;
+			if (threshold > info[bts_index].stat[scen].qurgent_th_r || !threshold)
+				threshold = info[bts_index].stat[scen].qurgent_th_r;
+			if (threshold == urgent_lat[i].th_read)
+				continue;
+
+			urgent_lat[i].th_read = threshold;
+			BTSDBG_LOG(btsdev->dev,
+				   "Update %s latency: bus1 %uMhz, lat %u ns, th 0x%x\n",
+				   urgent_lat[i].name, bus1_freq, urgent_lat[i].lat_read,
+				   threshold);
+
+			info[bts_index].ops->get_urgent(info[bts_index].va_base, &stat);
+			if (stat.qurgent_th_r != threshold) {
+				stat.qurgent_th_r = threshold;
+				info[bts_index].ops->set_urgent(info[bts_index].va_base, &stat);
+				if (trace_clock_set_rate_enabled()) {
+					scnprintf(trace_name, sizeof(trace_name), "BTS_%s_ur_th_rd",
+						  urgent_lat[i].name);
+					trace_clock_set_rate(trace_name, threshold,
+							     raw_smp_processor_id());
+				}
+			}
+		}
+	}
+
+	spin_unlock(&btsdev->lock);
+}
+#endif
 
 static void bts_calc_bw(void)
 {
@@ -165,6 +244,7 @@ static void bts_calc_bw(void)
 
 	/* Calculate the final INT frequency based on NOCL2AA, NOCL2AB & NOCL1A */
 	int_freq = max(int_freq, bus1_to_int_freq(bus1_freq));
+	bts_update_urgent_lat_req(bus1_freq);
 
 	BTSDBG_LOG(btsdev->dev,
 		   "BW: T:%.8u R:%.8u W:%.8u P:%.8u RT:%.8u MIF:%.8u NOCL2A:%.8u INT:%.8u\n",
@@ -249,18 +329,45 @@ static void bts_update_stats(unsigned int index)
 static void bts_set(unsigned int scen, unsigned int index)
 {
 	struct bts_info *info = btsdev->bts_list;
+#if IS_ENABLED(CONFIG_SOC_ZUMA)
+	struct bts_urgent_lat *urgent_lat = btsdev->urgent_lat_list;
+	struct bts_stat bts_stat;
+	unsigned int i, cur_urgent_th_r;
+	bool update_urgent = false;
+#endif
 	int ret;
 
 	if (!info[index].ops->set_bts || !info[index].pd_on)
 		return;
 
 	/* Check scenario set exists */
-	if (info[index].stat[scen].stat_on)
-		ret = info[index].ops->set_bts(info[index].va_base,
-					       &info[index].stat[scen]);
+	if (!info[index].stat[scen].stat_on)
+		scen = ID_DEFAULT;
+
+#if IS_ENABLED(CONFIG_SOC_ZUMA)
+	for (i = 0; i < btsdev->num_urgent_lat; i++) {
+		if (urgent_lat[i].bts_index == index) {
+			cur_urgent_th_r = info[index].stat[scen].qurgent_th_r;
+			if (urgent_lat[i].th_read > 0 && urgent_lat[i].th_read < cur_urgent_th_r) {
+				BTSDBG_LOG(btsdev->dev, "Replace %s urgent: th_read 0x%x -> 0x%x\n",
+					   urgent_lat[i].name, cur_urgent_th_r,
+					   urgent_lat[i].th_read);
+				memcpy(&bts_stat, &info[index].stat[scen],
+				       sizeof(info[index].stat[scen]));
+				bts_stat.qurgent_th_r = urgent_lat[i].th_read;
+				update_urgent = true;
+			}
+			break;
+		}
+	}
+
+	if (update_urgent)
+		ret = info[index].ops->set_bts(info[index].va_base, &bts_stat);
 	else
-		ret = info[index].ops->set_bts(info[index].va_base,
-					       &info[index].stat[ID_DEFAULT]);
+		ret = info[index].ops->set_bts(info[index].va_base, &info[index].stat[scen]);
+#else
+	ret = info[index].ops->set_bts(info[index].va_base, &info[index].stat[scen]);
+#endif
 
 	if (ret)
 		dev_err(btsdev->dev,
@@ -364,6 +471,65 @@ unsigned int bts_get_scenindex(const char *name)
 	return index;
 }
 EXPORT_SYMBOL_GPL(bts_get_scenindex);
+
+#if IS_ENABLED(CONFIG_SOC_ZUMA)
+int bts_get_urgent_lat_bts_index(const char *name)
+{
+	unsigned int i, bts_index;
+	struct bts_urgent_lat *urgent_lat = btsdev->urgent_lat_list;
+
+	spin_lock(&btsdev->lock);
+	for (i = 0; i < btsdev->num_urgent_lat; i++) {
+		if (strcmp(name, urgent_lat[i].name) == 0)
+			break;
+	}
+
+	if (i < btsdev->num_urgent_lat) {
+		bts_index = urgent_lat[i].bts_index;
+	} else {
+		bts_index = -EINVAL;
+		dev_err(btsdev->dev, "%s: invalid `%s`", __func__, name);
+	}
+	spin_unlock(&btsdev->lock);
+
+	return bts_index;
+}
+EXPORT_SYMBOL_GPL(bts_get_urgent_lat_bts_index);
+
+void bts_set_urgent_lat_read(int bts_index, unsigned int lat_read)
+{
+	unsigned int i;
+	struct bts_urgent_lat *urgent_lat = btsdev->urgent_lat_list;
+	char trace_name[32];
+
+	if (bts_index < 0 || bts_index >= btsdev->num_bts) {
+		dev_err(btsdev->dev, "%s: Invalid bts index %d!\n", __func__, bts_index);
+		return;
+	}
+
+	spin_lock(&btsdev->lock);
+	for (i = 0; i < btsdev->num_urgent_lat; i++) {
+		if (bts_index == urgent_lat[i].bts_index) {
+			urgent_lat[i].lat_read = lat_read;
+			break;
+		}
+	}
+
+	if (i == btsdev->num_urgent_lat)
+		dev_warn(btsdev->dev, "%s: bts index %d does not upport set urgent lat\n", __func__,
+			 bts_index);
+	else
+		BTSDBG_LOG(btsdev->dev, "%s: lat read %u\n", urgent_lat[i].name, lat_read);
+
+	spin_unlock(&btsdev->lock);
+
+	if (trace_clock_set_rate_enabled() && i != btsdev->num_urgent_lat) {
+		scnprintf(trace_name, sizeof(trace_name), "BTS_%s_ur_lat_rd", urgent_lat[i].name);
+		trace_clock_set_rate(trace_name, lat_read, raw_smp_processor_id());
+	}
+}
+EXPORT_SYMBOL_GPL(bts_set_urgent_lat_read);
+#endif
 
 int bts_update_bw(unsigned int index, struct bts_bw bw)
 {
@@ -1583,10 +1749,11 @@ static int bts_parse_data(struct device_node *np, struct bts_device *data)
 	struct device_node *child_np = NULL;
 	struct device_node *snp = NULL;
 	struct resource res;
-	int i, j, map_cnt;
+	int i, j, map_cnt, count;
 	int of_data_int_array[OF_DATA_NUM_MAX];
 	int ret = 0;
 #if IS_ENABLED(CONFIG_SOC_ZUMA)
+	struct bts_urgent_lat *urgent_lat;
 	bool has_nocl2aa = false;
 	bool has_nocl2ab = false;
 #endif
@@ -1624,15 +1791,15 @@ static int bts_parse_data(struct device_node *np, struct bts_device *data)
 		data->bus1_int_tbl[i].int_freq = of_data_int_array[i * NUM_COLS + 1];
 	}
 
-	data->num_scen = (unsigned int)of_property_count_strings(
-			np, "list-scen");
-	if (!data->num_scen) {
+	count = of_property_count_strings(np, "list-scen");
+	if (count <= 0) {
 		BTSDBG_LOG(data->dev,
 			   "There should be at least one scenario\n");
 		ret = -EINVAL;
 		goto err;
 	}
 
+	data->num_scen = count;
 	scen = devm_kcalloc(data->dev, data->num_scen,
 			    sizeof(struct bts_scen), GFP_KERNEL);
 	if (!scen) {
@@ -1653,15 +1820,15 @@ static int bts_parse_data(struct device_node *np, struct bts_device *data)
 		}
 	}
 
-	data->num_rts = (unsigned int)of_property_count_strings(
-			np, "rt-names");
-	if (!data->num_rts) {
+	count = of_property_count_strings(np, "rt-names");
+	if (count <= 0) {
 		BTSDBG_LOG(data->dev,
 			   "No rt names found\n");
 		ret = -EINVAL;
 		goto err;
 	}
 
+	data->num_rts = count;
 	data->rt_names = devm_kcalloc(data->dev, data->num_rts,
 				      sizeof(char *), GFP_KERNEL);
 	if (!data->rt_names) {
@@ -1689,14 +1856,14 @@ static int bts_parse_data(struct device_node *np, struct bts_device *data)
 	}
 
 #if IS_ENABLED(CONFIG_SOC_ZUMA)
-	data->num_nocl = (unsigned int)of_property_count_strings(np,
-				"nocl-names");
-	if (!data->num_nocl || (data->num_nocl >= data->num_bts)) {
+	count = of_property_count_strings(np, "nocl-names");
+	if (count <= 0 || count >= data->num_bts) {
 		BTSDBG_LOG(data->dev,
 			   "No nocl names found or the count is wrong\n");
 		ret = -EINVAL;
 		goto err;
 	}
+	data->num_nocl = count;
 	data->nocl_infos = devm_kcalloc(data->dev, data->num_nocl,
 					sizeof(struct nocl_info), GFP_KERNEL);
 	if (!data->nocl_infos) {
@@ -1847,6 +2014,37 @@ static int bts_parse_data(struct device_node *np, struct bts_device *data)
 		ret = -ENOMEM;
 		goto err;
 	}
+
+#if IS_ENABLED(CONFIG_SOC_ZUMA)
+	count = of_property_count_strings(np, "list-urgent-lat");
+
+	if (count > 0) {
+		unsigned int index;
+
+		urgent_lat =
+			devm_kcalloc(data->dev, count, sizeof(struct bts_urgent_lat), GFP_KERNEL);
+		if (!urgent_lat) {
+			ret = -ENOMEM;
+			goto err;
+		}
+
+		for (i = 0; i < count; i++) {
+			ret = of_property_read_string_index(np, "list-urgent-lat", i,
+							    &urgent_lat[i].name);
+			if (ret < 0) {
+				dev_err(data->dev, "Unable to get name of urgent lat list\n");
+				goto err;
+			}
+			for (index = 0; index < data->num_bts; index++) {
+				if (strcmp(urgent_lat[i].name, info[index].name) == 0)
+					break;
+			}
+			urgent_lat[i].bts_index = index;
+		}
+		data->num_urgent_lat = count;
+		data->urgent_lat_list = urgent_lat;
+	}
+#endif
 
 	data->bts_list = info;
 	data->scen_list = scen;

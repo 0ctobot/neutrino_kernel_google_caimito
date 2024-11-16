@@ -23,7 +23,6 @@ static inline int g2d_smc(unsigned long cmd, unsigned long arg0,
 #endif
 }
 
-#define SMC_DRM_G2D_CMD_DATA            0x8200202d
 #define SMC_PROTECTION_SET		0x82002010
 
 #define G2D_ALWAYS_S 37

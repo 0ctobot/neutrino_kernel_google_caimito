@@ -7,6 +7,8 @@
 #ifndef __DT_S2MPG1X_POWER_H
 #define __DT_S2MPG1X_POWER_H
 
+#include <linux/kconfig.h>
+
 #define OCP_WARN_DISABLE	0
 #define OCP_WARN_ENABLE		1
 
@@ -105,6 +107,10 @@
 #define RTC_WTSR_COLDTIMER_165_MSEC	2
 #define RTC_WTSR_COLDTIMER_256_MSEC	3
 
+#if IS_ENABLED(CONFIG_REGULATOR_S2MPG14) || IS_ENABLED(CONFIG_REGULATOR_S2MPG12)
 #define METER_CHANNEL_MAX 12
+#else
+#define METER_CHANNEL_MAX 8
+#endif
 
 #endif /* __DT_S2MPG1X_POWER_H */

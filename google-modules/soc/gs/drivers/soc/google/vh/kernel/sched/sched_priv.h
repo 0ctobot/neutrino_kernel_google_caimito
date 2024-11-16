@@ -7,12 +7,14 @@
 #define UCLAMP_STATS_STEP   (100 / (UCLAMP_STATS_SLOTS - 1))
 #define DEF_UTIL_THRESHOLD  1280
 #define DEF_UTIL_POST_INIT_SCALE  512
+#define DEF_THERMAL_CAP_MARGIN  1536
 #define C1_EXIT_LATENCY     1
 #define THREAD_PRIORITY_TOP_APP_BOOST 110
 #define THREAD_PRIORITY_BACKGROUND    130
 #define THREAD_PRIORITY_LOWEST        139
 #define LIST_QUEUED         0xa5a55a5a
 #define LIST_NOT_QUEUED     0x5a5aa5a5
+#define LIB_PATH_LENGTH 512
 /*
  * For cpu running normal tasks, its uclamp.min will be 0 and uclamp.max will be 1024,
  * and the sum will be 1024. We use this as index that cpu is not running important tasks.
@@ -40,6 +42,7 @@
 		      __val / DIV_ROUND_CLOSEST(SCHED_CAPACITY_SCALE, UCLAMP_BUCKETS),	      \
 		      UCLAMP_BUCKETS - 1)
 
+extern unsigned int thermal_cap_margin[CONFIG_VH_SCHED_MAX_CPU_NR];
 extern unsigned int sched_capacity_margin[CONFIG_VH_SCHED_MAX_CPU_NR];
 extern unsigned int sched_auto_fits_capacity[CONFIG_VH_SCHED_MAX_CPU_NR];
 extern unsigned int sched_dvfs_headroom[CONFIG_VH_SCHED_MAX_CPU_NR];
@@ -146,6 +149,7 @@ struct vendor_group_property {
 	bool prefer_high_cap;
 	bool task_spreading;
 	bool auto_uclamp_max;
+	bool auto_prefer_fit;
 #if !IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 	unsigned int group_throttle;
 #endif
@@ -230,6 +234,14 @@ enum vendor_group_attribute {
 	VTA_PROC_GROUP,
 };
 
+enum VENDOR_TUNABLE_TYPE {
+	SCHED_CAPACITY_MARGIN,
+	SCHED_AUTO_UCLAMP_MAX,
+	SCHED_DVFS_HEADROOM,
+	SCHED_IOWAIT_BOOST_MAX,
+	THERMAL_CAP_MARGIN,
+};
+
 #if !IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 struct vendor_task_group_struct {
 	enum vendor_group group;
@@ -270,6 +282,8 @@ DECLARE_PER_CPU(u64, dvfs_update_delay);
  * Any change for these functions in upstream GKI would require extensive review
  * to make proper adjustment in vendor hook.
  */
+#define UTIL_EST_MARGIN (SCHED_CAPACITY_SCALE / 100)
+
 extern struct uclamp_se uclamp_default[UCLAMP_CNT];
 
 void set_next_buddy(struct sched_entity *se);
@@ -315,6 +329,42 @@ extern inline void uclamp_rq_inc_id(struct rq *rq, struct task_struct *p,
 				    enum uclamp_id clamp_id);
 extern inline void uclamp_rq_dec_id(struct rq *rq, struct task_struct *p,
 				    enum uclamp_id clamp_id);
+
+static inline void
+uclamp_update_active(struct task_struct *p, enum uclamp_id clamp_id)
+{
+	struct rq_flags rf;
+	struct rq *rq;
+
+	if (!uclamp_is_used())
+		return;
+
+	/*
+	 * Lock the task and the rq where the task is (or was) queued.
+	 *
+	 * We might lock the (previous) rq of a !RUNNABLE task, but that's the
+	 * price to pay to safely serialize util_{min,max} updates with
+	 * enqueues, dequeues and migration operations.
+	 * This is the same locking schema used by __set_cpus_allowed_ptr().
+	 */
+	rq = task_rq_lock(p, &rf);
+
+	/*
+	 * Setting the clamp bucket is serialized by task_rq_lock().
+	 * If the task is not yet RUNNABLE and its task_struct is not
+	 * affecting a valid clamp bucket, the next time it's enqueued,
+	 * it will already see the updated clamp bucket value.
+	 */
+	if (p->uclamp[clamp_id].active) {
+		uclamp_rq_dec_id(rq, p, clamp_id);
+		uclamp_rq_inc_id(rq, p, clamp_id);
+
+		if (clamp_id == UCLAMP_MAX && rq->uclamp_flags & UCLAMP_FLAG_IDLE)
+			rq->uclamp_flags &= ~UCLAMP_FLAG_IDLE;
+	}
+
+	task_rq_unlock(rq, p, &rf);
+}
 
 static inline int util_fits_cpu(unsigned long util,
 				unsigned long uclamp_min,
@@ -492,7 +542,7 @@ static inline bool get_uclamp_fork_reset(struct task_struct *p, bool inherited)
 {
 	if (inherited)
 		return get_vendor_task_struct(p)->uclamp_fork_reset ||
-			get_vendor_binder_task_struct(p)->uclamp_fork_reset;
+			get_vendor_inheritance_struct(p)->uclamp_fork_reset;
 	else
 		return get_vendor_task_struct(p)->uclamp_fork_reset;
 }
@@ -536,12 +586,12 @@ static inline bool should_auto_prefer_idle(struct task_struct *p, int group)
 static inline bool get_prefer_idle(struct task_struct *p)
 {
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
-	struct vendor_binder_task_struct *vbinder = get_vendor_binder_task_struct(p);
+	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
 
 	// Always perfer idle for ADPF tasks or tasks with prefer_idle set explicitly.
 	// In auto_prefer_idle case, only allow high prio tasks of the prefer_idle group,
 	// or high prio task with wake_q_count value greater than 0 in top-app.
-	if (get_uclamp_fork_reset(p, true) || vp->prefer_idle || vbinder->prefer_idle)
+	if (get_uclamp_fork_reset(p, true) || vp->prefer_idle || vi->prefer_idle)
 		return true;
 	else if (vendor_sched_auto_prefer_idle)
 		return should_auto_prefer_idle(p, vp->group);
@@ -550,6 +600,18 @@ static inline bool get_prefer_idle(struct task_struct *p)
 			uclamp_eff_value_pixel_mod(p, UCLAMP_MAX) == SCHED_CAPACITY_SCALE);
 	else
 		return vg[vp->group].prefer_idle;
+}
+
+static inline void init_vendor_inheritance_struct(struct vendor_inheritance_struct *vi)
+{
+	int i;
+
+	for (i = 0; i < VI_MAX; i++) {
+		vi->uclamp[i][UCLAMP_MIN] = uclamp_none(UCLAMP_MIN);
+		vi->uclamp[i][UCLAMP_MAX] = uclamp_none(UCLAMP_MAX);
+	}
+	vi->prefer_idle = 0;
+	vi->uclamp_fork_reset = 0;
 }
 
 static inline void init_vendor_task_struct(struct vendor_task_struct *v_tsk)
@@ -571,18 +633,12 @@ static inline void init_vendor_task_struct(struct vendor_task_struct *v_tsk)
 	v_tsk->uclamp_filter.uclamp_max_ignored = 0;
 	v_tsk->iowait_boost = 0;
 	v_tsk->is_binder_task = false;
-	v_tsk->binder_task.uclamp[UCLAMP_MIN] = uclamp_none(UCLAMP_MIN);
-	v_tsk->binder_task.uclamp[UCLAMP_MIN] = uclamp_none(UCLAMP_MAX);
-	v_tsk->binder_task.prefer_idle = false;
-	v_tsk->binder_task.active = false;
-	v_tsk->binder_task.uclamp_fork_reset = false;
-	v_tsk->uclamp_pi[UCLAMP_MIN] = uclamp_none(UCLAMP_MIN);
-	v_tsk->uclamp_pi[UCLAMP_MAX] = uclamp_none(UCLAMP_MAX);
 	v_tsk->runnable_start_ns = -1;
 	v_tsk->delta_exec = 0;
 	v_tsk->util_enqueued = 0;
 	v_tsk->prev_util_enqueued = 0;
 	v_tsk->ignore_util_est_update = false;
+	init_vendor_inheritance_struct(&v_tsk->vi);
 }
 
 extern u64 sched_slice(struct cfs_rq *cfs_rq, struct sched_entity *se);
@@ -938,7 +994,7 @@ static inline void __update_util_est_invariance(struct rq *rq,
 	vp->prev_sum_exec_runtime = se->sum_exec_runtime;
 
 	/* Is the task util increasing? */
-	if (task_util(p) < vp->util_enqueued)
+	if (task_util(p) < vp->util_enqueued + UTIL_EST_MARGIN)
 		return;
 
 	new_util_est = approximate_util_avg(vp->util_enqueued, vp->delta_exec);

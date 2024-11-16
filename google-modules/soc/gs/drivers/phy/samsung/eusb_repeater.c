@@ -11,9 +11,29 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/extcon.h>
+
 #include "eusb_repeater.h"
 
 struct eusb_repeater_data *g_tud;
+
+/*
+ * Time 3 ms is required for the eusb repeater to be ready to accept RAP and I2C requests.
+ * See eUSB2 Repeater 7.7 for timing requirement.
+ */
+static void ensure_eusb_repeater_ready(struct eusb_repeater_data *tud)
+{
+	mutex_lock(&tud->mutex);
+	ktime_t now = ktime_get();
+	const ktime_t target = ktime_add_us(tud->start_time, TIME_RH_READY);
+
+	if (!tud->ready) {
+		if (ktime_before(now, target))
+			udelay(ktime_us_delta(target, now));
+		tud->ready = true;
+	}
+	mutex_unlock(&tud->mutex);
+}
 
 int eusb_repeater_i2c_write(struct eusb_repeater_data *tud, u8 reg, u8 *data, int len)
 {
@@ -34,7 +54,9 @@ int eusb_repeater_i2c_write(struct eusb_repeater_data *tud, u8 reg, u8 *data, in
 	msg.flags = 0;
 	msg.len = len + 1;
 	msg.buf = buf;
+
 	mutex_lock(&tud->i2c_mutex);
+
 	for (retry = 0; retry < TUSB_I2C_RETRY_CNT; retry++) {
 		ret = i2c_transfer(tud->client->adapter, &msg, 1);
 		if (ret == 1)
@@ -106,6 +128,7 @@ static int eusb_repeater_write_reg(struct eusb_repeater_data *tud, u8 reg, u8 *d
 {
 	int ret = 0;
 
+	ensure_eusb_repeater_ready(tud);
 	ret = eusb_repeater_i2c_write(tud, reg, data, len);
 	if (ret < 0) {
 		dev_err(tud->dev, "%s: reg(0x%x), ret(%d)\n",
@@ -118,6 +141,7 @@ static int eusb_repeater_read_reg(struct eusb_repeater_data *tud, u8 reg, u8 *da
 {
 	int ret = 0;
 
+	ensure_eusb_repeater_ready(tud);
 	ret = eusb_repeater_i2c_read(tud, reg, data, len);
 	if (ret < 0) {
 		dev_err(tud->dev, "%s: reg(0x%x), ret(%d)\n",
@@ -251,8 +275,6 @@ eusb_repeater_store(struct device *dev,
 		ret = eusb_repeater_ctrl(true);
 		if (ret < 0)
 			return -EBUSY;
-
-		mdelay(3);
 	}
 
 	for (i = 0; i < tud->tune_cnt; i++) {
@@ -836,15 +858,22 @@ static const struct of_device_id eusb_repeater_match_table[] = {
 		{},
 };
 
-void eusb_repeater_update_usb_state(bool data_enabled)
+void eusb_repeater_update_usb_state(bool on)
 {
 	struct eusb_repeater_data *tud = g_tud;
 
 	if (!tud)
 		return;
 
-	tud->eusb_data_enabled = data_enabled;
-	if (tud->eusb_pm_status && !tud->eusb_data_enabled)
+	mutex_lock(&tud->mutex);
+	if (on)
+		tud->start_time = ktime_get();
+	tud->ready = false;
+	tud->eusb_data_enabled = (extcon_get_state(tud->edev, EXTCON_USB) > 0 ||
+				  extcon_get_state(tud->edev, EXTCON_USB_HOST) > 0);
+	mutex_unlock(&tud->mutex);
+
+	if (on && tud->eusb_pm_status && !tud->eusb_data_enabled)
 		eusb_repeater_ctrl(false);
 
 	return;
@@ -876,8 +905,6 @@ int eusb_repeater_power_on(void)
 	ret = eusb_repeater_ctrl(true);
 	if (ret < 0)
 		goto err;
-
-	mdelay(3);
 
 	ret = eusb_repeater_read_reg(tud, 0x50,
 				&read_data, 1);
@@ -989,10 +1016,18 @@ static int eusb_repeater_probe(struct i2c_client *client,
 
 	tud = kzalloc(sizeof(*tud), GFP_KERNEL);
 	if (tud == NULL) {
+		dev_err(&client->dev, "%s: couldn't allocate eusb_repeater_data\n", __func__);
 		ret = -ENOMEM;
 		goto err_repeater_nomem;
 	}
 	tud->dev = &client->dev;
+
+	tud->edev = extcon_get_edev_by_phandle(tud->dev, 0);
+	if (IS_ERR_OR_NULL(tud->edev)) {
+		dev_err(&client->dev, "%s: couldn't get extcon\n", __func__);
+		ret = -EPROBE_DEFER;
+		goto err_repeater_func;
+	}
 
 	if (of_node) {
 		pdata = devm_kzalloc(&client->dev, sizeof(*pdata), GFP_KERNEL);
@@ -1010,7 +1045,7 @@ static int eusb_repeater_probe(struct i2c_client *client,
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		dev_err(&client->dev, "%s: EIO err!\n", __func__);
-		ret = -ENOMEM;
+		ret = -EIO;
 		goto err_parse_dt;
 	}
 
@@ -1041,6 +1076,7 @@ static int eusb_repeater_probe(struct i2c_client *client,
 	}
 
 	i2c_set_clientdata(client, tud);
+	mutex_init(&tud->mutex);
 	mutex_init(&tud->i2c_mutex);
 
 	/*
@@ -1059,7 +1095,7 @@ err_parse_dt:
 err_repeater_func:
 	kfree(tud);
 err_repeater_nomem:
-	dev_info(&client->dev, "%s: err = %d\n", __func__, ret);
+	dev_err(&client->dev, "%s: err = %d\n", __func__, ret);
 
 	return ret;
 }

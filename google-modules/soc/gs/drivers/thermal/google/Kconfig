@@ -24,3 +24,12 @@ config THERMAL_SENSOR_STS4X
 	help
 	  This enables the thermal driver for the Digital Temp Sensor (STS4x).
 	  It initiates a i2c_driver and registers a thermal zone to get temperature.
+
+config THERMAL_UCLAMP_COOLING_DEVICE
+	tristate "Thermal cooling device for scheduler auto uclamp"
+	depends on THERMAL && VH_SCHED
+	help
+	  This module will register cooling device to place thermal auto uclamp max
+	  for each cluster. There will be one cooling device per cluster and thermal
+	  governors can use these cooling device to mitigate CPU to selectively allow
+	  ADPF tasks to use the max CPU capacity.

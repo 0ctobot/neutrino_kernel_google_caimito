@@ -1,6 +1,0 @@
-# SPDX-License-Identifier: GPL-2.0
-
-config DELAY_INIT
-	tristate "Delay Init Module"
-	help
-	  This driver can be used to delay second stage init

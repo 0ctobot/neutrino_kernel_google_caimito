@@ -373,7 +373,7 @@ static void enable_data_path_locked(struct fusb307b_plat *chip)
 	bool enable_data;
 
 	logbuffer_log(chip->log,
-		      "%s pd_capable:%u pd_data_capable:%u no_bc_12:%u bc12_data_capable:%u attached:%u",
+		      "%s pd_data_capable:%u no_bc_12:%u bc12_data_capable:%u attached:%u",
 		      __func__, chip->pd_data_capable ? 1 : 0, chip->no_bc_12 ? 1 : 0,
 		      chip->bc12_data_capable ? 1 : 0, chip->attached ? 1
 		      : 0);

@@ -115,6 +115,8 @@
 #define AUR_CLKDIVSTEP_STAT (0x838)
 #define CLUSTER0_MPMM (0x1408)
 #define CLUSTER0_PPM (0x140c)
+#define CLUSTER0_MID_DISPBLOCK (0x158c)
+#define CLUSTER0_BIG_DISPBLOCK (0x1588)
 #define MPMMEN_MASK (0xF << 21)
 #define PPMEN_MASK (0x3 << 8)
 #define PPMCTL_MASK (0xFF)
@@ -149,8 +151,8 @@
 
 #define CPU0_CLUSTER_MIN 0
 #define CPU1_CLUSTER_MIN 4
-#define CPU2_CLUSTER_MIN 8
-#define METER_CHANNEL_MAX 12
+#define CPU2_CLUSTER_MIN 6
+#define METER_CHANNEL_MAX 8
 
 /* Event Counter */
 #define EVT_CNT_ENABLE_DEFAULT  1

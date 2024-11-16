@@ -731,11 +731,11 @@ static irqreturn_t exynos5_i2c_irq(int irqno, void *dev_id)
 	 */
 	if (reg_val & HSI2C_INT_CHK_TRANS_STATE) {
 		trans_status = readl(i2c->regs + HSI2C_TRANS_STATUS);
-		dev_err(i2c->dev, "HSI2C Error Interrupt occurred(IS:0x%08x, TR:0x%08x) for %#x\n",
+		dev_warn(i2c->dev, "HSI2C Error Interrupt occurred(IS:0x%08x, TR:0x%08x) for %#x\n",
 			(unsigned int)reg_val, (unsigned int)trans_status, (i2c->msg->addr & 0x7f));
 
 		if (reg_val & HSI2C_INT_NODEV) {
-			dev_err(i2c->dev, "HSI2C NO ACK occurred for %#x\n",
+			dev_warn(i2c->dev, "HSI2C NO ACK occurred for %#x\n",
 				(i2c->msg->addr & 0x7f));
 			if (i2c->nack_restart) {
 				if (reg_val & HSI2C_INT_TRANSFER_DONE)

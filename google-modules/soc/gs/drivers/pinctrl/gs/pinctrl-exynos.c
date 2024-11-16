@@ -425,11 +425,11 @@ static int exynos_wkup_irq_set_wake(struct irq_data *irqd, unsigned int on)
 	struct samsung_pinctrl_drv_data *d = bank->drvdata;
 	u32 bit = 0;
 
-	bit = bank->eint_num + irqd->hwirq + bank->wake_mask_bit_offset;
+	bit = bank->eint_num + irqd->hwirq;
 	if (bit >= BITMAP_SIZE) {
-		dev_info(d->dev, "bitmap for set_wake is not supported (%s)"
-			"hwirq = %lu, eint_num = %u, wake_mask_bit_offset = %u\n",
-			bank->name, irqd->hwirq, bank->eint_num, bank->wake_mask_bit_offset);
+		dev_info(d->dev,
+			 "bitmap for set_wake is not supported (%s) hwirq = %lu, eint_num = %u\n",
+			 bank->name, irqd->hwirq, bank->eint_num);
 		return 0;
 	}
 

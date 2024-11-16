@@ -302,12 +302,12 @@ TRACE_EVENT(set_cpus_allowed_by_task,
 
 TRACE_EVENT(sched_find_energy_efficient_cpu,
 
-	TP_PROTO(struct task_struct *tsk, bool prefer_idle, bool prefer_high_cap,
+	TP_PROTO(struct task_struct *tsk, bool prefer_idle, bool prefer_fit,
 		 unsigned long task_importance, cpumask_t *idle_fit, cpumask_t *idle_unfit,
 		 cpumask_t *unimportant_fit, cpumask_t *unimportant_unfit, cpumask_t *packing,
 		 cpumask_t *max_spare_cap, cpumask_t *idle_unpreferred, int best_energy_cpu),
 
-	TP_ARGS(tsk, prefer_idle, prefer_high_cap, task_importance, idle_fit, idle_unfit,
+	TP_ARGS(tsk, prefer_idle, prefer_fit, task_importance, idle_fit, idle_unfit,
 		unimportant_fit, unimportant_unfit, packing, max_spare_cap, idle_unpreferred,
 		best_energy_cpu),
 
@@ -315,7 +315,7 @@ TRACE_EVENT(sched_find_energy_efficient_cpu,
 		__array(char,		comm, TASK_COMM_LEN)
 		__field(pid_t,		pid)
 		__field(bool,	        prefer_idle)
-		__field(bool,	        prefer_high_cap)
+		__field(bool,	        prefer_fit)
 		__field(unsigned long,	task_importance)
 		__field(unsigned long,	idle_fit)
 		__field(unsigned long,	idle_unfit)
@@ -331,7 +331,7 @@ TRACE_EVENT(sched_find_energy_efficient_cpu,
 		memcpy(__entry->comm, tsk->comm, TASK_COMM_LEN);
 		__entry->pid               = tsk->pid;
 		__entry->prefer_idle       = prefer_idle;
-		__entry->prefer_high_cap   = prefer_high_cap;
+		__entry->prefer_fit        = prefer_fit;
 		__entry->task_importance   = task_importance;
 		__entry->idle_fit          = *idle_fit->bits;
 		__entry->idle_unfit        = *idle_unfit->bits;
@@ -343,29 +343,58 @@ TRACE_EVENT(sched_find_energy_efficient_cpu,
 		__entry->best_energy_cpu   = best_energy_cpu;
 		),
 
-	TP_printk("pid=%d comm=%s prefer_idle=%d prefer_high_cap=%d task_importance=%lu " \
+	TP_printk("pid=%d comm=%s prefer_idle=%d prefer_fit=%d task_importance=%lu " \
 		  "idle_fit=0x%lx idle_unfit=0x%lx unimportant_fit=0x%lx unimportant_unfit=0x%lx "\
 		  "packing=0x%lx max_spare_cap=0x%lx idle_unpreferred=0x%lx best_energy_cpu=%d",
-		  __entry->pid, __entry->comm, __entry->prefer_idle, __entry->prefer_high_cap,
+		  __entry->pid, __entry->comm, __entry->prefer_idle, __entry->prefer_fit,
 		  __entry->task_importance, __entry->idle_fit, __entry->idle_unfit,
 		  __entry->unimportant_fit, __entry->unimportant_unfit, __entry->packing,
 		  __entry->max_spare_cap, __entry->idle_unpreferred, __entry->best_energy_cpu)
 );
 
+TRACE_EVENT(sched_wakeup_task_attr,
+
+	TP_PROTO(struct task_struct *tsk, const cpumask_t *cpu_affinity,
+		 unsigned long task_util, int uclamp_min, u64 vruntime),
+
+	TP_ARGS(tsk, cpu_affinity, task_util, uclamp_min, vruntime),
+
+	TP_STRUCT__entry(
+		__field(pid_t,		pid)
+		__field(unsigned long,  cpu_affinity)
+		__field(unsigned long,	task_util)
+		__field(unsigned long,	uclamp_min)
+		__field(u64,	        vruntime)
+		),
+
+	TP_fast_assign(
+		__entry->pid             = tsk->pid;
+		__entry->cpu_affinity    = *cpu_affinity->bits;
+		__entry->task_util       = task_util;
+		__entry->uclamp_min      = uclamp_min;
+		__entry->vruntime        = vruntime;
+		),
+
+	TP_printk("pid=%d cpu_affinity=0x%lx, task_util=%lu, uclamp.min=%lu vruntime=%Lu [ns]",
+		  __entry->pid,  __entry->cpu_affinity, __entry->task_util, __entry->uclamp_min,
+		  (unsigned long long)__entry->vruntime)
+);
+
 TRACE_EVENT(sched_select_task_rq_fair,
 
 	TP_PROTO(struct task_struct *tsk, unsigned long task_util, bool sync_wakeup,
-		 bool prefer_prev, bool sync_boost, int group, int uclamp_min, int uclamp_max,
-		 int prev_cpu, int target_cpu),
+		 bool uclamp_fork_reset, bool prefer_prev, bool sync_boost, int group,
+		 int uclamp_min, int uclamp_max, int prev_cpu, int target_cpu),
 
-	TP_ARGS(tsk, task_util, sync_wakeup, prefer_prev, sync_boost, group, uclamp_min, uclamp_max,
-		prev_cpu, target_cpu),
+	TP_ARGS(tsk, task_util, sync_wakeup, uclamp_fork_reset, prefer_prev, sync_boost,
+		group, uclamp_min, uclamp_max, prev_cpu, target_cpu),
 
 	TP_STRUCT__entry(
 		__array(char,		comm, TASK_COMM_LEN)
 		__field(pid_t,		pid)
 		__field(unsigned long,	task_util)
 		__field(bool,		sync_wakeup)
+		__field(bool,		uclamp_fork_reset)
 		__field(bool,		prefer_prev)
 		__field(bool,		sync_boost)
 		__field(int,		group)
@@ -380,6 +409,7 @@ TRACE_EVENT(sched_select_task_rq_fair,
 		__entry->pid             = tsk->pid;
 		__entry->task_util       = task_util;
 		__entry->sync_wakeup     = sync_wakeup;
+		__entry->uclamp_fork_reset     = uclamp_fork_reset;
 		__entry->prefer_prev     = prefer_prev;
 		__entry->sync_boost      = sync_boost;
 		__entry->group           = group;
@@ -389,11 +419,12 @@ TRACE_EVENT(sched_select_task_rq_fair,
 		__entry->target_cpu      = target_cpu;
 		),
 
-	TP_printk("pid=%d comm=%s task_util=%lu sync_wakeup=%d prefer_prev=%d sync_boost=%d " \
-		  "group=%d uclamp.min=%lu uclamp.max=%lu prev_cpu=%d target_cpu=%d",
-		  __entry->pid, __entry->comm,  __entry->task_util, __entry->sync_wakeup,
-		  __entry->prefer_prev, __entry->sync_boost, __entry->group, __entry->uclamp_min,
-		  __entry->uclamp_max, __entry->prev_cpu, __entry->target_cpu)
+	TP_printk("pid=%d comm=%s task_util=%lu sync_wakeup=%d uclamp_fork_reset=%d prefer_prev=%d " \
+		  "sync_boost=%d group=%d uclamp.min=%lu uclamp.max=%lu prev_cpu=%d target_cpu=%d",
+		  __entry->pid, __entry->comm, __entry->task_util, __entry->sync_wakeup,
+		  __entry->uclamp_fork_reset, __entry->prefer_prev, __entry->sync_boost,
+		  __entry->group, __entry->uclamp_min, __entry->uclamp_max,
+		  __entry->prev_cpu, __entry->target_cpu)
 );
 
 TRACE_EVENT(sched_cpu_util_cfs,
@@ -570,10 +601,10 @@ TRACE_EVENT(sched_cpu_util_rt,
 TRACE_EVENT(sched_find_least_loaded_cpu,
 
 	TP_PROTO(struct task_struct *tsk, int group, unsigned long uclamp_min,
-		 unsigned long uclamp_max, bool prefer_high_cap, int prev_cpu, int best_cpu,
+		 unsigned long uclamp_max, bool prefer_fit, int prev_cpu, int best_cpu,
 		 unsigned long lowest_mask, unsigned long backup_mask),
 
-	TP_ARGS(tsk, group, uclamp_min, uclamp_max, prefer_high_cap, prev_cpu, best_cpu,
+	TP_ARGS(tsk, group, uclamp_min, uclamp_max, prefer_fit, prev_cpu, best_cpu,
 		lowest_mask, backup_mask),
 
 	TP_STRUCT__entry(
@@ -582,7 +613,7 @@ TRACE_EVENT(sched_find_least_loaded_cpu,
 		__field(int,		group)
 		__field(unsigned long,	uclamp_min)
 		__field(unsigned long,	uclamp_max)
-		__field(bool,		prefer_high_cap)
+		__field(bool,		prefer_fit)
 		__field(int,		prev_cpu)
 		__field(int,		best_cpu)
 		__field(unsigned long,	lowest_mask)
@@ -595,17 +626,17 @@ TRACE_EVENT(sched_find_least_loaded_cpu,
 		__entry->group                   = group;
 		__entry->uclamp_min              = uclamp_min;
 		__entry->uclamp_max              = uclamp_max;
-		__entry->prefer_high_cap         = prefer_high_cap;
+		__entry->prefer_fit              = prefer_fit;
 		__entry->prev_cpu                = prev_cpu;
 		__entry->best_cpu                = best_cpu;
 		__entry->lowest_mask             = lowest_mask;
 		__entry->backup_mask             = backup_mask;
 		),
 
-	TP_printk("pid=%d comm=%s group=%d uclamp_min=%lu uclamp_max=%lu prefer_high_cap=%d " \
+	TP_printk("pid=%d comm=%s group=%d uclamp_min=%lu uclamp_max=%lu prefer_fit=%d " \
 		"prev_cpu=%d best_cpu=%d lowest_mask=0x%lx backup_mask=0x%lx",
 		__entry->pid, __entry->comm, __entry->group, __entry->uclamp_min,
-		__entry->uclamp_max, __entry->prefer_high_cap, __entry->prev_cpu, __entry->best_cpu,
+		__entry->uclamp_max, __entry->prefer_fit, __entry->prev_cpu, __entry->best_cpu,
 		__entry->lowest_mask, __entry->backup_mask)
 );
 

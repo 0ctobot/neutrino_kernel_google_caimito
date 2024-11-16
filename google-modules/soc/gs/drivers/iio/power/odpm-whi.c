@@ -50,6 +50,7 @@
 #define ODPM_MIN_INTERVAL_ACC_COUNT 20 /* accumulator counts */
 
 #define UHZ_PER_HZ 1000000
+#define PICO_PER_MILLI 1000000000
 
 #define str(val) #val
 #define xstr(s) str(s)
@@ -101,8 +102,20 @@
 		.info_mask_separate = BIT(IIO_CHAN_INFO_AVERAGE_RAW),          \
 		.info_mask_shared_by_dir = BIT(IIO_CHAN_INFO_SAMP_FREQ),       \
 	}
+#define ODPM_CURRENT_BIT_RES_CHANNEL(_index)                                               \
+	{                                                                      \
+		.type = IIO_CURRENT, .indexed = 1, .channel = (_index),         \
+		.info_mask_separate = BIT(IIO_CHAN_INFO_SCALE),          \
+		.info_mask_shared_by_dir = BIT(IIO_CHAN_INFO_SAMP_FREQ),       \
+	}
+#define ODPM_POWER_BIT_RES_CHANNEL(_index)                                               \
+	{                                                                      \
+		.type = IIO_POWER, .indexed = 1, .channel = (_index),         \
+		.info_mask_separate = BIT(IIO_CHAN_INFO_SCALE),          \
+		.info_mask_shared_by_dir = BIT(IIO_CHAN_INFO_SAMP_FREQ),       \
+	}
 
-static const struct iio_chan_spec s2mpg1x_single_channel[ODPM_CHANNEL_MAX] = {
+static const struct iio_chan_spec s2mpg1x_single_channel[ODPM_CHANNEL_MAX * 3] = {
 	ODPM_ACC_CHANNEL(0), ODPM_ACC_CHANNEL(1),
 	ODPM_ACC_CHANNEL(2), ODPM_ACC_CHANNEL(3),
 	ODPM_ACC_CHANNEL(4), ODPM_ACC_CHANNEL(5),
@@ -110,6 +123,22 @@ static const struct iio_chan_spec s2mpg1x_single_channel[ODPM_CHANNEL_MAX] = {
 #if IS_ENABLED(CONFIG_SOC_GS201)
 	ODPM_ACC_CHANNEL(8), ODPM_ACC_CHANNEL(9),
 	ODPM_ACC_CHANNEL(10), ODPM_ACC_CHANNEL(11),
+#endif
+	ODPM_CURRENT_BIT_RES_CHANNEL(0), ODPM_CURRENT_BIT_RES_CHANNEL(1),
+	ODPM_CURRENT_BIT_RES_CHANNEL(2), ODPM_CURRENT_BIT_RES_CHANNEL(3),
+	ODPM_CURRENT_BIT_RES_CHANNEL(4), ODPM_CURRENT_BIT_RES_CHANNEL(5),
+	ODPM_CURRENT_BIT_RES_CHANNEL(6), ODPM_CURRENT_BIT_RES_CHANNEL(7),
+#if IS_ENABLED(CONFIG_SOC_GS201)
+	ODPM_CURRENT_BIT_RES_CHANNEL(8), ODPM_CURRENT_BIT_RES_CHANNEL(9),
+	ODPM_CURRENT_BIT_RES_CHANNEL(10), ODPM_CURRENT_BIT_RES_CHANNEL(11),
+#endif
+	ODPM_POWER_BIT_RES_CHANNEL(0), ODPM_POWER_BIT_RES_CHANNEL(1),
+	ODPM_POWER_BIT_RES_CHANNEL(2), ODPM_POWER_BIT_RES_CHANNEL(3),
+	ODPM_POWER_BIT_RES_CHANNEL(4), ODPM_POWER_BIT_RES_CHANNEL(5),
+	ODPM_POWER_BIT_RES_CHANNEL(6), ODPM_POWER_BIT_RES_CHANNEL(7),
+#if IS_ENABLED(CONFIG_SOC_GS201)
+	ODPM_POWER_BIT_RES_CHANNEL(8), ODPM_POWER_BIT_RES_CHANNEL(9),
+	ODPM_POWER_BIT_RES_CHANNEL(10), ODPM_POWER_BIT_RES_CHANNEL(11),
 #endif
 };
 
@@ -1681,12 +1710,39 @@ static int odpm_read_raw(struct iio_dev *indio_dev,
 			 long mask)
 {
 	int ret = 0;
+	struct odpm_info *info = iio_priv(indio_dev);
+	const int rail_i = info->channels[chan->channel].rail_i;
+	u64 milli_res_iq30;
 
 	switch (mask) {
 	case IIO_CHAN_INFO_AVERAGE_RAW:
 		switch (chan->type) {
 		case IIO_ENERGY:
 			break;
+		default:
+			break;
+		}
+		break;
+	case IIO_CHAN_INFO_SCALE:
+		switch (chan->type) {
+		case IIO_CURRENT:
+			mutex_lock(&info->lock);
+			milli_res_iq30 = odpm_get_resolution_milli_iq30(info,
+									rail_i,
+									S2MPG1X_METER_CURRENT);
+			mutex_unlock(&info->lock);
+			*val = (u32)_IQ30_to_int(milli_res_iq30);
+			*val2 = (u32)_IQ30_to_int(milli_res_iq30 * PICO_PER_MILLI) % PICO_PER_MILLI;
+			return IIO_VAL_INT_PLUS_NANO;
+		case IIO_POWER:
+			mutex_lock(&info->lock);
+			milli_res_iq30 = odpm_get_resolution_milli_iq30(info,
+									rail_i,
+									S2MPG1X_METER_POWER);
+			mutex_unlock(&info->lock);
+			*val = (u32)_IQ30_to_int(milli_res_iq30);
+			*val2 = (u32)_IQ30_to_int(milli_res_iq30 * PICO_PER_MILLI) % PICO_PER_MILLI;
+			return IIO_VAL_INT_PLUS_NANO;
 		default:
 			break;
 		}
@@ -1909,7 +1965,7 @@ static int odpm_probe(struct platform_device *pdev)
 	mutex_init(&odpm_info->lock);
 
 	pr_info("odpm: %s: init completed\n", pdev->name);
-
+	smp_store_release(&odpm_info->ready, true);
 	return ret;
 }
 

@@ -253,8 +253,6 @@ source "$(KCONFIG_SOC_GS_PREFIX)drivers/soc/google/debug/Kconfig"
 
 source "$(KCONFIG_SOC_GS_PREFIX)drivers/soc/google/gnssif_spi/Kconfig"
 
-source "$(KCONFIG_SOC_GS_PREFIX)drivers/soc/google/debug/Kconfig"
-
 source "$(KCONFIG_SOC_GS_PREFIX)drivers/soc/google/eh/Kconfig"
 
 source "$(KCONFIG_SOC_GS_PREFIX)drivers/soc/google/gcma/Kconfig"
@@ -302,14 +300,6 @@ config PKVM_S2MPU_V9
 	default n
 	help
 	This module is a driver for the stage-2 IOMMU controlled by hypervisor.
-
-config RADIO_S5300
-	bool "Samsung S5300 Radio"
-	default n
-
-config RADIO_S5400
-	bool "Samsung S5400 Radio"
-	default n
 
 config KERNEL_TOP
 	tristate "Display processes statistic"

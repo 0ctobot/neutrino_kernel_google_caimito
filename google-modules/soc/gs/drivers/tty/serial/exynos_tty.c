@@ -1293,7 +1293,6 @@ static void exynos_serial_rx_drain_fifo(struct exynos_uart_port *ourport)
 				}
 			}
 		}
-		uart_copy_to_local_buf(1, &ourport->uart_local_buf, trace_buf, trace_cnt);
 	}
 
 	exynos_clear_bit(port, S3C64XX_UINTM_RXD, S3C64XX_UINTM);
@@ -1421,7 +1420,6 @@ out:
 				logbuffer_log(ourport->log, "TX: len: %d, buf: %s", trace_cnt, buf);
 			}
 		}
-		uart_copy_to_local_buf(0, &ourport->uart_local_buf, trace_buf, trace_cnt);
 	}
 
 	spin_unlock_irqrestore(&port->lock, flags);

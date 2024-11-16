@@ -533,7 +533,7 @@ static inline sysmmu_pte_t make_sysmmu_pte(phys_addr_t paddr,
 
 static sysmmu_pte_t *alloc_lv2entry(struct samsung_sysmmu_domain *domain,
 				    sysmmu_pte_t *sent, sysmmu_iova_t iova,
-				    atomic_t *pgcounter)
+				    atomic_t *pgcounter, gfp_t gfp)
 {
 	if (lv1ent_section(sent)) {
 		WARN(1, "Trying to install second level page table for va %#010x over valid 1MB descriptor: %#010x",
@@ -551,7 +551,7 @@ static sysmmu_pte_t *alloc_lv2entry(struct samsung_sysmmu_domain *domain,
 		unsigned long flags;
 		sysmmu_pte_t *pent;
 
-		pent = kmem_cache_zalloc(slpt_cache, GFP_KERNEL);
+		pent = kmem_cache_zalloc(slpt_cache, gfp);
 		if (!pent)
 			return ERR_PTR(-ENOMEM);
 
@@ -648,7 +648,7 @@ static int lv2set_page(sysmmu_pte_t *pent, phys_addr_t paddr,
 
 static int samsung_sysmmu_map(struct iommu_domain *dom, unsigned long l_iova,
 			      phys_addr_t paddr, size_t size, int prot,
-			      gfp_t unused)
+			      gfp_t gfp)
 {
 	struct samsung_sysmmu_domain *domain = to_sysmmu_domain(dom);
 	sysmmu_iova_t iova = (sysmmu_iova_t)l_iova;
@@ -668,7 +668,7 @@ static int samsung_sysmmu_map(struct iommu_domain *dom, unsigned long l_iova,
 	} else {
 		sysmmu_pte_t *pent;
 
-		pent = alloc_lv2entry(domain, entry, iova, lv2entcnt);
+		pent = alloc_lv2entry(domain, entry, iova, lv2entcnt, gfp);
 
 		if (IS_ERR(pent))
 			ret = PTR_ERR(pent);

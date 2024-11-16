@@ -75,6 +75,8 @@
 
 #define REG_DISABLE_P1			BIT(6)
 
+#define TIME_RH_READY			(3 * 1000)
+
 struct eusb_repeater_tune_param {
 	char name[32];
 	unsigned int reg;
@@ -85,7 +87,9 @@ struct eusb_repeater_tune_param {
 
 struct eusb_repeater_data {
 	struct device			*dev;
+	struct extcon_dev		*edev;
 	struct i2c_client		*client;
+	struct mutex			mutex;
 	struct mutex			i2c_mutex;
 	struct eusb_repeater_plat_data	*pdata;
 	unsigned int comm_err_count;	/* i2c comm error count */
@@ -100,6 +104,9 @@ struct eusb_repeater_data {
 	struct regulator *vdd33;
 	bool eusb_pm_status;
 	bool eusb_data_enabled;
+
+	bool ready;
+	ktime_t start_time;
 };
 
 struct eusb_repeater_plat_data {

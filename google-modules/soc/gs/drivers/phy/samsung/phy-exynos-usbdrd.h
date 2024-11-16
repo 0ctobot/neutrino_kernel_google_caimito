@@ -229,7 +229,6 @@ void __iomem *phy_exynos_usbdp_get_address(void);
 #if IS_ENABLED(CONFIG_PHY_EXYNOS_EUSB_REPEATER)
 extern int eusb_repeater_power_on(void);
 extern int eusb_repeater_power_off(void);
-extern void eusb_repeater_update_usb_state(bool);
 #endif
 
 #endif	/* __PHY_EXYNOS_USBDRD_H__ */

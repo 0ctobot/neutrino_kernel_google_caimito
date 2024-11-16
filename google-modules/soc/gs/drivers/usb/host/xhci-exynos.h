@@ -38,9 +38,6 @@ struct xhci_hcd_exynos {
 	u32 			portsc_control_priority;
 	enum usb_port_state	port_state;
 	bool			port_ctrl_allowed;
-
-	/* remote wakeup */
-	bool			rewa_supported;
 };
 
 struct xhci_exynos_priv {
@@ -68,6 +65,11 @@ struct xhci_exynos_ops {
 
 #define hcd_to_xhci_exynos_priv(h) ((struct xhci_exynos_priv *)hcd_to_xhci(h)->priv)
 #define xhci_to_exynos_priv(x) ((struct xhci_exynos_priv *)(x)->priv)
+
+struct xhci_exynos_udev_ids {
+	__le16 vendor;
+	__le16 product;
+};
 
 extern void __iomem *phycon_base_addr;
 extern int exynos_usbdrd_phy_vendor_set(struct phy *phy, int is_enable,

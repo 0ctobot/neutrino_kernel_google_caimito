@@ -548,7 +548,7 @@ static inline sysmmu_pte_t make_sysmmu_pte(phys_addr_t paddr, int pgsize, int at
 
 static sysmmu_pte_t *alloc_lv2entry(struct samsung_sysmmu_domain *domain,
 				    sysmmu_pte_t *sent, sysmmu_iova_t iova,
-				    atomic_t *pgcounter)
+				    atomic_t *pgcounter, gfp_t gfp)
 {
 	if (lv1ent_section(sent)) {
 		WARN(1, "trying to map on %#011llx mapped with 1MiB page. FLPD: %#010lx", iova,
@@ -560,7 +560,7 @@ static sysmmu_pte_t *alloc_lv2entry(struct samsung_sysmmu_domain *domain,
 		unsigned long flags;
 		sysmmu_pte_t *pent;
 
-		pent = kmem_cache_zalloc(slpt_cache, GFP_KERNEL);
+		pent = kmem_cache_zalloc(slpt_cache, gfp);
 		if (!pent)
 			return ERR_PTR(-ENOMEM);
 
@@ -685,7 +685,7 @@ static int lv2set_page(struct samsung_sysmmu_domain *domain, sysmmu_iova_t iova,
 }
 
 static int samsung_sysmmu_map(struct iommu_domain *dom, unsigned long l_iova, phys_addr_t paddr,
-			      size_t size, int prot, gfp_t unused)
+			      size_t size, int prot, gfp_t gfp)
 {
 	struct samsung_sysmmu_domain *domain = to_sysmmu_domain(dom);
 	sysmmu_iova_t iova = (sysmmu_iova_t)l_iova;
@@ -704,7 +704,7 @@ static int samsung_sysmmu_map(struct iommu_domain *dom, unsigned long l_iova, ph
 	} else {
 		sysmmu_pte_t *pent;
 
-		pent = alloc_lv2entry(domain, entry, iova, lv2entcnt);
+		pent = alloc_lv2entry(domain, entry, iova, lv2entcnt, gfp);
 
 		if (IS_ERR(pent))
 			ret = PTR_ERR(pent);
@@ -1028,14 +1028,11 @@ static void samsung_sysmmu_release_device(struct device *dev)
 {
 	struct iommu_fwspec *fwspec = dev_iommu_fwspec_get(dev);
 	struct sysmmu_clientdata *client;
-	int i;
 
 	if (!fwspec || fwspec->ops != &samsung_sysmmu_ops)
 		return;
 
 	client = (struct sysmmu_clientdata *)dev_iommu_priv_get(dev);
-	for (i = 0; i < client->sysmmu_count; i++)
-		device_link_del(client->dev_link[i]);
 	kfree(client->dev_link);
 
 	iommu_fwspec_free(dev);

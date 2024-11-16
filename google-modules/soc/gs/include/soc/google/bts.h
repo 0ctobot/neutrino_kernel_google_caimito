@@ -8,6 +8,7 @@
 #ifndef __EXYNOS_BTS_H_
 #define __EXYNOS_BTS_H_
 
+#include <linux/errno.h>
 #include <linux/types.h>
 
 /**
@@ -94,6 +95,19 @@ unsigned int bts_get_scenindex(const char *name);
 int bts_add_scenario(unsigned int index);
 int bts_del_scenario(unsigned int index);
 
+#if IS_ENABLED(CONFIG_SOC_ZUMA)
+int bts_get_urgent_lat_bts_index(const char *name);
+void bts_set_urgent_lat_read(int index, unsigned int lat_read);
+#else
+static inline int bts_get_urgent_lat_bts_index(const char *name)
+{
+	return -ENOSYS;
+}
+static inline void bts_set_urgent_lat_read(int index, unsigned int lat_read)
+{
+}
+#endif
+
 void bts_pd_sync(unsigned int cal_id, int on);
 
 #else /* CONFIG_EXYNOS_BTS */
@@ -103,6 +117,13 @@ static inline int bts_update_bw(unsigned int index, struct bts_bw bw) { return -
 static inline unsigned int bts_get_scenindex(const char *name) { return 0; }
 static inline int bts_add_scenario(unsigned int index) { return -ENOSYS; }
 static inline int bts_del_scenario(unsigned int index) { return -ENOSYS; }
+static inline int bts_get_urgent_lat_bts_index(const char *name)
+{
+	return -ENOSYS;
+}
+static inline void bts_set_urgent_lat_read(int index, unsigned int lat_read)
+{
+}
 static inline void bts_pd_sync(unsigned int cal_id, int on) { }
 
 #endif /* CONFIG_EXYNOS_BTS */

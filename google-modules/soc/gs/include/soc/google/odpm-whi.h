@@ -116,6 +116,7 @@ struct odpm_info {
 
 	u64 last_poll_ktime_boot_ns;
 	bool sleeping;
+	bool ready;
 };
 
 void odpm_get_lpf_values(struct odpm_info *info, s2mpg1x_meter_mode mode,

@@ -14,11 +14,6 @@ filegroup(
 )
 
 label_flag(
-    name = "gs_kernel_build",
-    build_setting_default = ":gs_undefined",
-)
-
-label_flag(
     name = "gs_soc_module",
     build_setting_default = ":gs_undefined",
 )
@@ -73,6 +68,7 @@ filegroup(
         # List of headers needed by external modules
         "drivers/dma-buf/heaps/samsung/samsung-dma-heap.h",
         "drivers/usb/host/xhci-exynos.h",
+        "drivers/usb/host/xhci-goog-dma.h",
         "drivers/usb/typec/tcpm/google/google_tcpci_shim.h",
         "drivers/usb/typec/tcpm/google/tcpci_max77759.h",
         "drivers/usb/typec/tcpm/google/usb_psy.h",

@@ -60,7 +60,7 @@ struct zram_table_entry {
 		unsigned long element;
 	};
 	unsigned long flags;
-#ifdef CONFIG_ZRAM_MEMORY_TRACKING
+#ifdef CONFIG_ZRAM_GS_MEMORY_TRACKING
 	ktime_t ac_time;
 #endif
 };
@@ -79,7 +79,7 @@ enum zram_stat_item {
 	NR_PAGE_STORED,		/* no. of pages currently stored */
 	NR_WRITESTALL,		/* no. of write slow paths */
 	NR_MISS_FREE,		/* no. of missed free */
-#ifdef	CONFIG_ZRAM_WRITEBACK
+#ifdef	CONFIG_ZRAM_GS_WRITEBACK
 	NR_BD_COUNT,		/* no. of pages in backing device */
 	NR_BD_READ,		/* no. of reads from backing device */
 	NR_BD_WRITE,		/* no. of writes from backing device */
@@ -116,7 +116,7 @@ struct zram {
 	 * zram is claimed so open request will be failed
 	 */
 	bool claim; /* Protected by disk->open_mutex */
-#ifdef CONFIG_ZRAM_WRITEBACK
+#ifdef CONFIG_ZRAM_GS_WRITEBACK
 	struct file *backing_dev;
 	spinlock_t wb_limit_lock;
 	bool wb_limit_enable;
@@ -125,7 +125,7 @@ struct zram {
 	unsigned long *bitmap;
 	unsigned long nr_pages;
 #endif
-#ifdef CONFIG_ZRAM_MEMORY_TRACKING
+#ifdef CONFIG_ZRAM_GS_MEMORY_TRACKING
 	struct dentry *debugfs_dir;
 #endif
 };

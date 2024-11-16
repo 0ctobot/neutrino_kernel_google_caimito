@@ -33,6 +33,8 @@ extern void vh_arch_set_freq_scale_pixel_mod(void *data,
 					     unsigned long freq,
 					     unsigned long max,
 					     unsigned long *scale);
+
+extern bool update_thermal_freq_cap(unsigned int cpu);
 #endif
 
 #if IS_ENABLED(CONFIG_EXYNOS_CPU_THERMAL)
@@ -185,6 +187,8 @@ static void apply_profile(struct pixel_em_profile *profile)
 		} else {
 			pr_err("Could not find cpufreq policy for CPU %d!\n", cpu);
 		}
+
+		update_thermal_freq_cap(cpu);
 	}
 }
 

@@ -63,6 +63,10 @@
 #define DWC3_EXYNOS_MAX_WAIT_COUNT 250
 #define DWC3_EXYNOS_DISCONNECT_COUNT 500
 
+/* PHY Owner Bits */
+#define DWC3_EXYNOS_PHY_OWNER_USB	BIT(0)
+#define DWC3_EXYNOS_PHY_OWNER_DP	BIT(1)
+
 struct dwc3_exynos_config { /* Exynos Specific Configuations */
 	bool adj_sof_accuracy;
 	bool is_not_vbus_pad;
@@ -89,6 +93,8 @@ struct dwc3_exynos {
 	struct notifier_block	device_nb;
 	struct notifier_block	host_nb;
 
+	struct mutex		dotg_lock;
+
 	bool			usb_data_enabled;
 	bool			extra_delay;
 	bool			gadget_state;
@@ -103,6 +109,11 @@ struct dwc3_exynos {
 
 	/* Flag for setting current_dr_role peripheral */
 	int			need_dr_role;
+
+	struct xhci_goog_dma_coherent_mem	**mem;
+
+	/* bitmap of usb phy owners */
+	int			phy_owner_bits;
 };
 
 static inline u32 dwc3_exynos_readl(void __iomem *base, u32 offset)

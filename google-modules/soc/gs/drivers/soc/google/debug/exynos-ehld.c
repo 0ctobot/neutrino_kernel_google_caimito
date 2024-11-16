@@ -112,6 +112,7 @@ struct exynos_ehld_ctrl {
 	int				ehld_cpupm;    /* CPUPM state */
 	raw_spinlock_t			lock;
 	bool				need_to_task;
+	u32				cntr_shift;
 };
 
 static DEFINE_PER_CPU(struct exynos_ehld_ctrl, ehld_ctrl) = {
@@ -231,10 +232,11 @@ static u32 exynos_ehld_read_pmu_counter(void)
 void exynos_ehld_value_raw_update(unsigned int cpu)
 {
 	u32 val;
+	struct exynos_ehld_ctrl *ctrl = per_cpu_ptr(&ehld_ctrl, cpu);
 
 	val = exynos_ehld_read_pmu_counter();
 
-	dbg_snapshot_set_core_pmu_val(val, cpu);
+	dbg_snapshot_set_core_pmu_val(val + ctrl->cntr_shift, cpu);
 
 	ehld_info(0, "%s: cpu%u: val:%x timer:%llx",
 			__func__, cpu, val, cpu_clock(cpu));
@@ -580,6 +582,7 @@ static int exynos_ehld_cpu_pm_exit(unsigned int cpu)
 	 * Thus, we will need to use CPU clock as the initial value.
 	 */
 	dbg_snapshot_set_core_pmu_val(cpu_clock(cpu), cpu);
+	ctrl->cntr_shift = cpu_clock(cpu);
 	ctrl->ehld_cpupm = 0;
 out:
 	raw_spin_unlock_irqrestore(&ctrl->lock, flags);

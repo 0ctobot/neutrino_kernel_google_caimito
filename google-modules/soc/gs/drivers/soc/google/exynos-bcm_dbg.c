@@ -319,7 +319,7 @@ static int exynos_bcm_dbg_pd_sync_init(struct exynos_bcm_dbg_data *data)
 			exynos_pd->bcm = data->pd_info[pd_index];
 			data->pd_info[pd_index]->cal_pdid = exynos_pd->cal_pdid;
 			if (cal_pd_status(exynos_pd->cal_pdid)) {
-				ret = exynos_bcm_dbg_pd_sync(data->pd_info[pd_index]->cal_pdid, true);
+				ret = exynos_bcm_dbg_early_pd_sync(exynos_pd->cal_pdid, true);
 				if (ret) {
 					mutex_unlock(&exynos_pd->access_lock);
 					return ret;

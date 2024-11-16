@@ -35,3 +35,10 @@ CFLAGS_REMOVE_ufs-pixel-fips_sha256.o = $(CC_FLAGS_FTRACE)
 CFLAGS_REMOVE_ufs-pixel-fips140-refs.o = $(CC_FLAGS_FTRACE)
 CFLAGS_REMOVE_ufs-pixel-fips-exynos.o = $(CC_FLAGS_FTRACE)
 endif
+
+GCOV_PROFILE_ufs-pixel-fips140.o := n
+GCOV_PROFILE_ufs-pixel-fips.o := n
+GCOV_PROFILE_ufs-pixel-fips-swkeys.o := n
+GCOV_PROFILE_ufs-pixel-fips_sha256.o := n
+GCOV_PROFILE_ufs-pixel-fips140-refs.o := n
+GCOV_PROFILE_ufs-pixel-fips-exynos.o := n

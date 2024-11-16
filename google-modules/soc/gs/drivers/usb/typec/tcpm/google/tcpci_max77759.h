@@ -216,6 +216,9 @@ struct max77759_plat {
 	/* protects checking and setting sourcing_vbus_high in check_and_clear_ext_bst */
 	struct mutex ext_bst_ovp_clear_lock;
 
+	/* Set to true if EXT_BST_EN is not used */
+	bool manual_disable_vbus;
+
 	int device_id;
 	int product_id;
 

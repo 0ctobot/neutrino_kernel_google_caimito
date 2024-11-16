@@ -89,8 +89,8 @@ static int update_rela_ref(const char *name)
 	sprintf(str, "fips140_rela_%s", name);
 	size_var = get_sym_addr(str);
 	if (!size_var) {
-		fprintf(stderr, "variable '%s' not found, disregarding .%s section\n",
-			str, name);
+		printf("variable '%s' not found, disregarding .%s section\n",
+		       str, name);
 		return 1;
 	}
 

@@ -16,37 +16,8 @@
 #include "g2d_debug.h"
 #include "g2d_secure.h"
 
-static void g2d_hw_push_task_by_smc(struct g2d_device *g2d_dev,
-				    struct g2d_task *task)
-{
-	int i;
-
-	task->sec.secure_layer_mask = 0;
-
-	for (i = 0; i < task->num_source; i++)
-		if (!!(task->source[i].flags & G2D_LAYERFLAG_SECURE))
-			task->sec.secure_layer_mask |= 1 << i;
-
-	if (!!(task->target.flags & G2D_LAYERFLAG_SECURE) || !!(task->sec.secure_layer_mask))
-		task->sec.secure_layer_mask |= 1 << 24;
-
-	dma_sync_single_for_device(g2d_dev->noncoherent_dev, virt_to_phys(&task->sec),
-				   sizeof(task->sec), DMA_TO_DEVICE);
-	dma_sync_single_for_device(g2d_dev->noncoherent_dev, page_to_phys(task->cmd_page),
-				  G2D_CMD_LIST_SIZE, DMA_TO_DEVICE);
-
-	if (g2d_smc(SMC_DRM_G2D_CMD_DATA, virt_to_phys(&task->sec), 0, 0)) {
-		perrfndev(g2d_dev, "Failed to push %d %d %d %d",
-			  task->sec.cmd_count, task->sec.priority,
-			  g2d_task_id(task), task->sec.secure_layer_mask);
-
-		g2d_dump_info(g2d_dev, task);
-	}
-}
-
 void g2d_hw_push_task(struct g2d_device *g2d_dev, struct g2d_task *task)
 {
-	bool self_prot = g2d_dev->caps & G2D_DEVICE_CAPS_SELF_PROTECTION;
 	u32 state = g2d_hw_get_job_state(g2d_dev, g2d_task_id(task));
 
 	if (state != G2D_JOB_STATE_DONE)
@@ -55,11 +26,6 @@ void g2d_hw_push_task(struct g2d_device *g2d_dev, struct g2d_task *task)
 
 	if (IS_ENABLED(CONFIG_EXYNOS_CONTENT_PATH_PROTECTION)) {
 		unsigned int i;
-
-		if (!self_prot) {
-			g2d_hw_push_task_by_smc(g2d_dev, task);
-			return;
-		}
 
 		state = 0;
 

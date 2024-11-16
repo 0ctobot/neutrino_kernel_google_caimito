@@ -32,7 +32,7 @@ config ZCOMP_EH
 	  Support Emerald Hill HW compressor. User should configure it via
 	  echo "lz77eh" > /sys/block/zramX/comp_algorithm
 
-config ZRAM_WRITEBACK
+config ZRAM_GS_WRITEBACK
        bool "Write back incompressible or idle page to backing device"
        depends on ZRAM_GS
        help
@@ -46,7 +46,7 @@ config ZRAM_WRITEBACK
 
 	 See Documentation/admin-guide/blockdev/zram.rst for more information.
 
-config ZRAM_MEMORY_TRACKING
+config ZRAM_GS_MEMORY_TRACKING
 	bool "Track zRam block status"
 	depends on ZRAM_GS && DEBUG_FS
 	help

@@ -1243,6 +1243,7 @@ struct mfc_dev {
 
 	struct mutex mfc_mutex;
 	struct mutex mfc_migrate_mutex;
+	struct mutex sysmmu_fault_mutex;
 
 	struct mfc_ctx *ctx[MFC_NUM_CONTEXTS];
 	struct mfc_ctx *move_ctx[MFC_NUM_CONTEXTS];

@@ -142,6 +142,17 @@ enum bcl_usb_mode {
 #define port_is_sink(cc1, cc2) \
 	(rp_def_detected(cc1, cc2) || rp_1a5_detected(cc1, cc2) || rp_3a_detected(cc1, cc2))
 
+#define is_rd_open(cc1, cc2) \
+	((((cc1) == TYPEC_CC_RD) && ((cc2) == TYPEC_CC_OPEN)) || \
+	 (((cc1) == TYPEC_CC_OPEN) && ((cc2) == TYPEC_CC_RD)))
+
+#define is_rd_ra(cc1, cc2) \
+	((((cc1) == TYPEC_CC_RD) && ((cc2) == TYPEC_CC_RA)) || \
+	 (((cc1) == TYPEC_CC_RA) && ((cc2) == TYPEC_CC_RD)))
+
+#define port_is_source(cc1, cc2) \
+	(is_rd_open(cc1, cc2) || is_rd_ra(cc1, cc2))
+
 #define is_debug_accessory_detected(cc1, cc2) \
 	((((cc1) == TYPEC_CC_RP_DEF) || ((cc1) == TYPEC_CC_RP_1_5) || ((cc1) == TYPEC_CC_RP_3_0)) && \
 	 (((cc1) == TYPEC_CC_RP_DEF) || ((cc1) == TYPEC_CC_RP_1_5) || ((cc1) == TYPEC_CC_RP_3_0)))
@@ -640,6 +651,15 @@ static ssize_t usb_limit_source_enable_store(struct device *dev, struct device_a
 }
 static DEVICE_ATTR_RW(usb_limit_source_enable);
 
+static ssize_t manual_disable_vbus_show(struct device *dev, struct device_attribute *attr,
+					char *buf)
+{
+	struct max77759_plat *chip = i2c_get_clientdata(to_i2c_client(dev));
+
+	return sysfs_emit(buf, "%u\n", chip->manual_disable_vbus);
+};
+static DEVICE_ATTR_RO(manual_disable_vbus);
+
 static struct device_attribute *max77759_device_attrs[] = {
 	&dev_attr_frs,
 	&dev_attr_bc12_enabled,
@@ -656,6 +676,7 @@ static struct device_attribute *max77759_device_attrs[] = {
 	&dev_attr_sbu_pullup,
 	&dev_attr_usb_limit_source_enable,
 	&dev_attr_irq_hpd_count,
+	&dev_attr_manual_disable_vbus,
 	NULL
 };
 
@@ -843,7 +864,7 @@ static int post_process_pd_message(struct max77759_plat *chip, struct pd_message
 		    (payload[1] & DP_STATUS_IRQ_HPD)) {
 			chip->irq_hpd_count++;
 			LOG(LOG_LVL_DEBUG, chip->log, "DP IRQ_HPD:%d count:%u",
-			    (payload[1] & DP_STATUS_IRQ_HPD), chip->irq_hpd_count);
+			    !!(payload[1] & DP_STATUS_IRQ_HPD), chip->irq_hpd_count);
 			// sysfs_notify(&chip->dev->kobj, NULL, "irq_hpd_count");
 			kobject_uevent(&chip->dev->kobj, KOBJ_CHANGE);
 		}
@@ -1153,6 +1174,23 @@ static void max777x9_bcl_usb_update(struct max77759_plat *chip, enum bcl_usb_mod
 	}
 }
 
+static void max77759_force_discharge(struct max77759_plat *chip, bool enable)
+{
+	struct google_shim_tcpci *tcpci = chip->tcpci;
+	u8 pwr_ctrl;
+	int ret;
+
+	ret = max77759_read8(tcpci->regmap, TCPC_POWER_CTRL, &pwr_ctrl);
+	LOG(LOG_LVL_DEBUG, chip->log, "%s: FORCE_DISCHARGE %u -> %u, ret %d", __func__,
+	    !!(pwr_ctrl & TCPC_POWER_CTRL_FORCE_DISCHARGE), enable, ret);
+	ret = max77759_update_bits8(chip->data.regmap, TCPC_POWER_CTRL,
+				    TCPC_POWER_CTRL_FORCE_DISCHARGE,
+				    enable ? TCPC_POWER_CTRL_FORCE_DISCHARGE : 0);
+	if (ret < 0)
+		LOG(LOG_LVL_DEBUG, chip->log, "%s force discharge failed",
+		    enable ? "enabling" : "disabling");
+}
+
 static void enable_vbus_work(struct kthread_work *work)
 {
 	struct max77759_plat *chip  =
@@ -1210,9 +1248,15 @@ static int max77759_set_vbus(struct google_shim_tcpci *tcpci, struct google_shim
 	kthread_flush_work(&chip->enable_vbus_work.work);
 
 	if (source && !sink) {
+		if (chip->manual_disable_vbus)
+			/* ensure force_discharge cleared before enabling vbus */
+			max77759_force_discharge(chip, false);
 		kthread_mod_delayed_work(chip->wq, &chip->enable_vbus_work, 0);
 		return 0;
 	} else if (sink && !source) {
+		if (chip->manual_disable_vbus)
+			/* ensure force_discharge cleared before buck on */
+			max77759_force_discharge(chip, false);
 		ret = gvotable_cast_vote(chip->charger_mode_votable, TCPCI_MODE_VOTER,
 					 (void *)GBMS_USB_BUCK_ON, true);
 		max777x9_bcl_usb_update(chip, USB_PLUGGED);
@@ -1362,7 +1406,7 @@ static void check_missing_rp_work(struct kthread_work *work)
 		ret = power_supply_set_property(chip->usb_psy, POWER_SUPPLY_PROP_VOLTAGE_MAX, &val);
 		if (ret < 0)
 			LOG(LOG_LVL_DEBUG, chip->log, "%s: unable to set max voltage to %d, ret=%d",
-			    chip->vbus_mv * 1000, ret, __func__);
+			    __func__, chip->vbus_mv * 1000, ret);
 		update_compliance_warnings(chip, COMPLIANCE_WARNING_MISSING_RP, true);
 		usb_psy_set_sink_state(chip->usb_psy_data, true);
 	} else if (chip->compliance_warnings->missing_rp) {
@@ -1406,8 +1450,8 @@ static bool check_and_clear_ext_bst(struct max77759_plat *chip)
 	mutex_lock(&chip->ext_bst_ovp_clear_lock);
 	regmap_read(chip->data.regmap, TCPC_POWER_STATUS, &pwr_status);
 	vbus_mv = max77759_get_vbus_voltage_mv(chip->client);
-	LOG(LOG_LVL_DEBUG, chip->log, "sourcing_vbus_high:0x%x vbus_mv:%u",
-	    pwr_status & TCPC_POWER_STATUS_SRC_HI_VOLT, vbus_mv);
+	LOG(LOG_LVL_DEBUG, chip->log, "sourcing_vbus_high:%d vbus_mv:%u",
+	    !!(pwr_status & TCPC_POWER_STATUS_SRC_HI_VOLT), vbus_mv);
 
 	if (chip->sourcing_vbus_high) {
 		ret = true;
@@ -1740,30 +1784,78 @@ static void max77759_get_cc(struct max77759_plat *chip, enum typec_cc_status *cc
 				tcpc_presenting_rd(role_control, CC2));
 }
 
-static void max77759_cache_cc(struct max77759_plat *chip)
+/*
+ * WAR (b/335368150): Use the flag manual_disable_vbus to check whether OTG_SW_EN
+ * (EXT_BST_EN in max77779) is used. If true (not used), notify BMS to turn off Vbus as soon as
+ * disconnect is detected by the driver so that VBUS can discharge when entering
+ * Disconnected_As_Src state. Also enable force discharge as auto discharge would automatically turn
+ * off after tSafe0V if software is slow to disable vbus.
+ *
+ * Check the status of TCPC_POWER_CTRL_AUTO_DISCHARGE for some usecases that this WAR is not needed,
+ * such as Power Role Swap (Apply_RC state).
+ */
+static int max77759_manual_vbus_handling_on_cc_change(struct max77759_plat *chip,
+						      enum typec_cc_status new_cc1,
+						      enum typec_cc_status new_cc2)
 {
-	enum typec_cc_status cc1, cc2;
+	struct google_shim_tcpci *tcpci = chip->tcpci;
+	bool auto_discharge_enabled, disconnect_as_source;
+	u8 pwr_ctrl;
+	int ret;
 
-	max77759_get_cc(chip, &cc1, &cc2);
+	if (!chip->manual_disable_vbus)
+		return 0;
+
+	ret = max77759_read8(tcpci->regmap, TCPC_POWER_CTRL, &pwr_ctrl);
+	if (ret < 0) {
+		LOG(LOG_LVL_DEBUG, chip->log, "%s: failed to read TCPC_POWER_CTRL ret:%d", __func__,
+		    ret);
+		return ret;
+	}
+
+	auto_discharge_enabled = !!(pwr_ctrl & TCPC_POWER_CTRL_AUTO_DISCHARGE);
+	disconnect_as_source = chip->sourcing_vbus && auto_discharge_enabled &&
+			       port_is_source(chip->cc1, chip->cc2) &&
+			       cc_open_or_toggling(new_cc1, new_cc2);
+	if (disconnect_as_source) {
+		max77759_force_discharge(chip, true);
+		ret = gvotable_cast_vote(chip->charger_mode_votable, TCPCI_MODE_VOTER,
+					 (void *)GBMS_USB_BUCK_ON, false);
+		max777x9_bcl_usb_update(chip, USB_UNPLUGGED);
+
+		LOG(LOG_LVL_DEBUG, chip->log, "%s: GBMS_MODE_VOTABLE voting 0 for BUCK_ON ret:%d",
+		    ret < 0 ? "Error" : "Success", ret);
+
+		chip->sourcing_vbus = 0;
+		chip->vbus_present = 0;
+		tcpm_vbus_change(tcpci->port);
+	}
+
+	return ret;
+}
+
+static void max77759_cache_cc(struct max77759_plat *chip, enum typec_cc_status new_cc1,
+			      enum typec_cc_status new_cc2)
+{
 	/*
 	 * If the Vbus OVP is restricted to quick ramp-up time for incoming Vbus to work properly,
 	 * queue a delayed work to check the Vbus status later. Cancel the delayed work once the CC
 	 * is back to Open as we won't expect that Vbus is coming.
 	 */
 	if (chip->quick_ramp_vbus_ovp) {
-		if (cc_open_or_toggling(chip->cc1, chip->cc2) && port_is_sink(cc1, cc2)) {
+		if (cc_open_or_toggling(chip->cc1, chip->cc2) && port_is_sink(new_cc1, new_cc2)) {
 			kthread_mod_delayed_work(chip->wq, &chip->reset_ovp_work,
 						 msecs_to_jiffies(VBUS_RAMPUP_TIMEOUT_MS));
-		} else if (cc_open_or_toggling(cc1, cc2)) {
+		} else if (cc_open_or_toggling(new_cc1, new_cc2)) {
 			kthread_cancel_delayed_work_sync(&chip->reset_ovp_work);
 			chip->reset_ovp_retry = 0;
 		}
 	}
 
 	LOG(LOG_LVL_DEBUG, chip->log,
-	    "cc1: %u -> %u cc2: %u -> %u", chip->cc1, cc1, chip->cc2, cc2);
-	chip->cc1 = cc1;
-	chip->cc2 = cc2;
+	    "cc1: %u -> %u cc2: %u -> %u", chip->cc1, new_cc1, chip->cc2, new_cc2);
+	chip->cc1 = new_cc1;
+	chip->cc2 = new_cc2;
 }
 
 /* hold irq_status_lock before calling */
@@ -1934,9 +2026,19 @@ static irqreturn_t _max77759_irq_locked(struct max77759_plat *chip, u16 status,
 		}
 
 		if (invoke_tcpm_for_cc_update) {
+			enum typec_cc_status new_cc1, new_cc2;
+
 			LOG(LOG_LVL_DEBUG, chip->log, "invoke_tcpm_for_cc_update");
 			tcpm_cc_change(tcpci->port);
-			max77759_cache_cc(chip);
+			max77759_get_cc(chip, &new_cc1, &new_cc2);
+			/*
+			 * To preserve the tcpm event ordering, do this optional special vbus
+			 * handling after tcpm_cc_change because tcpm_vbus_change will be called
+			 * here. Note that this function may spend several milliseconds for gvotable
+			 * function calls.
+			 */
+			max77759_manual_vbus_handling_on_cc_change(chip, new_cc1, new_cc2);
+			max77759_cache_cc(chip, new_cc1, new_cc2);
 			/* Check for missing-rp non compliant power source */
 			if (!regmap_read(tcpci->regmap, TCPC_POWER_STATUS, &pwr_status) &&
 			    !chip->usb_throttled && !chip->toggle_disable_status)
@@ -1986,7 +2088,7 @@ static irqreturn_t _max77759_irq_locked(struct max77759_plat *chip, u16 status,
 		max77759_enable_voltage_alarm(chip, true, true);
 
 		ret = extcon_set_state_sync(chip->extcon, EXTCON_MECHANICAL, 0);
-		LOG(LOG_LVL_DEBUG, chip->log, "%s turning off connected, ret=%d",
+		LOG(LOG_LVL_DEBUG, chip->log, "%s: %s turning off connected, ret=%d",
 		    __func__, ret < 0 ? "Failed" : "Succeeded", ret);
 	}
 
@@ -2044,6 +2146,9 @@ static irqreturn_t _max77759_irq_locked(struct max77759_plat *chip, u16 status,
 		vsafe0v = raw & TCPC_EXTENDED_STATUS_VSAFE0V;
 		LOG(LOG_LVL_DEBUG, log, "VSAFE0V (runtime): %c -> %c",
 		    chip->vsafe0v ? 'Y' : 'N', vsafe0v ? 'Y' : 'N');
+
+		if (vsafe0v && chip->manual_disable_vbus)
+			max77759_force_discharge(chip, false);
 
 		/*
 		 * b/199991513 For some OVP chips, when the incoming Vbus ramps up from 0, there is
@@ -3493,6 +3598,8 @@ static int max77759_probe(struct i2c_client *client,
 
 	/* Default enable on MAX77759 A1 or higher. Default enable on MAX77779 */
 	if (pid == MAX77779_PRODUCT_ID || device_id >= MAX77759_DEVICE_ID_A1) {
+		chip->manual_disable_vbus = of_property_read_bool(dn, "manual-disable-vbus");
+		dev_info(&client->dev, "manual disable_vbus %u", chip->manual_disable_vbus);
 		chip->data.auto_discharge_disconnect = true;
 		chip->frs = true;
 	}

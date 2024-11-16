@@ -274,9 +274,10 @@ static int find_least_loaded_cpu(struct task_struct *p, struct cpumask *lowest_m
 		best_cpu = cpu;
 	}
 
-	/* Set cpus with the same least importance as backup */
+	/* Set cpus with importance less than or equal to 1024 as backup */
 	for_each_cpu(cpu, lowest_mask) {
-		if (candidates[cpu] && cpu_importance[cpu] == least_importance && cpu != best_cpu)
+		if (candidates[cpu] && cpu_importance[cpu] <= DEFAULT_IMPRATANCE_THRESHOLD &&
+		    cpu != best_cpu)
 			cpumask_set_cpu(cpu, backup_mask);
 	}
 

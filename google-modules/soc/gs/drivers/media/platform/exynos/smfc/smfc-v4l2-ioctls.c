@@ -584,10 +584,7 @@ static bool __smfc_check_image_size(struct device *dev, __u32 type,
 				    const struct smfc_image_format *smfc_fmt,
 				    __u32 width, __u32 height)
 {
-	__u32 min_width = SMFC_MIN_WIDTH << smfc_fmt->chroma_hfactor;
-	__u32 min_height = SMFC_MIN_WIDTH << smfc_fmt->chroma_vfactor;
-
-	if (width < min_width || height < min_height) {
+	if (width < SMFC_MIN_WIDTH || height < SMFC_MIN_HEIGHT) {
 		dev_warn(dev, "Too small image size(%ux%u) for '%s'\n",
 			 width, height, buf_type_name(type));
 		return false;

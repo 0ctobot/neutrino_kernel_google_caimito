@@ -33,6 +33,7 @@
 #if IS_ENABLED(CONFIG_SOC_ZUMA)
 #define NOCL2A_NUM_CHANNEL 2
 #define INT_BUS_WIDTH 32
+#define URGENT_TIMEOUT_EPOCH 16
 #endif
 
 #define DEFAULT_QOS 0x4
@@ -64,9 +65,11 @@ struct nocl_info {
  * @lock:	a spin-lock to protect accessing bts
  * @mutex_lock: mutex-lock to protect accessing setting DVFS
  *
- * @num_bts:	number of bts hardware
- * @num_scen:	number of scenario be used
- * @top_scen:	current top scenario
+ * @num_bts:		number of bts hardware
+ * @num_scen:		number of scenario be used
+ * @num_rts:		number of RT client
+ * @num_urgent_lat:	number of bts hardware support set urgent latency
+ * @top_scen:		current top scenario
  *
  * @bts_list:	struct bts_info * - start address pointer for BTS devices
  * @scen_list:  struct bts_scen * - start address pointer for BTS scenarios
@@ -91,8 +94,8 @@ struct bts_device {
 
 	unsigned int num_bts;
 	unsigned int num_scen;
-	unsigned int top_scen;
 	unsigned int num_rts;
+	unsigned int top_scen;
 
 	struct bts_info *bts_list;
 	struct bts_scen *scen_list;
@@ -108,6 +111,8 @@ struct bts_device {
 #if IS_ENABLED(CONFIG_SOC_ZUMA)
 	unsigned int num_nocl;
 	struct nocl_info *nocl_infos;
+	unsigned int num_urgent_lat;
+	struct bts_urgent_lat *urgent_lat_list;
 #endif
 };
 
@@ -161,6 +166,15 @@ struct bts_scen {
 	int usage_count;
 	const char *name;
 };
+
+#if IS_ENABLED(CONFIG_SOC_ZUMA)
+struct bts_urgent_lat {
+	unsigned int bts_index;
+	unsigned int lat_read;
+	unsigned int th_read;
+	const char *name;
+};
+#endif
 
 /**
  * struct bts_stat - BTS status

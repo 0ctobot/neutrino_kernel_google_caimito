@@ -1005,7 +1005,7 @@ void exynos_pm_qos_update_request(struct exynos_pm_qos_request *req,
 		return;
 	}
 
-	cancel_delayed_work_sync(&req->work);
+	cancel_delayed_work(&req->work);
 	__exynos_pm_qos_update_request(req, new_value);
 }
 EXPORT_SYMBOL_GPL(exynos_pm_qos_update_request);

@@ -62,6 +62,24 @@ DEFINE_STATIC_KEY_FALSE(auto_migration_margins_enable);
 
 DEFINE_STATIC_KEY_FALSE(skip_inefficient_opps_enable);
 
+#define vi_set_latency_sensitive(vi, type, value) \
+    do { \
+        if (value) { \
+            (vi)->uclamp_fork_reset |= (1 << (type)); \
+        } else { \
+            (vi)->uclamp_fork_reset &= ~(1 << (type)); \
+        } \
+    } while (0)
+
+#define vi_set_prefer_idle(vi, type, value) \
+    do { \
+        if (value) { \
+            (vi)->prefer_idle |= (1 << (type)); \
+        } else { \
+            (vi)->prefer_idle &= ~(1 << (type)); \
+        } \
+    } while (0)
+
 /*****************************************************************************/
 /*                       New Code Section                                    */
 /*****************************************************************************/
@@ -239,10 +257,28 @@ void rvh_set_cpus_allowed_by_task(void *data, const struct cpumask *cpu_valid_ma
 	return;
 }
 
-
-void set_uclamp_inheritance(struct task_struct *p, struct task_struct *pi_task,
-	unsigned int *uclamp_pi)
+static void set_latency_sensitive_inheritance(struct task_struct *p, unsigned int type, int val)
 {
+	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
+
+	if (task_on_rq_queued(p)) {
+		bool old_uclamp_fork_reset = get_uclamp_fork_reset(p, true);
+
+		vi_set_latency_sensitive(vi, type, val);
+
+		if (!old_uclamp_fork_reset && get_uclamp_fork_reset(p, true))
+			inc_adpf_counter(p, task_rq(p));
+		else if (old_uclamp_fork_reset && !get_uclamp_fork_reset(p, true))
+			dec_adpf_counter(p, task_rq(p));
+	} else
+		vi_set_latency_sensitive(vi, type, val);
+}
+
+static void set_performance_inheritance(struct task_struct *p, struct task_struct *pi_task,
+	unsigned int type)
+{
+	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
+
 	if (pi_task) {
 		unsigned long p_util = task_util(p);
 		unsigned long p_uclamp_min = uclamp_eff_value_pixel_mod(p, UCLAMP_MIN);
@@ -250,6 +286,8 @@ void set_uclamp_inheritance(struct task_struct *p, struct task_struct *pi_task,
 		unsigned long pi_util = task_util(pi_task);
 		unsigned long pi_uclamp_min = uclamp_eff_value_pixel_mod(pi_task, UCLAMP_MIN);
 		unsigned long pi_uclamp_max = uclamp_eff_value_pixel_mod(pi_task, UCLAMP_MAX);
+
+		lockdep_assert_held(&pi_task->pi_lock);
 
 		/*
 		 * Take task's util into consideration first to do full
@@ -269,63 +307,54 @@ void set_uclamp_inheritance(struct task_struct *p, struct task_struct *pi_task,
 		/* Inherit unclamp_min/max if they're inverted */
 
 		if (p_uclamp_min < pi_uclamp_min)
-			uclamp_pi[UCLAMP_MIN] = pi_uclamp_min;
+			vi->uclamp[type][UCLAMP_MIN] = pi_uclamp_min;
 
 		if (p_uclamp_max < pi_uclamp_max || pi_uclamp_min > p_uclamp_max)
-			uclamp_pi[UCLAMP_MAX] = pi_uclamp_max;
+			vi->uclamp[type][UCLAMP_MAX] = pi_uclamp_max;
 
-		return;
+		if (!!get_uclamp_fork_reset(pi_task, true))
+			set_latency_sensitive_inheritance(p, type, 1);
+
+		if (!!get_prefer_idle(pi_task))
+			vi_set_prefer_idle(vi, type, 1);
+	} else {
+		vi->uclamp[type][UCLAMP_MIN] = uclamp_none(UCLAMP_MIN);
+		vi->uclamp[type][UCLAMP_MAX] = uclamp_none(UCLAMP_MAX);
+
+		set_latency_sensitive_inheritance(p, type, 0);
+
+		vi_set_prefer_idle(vi, type, 0);
 	}
-
-	uclamp_pi[UCLAMP_MIN] = uclamp_none(UCLAMP_MIN);
-	uclamp_pi[UCLAMP_MAX] = uclamp_none(UCLAMP_MAX);
 }
 
 void vh_binder_set_priority_pixel_mod(void *data, struct binder_transaction *t,
 	struct task_struct *p)
 {
-	struct vendor_binder_task_struct *vbinder = get_vendor_binder_task_struct(p);
-
 	get_vendor_task_struct(p)->is_binder_task = true;
 
-	if (!t->from || vbinder->active)
+	if (!t->from)
 		return;
 
-	vbinder->active = true;
-
-	/* inherit uclamp */
-	set_uclamp_inheritance(p, current, vbinder->uclamp);
-
-	/* inherit prefer_idle */
-	vbinder->prefer_idle = get_prefer_idle(current);
-
-	/* Inherit uclamp_fork_reset form get_vendor_binder_task_struct(current)->uclamp_fork_reset
-	 * or get_vendor_task_struct(current)->uclamp_fork_reset.
-	 */
-	if (get_uclamp_fork_reset(current, true) && !get_uclamp_fork_reset(p, true))
-		vbinder->uclamp_fork_reset = true;
+	set_performance_inheritance(p, current, VI_BINDER);
 }
 
 void vh_binder_restore_priority_pixel_mod(void *data, struct binder_transaction *t,
 	struct task_struct *p)
 {
-	struct vendor_binder_task_struct *vbinder = get_vendor_binder_task_struct(p);
-
-	if (vbinder->active) {
-		if (task_on_rq_queued(p) && vbinder->uclamp_fork_reset)
-			dec_adpf_counter(p, task_rq(p));
-
-		set_uclamp_inheritance(p, NULL, vbinder->uclamp);
-		vbinder->uclamp_fork_reset = false;
-		vbinder->prefer_idle = false;
-		vbinder->active = false;
-	}
+	set_performance_inheritance(p, NULL, VI_BINDER);
 }
 
 void rvh_rtmutex_prepare_setprio_pixel_mod(void *data, struct task_struct *p,
 	struct task_struct *pi_task)
 {
-	set_uclamp_inheritance(p, pi_task, get_vendor_task_struct(p)->uclamp_pi);
+	set_performance_inheritance(p, pi_task, VI_RTMUTEX);
+}
+
+void rvh_try_to_wake_up_success_pixel_mod(void *data, struct task_struct *p)
+{
+	trace_sched_wakeup_task_attr(p, p->cpus_ptr, task_util_est(p),
+				     uclamp_eff_value_pixel_mod(p, UCLAMP_MIN),
+				     p->se.vruntime);
 }
 
 void set_cluster_enabled_cb(int cluster, int enabled)

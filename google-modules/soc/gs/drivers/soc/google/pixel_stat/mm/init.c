@@ -9,6 +9,7 @@
 #include <linux/module.h>
 #include <soc/google/meminfo.h>
 #include <trace/hooks/mm.h>
+#include <trace/hooks/vmscan.h>
 #include "cma.h"
 #include "vmscan.h"
 #include "compaction.h"
@@ -88,6 +89,14 @@ static int pixel_stat_mm_init(void)
 		return ret;
 
 	ret = register_trace_android_rvh_mapping_shrinkable(rvh_mapping_shrinkable, NULL);
+	if (ret)
+		return ret;
+
+	ret = register_trace_mm_vmscan_kswapd_wake(vh_vmscan_kswapd_wake, NULL);
+	if (ret)
+		return ret;
+
+	ret = register_trace_android_vh_vmscan_kswapd_done(vh_vmscan_kswapd_done, NULL);
 	if (ret)
 		return ret;
 

@@ -417,7 +417,7 @@ void max777x9_disable_auto_ultra_low_power_mode(struct max77759_plat *chip, bool
 
 	chip->contaminant->is_max77779 ?
 		max77779_disable_auto_ultra_low_power_mode(chip, disable) :
-		max77779_disable_auto_ultra_low_power_mode(chip, disable);
+		max77759_disable_auto_ultra_low_power_mode(chip, disable);
 }
 EXPORT_SYMBOL_GPL(max777x9_disable_auto_ultra_low_power_mode);
 MODULE_AUTHOR("Badhri Jagan Sridharan <badhri@google.com>");

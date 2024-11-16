@@ -131,6 +131,9 @@ int mfc_core_sysmmu_fault_handler(struct iommu_fault *fault, void *param)
 	struct mfc_core *core = (struct mfc_core *)param;
 	unsigned int trans_info, fault_status;
 	int ret;
+	struct mfc_dev *dev = core->dev;
+
+	mutex_lock(&dev->sysmmu_fault_mutex);
 
 	if (core->core_pdata->trans_info_offset)
 		trans_info = core->core_pdata->trans_info_offset;
@@ -148,6 +151,7 @@ int mfc_core_sysmmu_fault_handler(struct iommu_fault *fault, void *param)
 			if (MFC_MMU1_READL(fault_status) && ((MFC_MMU1_READL(trans_info) &
 				  MFC_MMU_FAULT_TRANS_INFO_AXID_MASK) == 1)) {
 				mfc_core_err("There is TS-MUX page fault. skip SFR dump\n");
+				mutex_unlock(&dev->sysmmu_fault_mutex);
 				return 0;
 			}
 		/* PMMU ID is 1 means that sysmmu1 in sysmmu v9 */
@@ -156,6 +160,7 @@ int mfc_core_sysmmu_fault_handler(struct iommu_fault *fault, void *param)
 				   core->core_pdata->fault_pmmuid_shift) & 0xFF) == 1)) {
 			if ((MFC_MMU0_READL(trans_info) & MFC_MMU_FAULT_TRANS_INFO_AXID_MASK) == 1) {
 				mfc_core_err("There is TS-MUX page fault. skip SFR dump\n");
+				mutex_unlock(&dev->sysmmu_fault_mutex);
 				return 0;
 			}
 		}
@@ -166,6 +171,7 @@ int mfc_core_sysmmu_fault_handler(struct iommu_fault *fault, void *param)
 		if ((MFC_MMU0_READL(trans_info) & core->core_pdata->axid_mask)
 				!= core->core_pdata->mfc_fault_num) {
 			mfc_core_err("This is not a MFC page fault\n");
+			mutex_unlock(&dev->sysmmu_fault_mutex);
 			return 0;
 		}
 	}
@@ -209,6 +215,8 @@ int mfc_core_sysmmu_fault_handler(struct iommu_fault *fault, void *param)
 	} else {
 		ret = 0;
 	}
+
+	mutex_unlock(&dev->sysmmu_fault_mutex);
 
 	return ret;
 }

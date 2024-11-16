@@ -472,7 +472,7 @@ void usb_psy_start_sdp_timeout(void *usb)
 		return;
 
 	if (usb_psy->usb_type == POWER_SUPPLY_USB_TYPE_SDP) {
-		logbuffer_logk(usb_psy->log, LOGLEVEL_INFO, "Starting alarm with expiry %lu\n",
+		logbuffer_logk(usb_psy->log, LOGLEVEL_INFO, "Starting alarm with expiry %d\n",
 			       usb_psy->update_sdp_enum_timeout ?
 					SDP_ENUMERATION_TIMEOUT_MS :
 					SDP_ENUMERATION_TIMEOUT_FIRST_CONNECT_MS);
@@ -686,7 +686,7 @@ static int dead_battery_callback(struct gvotable_election *el, const char *reaso
 		ret = gvotable_cast_vote(usb->usb_icl_proto_el, vote.reason, &vote, false);
 	}
 
-	logbuffer_log(usb->log, "%s: %s:%d %s usb_icl_proto_el: %lu by %s",
+	logbuffer_log(usb->log, "%s: %s:%d %s usb_icl_proto_el: %u by %s",
 		      __func__, ret < 0 ? "error" : "success", ret,
 		      vote_result ? "voting" : "clearing", vote.val,
 		      proto_voter_reason[DEAD_BATTERY]);
