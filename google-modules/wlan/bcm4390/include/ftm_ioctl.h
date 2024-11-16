@@ -137,9 +137,6 @@ typedef uint32	wl_ftm_flags_t;
 #define WL_FTM_SESSION_FLAG_DONT_SCAN		0x0008000000000000llu	/* Don't scan when both
 									 * peers are already known.
 									 */
-#define WL_FTM_SESSION_FLAG_USE_BSS_COLOR_LMR	0x0010000000000000llu	/* Set BSS Color in HE LMR
-									 * regardless of assoc
-									 */
 
 #define WL_FTM_SESSION_FLAG_USE_ANT_DIVERSITY	0x0020000000000000llu	/* Use antenna diversity
 									 * for ranging operation
@@ -199,8 +196,7 @@ typedef uint64 wl_ftm_session_flags_t;
 	| WL_FTM_SESSION_FLAG_RNM_MFP_REQ \
 	| WL_FTM_SESSION_FLAG_SEC_LTF_SUPPORTED \
 	| WL_FTM_SESSION_FLAG_SEC_LTF_REQUIRED \
-	| WL_FTM_SESSION_FLAG_TX_HE_LMR \
-	| WL_FTM_SESSION_FLAG_USE_BSS_COLOR_LMR)
+	| WL_FTM_SESSION_FLAG_TX_HE_LMR)
 
 /* flags relevant to NTB sessions */
 #define FTM_NTB_CONFIG_MASK	FTM_TB_NTB_COMMON_CONFIG_MASK

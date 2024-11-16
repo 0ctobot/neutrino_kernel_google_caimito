@@ -25237,6 +25237,7 @@ typedef struct wlc_wlc_roam_rssi_limit {
 	uint8 data[];
 } wlc_roam_rssi_limit_t;
 
+
 #define WLC_ROAM_5G_BANDBOOST_VER_1	1
 typedef struct wlc_roam_5g_band_boost_info_v1 {
 	uint16 ver;
@@ -27135,37 +27136,6 @@ typedef struct wl_phy_noise_v1 {
 		wl_phy_noise_knoise_v1_t knoise_v1;
 	} u;
 } wl_phy_noise_v1_t;
-
-#define WL_PHY_TX_MUTE_VER_1		1u
-#define WL_PHY_RX_BLANK_VER_1		1u
-#define WL_PHY_TX_MUTE_LIMIT		0x1Fu
-#define WL_PHY_RX_BLANK_LIMIT		0x7u
-#define WL_PHY_TX_MUTE_HEADER_LEN	4u
-#define WL_PHY_RX_BLANK_HEADER_LEN	4u
-
-typedef struct wl_phy_tx_mute_info_v1 {
-	uint8 tx_mute_bitmask[WTC_MAX_BAND];
-	uint8 PAD[1];
-} wl_phy_tx_mute_info_v1_t;
-
-typedef struct wl_phy_tx_mute {
-	uint16 ver;
-	uint16 len;
-	uint8  data[WTC_MAX_BAND];
-	uint8  PAD[1];
-} wl_phy_tx_mute_t;
-
-typedef struct wl_phy_rx_blank_info_v1 {
-	uint8 rx_blank_bitmask[WTC_MAX_BAND];
-	uint8   PAD[1];
-} wl_phy_rx_blank_info_v1_t;
-
-typedef struct wl_phy_rx_blank {
-	uint16 ver;
-	uint16 len;
-	uint8  data[WTC_MAX_BAND];
-	uint8  PAD[1];
-} wl_phy_rx_blank_t;
 
 #ifndef CHSPEC2WLC_BAND
 #ifdef WL_BAND6G
