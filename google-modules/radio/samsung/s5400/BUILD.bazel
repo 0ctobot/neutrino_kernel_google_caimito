@@ -29,7 +29,7 @@ kernel_module(
         "cpif_page.ko",
         "shm_ipc.ko",
     ],
-    kernel_build = "//private/google-modules/soc/gs:gs_kernel_build",
+    kernel_build = "//private/devices/google/common:kernel",
     visibility = [
         "//private/devices/google:__subpackages__",
         "//private/google-modules:__subpackages__",
