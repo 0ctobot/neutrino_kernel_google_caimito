@@ -41,46 +41,31 @@ static int touch_offload_release(struct inode *inode, struct file *file)
 }
 
 static int pack_frame(struct touch_offload_context *context,
-		      struct touch_offload_frame *frame, char **packed)
+		      struct touch_offload_frame *frame, u8 **packed)
 {
-	/* TODO: compute precise size of a packed frame */
-	int max_packed_frame_size =
-		sizeof(struct touch_offload_frame) +
-		TOUCH_OFFLOAD_DATA_SIZE_2D(context->caps.rx_size,
-					   context->caps.tx_size) *
-		MAX_CHANNELS;
-	/* TODO: preallocate memory for a single packed frame */
-	char *packed_mem = NULL;
-	char *ptr = NULL;
+	u8 *ptr = context->prealloc_packed_frame;
 	int channel_size;
 	int i = 0;
 
-	if (!frame || frame->num_channels > MAX_CHANNELS)
+	if (!ptr || !frame || frame->num_channels > MAX_CHANNELS)
 		return -EINVAL;
 
-	packed_mem = kzalloc(max_packed_frame_size, GFP_KERNEL);
-	if (packed_mem == NULL)
-		return -ENOMEM;
-	ptr = packed_mem;
-
 	/* Copy the header */
-
 	memcpy(ptr, &frame->header, sizeof(frame->header));
 	ptr += sizeof(frame->header);
 
 	/* Copy frame data */
-
 	for (i = 0; i < frame->num_channels; i++) {
 		if (frame->channel_type[i] == TOUCH_DATA_TYPE_COORD)
 			channel_size = TOUCH_OFFLOAD_FRAME_SIZE_COORD;
 		else if ((frame->channel_type[i] & TOUCH_SCAN_TYPE_MUTUAL) != 0)
 			channel_size =
-			    TOUCH_OFFLOAD_FRAME_SIZE_2D(context->caps.rx_size,
-							context->caps.tx_size);
+			    TOUCH_OFFLOAD_FRAME_SIZE_2D(context->caps.heatmap_height,
+							context->caps.heatmap_width);
 		else if ((frame->channel_type[i] & TOUCH_SCAN_TYPE_SELF) != 0)
 			channel_size =
-			    TOUCH_OFFLOAD_FRAME_SIZE_1D(context->caps.rx_size,
-							context->caps.tx_size);
+			    TOUCH_OFFLOAD_FRAME_SIZE_1D(context->caps.heatmap_height,
+							context->caps.heatmap_width);
 		else if (frame->channel_type[i] ==
 				CONTEXT_CHANNEL_TYPE_DRIVER_STATUS)
 			channel_size = TOUCH_OFFLOAD_FRAME_SIZE_DRIVER_STATUS;
@@ -90,15 +75,14 @@ static int pack_frame(struct touch_offload_context *context,
 		else {
 			pr_err("%s: Invalid channel_type = 0x%08X", __func__,
 			       frame->channel_type[i]);
-			kfree(packed_mem);
 			return -EINVAL;
 		}
 		memcpy(ptr, frame->channel_data[i], channel_size);
 		ptr += channel_size;
 	}
 
-	*packed = packed_mem;
-	return (ptr - packed_mem);
+	*packed = context->prealloc_packed_frame;
+	return (ptr - *packed);
 }
 
 static ssize_t touch_offload_read(struct file *file, char __user *user_buffer,
@@ -132,7 +116,6 @@ static ssize_t touch_offload_read(struct file *file, char __user *user_buffer,
 	    *offset == context->packed_frame_size) {
 		pr_err("%s: [Unexpected!] The buffer should have been recycled after the previous read.\n",
 		       __func__);
-		kfree(context->packed_frame);
 		context->packed_frame = NULL;
 		*offset = 0;
 		mutex_unlock(&context->buffer_lock);
@@ -187,7 +170,6 @@ static ssize_t touch_offload_read(struct file *file, char __user *user_buffer,
 
 	/* Recycle the frame if transfer was complete */
 	if (*offset == context->packed_frame_size) {
-		kfree(context->packed_frame);
 		context->packed_frame = NULL;
 		*offset = 0;
 	}
@@ -224,6 +206,11 @@ static int touch_offload_allocate_buffers(struct touch_offload_context *context,
 	int num_channels;
 	__u32 mask;
 	__u32 size = 0;
+	int max_packed_frame_size =
+		sizeof(struct touch_offload_frame) +
+		TOUCH_OFFLOAD_DATA_SIZE_2D(context->caps.heatmap_height,
+					   context->caps.heatmap_width) *
+		MAX_CHANNELS;
 
 	pr_debug("%s\n", __func__);
 
@@ -239,6 +226,13 @@ static int touch_offload_allocate_buffers(struct touch_offload_context *context,
 
 
 	mutex_lock(&context->buffer_lock);
+	context->prealloc_packed_frame =
+		devm_kzalloc(context->device, max_packed_frame_size, GFP_KERNEL);
+	if (context->prealloc_packed_frame == NULL) {
+		mutex_unlock(&context->buffer_lock);
+		return -ENOMEM;
+	}
+	context->prealloc_packed_frame_size = max_packed_frame_size;
 
 	/* Add new buffers to the free_pool */
 	for (i = 0; i < nb; i++) {
@@ -279,8 +273,8 @@ static int touch_offload_allocate_buffers(struct touch_offload_context *context,
 				frame->channel_type[chan] =
 				    TOUCH_SCAN_TYPE_MUTUAL | mask;
 				size = TOUCH_OFFLOAD_FRAME_SIZE_2D(
-						context->caps.rx_size,
-						context->caps.tx_size);
+						context->caps.heatmap_height,
+						context->caps.heatmap_width);
 				frame->channel_data[chan] = kzalloc(size,
 								    GFP_KERNEL);
 				if (frame->channel_data[chan] == NULL)
@@ -302,8 +296,8 @@ static int touch_offload_allocate_buffers(struct touch_offload_context *context,
 				frame->channel_type[chan] =
 					TOUCH_SCAN_TYPE_SELF | mask;
 				size = TOUCH_OFFLOAD_FRAME_SIZE_1D(
-						context->caps.rx_size,
-						context->caps.tx_size);
+						context->caps.heatmap_height,
+						context->caps.heatmap_width);
 				frame->channel_data[chan] = kzalloc(size,
 								GFP_KERNEL);
 				if (frame->channel_data[chan] == NULL)

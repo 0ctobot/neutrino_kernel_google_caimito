@@ -112,6 +112,7 @@ struct g_usi_context {
 					 * the previous one. We notify that by creating new input
 					 * event node with the new vid/pid.
 					 */
+	bool recreate_evdev_enabled;	/* recreate input event node is enabled ? */
 
 	bool is_flex_beacon;		/* true: flex beacon, false: standard beacon */
 	enum g_usi_op_status status;	/* pen operation status */
@@ -276,7 +277,8 @@ int goog_usi_report_gid(g_usi_handle_t handle, const u8 *gid)
 		usi_ctx->id.product = pid;
 
 		/* create new input node when the new stylus is unpaired */
-		usi_ctx->create_new_input_dev_flag = true;
+		if (usi_ctx->recreate_evdev_enabled)
+			usi_ctx->create_new_input_dev_flag = true;
 	}
 
 	usi_ctx->status = G_USI_OP_IDENTIFIED; /* Parsing GID is done. The stylus is identified */
@@ -1933,6 +1935,18 @@ static u8 g_usi_color24_to_color8(u8 r, u8 g, u8 b)
 	return color8_idx;
 }
 
+static bool g_usi_color8_to_color24(int color8_idx, u8 *r, u8 *g, u8 *b)
+{
+	if (color8_idx < 0 || color8_idx >= ARRAY_SIZE(true_colors))
+		return false;
+
+	*r = true_colors[color8_idx].r;
+	*g = true_colors[color8_idx].g;
+	*b = true_colors[color8_idx].b;
+
+	return true;
+}
+
 /*
  * convert button info: USI button value to HID button value
  *
@@ -2153,10 +2167,9 @@ static int g_usi_hid_get_feature_report(struct g_usi_context *usi_ctx, u8 *buf, 
 		} else {
 			color8 = usi_ctx->stylus_capability[4];
 
-			/* color8 to color24 */
-			buf[2] = true_colors[color8].b; /* Blue Value */
-			buf[3] = true_colors[color8].g; /* Green Value */
-			buf[4] = true_colors[color8].r; /* Red Value */
+			/* convert color8 to color24 - buf[2]:blue, buf[3]:green, buf[4]:red */
+			if (g_usi_color8_to_color24(color8, buf + 4, buf + 3, buf + 2) == false)
+				return -ENODATA;
 		}
 
 		break;
@@ -2210,7 +2223,7 @@ static int g_usi_hid_set_feature_report(struct g_usi_context *usi_ctx, u8 *buf, 
 	int i;
 	u16 cmd_data = 0;
 	u8 stylus_has_button = 0x20;		/* refer to C.GetCapability() in USI 2.0 spec */
-	u8 color8 = 0;
+	u8 color8 = 0, r, g, b;
 
 	if (!usi_ctx->cbs->g_usi_send_uplink) {
 		G_USI_ERR("Set Feature Request is not supported");
@@ -2226,14 +2239,15 @@ static int g_usi_hid_set_feature_report(struct g_usi_context *usi_ctx, u8 *buf, 
 			return -EINVAL;
 
 		color8 = buf[2];
-		if (is_true_color_supported(usi_ctx)) {
-			cmd_data = 0x0100 | true_colors[color8].b;
+		if (is_true_color_supported(usi_ctx) &&
+		    g_usi_color8_to_color24(color8, &r, &g, &b)) {
+			cmd_data = 0x0100 | b;
 			g_usi_send_write_cmd(usi_ctx, 1, G_USI_SET_COLOR, cmd_data);
 
-			cmd_data = 0x0200 | true_colors[color8].g;
+			cmd_data = 0x0200 | g;
 			g_usi_send_write_cmd(usi_ctx, 1, G_USI_SET_COLOR, cmd_data);
 
-			cmd_data = 0x0400 | true_colors[color8].r;
+			cmd_data = 0x0400 | r;
 			g_usi_send_write_cmd(usi_ctx, 1, G_USI_SET_COLOR, cmd_data);
 		}
 
@@ -2522,6 +2536,38 @@ setget_error:
 	return ret;
 }
 
+static ssize_t recreate_evdev_enabled_store(struct device *dev, struct device_attribute *attr,
+					    const char *buf, size_t count)
+{
+	struct g_usi_context *usi_ctx = container_of(dev_get_drvdata(dev), struct g_usi_context,
+						     g_usi_hidraw_dev);
+
+	if (kstrtobool(buf, &usi_ctx->recreate_evdev_enabled))
+		G_USI_ERR("error: invalid input!\n");
+
+	return count;
+}
+
+static ssize_t recreate_evdev_enabled_show(struct device *dev, struct device_attribute *attr,
+					   char *buf)
+{
+	struct g_usi_context *usi_ctx = container_of(dev_get_drvdata(dev), struct g_usi_context,
+						     g_usi_hidraw_dev);
+
+	return sysfs_emit(buf, "recreate_evdev_enabled : %d\n", usi_ctx->recreate_evdev_enabled);
+}
+
+static DEVICE_ATTR_RW(recreate_evdev_enabled);
+
+static struct attribute *g_usi_attrs[] = {
+	&dev_attr_recreate_evdev_enabled.attr,
+	NULL,
+};
+
+static const struct attribute_group g_usi_attrs_group = {
+	.attrs = g_usi_attrs,
+};
+
 static const struct file_operations g_usi_fops = {
 	.owner = THIS_MODULE,
 	.open = device_open,
@@ -2543,11 +2589,23 @@ static int g_usi_create_hidraw(struct g_usi_context *usi_ctx)
 		return ret;
 	}
 
+	ret = sysfs_create_group(&usi_ctx->g_usi_hidraw_dev.this_device->kobj, &g_usi_attrs_group);
+	if (ret) {
+		G_USI_ERR("failed to create attributes : %d\n", ret);
+		goto error_sysfs_create_group;
+	}
+
 	return 0;
+
+error_sysfs_create_group:
+	misc_deregister(&usi_ctx->g_usi_hidraw_dev);
+
+	return ret;
 }
 
 static void g_usi_remove_hidraw(struct g_usi_context *usi_ctx)
 {
+	sysfs_remove_group(&usi_ctx->g_usi_hidraw_dev.this_device->kobj, &g_usi_attrs_group);
 	misc_deregister(&usi_ctx->g_usi_hidraw_dev);
 }
 
@@ -2603,6 +2661,7 @@ g_usi_handle_t goog_usi_register(struct g_usi *usi)
 	 */
 	usi_ctx->id.vendor = 0xFFFF;
 	usi_ctx->id.product = 0xFFFF;
+	usi_ctx->recreate_evdev_enabled = 1;
 	usi_ctx->input_dev = g_usi_register_input(usi_ctx);
 	if (!usi_ctx->input_dev) {
 		G_USI_ERR("Cannot create input device");

@@ -150,8 +150,8 @@ struct g_usi_event {
 	u32 x;		/* ABS_X */
 	u32 y;		/* ABS_Y */
 	u32 pressure;	/* ABS_PRESSURE */
-	u32 tilt_x;	/* ABA_TILT_X */
-	u32 tilt_y;	/* ABA_TILT_Y */
+	s32 tilt_x;	/* ABA_TILT_X */
+	s32 tilt_y;	/* ABA_TILT_Y */
 	u32 distance;	/* ABS_DISTANCE */
 	u32 buttons;	/* BIT0: BTN_STYLUS, BIT1:BTN_STYLUS2, BIT3: BTN_TOOL_RUBBER */
 };

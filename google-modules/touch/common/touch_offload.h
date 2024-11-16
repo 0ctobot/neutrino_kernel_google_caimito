@@ -86,7 +86,9 @@ struct touch_offload_context {
 	struct list_head frame_queue;
 	struct touch_offload_frame *reserved_frame;
 	wait_queue_head_t read_queue;
-	char *packed_frame;
+	u8 *prealloc_packed_frame;
+	__u32 prealloc_packed_frame_size;
+	u8 *packed_frame;
 	__u32 packed_frame_size;
 	struct mutex buffer_lock;
 	struct completion reserve_returned;
