@@ -4145,7 +4145,7 @@ static DEVICE_ATTR_RW(enable_br_stats);
 
 static ssize_t trigger_br_stats_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	return sysfs_emit(buf, "");
+	return sysfs_emit(buf, "%s", "");
 }
 
 static ssize_t trigger_br_stats_store(struct device *dev, struct device_attribute *attr,
