@@ -1530,21 +1530,23 @@ ifneq ($(wildcard $(srctree)/arch/$(SRCARCH)/boot/dts/),)
 dtstree ?= arch/$(SRCARCH)/boot/dts
 endif
 
-dtstree := google-devices/zumapro/dts
+dtstree := google-devices/zuma/dts google-devices/zumapro/dts
 DTC_INCLUDE := $(srctree)/google-modules/soc/gs/include/dtc
 export DTC_INCLUDE
 
 ifneq ($(dtstree),)
 
 %.dtb: dtbs_prepare
-	$(Q)$(MAKE) $(build)=$(dtstree) $(dtstree)/$@
+	$(Q)$(MAKE) $(build)=$(@D) $(@D)/$@
 
 %.dtbo: dtbs_prepare
-	$(Q)$(MAKE) $(build)=$(dtstree) $(dtstree)/$@
+	$(Q)$(MAKE) $(build)=$(@D) $(@D)/$@
 
-PHONY += dtbs dtbs_prepare dtbs_install dtbs_check
-dtbs: dtbs_prepare
-	$(Q)$(MAKE) $(build)=$(dtstree)
+PHONY += dtbs dtbs_prepare dtbs_install dtbs_check $(dtstree)
+$(dtstree): dtbs_prepare
+	$(Q)$(MAKE) $(build)=$@
+
+dtbs: $(dtstree)
 
 # include/config/kernel.release is actually needed when installing DTBs because
 # INSTALL_DTBS_PATH contains $(KERNELRELEASE). However, we do not want to make
