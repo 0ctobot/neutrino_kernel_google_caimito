@@ -24,10 +24,6 @@
 #undef CREATE_TRACE_POINTS
 #include <trace/hooks/ufshcd.h>
 
-static void exynos_ufs_swkeys_fill_prdt(void *unused, struct ufs_hba *hba,
-				     struct ufshcd_lrb *lrbp,
-				     unsigned int segments, int *err);
-
 static int exynos_ufs_swkeys_register_fips_self_test(void);
 
 enum fmp_crypto_algo_mode {
@@ -91,11 +87,6 @@ int exynos_ufs_crypto_init_sw_keys_mode(struct ufs_hba *hba)
 	if (ret)
 		return ret;
 
-	ret = register_trace_android_vh_ufs_fill_prdt(
-				exynos_ufs_swkeys_fill_prdt, NULL);
-	if (ret)
-		return ret;
-
 	/* Advertise crypto support to ufshcd-core. */
 	hba->caps |= UFSHCD_CAP_CRYPTO;
 
@@ -115,6 +106,19 @@ int exynos_ufs_crypto_init_sw_keys_mode(struct ufs_hba *hba)
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_SCSI_UFS_PIXEL_FIPS140)
+static void exynos_ufs_swkeys_fips_self_test(void *data, struct ufs_hba *hba)
+{
+	if (ufs_pixel_fips_verify(hba))
+		panic("FMP self test failed");
+}
+
+static int exynos_ufs_swkeys_register_fips_self_test(void)
+{
+	return register_trace_android_rvh_ufs_complete_init(
+		exynos_ufs_swkeys_fips_self_test, NULL);
+}
+#else
 static inline __be32 fmp_key_word(const u8 *key, int j)
 {
 	return cpu_to_be32(get_unaligned_le32(
@@ -192,21 +196,13 @@ static void exynos_ufs_swkeys_fill_prdt(void *unused, struct ufs_hba *hba,
 	}
 }
 
-#if IS_ENABLED(CONFIG_SCSI_UFS_PIXEL_FIPS140)
-static void exynos_ufs_swkeys_fips_self_test(void *data, struct ufs_hba *hba)
-{
-	if (ufs_pixel_fips_verify(hba))
-		panic("FMP self test failed");
-}
-
 static int exynos_ufs_swkeys_register_fips_self_test(void)
 {
-	return register_trace_android_rvh_ufs_complete_init(
-		exynos_ufs_swkeys_fips_self_test, NULL);
-}
-#else
-static int exynos_ufs_swkeys_register_fips_self_test(void)
-{
-	return 0;
+	/*
+	 * The fips module will register internal fill_prdt implementation.
+	 * If the module is not enabled, then register fill_rdt here.
+	 */
+	return register_trace_android_vh_ufs_fill_prdt(
+		exynos_ufs_swkeys_fill_prdt, NULL);
 }
 #endif

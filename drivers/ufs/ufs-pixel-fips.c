@@ -8,12 +8,14 @@
  *
  */
 
+#include <asm/unaligned.h>
+#include <crypto/aes.h>
+#include <crypto/algapi.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
-#include <asm/unaligned.h>
 #include <scsi/scsi_proto.h>
 #include "ufs-exynos-gs.h"
 #include "ufs-pixel-fips.h"
@@ -158,9 +160,11 @@ struct upiu {
 static int ise_available;
 
 /* Configure inline encryption (or decryption) on requests that require it. */
-static void ufs_pixel_fips_crypto_fill_prdt(void *unused, struct ufs_hba *hba,
-					     struct ufshcd_lrb *lrbp,
-					     unsigned int segments, int *err)
+static void ufs_pixel_fips_crypto_fill_prdt_hw_key_mode(void *unused,
+							struct ufs_hba *hba,
+							struct ufshcd_lrb *lrbp,
+							unsigned int segments,
+							int *err)
 {
 	struct pixel_ufs_prdt_entry *prdt =
 		(struct pixel_ufs_prdt_entry *)lrbp->ucd_prdt_ptr;
@@ -213,6 +217,77 @@ static void ufs_pixel_fips_crypto_fill_prdt(void *unused, struct ufs_hba *hba,
 	 * get filled into the UTRD according to the UFSHCI standard.
 	 */
 	lrbp->crypto_key_slot = -1;
+}
+
+/* Configure inline encryption (or decryption) on requests that require it. */
+static void ufs_pixel_fips_crypto_fill_prdt_sw_key_mode(void *unused,
+							struct ufs_hba *hba,
+							struct ufshcd_lrb *lrbp,
+							unsigned int segments,
+							int *err)
+{
+	const struct bio_crypt_ctx *bc;
+	const u8 *key, *tweak_key;
+	u64 dun_lo, dun_hi;
+	struct pixel_ufs_prdt_entry *prdt;
+	unsigned int i;
+
+	/*
+	 * There's nothing to do for unencrypted requests, since the mode field
+	 * ("FAS") is already 0 (FMP_BYPASS_MODE) by default, as it's in the
+	 * same word as ufshcd_sg_entry::size which was already initialized.
+	 */
+	bc = scsi_cmd_to_rq(lrbp->cmd)->crypt_ctx;
+	if (!bc)
+		return;
+
+	key = bc->bc_key->raw;
+	tweak_key = key + AES_KEYSIZE_256;
+	dun_lo = bc->bc_dun[0];
+	dun_hi = bc->bc_dun[1];
+
+	/* Reject weak AES-XTS keys. */
+	if (!crypto_memneq(key, tweak_key, AES_KEYSIZE_256)) {
+		dev_err(hba->dev, "Can't use weak AES-XTS key\n");
+		*err = -EIO;
+		return;
+	}
+
+	/* Configure FMP on each segment of the request. */
+	prdt = (struct pixel_ufs_prdt_entry *)lrbp->ucd_prdt_ptr;
+	for (i = 0; i < segments; i++) {
+		struct pixel_ufs_prdt_entry *ent = &prdt[i];
+		struct ufshcd_sg_entry *prd = (struct ufshcd_sg_entry *)ent;
+		int j;
+
+		/* Each segment must be exactly one data unit. */
+		if (le32_to_cpu(prd->size) + 1 !=
+		    UFS_PIXEL_CRYPTO_DATA_UNIT_SIZE) {
+			pr_err("scatterlist segment is misaligned for crypto\n");
+			*err = -EIO;
+			return;
+		}
+
+		/* Set the algorithm and key length. */
+		ent->des3 |= cpu_to_le32(PRDT_FAS_XTS | PRDT_FKL_256);
+
+		/* Set the key. */
+		for (j = 0; j < ENCKEY_NUM_WORDS; j++) {
+			ent->file_enckey[ENCKEY_NUM_WORDS - 1 - j] =
+				get_unaligned_be32(&key[j * 4]);
+			ent->file_twkey[TWKEY_NUM_WORDS - 1 - j] =
+				get_unaligned_be32(&tweak_key[j * 4]);
+		}
+
+		/* Set the IV. */
+		ent->iv[0] = cpu_to_be64(dun_hi);
+		ent->iv[1] = cpu_to_be64(dun_lo);
+
+		/* Increment the data unit number. */
+		dun_lo++;
+		if (dun_lo == 0)
+			dun_hi++;
+	}
 }
 
 static void ufs_pixel_fips_build_utrd(struct ufs_hba *hba,
@@ -910,8 +985,11 @@ static int __init ufs_pixel_fips_init(void)
 	pr_info("Verify self HMAC passed\n");
 
 	ret = use_hw_keys ? register_trace_android_vh_ufs_fill_prdt(
-				    ufs_pixel_fips_crypto_fill_prdt, NULL) :
-			    0;
+				    ufs_pixel_fips_crypto_fill_prdt_hw_key_mode,
+				    NULL) :
+			    register_trace_android_vh_ufs_fill_prdt(
+				    ufs_pixel_fips_crypto_fill_prdt_sw_key_mode,
+				    NULL);
 	if (ret)
 		pr_err("Failed to register ufs_pixel_fips_crypto_fill_prdt\n");
 
