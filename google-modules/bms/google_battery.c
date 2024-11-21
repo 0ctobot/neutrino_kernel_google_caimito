@@ -5865,8 +5865,6 @@ static void batt_cycle_count_update(struct batt_drv *batt_drv, int soc)
 
 /* ------------------------------------------------------------------------- */
 
-#ifdef CONFIG_DEBUG_FS
-
 static ssize_t cycle_counts_store(struct device *dev,
 				  struct device_attribute *attr,
 				  const char *buf, size_t count)
@@ -6420,8 +6418,6 @@ static int debug_ravg_fops_write(void *data, u64 val)
 }
 
 DEFINE_SIMPLE_ATTRIBUTE(debug_ravg_fops, NULL, debug_ravg_fops_write, "%llu\n");
-
-#endif
 
 /* ------------------------------------------------------------------------- */
 
@@ -9754,7 +9750,7 @@ static enum batt_paired_state batt_check_pairing_state(struct batt_drv *batt_drv
 		}
 
 	/* recycled battery */
-	} else if (strncmp(dev_info, dev_info_check, strlen(dev_info_check))) {
+	} else if (strncmp(dev_info, dev_info_check, GBMS_DINF_LEN)) {
 		pr_warn("Battery paired to a different device\n");
 
 		return BATT_PAIRING_MISMATCH;
