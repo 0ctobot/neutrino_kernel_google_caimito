@@ -38,6 +38,100 @@ bool is_log_enable __read_mostly = true;
 extern void try_umount(const char *mnt, bool check_mnt, int flags);
 #endif
 
+/* sus_path */
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+DEFINE_HASHTABLE(SUS_PATH_HLIST, 10);
+static int susfs_update_sus_path_inode(char *target_pathname) {
+	struct path p;
+	struct inode *inode = NULL;
+
+	if (kern_path(target_pathname, LOOKUP_FOLLOW, &p)) {
+		SUSFS_LOGE("Failed opening file '%s'\n", target_pathname);
+		return 1;
+	}
+
+	/* We don't allow tmpfs paths, because its inode->i_ino restarts from 1. */ 
+	if (strcmp(p.mnt->mnt_sb->s_type->name, "tmpfs") == 0) {
+		SUSFS_LOGE("target_pathname: '%s' cannot be added since its filesystem is 'tmpfs'\n",
+		           target_pathname);
+		path_put(&p);
+		return 1;
+	}
+
+	inode = d_inode(p.dentry);
+	if (!inode) {
+		SUSFS_LOGE("inode is NULL\n");
+		path_put(&p);
+		return 1;
+	}
+
+	spin_lock(&inode->i_lock);
+	inode->i_state |= INODE_STATE_SUS_PATH;
+	spin_unlock(&inode->i_lock);
+
+	path_put(&p);
+	return 0;
+}
+
+int susfs_add_sus_path(struct st_susfs_sus_path* __user user_info) {
+	struct st_susfs_sus_path info;
+	struct st_susfs_sus_path_hlist *new_entry, *tmp_entry;
+	struct hlist_node *tmp_node;
+	int bkt;
+	bool update_hlist = false;
+
+	if (copy_from_user(&info, user_info, sizeof(info))) {
+		SUSFS_LOGE("failed copying from userspace\n");
+		return 1;
+	}
+
+	spin_lock(&susfs_spin_lock);
+	hash_for_each_safe(SUS_PATH_HLIST, bkt, tmp_node, tmp_entry, node) {
+	if (!strcmp(tmp_entry->target_pathname, info.target_pathname)) {
+			hash_del(&tmp_entry->node);
+			kfree(tmp_entry);
+			update_hlist = true;
+			break;
+		}
+	}
+	spin_unlock(&susfs_spin_lock);
+
+	new_entry = kmalloc(sizeof(struct st_susfs_sus_path_hlist), GFP_KERNEL);
+	if (!new_entry) {
+		SUSFS_LOGE("not enough memory\n");
+		return 1;
+	}
+
+	new_entry->target_ino = info.target_ino;
+	strncpy(new_entry->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+	if (susfs_update_sus_path_inode(new_entry->target_pathname)) {
+		kfree(new_entry);
+		return 1;
+	}
+	spin_lock(&susfs_spin_lock);
+	hash_add(SUS_PATH_HLIST, &new_entry->node, info.target_ino);
+	if (update_hlist) {
+ 		SUSFS_LOGI("target_ino: '%lu', target_pathname: '%s' is successfully updated to SUS_PATH_HLIST\n",
+		           new_entry->target_ino, new_entry->target_pathname);	
+	} else {
+		SUSFS_LOGI("target_ino: '%lu', target_pathname: '%s' is successfully added to SUS_PATH_HLIST\n",
+		           new_entry->target_ino, new_entry->target_pathname);
+	}
+	spin_unlock(&susfs_spin_lock);
+	return 0;
+}
+
+int susfs_sus_ino_for_filldir64(unsigned long ino) {
+	struct st_susfs_sus_path_hlist *entry;
+
+	hash_for_each_possible(SUS_PATH_HLIST, entry, node, ino) {
+		if (entry->target_ino == ino)
+			return 1;
+	}
+	return 0;
+}
+#endif
+
 /* sus_mount */
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 LIST_HEAD(LH_SUS_MOUNT);
