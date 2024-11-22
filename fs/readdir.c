@@ -24,6 +24,10 @@
 
 #include <asm/unaligned.h>
 
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+#include <linux/susfs.h>
+#endif
+
 /*
  * Note the "unsafe_put_user() semantics: we goto a
  * label for errors.
@@ -316,6 +320,12 @@ static bool filldir64(struct dir_context *ctx, const char *name, int namlen,
 	int reclen = ALIGN(offsetof(struct linux_dirent64, d_name) + namlen + 1,
 		sizeof(u64));
 	int prev_reclen;
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	if (likely(current_cred()->user->android_kabi_reserved2 & 16777216) &&
+	    susfs_sus_ino_for_filldir64(ino)) {
+		return 0;
+	}
+#endif
 
 	buf->error = verify_dirent_name(name, namlen);
 	if (unlikely(buf->error))

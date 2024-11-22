@@ -10,6 +10,7 @@
 /* ENUM */
 
 /* Shared with userspace ksu_susfs tool. */
+#define CMD_SUSFS_ADD_SUS_PATH 0x55550
 #define CMD_SUSFS_ADD_SUS_MOUNT 0x55560
 #define CMD_SUSFS_ADD_TRY_UMOUNT 0x55580
 #define CMD_SUSFS_ENABLE_LOG 0x555a0
@@ -30,6 +31,8 @@
  * user_struct->android_kabi_reserved2 => storing flag 'USER_STRUCT_KABI2_'
  */
 
+/* 1 << 24 */
+#define INODE_STATE_SUS_PATH 16777216
 /* 1 << 25 */
 #define INODE_STATE_SUS_MOUNT 33554432
 /* 1 << 24, for distinguishing root/non-root granted user app process. */
@@ -42,6 +45,18 @@
 
 /* STRUCT */
 
+/* sus_path */
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+struct st_susfs_sus_path {
+	unsigned long                           target_ino;
+	char                                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
+};
+struct st_susfs_sus_path_hlist {
+	unsigned long                           target_ino;
+	char                                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
+	struct hlist_node                       node;
+};
+#endif
 /* sus_mount */
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 struct st_susfs_sus_mount {
@@ -67,6 +82,11 @@ struct st_susfs_try_umount_list {
 
 /* FORWARD DECLARATION */
 
+/* sus_path */
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+int susfs_add_sus_path(struct st_susfs_sus_path* __user user_info);
+int susfs_sus_ino_for_filldir64(unsigned long ino);
+#endif
 /* sus_mount */
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 int susfs_add_sus_mount(struct st_susfs_sus_mount* __user user_info);
