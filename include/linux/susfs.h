@@ -4,7 +4,6 @@
 #include <linux/version.h>
 #include <linux/types.h>
 #include <linux/utsname.h>
-#include <linux/mount.h>
 #include <linux/hashtable.h>
 #include <linux/path.h>
 
@@ -15,6 +14,7 @@
 #define CMD_SUSFS_ADD_TRY_UMOUNT 0x55580
 #define CMD_SUSFS_ENABLE_LOG 0x555a0
 #define CMD_SUSFS_SET_BOOTCONFIG 0x555b0
+#define CMD_SUSFS_RUN_UMOUNT_FOR_CURRENT_MNT_NS 0x555d0
 
 /* 256 should address many paths already unless you are doing some
  * strange experimental stuff, then set your own desired length. */
@@ -25,20 +25,15 @@
 
 /*
  * inode->i_state => storing flag 'INODE_STATE_'
- * inode->android_kabi_reserved1 => storing fake i_ino
- * inode->android_kabi_reserved2 => storing fake i_dev
- * inode->super_block->android_kabi_reserved1 => storing fake i_nlink
- * inode->super_block->android_kabi_reserved2 => storing fake i_size
- * inode->super_block->android_kabi_reserved3 => storing fake i_blocks
- * user_struct->android_kabi_reserved1 => storing flag 'USER_STRUCT_KABI1_'
+ * mount->mnt.android_kabi_reserved4 => storing original mnt_id
+ * task_struct->android_kabi_reserved8 => storing last valid fake mnt_id
+ * user_struct->android_kabi_reserved2 => storing flag 'USER_STRUCT_KABI2_'
  */
 
 /* 1 << 25 */
 #define INODE_STATE_SUS_MOUNT 33554432
-/* 1 << 0 */
-#define TASK_STRUCT_KABI1_IS_ZYGOTE 1
 /* 1 << 24, for distinguishing root/non-root granted user app process. */
-#define USER_STRUCT_KABI1_NON_ROOT_USER_APP_PROFILE 16777216
+#define USER_STRUCT_KABI2_NON_ROOT_USER_APP_PROFILE 16777216
 
 /* MACRO */
 

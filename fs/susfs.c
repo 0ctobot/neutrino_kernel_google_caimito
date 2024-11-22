@@ -14,8 +14,10 @@
 #include <linux/fdtable.h>
 #include <linux/statfs.h>
 #include <linux/susfs.h>
+#include "pnode.h"
 
 spinlock_t susfs_spin_lock;
+extern bool susfs_is_current_ksu_domain(void);
 
 #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
 bool is_log_enable __read_mostly = true;
@@ -144,6 +146,7 @@ void susfs_auto_add_default_mount(const char __user *to_pathname) {
 		return;
 	if ((!strncmp(pathname, "/data/adb/modules", 17) ||
 		 !strncmp(pathname, "/debug_ramdisk", 14) ||
+		 !strncmp(pathname, "/system_ext", 11) ||
 		 !strncmp(pathname, "/system", 7) ||
 		 !strncmp(pathname, "/vendor", 7) ||
 		 !strncmp(pathname, "/product", 8)) &&
