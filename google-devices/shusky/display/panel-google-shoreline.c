@@ -944,6 +944,7 @@ static void shoreline_lhbm_brightness_init(struct exynos_panel *ctx)
 
 static void shoreline_debugfs_init(struct drm_panel *panel, struct dentry *root)
 {
+#if IS_ENABLED(CONFIG_DEBUG_FS)
 	struct exynos_panel *ctx = container_of(panel, struct exynos_panel, panel);
 	struct dentry *panel_root, *csroot;
 
@@ -963,6 +964,7 @@ static void shoreline_debugfs_init(struct drm_panel *panel, struct dentry *root)
 	exynos_panel_debugfs_create_cmdset(ctx, csroot,
 					   &shoreline_init_cmd_set, "init");
 	dput(csroot);
+#endif
 }
 
 static void shoreline_panel_init(struct exynos_panel *ctx)

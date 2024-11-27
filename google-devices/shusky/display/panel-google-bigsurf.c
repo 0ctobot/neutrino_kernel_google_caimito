@@ -1091,6 +1091,7 @@ static void bigsurf_lhbm_brightness_init(struct exynos_panel *ctx)
 
 static void bigsurf_debugfs_init(struct drm_panel *panel, struct dentry *root)
 {
+#if IS_ENABLED(CONFIG_DEBUG_FS)
 	struct exynos_panel *ctx = container_of(panel, struct exynos_panel, panel);
 	struct dentry *panel_root, *csroot;
 
@@ -1110,6 +1111,7 @@ static void bigsurf_debugfs_init(struct drm_panel *panel, struct dentry *root)
 	dput(csroot);
 panel_out:
 	dput(panel_root);
+#endif
 }
 
 static void bigsurf_panel_init(struct exynos_panel *ctx)
