@@ -7,3 +7,12 @@ config GOOGLE_MODULES
 	select REGMAP_IRQ
 	select SND_SOC_COMPRESS
 	select VIDEOMODE_HELPERS
+
+config CAIMITO
+	bool "Build caimito kernel"
+	default y
+
+config SHUSKY
+	bool "Build shusky kernel"
+	depends on !CAIMITO
+	default n

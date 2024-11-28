@@ -18,9 +18,9 @@ obj-y += bms/
 obj-y += bms/misc/
 obj-y += display/common/gs_drm/
 obj-y += display/common/gs_panel/
-obj-y += display/panels/caimito/
+obj-$(CONFIG_CAIMITO) += display/panels/caimito/
 obj-y += display/samsung/
-obj-y += fingerprint/qcom/qfs4008/
+obj-$(CONFIG_CAIMITO) += fingerprint/qcom/qfs4008/
 obj-y += gps/broadcom/bcm47765/
 obj-y += gpu/mali_kbase/
 obj-y += gpu/mali_pixel/
@@ -29,14 +29,18 @@ obj-y += lwis/
 obj-y += nfc/
 obj-y += power/mitigation/
 obj-y += power/reset/
-obj-y += radio/samsung/s5400/
+obj-$(CONFIG_SHUSKY) += radio/samsung/s5300/
+obj-$(CONFIG_CAIMITO) += radio/samsung/s5400/
 obj-y += soc/gs/
 obj-y += touch/common/
-obj-y += touch/synaptics/syna_gtd/
+obj-$(CONFIG_SHUSKY) += touch/fts/ftm5/
+obj-$(CONFIG_SHUSKY) += touch/goodix/
+obj-$(CONFIG_CAIMITO) += touch/synaptics/syna_gtd/
 obj-y += trusty/
 obj-y += uwb/qorvo/qm35/qm35s/
 obj-y += video/gchips/
-obj-y += wlan/bcm4390/
+obj-$(CONFIG_CAIMITO) += wlan/bcm4390/
+obj-$(CONFIG_SHUSKY) += wlan/bcm4398/
 
 # These drivers each have their own unique copy of the gcip driver, which has
 # global symbols with the same names. To prevent a symbol name conflict when
