@@ -982,6 +982,9 @@ bcmdhd$(BCM_WLAN_CHIP_SUFFIX)-objs := $(DHDOFILES)
 obj-$(DRIVER_TYPE)   += bcmdhd$(BCM_WLAN_CHIP_SUFFIX).o
 ccflags-y := $(KBUILD_CFLAGS)
 ccflags-y += $(DHDCFLAGS)
+ifeq ($(CONFIG_CC_IS_GCC),y)
+CFLAGS_linux_osl.o := -Wno-cast-function-type
+endif
 
 # For in-tree model, define make rules here (KERNEL_SRC will be NULL)
 ifeq ($(KERNEL_SRC),)
