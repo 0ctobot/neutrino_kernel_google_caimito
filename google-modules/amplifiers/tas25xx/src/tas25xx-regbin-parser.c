@@ -1855,41 +1855,6 @@ static int32_t tas25xx_parse_algo_data(struct tas25xx_priv *p_tas25xx, uint8_t *
 	return ret;
 }
 
-static void tas25xx_update_custom_reg(struct tas25xx_priv *p_tas25xx, int ch)
-{
-	dev_info(p_tas25xx->platform_data->dev, "%s:", __func__);
-
-	if (ch == 0) {
-		//VSNS
-		p_tas25xx->update_bits(p_tas25xx, 0, 0xd, 0x40, 0x40);
-		p_tas25xx->update_bits(p_tas25xx, 0, 0xd, 0x3F, 0x00);
-
-		//ISNS
-		p_tas25xx->update_bits(p_tas25xx, 0, 0xe, 0x40, 0x40);
-		p_tas25xx->update_bits(p_tas25xx, 0, 0xe, 0x3F, 0x04);
-
-		//VBAT
-		if (p_tas25xx->mn_vbat) {
-			p_tas25xx->update_bits(p_tas25xx, 0, 0xf, 0x40, 0x40);
-			p_tas25xx->update_bits(p_tas25xx, 0, 0xf, 0x3F, 0x06);
-		}
-	} else if (ch == 1) {
-		//VSNS
-		p_tas25xx->update_bits(p_tas25xx, 1, 0xd, 0x40, 0x40);
-		p_tas25xx->update_bits(p_tas25xx, 1, 0xd, 0x3F, 0x08);
-
-		//ISNS
-		p_tas25xx->update_bits(p_tas25xx, 1, 0xe, 0x40, 0x40);
-		p_tas25xx->update_bits(p_tas25xx, 1, 0xe, 0x3F, 0x0c);
-
-		//VBAT
-		if (p_tas25xx->mn_vbat) {
-			p_tas25xx->update_bits(p_tas25xx, 1, 0xf, 0x40, 0x40);
-			p_tas25xx->update_bits(p_tas25xx, 1, 0xf, 0x3F, 0x0e);
-		}
-	}
-}
-
 static void tas25xx_fw_ready(const struct firmware *pFW, void *pContext)
 {
 	int32_t ret;
@@ -2508,8 +2473,6 @@ int32_t tas25xx_set_pre_powerup(struct tas25xx_priv *p_tas25xx, int32_t ch)
 		(struct tas25xx_profiles *)g_profile_data_list[ch].tas_profiles;
 
 	plat_data = (struct linux_platform *) p_tas25xx->platform_data;
-
-	tas25xx_update_custom_reg(p_tas25xx, ch);
 
 	dev_info(plat_data->dev, "ch-%d %s profile %s pre_power_up\n", ch, __func__,
 			tas_profiles_t[g_tas25xx_profile].name);
