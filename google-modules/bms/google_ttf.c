@@ -152,8 +152,11 @@ static int ttf_pwr_equiv_icl(const struct gbms_charging_event *ce_data,
 			     int vbatt_idx, int soc)
 {
 	const struct gbms_chg_profile *profile = ce_data->chg_profile;
+	const int volt_limit = profile->volt_limits[vbatt_idx] == 0 ?
+			       profile->volt_limits[profile->volt_nb_limits - 1] :
+			       profile->volt_limits[vbatt_idx];
 	const int aratio = (ce_data->adapter_details.ad_voltage * 10000) /
-			   (profile->volt_limits[vbatt_idx] / 1000);
+			   (volt_limit / 1000);
 	const struct gbms_ce_tier_stats *tier_stats;
 	const int efficiency = 95; /* TODO: use real efficiency */
 	const u32 capacity_ma = profile->capacity_ma;
@@ -252,6 +255,8 @@ static int ttf_pwr_ratio(const struct batt_ttf_stats *stats,
 	}
 
 	/* max tier demand for voltage tier at this temperature index */
+	vbatt_idx = vbatt_idx > profile->volt_nb_limits - 1 ?
+		    profile->volt_nb_limits - 1 : vbatt_idx;
 	cc_max = GBMS_CCCM_LIMITS(profile, temp_idx, vbatt_idx) / 1000;
 	/* statistical current demand for soc (<= cc_max) */
 	avg_cc = ttf_ref_cc(stats, soc);

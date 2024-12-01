@@ -403,7 +403,8 @@ static int chg_psy_changed(struct notifier_block *nb,
 	struct power_supply *psy = data;
 	struct chg_drv *chg_drv = container_of(nb, struct chg_drv, psy_nb);
 
-	pr_debug("%s name=%s evt=%lu\n", __func__, psy->desc->name, action);
+	dev_info_ratelimited(chg_drv->device, "%s name=%s evt=%lu\n", __func__,
+			     psy->desc->name, action);
 
 	if ((action != PSY_EVENT_PROP_CHANGED) ||
 	    (psy == NULL) || (psy->desc == NULL) || (psy->desc->name == NULL))

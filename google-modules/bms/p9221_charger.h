@@ -873,6 +873,7 @@ struct p9221_charger_data {
 	struct gvotable_election	*hda_tz_votable;
 	struct gvotable_election	*bcl_wlc_votable;
 	struct gvotable_election	*wlc_spoof_votable;
+	struct gvotable_election	*fan_level_votable;
 	struct notifier_block		nb;
 	struct mutex			io_lock;
 	struct mutex			cmd_lock;
@@ -896,6 +897,7 @@ struct p9221_charger_data {
 	struct delayed_work		chk_fod_work;
 	struct delayed_work		set_rf_work;
 	struct work_struct		uevent_work;
+	struct work_struct		calibration_work;
 	struct work_struct		rtx_disable_work;
 	struct work_struct		rtx_reset_work;
 	struct alarm			icl_ramp_alarm;
@@ -1030,6 +1032,7 @@ struct p9221_charger_data {
 	char				*i2c_rxdebug_buf;
 	struct mutex			irq_det_lock;
 	struct mutex			icl_lock;
+	int				fan_last_level;
 
 #if IS_ENABLED(CONFIG_GPIOLIB)
 	struct gpio_chip gpio;

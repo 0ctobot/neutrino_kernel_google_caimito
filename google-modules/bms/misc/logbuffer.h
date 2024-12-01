@@ -10,10 +10,17 @@
 
 struct logbuffer;
 
+__printf(2, 3)
 void logbuffer_log(struct logbuffer *instance, const char *fmt, ...);
+
+__printf(3, 4)
 void logbuffer_logk(struct logbuffer *instance, int loglevel, const char *fmt, ...);
+
+__printf(2, 0)
 void logbuffer_vlog(struct logbuffer *instance, const char *fmt,
 		    va_list args);
+
+__printf(4, 5)
 int dev_logbuffer_logk(struct device *dev, struct logbuffer *instance, int loglevel,
 		       const char *fmt, ...);
 

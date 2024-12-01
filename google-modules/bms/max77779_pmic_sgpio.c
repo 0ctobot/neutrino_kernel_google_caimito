@@ -426,6 +426,7 @@ static int max77779_pmic_sgpio_probe(struct platform_device *pdev)
 	gpio_chip->get = max77779_pmic_sgpio_get;
 	gpio_chip->set = max77779_pmic_sgpio_set;
 	gpio_chip->request = gpiochip_generic_request;
+	gpio_chip->free = gpiochip_generic_free;
 	gpio_chip->set_config = gpiochip_generic_config;
 	gpio_chip->base = -1;
 	gpio_chip->can_sleep = true;
