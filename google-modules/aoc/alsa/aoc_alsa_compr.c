@@ -579,7 +579,8 @@ int aoc_compr_get_position(struct aoc_alsa_stream *alsa_stream, uint64_t *positi
 		return -EINVAL;
 	}
 
-	*position = current_sample - alsa_stream->compr_pcm_io_sample_base;
+	*position = (current_sample - alsa_stream->compr_pcm_io_sample_base) *
+		    (long)alsa_stream->params_rate / AOC_COMPR_OFFLOAD_DEFAULT_SR;
 
 	pr_debug("%s: current_sample=%llu base=%llu\n", __func__,
 			current_sample, alsa_stream->compr_pcm_io_sample_base);
