@@ -90,4 +90,12 @@ config DRM_SAMSUNG_TUI
 	  This enables the TUI reverse proxy which allows the TA to allocate
 	  framebuffer.
 
+config QUEUE_DDIC_CMD_CALL_BACK
+	bool "dsim driver send callback after queue command"
+	depends on !GS_DRM_PANEL_UNIFIED
+	default n
+	help
+	  This will enable sending a notification to exynos panel
+	  when a command is queued on dsim driver.
+
 endif

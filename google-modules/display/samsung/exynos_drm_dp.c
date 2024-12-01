@@ -934,7 +934,7 @@ static int dp_link_up(struct dp_device *dp)
 		// dp_emulation_mode is enabled, use hard-coded sink params.
 		dp->sink.revision = DP_DPCD_REV_12;
 		dp->sink.link_rate = drm_dp_bw_code_to_link_rate(DP_LINK_BW_5_4);
-		dp->sink.num_lanes = 4;
+		dp->sink.num_lanes = 2;
 		dp->sink.enhanced_frame = false;
 		dp->sink.fec = false;
 		dp->sink.ssc = false;
@@ -956,6 +956,9 @@ static int dp_link_up(struct dp_device *dp)
 		dp_set_hwconfig_video(dp);
 
 		dp->hw_config.dp_emul = true;
+		dp->hw_config.num_lanes = 2;
+		dp->hw_config.orient_type = PLUG_NORMAL;
+		dp->hw_config.pin_type = PIN_TYPE_D;
 		if (!dp_hw_reinit(&dp->hw_config)) {
 			dp_info(dp, "HW configured with Rate(%d) and Lanes(%u)\n",
 				dp->hw_config.link_rate, dp->hw_config.num_lanes);
@@ -2226,9 +2229,10 @@ static int param_dp_emulation_mode_set(const char *val, const struct kernel_para
 		dp_emulation_mode = new_value;
 		if (dp_emulation_mode) {
 			memset(&dp_drvdata->hw_config, 0, sizeof(struct dp_hw_config));
-			dp_drvdata->hw_config.orient_type = PLUG_NORMAL;
-			dp_drvdata->hw_config.num_lanes = 4;
 			dp_drvdata->hw_config.dp_emul = true;
+			dp_drvdata->hw_config.num_lanes = 2;
+			dp_drvdata->hw_config.orient_type = PLUG_NORMAL;
+			dp_drvdata->hw_config.pin_type = PIN_TYPE_D;
 			dp_hpd_changed(dp_drvdata, EXYNOS_HPD_PLUG);
 		} else
 			dp_hpd_changed(dp_drvdata, EXYNOS_HPD_UNPLUG);
