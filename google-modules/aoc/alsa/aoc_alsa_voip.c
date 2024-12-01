@@ -54,7 +54,8 @@ static enum hrtimer_restart aoc_voip_irq_process(struct aoc_alsa_stream *alsa_st
 	 * the playback case represents what has been read from the buffer,
 	 * not what already played out .
 	*/
-	if (alsa_stream->dev == NULL)
+	if (alsa_stream->dev == NULL ||
+		 alsa_stream->substream->runtime->status->state != SNDRV_PCM_STATE_RUNNING)
 		return HRTIMER_RESTART;
 
 	dev = alsa_stream->dev;

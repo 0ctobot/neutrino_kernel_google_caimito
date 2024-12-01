@@ -184,7 +184,7 @@ static struct snd_pcm_hardware snd_aoc_playback_hw = {
 	.channels_max = 6,
 	.buffer_bytes_max = 16384 * 6,
 	.period_bytes_min = 16,
-	.period_bytes_max = 11520,
+	.period_bytes_max = 15360,
 	.periods_min = 2,
 	.periods_max = 1024 * 6,
 };
@@ -201,7 +201,8 @@ static enum hrtimer_restart aoc_pcm_irq_process(struct aoc_alsa_stream *alsa_str
 	 * the playback case represents what has been read from the buffer,
 	 * not what already played out .
 	*/
-	if (alsa_stream->dev == NULL)
+	if (alsa_stream->dev == NULL ||
+		 alsa_stream->substream->runtime->status->state != SNDRV_PCM_STATE_RUNNING)
 		return HRTIMER_RESTART;
 
 	dev = alsa_stream->dev;
