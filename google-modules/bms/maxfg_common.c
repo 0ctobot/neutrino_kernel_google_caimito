@@ -844,6 +844,9 @@ int maxfg_capture_to_cstr(struct maxfg_capture_config *config, u16* reg_val,
 				 reg_val[reg_idx]);
 	}
 
+	len += scnprintf(&str_buf[len], buf_len - len, "TS:%X",
+			 (unsigned int)ktime_get_real_seconds());
+
 	return len;
 }
 

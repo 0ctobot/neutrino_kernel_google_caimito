@@ -487,6 +487,7 @@ void gbms_logbuffer_prlog(struct logbuffer *log, int level, int debug_no_logbuff
 	"%s %s: " fmt, dev_driver_string(dev), dev_name(dev), ##__VA_ARGS__); \
 }
 
+__printf(6, 7)
 void gbms_logbuffer_devlog(struct logbuffer *log, struct device *dev, int level, int debug_no_logbuffer,
 			  int debug_printk_prlog, const char *f, ...);
 /* debug/print */
@@ -590,6 +591,7 @@ int ttf_stats_sscan(struct batt_ttf_stats *stats,
 struct batt_ttf_stats *ttf_stats_dup(struct batt_ttf_stats *dst,
 				     const struct batt_ttf_stats *src);
 
+__printf(2, 3)
 void ttf_log(const struct batt_ttf_stats *stats, const char *fmt, ...);
 
 ssize_t ttf_dump_details(char *buf, int max_size,
@@ -773,6 +775,8 @@ enum csi_status {
 #define CSI_STATUS_MASK_NOTCHARGING	(1 << 12)
 #define CSI_STATUS_MASK_CHARGING	(1 << 13)
 #define CSI_STATUS_MASK_DEFEND_LIMIT	(1 << 14)
+
+#define GET_BIT_POSITION(flag) (fls(flag) - 1)
 
 enum charging_state {
        BATTERY_STATUS_UNKNOWN = -1,

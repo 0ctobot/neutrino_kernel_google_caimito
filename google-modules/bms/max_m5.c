@@ -444,7 +444,7 @@ static int max_m5_period2caplsb(u16 taskperiod)
 static int max_m5_update_gauge_custom_parameters(struct max_m5_data *m5_data)
 {
 	struct maxfg_regmap *regmap = m5_data->regmap;
-	int ret, retries;
+	int ret, retries, temp;
 	u16 data;
 
 	/* write parameters (which include state) */
@@ -476,16 +476,6 @@ static int max_m5_update_gauge_custom_parameters(struct max_m5_data *m5_data)
 
 	m5_data->cap_lsb = max_m5_period2caplsb(m5_data->parameters.taskperiod);
 
-	/*
-	 * version could be in the DT: this will overwrite it if set.
-	 * Invalid version is not written out.
-	 */
-	ret = max_m5_model_write_version(m5_data, m5_data->model_version);
-	if (ret < 0) {
-		dev_err(m5_data->dev, "cannot update version (%d)\n", ret);
-		return ret;
-	}
-
 	/* trigger load model */
 	ret = REGMAP_READ(regmap, MAX_M5_CONFIG2, &data);
 	if (ret == 0)
@@ -504,25 +494,37 @@ static int max_m5_update_gauge_custom_parameters(struct max_m5_data *m5_data)
 		ret = REGMAP_READ(regmap, MAX_M5_CONFIG2, &data);
 		if (ret == 0 && !(data & MAX_M5_CONFIG2_LDMDL)) {
 			ret = REGMAP_READ(regmap, MAX_M5_REPCAP, &data);
-			if (ret == 0 && data != 0) {
-				int temp;
-
-				temp = max_m5_model_read_version(m5_data);
-				if (m5_data->model_version == MAX_M5_INVALID_VERSION) {
-					dev_info(m5_data->dev, "No Model Version, Current %x\n",
-						 temp);
-				} else if (temp != m5_data->model_version) {
-					dev_info(m5_data->dev, "Model Version %x, Mismatch %x\n",
-						 m5_data->model_version, temp);
-					return -EINVAL;
-				}
-
-				return 0;
-			}
+			if (ret == 0 && data != 0)
+				break;
 		}
 	}
 
-	return -ETIMEDOUT;
+	if (retries == 0)
+		return -ETIMEDOUT;
+
+	/*
+	 * version could be in the DT: this will overwrite it if set.
+	 * Invalid version is not written out.
+	 */
+	ret = max_m5_model_write_version(m5_data, m5_data->model_version);
+	if (ret < 0) {
+		dev_err(m5_data->dev, "cannot update version (%d)\n", ret);
+		return ret;
+	}
+
+	temp = max_m5_model_read_version(m5_data);
+	if (m5_data->model_version == MAX_M5_INVALID_VERSION) {
+		dev_info(m5_data->dev, "No Model Version, Current %x\n", temp);
+		return -EINVAL;
+	}
+
+	if (temp != m5_data->model_version) {
+		dev_info(m5_data->dev, "Model Version %x, Mismatch %x\n",
+			 m5_data->model_version, temp);
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 /* protected from mutex_lock(&chip->model_lock) */

@@ -571,7 +571,6 @@ struct batt_drv {
 
 	/* FAN level */
 	struct gvotable_election *fan_level_votable;
-	int fan_last_level;
 
 	/* stats */
 	int msc_state;
@@ -631,7 +630,6 @@ struct batt_drv {
 	struct gbms_storage_device *history;
 
 	/* Fan control */
-	int fan_level;
 	int fan_bt_limits[NB_FAN_BT_LIMITS];
 
 	/* AACR: Aged Adjusted Charging Rate */
@@ -1470,54 +1468,30 @@ static int fan_calculate_level(struct batt_drv *batt_drv)
 	return fan_level;
 }
 
-static void fan_level_reset(const struct batt_drv *batt_drv)
+static bool vote_fan_level(struct gvotable_election *fan_level_votable, int level, bool enable)
 {
+	int ret;
 
-	if (batt_drv->fan_level_votable)
-		gvotable_cast_int_vote(batt_drv->fan_level_votable,
-				       "MSC_BATT", 0, false);
-}
+	if (!fan_level_votable)
+		fan_level_votable = gvotable_election_get_handle(VOTABLE_FAN_LEVEL);
 
-static int fan_level_cb(struct gvotable_election *el,
-			const char *reason, void *vote)
-{
-	struct batt_drv *batt_drv = gvotable_get_data(el);
-	const int last_lvl = batt_drv->fan_last_level;
-	int lvl = GVOTABLE_PTR_TO_INT(vote);
-	const union gbms_ce_adapter_details *ad = &batt_drv->ce_data.adapter_details;
+	if (!fan_level_votable)
+		return false;
 
-	if (!batt_drv)
-		return 0;
-
-	if (batt_drv->fan_last_level == lvl)
-		return 0;
-
-	if (ad->ad_type != CHG_EV_ADAPTER_TYPE_WLC &&
-	    ad->ad_type != CHG_EV_ADAPTER_TYPE_WLC_EPP &&
-	    ad->ad_type != CHG_EV_ADAPTER_TYPE_WLC_SPP)
-		return 0;
-
-	pr_debug("FAN_LEVEL %d->%d reason=%s\n",
-		batt_drv->fan_last_level, lvl, reason ? reason : "<>");
-
-	batt_drv->fan_last_level = lvl;
-
-	if (!chg_state_is_disconnected(&batt_drv->chg_state)) {
-
-		logbuffer_log(batt_drv->ttf_stats.ttf_log,
-			"FAN_LEVEL %d->%d reason=%s",
-			last_lvl, lvl,
-			reason ? reason : "<>");
-
-		/*
-		 * Send the uevent by kobject API to distinguish the uevent sent by
-                 * power_supply_changed() since fan_level is not a standard power_supply_property
-		 */
-		kobject_uevent(&batt_drv->device->kobj, KOBJ_CHANGE);
+	ret = gvotable_cast_int_vote(fan_level_votable, "MSC_BATT", level, enable);
+	if (ret < 0) {
+		pr_err("MSC_FAN_LVL: enable:%d, level=%d ret=%d\n", enable, level, ret);
+		return false;
 	}
 
-	return 0;
+	return true;
 }
+
+static void fan_level_reset(struct batt_drv *batt_drv)
+{
+	vote_fan_level(batt_drv->fan_level_votable, 0, false);
+}
+
 /* ------------------------------------------------------------------------- */
 
 /*
@@ -2279,7 +2253,7 @@ static void bat_log_chg_stats(struct logbuffer *log,
 			ce_data->adapter_details.ad_voltage * 100,
 			ce_data->adapter_details.ad_amperage * 100);
 
-	logbuffer_log(log, "S: %hu,%hu, %hu,%hu %hu,%hu %ld,%ld, %u",
+	logbuffer_log(log, "S: %hu,%hu, %hu,%hu %hu,%hu %lld,%lld, %u",
 			ce_data->charging_stats.ssoc_in,
 			ce_data->charging_stats.voltage_in,
 			ce_data->charging_stats.ssoc_out,
@@ -5414,7 +5388,7 @@ static int batt_init_bpst_profile(struct batt_drv *batt_drv)
 /* call holding mutex_lock(&batt_drv->chg_lock); */
 static int batt_chg_logic(struct batt_drv *batt_drv)
 {
-	int rc, err = 0;
+	int rc, level, err = 0;
 	bool jeita_stop;
 	bool changed = false;
 	const bool disable_votes = batt_drv->disable_votes;
@@ -5682,13 +5656,9 @@ msc_logic_done:
 	}
 
 	/* Fan level can be updated only during power transfer */
-	if (batt_drv->fan_level_votable) {
-		int level = fan_calculate_level(batt_drv);
-
-		gvotable_cast_int_vote(batt_drv->fan_level_votable,
-				       "MSC_BATT", level, true);
-		pr_debug("MSC_FAN_LVL: level=%d\n", level);
-	}
+	level = fan_calculate_level(batt_drv);
+	vote_fan_level(batt_drv->fan_level_votable, level, true);
+	pr_debug("MSC_FAN_LVL: level=%d\n", level);
 
 	if (!batt_drv->msc_interval_votable)
 		batt_drv->msc_interval_votable =
@@ -7586,48 +7556,6 @@ static ssize_t batt_show_constant_charge_voltage(struct device *dev,
 static const DEVICE_ATTR(constant_charge_voltage, 0444,
 			 batt_show_constant_charge_voltage, NULL);
 
-static ssize_t fan_level_store(struct device *dev,
-			       struct device_attribute *attr,
-			       const char *buf, size_t count) {
-	struct power_supply *psy = container_of(dev, struct power_supply, dev);
-	struct batt_drv *batt_drv = power_supply_get_drvdata(psy);
-	int ret = 0;
-	int level;
-
-	ret = kstrtoint(buf, 0, &level);
-	if (ret < 0)
-		return ret;
-
-	if ((level < FAN_LVL_UNKNOWN) || (level > FAN_LVL_ALARM))
-		return -ERANGE;
-
-	batt_drv->fan_level = level;
-
-	/* always send a power supply event when forcing the value */
-	if (batt_drv->psy)
-		power_supply_changed(batt_drv->psy);
-
-	return count;
-}
-
-static ssize_t fan_level_show(struct device *dev,
-			      struct device_attribute *attr, char *buf)
-{
-	struct power_supply *psy = container_of(dev, struct power_supply, dev);
-	struct batt_drv *batt_drv = power_supply_get_drvdata(psy);
-	int result = 0;
-
-	if (batt_drv->fan_level == -1 && batt_drv->fan_level_votable)
-		result = gvotable_get_current_int_vote(
-				batt_drv->fan_level_votable);
-	else
-		result = batt_drv->fan_level;
-
-	return scnprintf(buf, PAGE_SIZE, "%d\n", result);
-}
-
-static const DEVICE_ATTR_RW(fan_level);
-
 static ssize_t show_health_safety_margin(struct device *dev,
 				   struct device_attribute *attr, char *buf)
 {
@@ -8264,6 +8192,7 @@ static ssize_t health_index_stats_show(struct device *dev,
 		const int use_algo = batt_bhi_map_algo(i, health_data);
 
 		cap_index = bhi_calc_cap_index(use_algo, batt_drv);
+		cap_index = bhi_cap_index_bound(use_algo, cap_index);
 		imp_index = bhi_calc_imp_index(use_algo, health_data);
 		sd_index = bhi_calc_sd_index(use_algo, health_data);
 
@@ -9280,9 +9209,6 @@ static int batt_init_fs(struct batt_drv *batt_drv)
 	ret = device_create_file(&batt_drv->psy->dev, &dev_attr_constant_charge_voltage);
 	if (ret)
 		dev_err(&batt_drv->psy->dev, "Failed to create constant charge voltage\n");
-	ret = device_create_file(&batt_drv->psy->dev, &dev_attr_fan_level);
-	if (ret)
-		dev_err(&batt_drv->psy->dev, "Failed to create fan level\n");
 	ret = device_create_file(&batt_drv->psy->dev, &dev_attr_health_safety_margin);
 	if (ret)
 		dev_err(&batt_drv->psy->dev, "Failed to create health safety margin\n");
@@ -10698,6 +10624,8 @@ static int gbatt_get_health(struct batt_drv *batt_drv)
 
 	switch (charging_state) {
 	case BATTERY_STATUS_NORMAL:
+	case BATTERY_STATUS_LONGLIFE:
+	case BATTERY_STATUS_ADAPTIVE:
 		health = POWER_SUPPLY_HEALTH_GOOD;
 		break;
 	case BATTERY_STATUS_TOO_COLD:
@@ -11869,23 +11797,6 @@ static int google_battery_probe(struct platform_device *pdev)
 
 	/* Fan levels limits from battery temperature */
 	batt_fan_bt_init(batt_drv);
-	batt_drv->fan_level = -1;
-	batt_drv->fan_last_level = -1;
-	batt_drv->fan_level_votable =
-		gvotable_create_int_election(NULL, gvotable_comparator_int_max,
-					     fan_level_cb, batt_drv);
-	if (IS_ERR_OR_NULL(batt_drv->fan_level_votable)) {
-		ret = PTR_ERR(batt_drv->fan_level_votable);
-		dev_err(batt_drv->device, "Fail to create fan_level_votable\n");
-		batt_drv->fan_level_votable = NULL;
-	} else {
-		gvotable_set_vote2str(batt_drv->fan_level_votable,
-				      gvotable_v2s_int);
-		gvotable_election_set_name(batt_drv->fan_level_votable,
-					   VOTABLE_FAN_LEVEL);
-		gvotable_cast_long_vote(batt_drv->fan_level_votable,
-					"DEFAULT", FAN_LVL_UNKNOWN, true);
-	}
 
 	/* charge speed interface: status and type */
 	batt_drv->csi_status_votable =
