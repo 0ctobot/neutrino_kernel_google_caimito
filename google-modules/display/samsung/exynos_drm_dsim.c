@@ -2481,7 +2481,7 @@ static void dsim_dump_cmd(struct dsim_device *dsim, const struct mipi_dsi_msg *m
 	logbuffer_log(dsim->log, "last=%d delay=%d tx=", is_last, dsim->tx_delay_ms);
 	while (tx_len > 0) {
 		/* "%*phN" limits up to 64 bytes */
-		size_t sz = min(tx_len, 64);
+		int sz = min(tx_len, 64);
 
 		logbuffer_log(dsim->log, "%*phN", sz, tx_buf);
 		tx_buf += sz;
