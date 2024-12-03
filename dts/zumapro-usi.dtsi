@@ -991,6 +991,7 @@
 		samsung,usi-serial-v2;
 		samsung,rts-alive-control;
 		samsung,uart-logging;
+		goog,ioctl-suspend;
 		#address-cells = <0x00000001>;
 		#size-cells = <0x00000000>;
 		clocks = <&clock MUX_APM_FUNC>, <&clock DOUT_CLK_APM_USI1_UART>;
