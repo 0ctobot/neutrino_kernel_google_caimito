@@ -206,6 +206,7 @@ void vh_sched_switch_pixel_mod(void *data, bool preempt, struct task_struct *pre
 void rvh_enqueue_task_pixel_mod(void *data, struct rq *rq, struct task_struct *p, int flags)
 {
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
+	unsigned long irqflags;
 	int group;
 
 	if (!static_branch_unlikely(&enqueue_dequeue_ready))
@@ -218,13 +219,13 @@ void rvh_enqueue_task_pixel_mod(void *data, struct rq *rq, struct task_struct *p
 		}
 	}
 
-	raw_spin_lock(&vp->lock);
+	raw_spin_lock_irqsave(&vp->lock, irqflags);
 	if (vp->queued_to_list == LIST_NOT_QUEUED) {
 		group = get_vendor_group(p);
 		add_to_vendor_group_list(&vp->node, group);
 		vp->queued_to_list = LIST_QUEUED;
 	}
-	raw_spin_unlock(&vp->lock);
+	raw_spin_unlock_irqrestore(&vp->lock, irqflags);
 
 	/*
 	 * uclamp filter for RT tasks. CFS tasks are handled in
@@ -238,6 +239,7 @@ void rvh_enqueue_task_pixel_mod(void *data, struct rq *rq, struct task_struct *p
 void rvh_dequeue_task_pixel_mod(void *data, struct rq *rq, struct task_struct *p, int flags)
 {
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
+	unsigned long irqflags;
 	int group;
 
 	if (!static_branch_unlikely(&enqueue_dequeue_ready))
@@ -248,13 +250,13 @@ void rvh_dequeue_task_pixel_mod(void *data, struct rq *rq, struct task_struct *p
 		update_uclamp_stats(rq->cpu, rq_clock(rq));
 #endif
 
-	raw_spin_lock(&vp->lock);
+	raw_spin_lock_irqsave(&vp->lock, irqflags);
 	if (vp->queued_to_list == LIST_QUEUED) {
 		group = get_vendor_group(p);
 		remove_from_vendor_group_list(&vp->node, group);
 		vp->queued_to_list = LIST_NOT_QUEUED;
 	}
-	raw_spin_unlock(&vp->lock);
+	raw_spin_unlock_irqrestore(&vp->lock, irqflags);
 
 	/*
 	 * Reset uclamp filter flags unconditionally for both RT and CFS.
@@ -293,8 +295,9 @@ static void set_latency_sensitive_inheritance(struct task_struct *p, unsigned in
 {
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
 	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
+	unsigned long irqflags;
 
-	raw_spin_lock(&vp->lock);
+	raw_spin_lock_irqsave(&vp->lock, irqflags);
 
 	if (task_on_rq_queued(p)) {
 		bool old_uclamp_fork_reset = get_uclamp_fork_reset(p, true);
@@ -311,7 +314,7 @@ static void set_latency_sensitive_inheritance(struct task_struct *p, unsigned in
 		vi_set_adpf(vi, type, val);
 	}
 
-	raw_spin_unlock(&vp->lock);
+	raw_spin_unlock_irqrestore(&vp->lock, irqflags);
 }
 
 static void set_performance_inheritance_locked(struct task_struct *p, struct task_struct *pi_task,
@@ -385,9 +388,11 @@ static void set_performance_inheritance_locked(struct task_struct *p, struct tas
 static inline void set_performance_inheritance(struct task_struct *p, struct task_struct *pi_task,
 	unsigned int type)
 {
-	raw_spin_lock(&p->pi_lock);
+	unsigned long irqflags;
+
+	raw_spin_lock_irqsave(&p->pi_lock, irqflags);
 	set_performance_inheritance_locked(p, pi_task, type);
-	raw_spin_unlock(&p->pi_lock);
+	raw_spin_unlock_irqrestore(&p->pi_lock, irqflags);
 }
 
 void vh_binder_set_priority_pixel_mod(void *data, struct binder_transaction *t,

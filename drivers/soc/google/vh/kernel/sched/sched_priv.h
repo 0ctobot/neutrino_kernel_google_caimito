@@ -143,18 +143,20 @@ static inline bool fits_capacity(unsigned long util, unsigned long capacity, int
 	void *__mptr = (void *)(ptr);				\
 	((type *)(__mptr - offsetof(type, member))); })
 
-#define remove_from_vendor_group_list(__node, __group) do {	\
-	raw_spin_lock(&vendor_group_list[__group].lock);	\
-	if (__node == vendor_group_list[__group].cur_iterator)	\
+#define remove_from_vendor_group_list(__node, __group) do {			\
+	unsigned long irqflags;							\
+	raw_spin_lock_irqsave(&vendor_group_list[__group].lock, irqflags);	\
+	if (__node == vendor_group_list[__group].cur_iterator)			\
 		vendor_group_list[__group].cur_iterator = (__node)->prev;	\
-	list_del_init(__node);					\
-	raw_spin_unlock(&vendor_group_list[__group].lock);	\
+	list_del_init(__node);							\
+	raw_spin_unlock_irqrestore(&vendor_group_list[__group].lock, irqflags);	\
 } while (0)
 
-#define add_to_vendor_group_list(__node, __group) do {		\
-	raw_spin_lock(&vendor_group_list[__group].lock);	\
-	list_add_tail(__node, &vendor_group_list[__group].list);	\
-	raw_spin_unlock(&vendor_group_list[__group].lock);	\
+#define add_to_vendor_group_list(__node, __group) do {				\
+	unsigned long irqflags;							\
+	raw_spin_lock_irqsave(&vendor_group_list[__group].lock, irqflags);	\
+	list_add_tail(__node, &vendor_group_list[__group].list);		\
+	raw_spin_unlock_irqrestore(&vendor_group_list[__group].lock, irqflags);	\
 } while (0)
 
 struct vendor_group_property {
@@ -1070,6 +1072,7 @@ static inline void __update_util_est_invariance(struct rq *rq,
 	unsigned int rampup_multiplier;
 	u64 delta_exec;
 	int __maybe_unused group;
+	unsigned long irqflags;
 
 	if (!static_branch_likely(&auto_dvfs_headroom_enable))
 		return;
@@ -1105,7 +1108,7 @@ static inline void __update_util_est_invariance(struct rq *rq,
 	if (update_cfs_rq) {
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 		group = get_utilization_group(p, get_vendor_group(p));
-		raw_spin_lock(&vendor_cfs_util[group][rq->cpu].lock);
+		raw_spin_lock_irqsave(&vendor_cfs_util[group][rq->cpu].lock, irqflags);
 		lsub_positive(&vendor_cfs_util[group][rq->cpu].util_est, se_enqueued);
 #endif
 		lsub_positive(&cfs_rq_enqueued, se_enqueued);
@@ -1121,7 +1124,7 @@ static inline void __update_util_est_invariance(struct rq *rq,
 
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 		vendor_cfs_util[group][rq->cpu].util_est += new_util_est;
-		raw_spin_unlock(&vendor_cfs_util[group][rq->cpu].lock);
+		raw_spin_unlock_irqrestore(&vendor_cfs_util[group][rq->cpu].lock, irqflags);
 #endif
 	}
 }
