@@ -1243,6 +1243,9 @@ struct gs_panel {
 
 	/** @skip_align: skip cmd align mechanism while this flag is set */
 	bool skip_cmd_align;
+
+	/** @trace_pid: pid to use for panel trace functions */
+	pid_t trace_pid;
 };
 
 /* FUNCTIONS */

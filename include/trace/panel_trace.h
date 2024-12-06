@@ -176,6 +176,27 @@ static inline void _panel_write_generic(char type, int pid, int value, const cha
 	_panel_write_generic('I', current->tgid, 0, __VA_ARGS__)
 
 /**
+ * PANEL_ATRACE_INT_PID() - used to trace an integer value
+ * @name: Name of variable to trace; does not support format string
+ * @value: Value of variable to trace
+ * @pid: Attach trace log to specific process ID
+ *
+ * Used to trace a variable or counter with an integer value
+ */
+#define PANEL_ATRACE_INT_PID(name, value, pid) \
+	_panel_write_generic('C', pid, value, name)
+
+/**
+ * PANEL_ATRACE_INT_PID_FMT() - used to trace an integer value for a formatted variable
+ * @value: Value of variable to trace
+ * @pid: Attach trace log to specific process ID
+ *
+ * Used to trace a formatted variable or counter with an integer value
+ */
+#define PANEL_ATRACE_INT_PID_FMT(value, pid, ...) \
+	_panel_write_generic('C', pid, value, __VA_ARGS__)
+
+/**
  * PANEL_ATRACE_INT() - used to trace an integer value
  * @name: Name of variable to trace; does not support format string
  * @value: Value of variable to trace
@@ -183,7 +204,7 @@ static inline void _panel_write_generic(char type, int pid, int value, const cha
  * Used to trace a variable or counter with an integer value
  */
 #define PANEL_ATRACE_INT(name, value) \
-	_panel_write_generic('C', current->tgid, value, name)
+	PANEL_ATRACE_INT_PID(name, value, current->tgid)
 
 #endif /* __PANEL_ATRACE_API_DEF_ */
 
