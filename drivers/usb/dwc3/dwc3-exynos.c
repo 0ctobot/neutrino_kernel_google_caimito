@@ -1469,18 +1469,11 @@ static int dwc3_exynos_runtime_idle(struct device *dev)
 	struct dwc3_exynos *exynos = dev_get_drvdata(dev);
 	u32 reg;
 
-	/*
-	 * TODO: Explore alternative approaches to guarantee the disconnect
-	 * flow executes seamlessly, eliminating the need for the dwc3 module
-	 * to verify dwc3 registers.
-	 */
-	exynos_pd_hsi0_write_lock();
 	if (exynos->dwc && exynos_pd_hsi0_get_ldo_status()) {
 		reg = dwc3_exynos_readl(exynos->dwc->regs, DWC3_DALEPENA);
 		if (reg)
 			return -EBUSY;
 	}
-	exynos_pd_hsi0_write_unlock();
 #endif
 
 	pm_runtime_mark_last_busy(dev);
