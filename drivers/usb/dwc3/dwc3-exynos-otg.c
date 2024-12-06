@@ -461,7 +461,7 @@ int dwc3_otg_start_gadget(struct dwc3_otg *dotg, int on)
 		device_unlock(&dwc->gadget->dev);
 
 		mutex_lock(&dotg->lock);
-		pm_runtime_put_sync(dev);
+		pm_runtime_put_sync_suspend(dev);
 		exynos->phy_owner_bits &= ~DWC3_EXYNOS_PHY_OWNER_USB;
 		mutex_unlock(&dotg->lock);
 
