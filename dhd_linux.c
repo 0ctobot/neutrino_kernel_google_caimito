@@ -15245,7 +15245,7 @@ void dhd_detach(dhd_pub_t *dhdp)
 
 			dhd_if_del_sta_list(ifp);
 
-			MFREE(dhd->pub.osh, ifp, sizeof(*ifp));
+			MFREE(dhd->pub.osh, dhd->iflist[0], sizeof(*ifp));
 			ifp = NULL;
 #ifdef WL_CFG80211
 			if (cfg && cfg->wdev) {
@@ -25016,8 +25016,14 @@ int dhd_os_send_alert_message(dhd_pub_t *dhdp)
 void *dhd_irq_to_desc(unsigned int irq)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0))
-	struct irq_data *irqdata = irq_get_irq_data(irq);
-	struct irq_desc *desc = irq_data_to_desc(irqdata);
+	struct irq_data *irqdata = NULL;
+	struct irq_desc *desc = NULL;
+
+	irqdata = irq_get_irq_data(irq);
+	if (irqdata == NULL) {
+		return NULL;
+	}
+	desc = irq_data_to_desc(irqdata);
 #else
 	struct irq_desc *desc = irq_to_desc(irq);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0) */
