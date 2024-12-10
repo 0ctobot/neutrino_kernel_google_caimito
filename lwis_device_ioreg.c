@@ -121,11 +121,42 @@ static int lwis_ioreg_device_probe(struct platform_device *plat_dev)
 		return ret;
 	}
 
-	ret = lwis_bus_manager_create(&ioreg_dev->base_dev);
-	if (ret) {
-		dev_err(ioreg_dev->base_dev.dev, "Error in ioreg bus manager creation\n");
-		lwis_base_unprobe(&ioreg_dev->base_dev);
-		return ret;
+	/*
+	 * If a device group has not been specified for a given IOREG device in
+	 * the device tree then fall back to old way of handling transactions.
+	 * This IOREG device will have its own transaction worker thread and will not
+	 * block the bus for processing the events. If the IOREG device belongs to a
+	 * valid group, then associate this device with the appropriate IOREG manager.
+	 */
+	if (ioreg_dev->device_group == LWIS_DEFAULT_DEVICE_GROUP) {
+		ret = lwis_create_kthread_workers(&ioreg_dev->base_dev);
+		if (ret) {
+			dev_err(ioreg_dev->base_dev.dev, "Failed to create lwis_ioreg_kthread");
+			lwis_base_unprobe(&ioreg_dev->base_dev);
+			return ret;
+		}
+
+		if (ioreg_dev->base_dev.transaction_thread_priority != 0) {
+			ret = lwis_set_kthread_priority(
+				&ioreg_dev->base_dev, ioreg_dev->base_dev.transaction_worker_thread,
+				ioreg_dev->base_dev.transaction_thread_priority);
+			if (ret) {
+				dev_err(ioreg_dev->base_dev.dev,
+					"Failed to set LWIS IOREG transaction kthread priority (%d)",
+					ret);
+				lwis_base_unprobe(&ioreg_dev->base_dev);
+				return ret;
+			}
+		}
+		dev_info(ioreg_dev->base_dev.dev, "Created worker thread successfully for %s\n",
+			 ioreg_dev->base_dev.name);
+	} else {
+		ret = lwis_bus_manager_create(&ioreg_dev->base_dev);
+		if (ret) {
+			dev_err(ioreg_dev->base_dev.dev, "Error in ioreg bus manager creation\n");
+			lwis_base_unprobe(&ioreg_dev->base_dev);
+			return ret;
+		}
 	}
 
 	dev_info(ioreg_dev->base_dev.dev, "IOREG Device Probe: Success\n");
