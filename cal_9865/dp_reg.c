@@ -2271,13 +2271,12 @@ int dp_hw_read_dpcd_burst(u32 address, u32 length, u8 *data)
 	return ret;
 }
 
-// Need to revisit here
-#define DDC_SEGMENT_ADDR 0x30
 int dp_hw_read_edid(u8 block_cnt, u32 length, u8 *data)
 {
 	u32 i, buf_length, length_calculation;
 	int ret;
 	int retry_cnt = AUX_RETRY_COUNT;
+	u8 segment = block_cnt / 2;
 	u8 offset = (block_cnt & 1) * EDID_BLOCK_SIZE;
 
 	while (retry_cnt > 0) {
@@ -2286,17 +2285,13 @@ int dp_hw_read_edid(u8 block_cnt, u32 length, u8 *data)
 		dp_reg_set_aux_reply_timeout_and_retries();
 		dp_reg_set_aux_ch_address_only_command(false);
 
-		if (block_cnt > 1) {
-			u8 segment = block_cnt / 2;
-
-			dp_reg_set_aux_ch_command(I2C_WRITE);
-			dp_reg_set_aux_ch_address(DDC_SEGMENT_ADDR);
-			dp_reg_set_aux_ch_length(1);
-			dp_reg_aux_ch_send_buf(&segment, 1);
-			ret = dp_reg_set_aux_ch_operation_enable();
-			if (ret)
-				cal_log_err(0, "sending segment failed\n");
-		}
+		dp_reg_set_aux_ch_command(I2C_WRITE);
+		dp_reg_set_aux_ch_address(DDC_SEGMENT_ADDR);
+		dp_reg_set_aux_ch_length(1);
+		dp_reg_aux_ch_send_buf(&segment, 1);
+		ret = dp_reg_set_aux_ch_operation_enable();
+		if (ret)
+			cal_log_err(0, "sending segment failed\n");
 
 		dp_reg_set_aux_ch_command(I2C_WRITE);
 		dp_reg_set_aux_ch_address(EDID_ADDRESS);
@@ -2345,6 +2340,7 @@ int dp_hw_read_edid(u8 block_cnt, u32 length, u8 *data)
 		}
 
 		if (ret == 0) {
+			dp_reg_set_aux_ch_command(I2C_READ_NO_MOT);
 			dp_reg_set_aux_ch_address_only_command(true);
 			ret = dp_reg_set_aux_ch_operation_enable();
 			dp_reg_set_aux_ch_address_only_command(false);

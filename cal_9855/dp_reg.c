@@ -1436,8 +1436,6 @@ int dp_hw_read_dpcd_burst(u32 address, u32 length, u8 *data)
 	return ret;
 }
 
-// Need to revisit here
-#define DDC_SEGMENT_ADDR 0x30
 int dp_hw_read_edid(u8 block_cnt, u32 length, u8 *data)
 {
 	u32 i, buf_length, length_calculation;
