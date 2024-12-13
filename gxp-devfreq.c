@@ -63,14 +63,13 @@ static int gxp_devfreq_get_cur_freq(struct device *dev, unsigned long *freq_hz)
 {
 	struct gxp_dev *gxp = dev_get_drvdata(dev);
 
-	gcip_pm_lock(gxp->power_mgr->pm);
-
-	if (!gxp_pm_is_blk_down(gxp))
+	if (!gcip_pm_get_if_powered(gxp->power_mgr->pm, false)) {
 		*freq_hz = (unsigned long)HZ_PER_KHZ * gxp_pm_blk_get_rate(gxp);
-	else
+		gcip_pm_put(gxp->power_mgr->pm);
+	} else {
 		*freq_hz = 0;
+	}
 
-	gcip_pm_unlock(gxp->power_mgr->pm);
 	return 0;
 }
 
