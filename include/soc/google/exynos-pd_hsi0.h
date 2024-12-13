@@ -15,11 +15,8 @@ struct exynos_pd_hsi0_data {
 	struct regulator *vdd_high;    //voltage is larger than 3v
 	struct regulator *vdd_medium;  //voltage is range from 1v to 2v
 	struct regulator *vdd_low;     //voltage is lower than 1v
-	struct mutex	power_lock;
 };
 
-void exynos_pd_hsi0_write_lock(void);
-void exynos_pd_hsi0_write_unlock(void);
 #if IS_ENABLED(CONFIG_EXYNOS_PD_HSI0)
 int exynos_pd_hsi0_ldo_manual_control(bool on);
 bool exynos_pd_hsi0_get_ldo_status(void);
