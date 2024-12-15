@@ -964,8 +964,9 @@ void psi_account_irqtime(struct rq *rq, struct task_struct *curr, struct task_st
 	int cpu = task_cpu(curr);
 	struct psi_group *group;
 	struct psi_group_cpu *groupc;
+	u64 *psi_time;
 	s64 delta;
-	u64 irq, *psi_time;
+	u64 irq;
 
 	if (!curr->pid)
 		return;
