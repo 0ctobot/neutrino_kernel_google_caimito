@@ -7,5 +7,3 @@ source "$(KCONFIG_EXT_MODULES_PREFIX)private/google-modules/fingerprint/qcom/qfs
 source "$(KCONFIG_EXT_MODULES_PREFIX)private/google-modules/radio/samsung/s5400/Kconfig"
 
 source "$(KCONFIG_EXT_MODULES_PREFIX)private/google-modules/touch/common/Kconfig"
-
-source "$(KCONFIG_EXT_MODULES_PREFIX)private/google-modules/touch/sec/Kconfig"
