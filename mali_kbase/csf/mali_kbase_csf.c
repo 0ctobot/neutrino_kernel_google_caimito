@@ -1728,21 +1728,11 @@ void kbase_csf_ctx_handle_fault(struct kbase_context *kctx, struct kbase_fault *
 	int gr;
 	bool reported = false;
 	struct base_gpu_queue_group_error err_payload;
-	int err;
-	struct kbase_device *kbdev;
 
 	if (WARN_ON(!kctx))
 		return;
 
 	if (WARN_ON(!fault))
-		return;
-
-	kbdev = kctx->kbdev;
-	err = kbase_reset_gpu_try_prevent(kbdev);
-	/* Regardless of whether reset failed or is currently happening, exit
-	 * early
-	 */
-	if (err)
 		return;
 
 	err_payload =
@@ -1752,7 +1742,7 @@ void kbase_csf_ctx_handle_fault(struct kbase_context *kctx, struct kbase_fault *
 									  .status = fault->status,
 								  } } };
 
-	rt_mutex_lock(&kctx->csf.lock);
+	lockdep_assert_held(&kctx->csf.lock);
 
 	for (gr = 0; gr < MAX_QUEUE_GROUP_NUM; gr++) {
 		struct kbase_queue_group *const group = kctx->csf.queue_groups[gr];
@@ -1773,12 +1763,8 @@ void kbase_csf_ctx_handle_fault(struct kbase_context *kctx, struct kbase_fault *
 		}
 	}
 
-	rt_mutex_unlock(&kctx->csf.lock);
-
 	if (reported)
 		kbase_event_wakeup_sync(kctx);
-
-	kbase_reset_gpu_allow(kbdev);
 }
 
 void kbase_csf_ctx_term(struct kbase_context *kctx)
@@ -3380,7 +3366,9 @@ static void handle_glb_fatal(struct kbase_device *const kbdev)
 	for (as = 0; as < kbdev->nr_hw_address_spaces; as++) {
 		unsigned long flags;
 		struct kbase_context *kctx;
-		struct kbase_fault fault;
+		struct kbase_fault fault = (struct kbase_fault){
+			.status = GPU_EXCEPTION_TYPE_SW_FAULT_1,
+		};
 
 		if (as == MCU_AS_NR)
 			continue;
@@ -3397,10 +3385,13 @@ static void handle_glb_fatal(struct kbase_device *const kbdev)
 			spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 			continue;
 		}
-		fault = (struct kbase_fault){
-			.status = GPU_EXCEPTION_TYPE_SW_FAULT_1,
-		};
-		kbase_csf_ctx_handle_fault(kctx, &fault, true);
+		if (!kbase_reset_gpu_try_prevent(kbdev)) {
+			rt_mutex_lock(&kctx->csf.lock);
+			kbase_csf_ctx_handle_fault(kctx, &fault, true);
+			rt_mutex_unlock(&kctx->csf.lock);
+
+			kbase_reset_gpu_allow(kbdev);
+		}
 		kbase_ctx_sched_release_ctx_lock(kctx);
 	}
 	if (kbase_prepare_to_reset_gpu(kbdev, RESET_FLAGS_HWC_UNRECOVERABLE_ERROR))
