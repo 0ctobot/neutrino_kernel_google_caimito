@@ -1243,6 +1243,9 @@ struct gs_panel {
 
 	/** @skip_align: skip cmd align mechanism while this flag is set */
 	bool skip_cmd_align;
+
+	/** @trace_pid: pid to use for panel trace functions */
+	pid_t trace_pid;
 };
 
 /* FUNCTIONS */
@@ -1629,6 +1632,19 @@ u32 panel_calc_linear_luminance(const u32 value, const u32 coef_x_1k, const int 
  * This function can be used if following sending DSI cmds would trigger panel self-scan behavior.
  */
 void gs_dsi_cmd_align(struct gs_panel *ctx);
+
+/**
+ * gs_dsi_cmd_need_wait_for_present_time_locked() - check if DSI command need waiting for present time
+ *
+ * @ctx: Reference to panel data
+ * @waiting_time_us: waiting time in us unit
+ *
+ * This function checks current commit present time to see if the delay is needed, which helps some
+ * commands that need skip some invalid TEs to execute at the right timing.
+ *
+ * Return: whether it needs to wait
+ */
+bool gs_dsi_cmd_need_wait_for_present_time_locked(struct gs_panel *ctx, u64 *waiting_time_us);
 
 /* HBM */
 
