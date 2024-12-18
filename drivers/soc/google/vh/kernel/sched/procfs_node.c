@@ -1427,6 +1427,7 @@ static int update_uclamp_fork_reset(const char *buf, bool val)
 	struct rq_flags rf;
 	struct rq *rq;
 	pid_t pid;
+	bool old_uclamp_fork_reset;
 
 	if (kstrtoint(buf, 0, &pid) || pid <= 0)
 		return -EINVAL;
@@ -1452,12 +1453,13 @@ static int update_uclamp_fork_reset(const char *buf, bool val)
 	rq = task_rq_lock(p, &rf);
 
 	if (vp->uclamp_fork_reset != val) {
-		bool old_uclamp_fork_reset = get_uclamp_fork_reset(p, true);
-
-		vp->uclamp_fork_reset = val;
-
 		if (vendor_sched_boost_adpf_prio)
 			update_task_prio(p, vp, val);
+
+		raw_spin_lock(&vp->lock);
+
+		old_uclamp_fork_reset = get_uclamp_fork_reset(p, true);
+		vp->uclamp_fork_reset = val;
 
 		if (task_on_rq_queued(p)) {
 			if (old_uclamp_fork_reset && !get_uclamp_fork_reset(p, true))
@@ -1465,6 +1467,8 @@ static int update_uclamp_fork_reset(const char *buf, bool val)
 			else if (!old_uclamp_fork_reset && get_uclamp_fork_reset(p, true))
 				inc_adpf_counter(p, task_rq(p));
 		}
+
+		raw_spin_unlock(&vp->lock);
 	}
 
 	task_rq_unlock(rq, p, &rf);
