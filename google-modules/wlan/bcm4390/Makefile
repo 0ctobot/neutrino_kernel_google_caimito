@@ -23,29 +23,9 @@
 # Path to the module source
 M ?= $(shell pwd)
 
-ifneq ($(KERNEL_SRC),)
-  KBUILD_OPTIONS += BCMDHD_ROOT=$(shell cd $(KERNEL_SRC); readlink -e $(M))
-
-  # For distinguishing 4390 projects. CONFIG_PCI_EXYNOS_GS is not enabled for next 4390 proj.
-  CONFIG_PCI_EXYNOS_GS := $(shell grep -w CONFIG_PCI_EXYNOS_GS $(O)/.config | cut -d'=' -f2)
-  ifneq ($(CONFIG_PCI_EXYNOS_GS), )
-    -include $(KERNEL_SRC)/../private/google-modules/soc/gs/Makefile.include
-  else
-    KCFLAGS += -I$(dir $(KERNEL_SRC))private/google-modules/soc/rdo/include
-    # For "include/linux/platform_data/sscoredump.h"
-    KCFLAGS += -I$(dir $(KERNEL_SRC))private/google-modules/soc/gs/include
-    ifneq ("$(wildcard $(dir ${O})private/google-modules/soc/rdo/Module.symvers)","")
-      EXTRA_SYMBOLS += $(dir ${O})private/google-modules/soc/rdo/Module.symvers
-    endif
-    ifneq ("$(wildcard $(dir ${O})private/google-modules/soc/rdo/pci/google-pcie-v1_Module.symvers)","")
-      EXTRA_SYMBOLS += $(dir ${O})private/google-modules/soc/rdo/pci/google-pcie-v1_Module.symvers
-    endif
-    ifneq ("$(wildcard $(dir ${O})private/google-modules/soc/rdo/pci/google-pcie-v2_Module.symvers)","")
-      EXTRA_SYMBOLS += $(dir ${O})private/google-modules/soc/rdo/pci/google-pcie-v2_Module.symvers
-    endif
-  endif
-  EXTRA_CFLAGS+="-Wno-missing-prototypes"
-endif
+KBUILD_OPTIONS += BCMDHD_ROOT=$(srctree)/$(src)
+-include $(KERNEL_SRC)/../private/google-modules/soc/gs/Makefile.include
+EXTRA_CFLAGS+="-Wno-missing-prototypes"
 
 
 # Define and "all" target, which isn't really needed but doesn't hurt.
