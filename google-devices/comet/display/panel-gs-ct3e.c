@@ -417,10 +417,16 @@ static const struct gs_display_underrun_param underrun_param = {
 	.te_var = 1,
 };
 
-static const u16 WIDTH_MM = 65, HEIGHT_MM = 146;
-static const u16 HDISPLAY = 1080, VDISPLAY = 2424;
-static const u16 HFP = 44, HSA = 16, HBP = 20;
-static const u16 VFP = 10, VSA = 6, VBP = 10;
+#define WIDTH_MM ((u16)65) 
+#define HEIGHT_MM ((u16)146)
+#define HDISPLAY ((u16)1080)
+#define VDISPLAY ((u16)2424)
+#define HFP ((u16)44)
+#define HSA ((u16)16)
+#define HBP ((u16)20)
+#define VFP ((u16)10)
+#define VSA ((u16)6)
+#define VBP ((u16)10)
 
 #define CT3E_DSC {\
 	.enabled = true,\
