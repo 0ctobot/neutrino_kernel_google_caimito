@@ -2266,7 +2266,7 @@ void kbasep_js_resume(struct kbase_device *kbdev)
 			struct kbase_context *kctx, *n;
 			unsigned long flags;
 
-			if (kbase_has_arbiter(kbdev)) {
+			if (!kbase_has_arbiter(kbdev)) {
 				spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
 
 				list_for_each_entry_safe(
