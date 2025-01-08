@@ -103,7 +103,7 @@ int exynos_pd_hsi0_ldo_manual_control(bool on)
 
 	mutex_lock(&hsi0_data->power_lock);
 
-	pr_info("%s ldo = %d\n", __func__, on);
+	pr_debug("%s ldo = %d\n", __func__, on);
 	exynos_pd_hsi0_ldo_control(hsi0_data, on);
 
 	mutex_unlock(&hsi0_data->power_lock);
