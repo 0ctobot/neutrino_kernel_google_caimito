@@ -20,6 +20,12 @@
 	google,bpp_dcicl_ramp_ua = <700000>;
 	google,bpp_dcicl_lower_vout_ua = <700000>;
 	google,bpp_dcicl_lower_vout_ramp_ua = <800000>;
+	/* alignment aid */
+	google,alignment_scalar_low_current = <300>;
+	google,alignment_scalar_high_current = <100>;
+	google,alignment_offset_low_current = <130000>;
+	google,alignment_offset_high_current = <146000>;
+	google,alignment_current_threshold = <500>;
 
 	fod = [97 27 60 6E BB C8 8E 2C A1 E6 A6 CB C5 10 80 28];
 	fod_epp = [8B 4A 8A 2B BB 80 8F 26 90 18 96 FF A8 39 80 19];
