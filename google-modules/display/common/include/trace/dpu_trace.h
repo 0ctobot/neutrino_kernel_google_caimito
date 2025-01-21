@@ -168,6 +168,27 @@ static inline void _tracing_mark_write(char type, int pid, int value, const char
 #define DPU_ATRACE_END(...) \
 	_tracing_mark_write('E', current->tgid, 0, "")
 
+/**
+ * DPU_ATRACE_INSTANT_PID() - used to trace an instantaneous event
+ * @name: Name of variable to trace; does not support format string
+ * @value: Value of variable to trace
+ * @pid: Attach trace log to specific process ID
+ *
+ * Used to trace an instantaneous event with a string value
+ */
+#define DPU_ATRACE_INSTANT_PID(name, pid) \
+	_tracing_mark_write('I', pid, 0, name)
+
+/**
+ * DPU_ATRACE_INSTANT() - used to trace an instantaneous event
+ * @name: Name of variable to trace; does not support format string
+ * @value: Value of variable to trace
+ *
+ * Used to trace an instantaneous event with a string value
+ */
+#define DPU_ATRACE_INSTANT(name) \
+	DPU_ATRACE_INSTANT_PID(name, current->tgid)
+
 #endif /* __DPU_ATRACE_API_DEF_ */
 #endif /* _DPU_TRACE_H_ */
 

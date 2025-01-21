@@ -638,18 +638,29 @@ static void gs_panel_bridge_mode_set(struct drm_bridge *bridge, const struct drm
 	const struct gs_panel_mode *old_mode;
 	bool need_update_backlight = false;
 	bool come_out_lp_mode = false;
+	u64 waiting_time_us = 0;
+	bool needs_waiting = false;
 
 	if (WARN_ON(!pmode))
 		return;
 
 	mutex_lock(&ctx->mode_lock); /*TODO(b/267170999): MODE*/
 	old_mode = ctx->current_mode;
+	if (old_mode != pmode)
+		needs_waiting = gs_dsi_cmd_need_wait_for_present_time_locked(ctx, &waiting_time_us);
+	mutex_unlock(&ctx->mode_lock);
 
-	if (old_mode == pmode) {
-		mutex_unlock(&ctx->mode_lock); /*TODO(b/267170999): MODE*/
+	if (old_mode == pmode)
 		return;
+
+	/* TODO(b/378255330): leave more time for composition */
+	if (needs_waiting) {
+		PANEL_ATRACE_BEGIN("%s: delay %llu us", __func__, waiting_time_us);
+		usleep_range(waiting_time_us, waiting_time_us + 10);
+		PANEL_ATRACE_END("%s", __func__);
 	}
 
+	mutex_lock(&ctx->mode_lock);
 	if (ctx->panel_state == GPANEL_STATE_HANDOFF) {
 		dev_warn(dev, "mode change at boot to %s\n", adjusted_mode->name);
 		ctx->panel_state = GPANEL_STATE_HANDOFF_MODESET;
@@ -661,7 +672,8 @@ static void gs_panel_bridge_mode_set(struct drm_bridge *bridge, const struct drm
 	dsi->mode_flags = pmode->gs_mode.mode_flags;
 	ctx->timestamps.last_mode_set_ts = ktime_get();
 
-	PANEL_ATRACE_BEGIN(__func__);
+	PANEL_ATRACE_BEGIN("%s: %dx%dx%d@%d", __func__, pmode->mode.hdisplay, pmode->mode.vdisplay,
+			   drm_mode_vrefresh(&pmode->mode), gs_drm_mode_te_freq(&pmode->mode));
 	if (funcs) {
 		const bool is_active = gs_is_panel_active(ctx);
 		const bool was_lp_mode = old_mode && old_mode->gs_mode.is_lp_mode;
@@ -704,12 +716,15 @@ static void gs_panel_bridge_mode_set(struct drm_bridge *bridge, const struct drm
 	if (pmode->gs_mode.is_lp_mode && gs_panel_has_func(ctx, set_post_lp_mode))
 		funcs->set_post_lp_mode(ctx);
 
+	PANEL_ATRACE_INT_PID_FMT(drm_mode_vrefresh(mode), ctx->trace_pid, "vrefresh[%s]",
+				 ctx->panel_model);
+	PANEL_ATRACE_INT_PID_FMT(gs_drm_mode_te_freq(mode), ctx->trace_pid, "vsync[%s]",
+				 ctx->panel_model);
 	mutex_unlock(&ctx->mode_lock); /*TODO(b/267170999): MODE*/
 
 	if (need_update_backlight && ctx->bl)
 		backlight_update_status(ctx->bl);
 
-	PANEL_ATRACE_INT("panel_fps", drm_mode_vrefresh(mode));
 	PANEL_ATRACE_END(__func__);
 }
 
