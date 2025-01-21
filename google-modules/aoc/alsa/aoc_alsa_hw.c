@@ -2592,6 +2592,42 @@ int aoc_mel_rs2_get(struct aoc_chip *chip, long *rs2)
 }
 #endif
 
+#if !(IS_ENABLED(CONFIG_SOC_GS101) || IS_ENABLED(CONFIG_SOC_GS201))
+int aoc_compr_offload_playback_rate_set(struct aoc_chip *chip, long *val)
+{
+	int err;
+	struct CMD_AUDIO_OUTPUT_DECODER_CFG_SPEED cmd;
+	uint32_t tmp;
+
+	AocCmdHdrSet(&(cmd.parent), CMD_AUDIO_OUTPUT_DECODER_CFG_SPEED_ID, sizeof(cmd));
+
+	tmp = (uint32_t)val[0];
+	cmd.speed = *(float *)(&tmp);
+	tmp = (uint32_t)val[1];
+	cmd.pitch = *(float *)(&tmp);
+	cmd.stretch_mode = (int32_t)val[2];
+	cmd.fallback_mode = (int32_t)val[3];
+
+	tmp = *(uint32_t *)&cmd.speed;
+	pr_info("speed = %x vs %lx\n", tmp, val[0]);
+	tmp = *(uint32_t *)&cmd.pitch;
+	pr_info("pitch = %x vs %lx\n", tmp, val[1]);
+	pr_info("stretch_mode = %x vs %lx\n", cmd.stretch_mode, val[2]);
+	pr_info("fallback_mode = %x vs %lx\n", cmd.fallback_mode, val[3]);
+
+	chip->decoder_cfg_speed = cmd;
+
+	/* Send cmd to AOC */
+	err = aoc_audio_control(CMD_OUTPUT_CHANNEL, (uint8_t *)&cmd, sizeof(cmd), NULL, chip);
+	if (err < 0) {
+		pr_err("ERR:%d in compr offload playback rate set\n", err);
+		return err;
+	}
+
+	return 0;
+}
+#endif
+
 int aoc_sidetone_enable(struct aoc_chip *chip, int enable)
 {
 	int err = 0;
