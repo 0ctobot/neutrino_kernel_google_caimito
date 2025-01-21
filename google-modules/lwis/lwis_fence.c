@@ -444,10 +444,9 @@ static int trigger_fence_add_transaction(int fence_fd, struct lwis_client *clien
 	struct lwis_pending_transaction_id *pending_transaction_id;
 	int ret = 0;
 
-	pending_transaction_id = kmalloc(sizeof(struct lwis_pending_transaction_id), GFP_KERNEL);
-	if (!pending_transaction_id) {
+	pending_transaction_id = kmalloc(sizeof(struct lwis_pending_transaction_id), GFP_ATOMIC);
+	if (!pending_transaction_id)
 		return -ENOMEM;
-	}
 
 	fence = lwis_dma_fence_get(fence_fd);
 	if (IS_ERR_OR_NULL(fence)) {
