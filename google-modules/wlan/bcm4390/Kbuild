@@ -30,10 +30,13 @@ ifeq ($(KERNEL_SRC),)
   endif
 endif
 
-# undef hikey and STB when GG is defined
+# For pixel build, unset SOC related configs which are defined in DHD
 ifneq ($(CONFIG_SOC_GOOGLE),)
-  CONFIG_ARCH_HISI=
-  CONFIG_ARCH_BRCMSTB=
+  # Find configs in DHD code with prefix "CONFIG_ARCH_"
+  ARCH_CONFIGS := $(shell grep -rEoh "CONFIG_ARCH_([0-9]|[A-Z]|_)+" $(BCMDHD_ROOT)/* | sort | uniq)
+
+  # Unset these CONFIG_ARCH_* configs if it is defined in kernel layer
+  $(foreach var, $(ARCH_CONFIGS), $(eval $(var) :=))
 endif
 
 #####################

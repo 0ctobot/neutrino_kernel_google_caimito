@@ -2609,6 +2609,7 @@ dhdpcie_dongle_attach(dhd_bus_t *bus)
 	sbpcieregs_t *sbpcieregs;
 	bool dongle_reset_needed;
 	uint16 chipid;
+	uint32 FISCtrlStatus;
 
 	BCM_REFERENCE(chipid);
 
@@ -2691,6 +2692,24 @@ dhdpcie_dongle_attach(dhd_bus_t *bus)
 
 	if (MULTIBP_ENAB(bus->sih)) {
 		dhd_bus_pcie_pwr_req_nolock(bus);
+	}
+
+	/*
+	 * If FIS done bit is set, then clear it, set chip big hammer
+	 * and return. This bit will be cleared only after Chip big hammer.
+	 */
+	FISCtrlStatus = PMU_REG(bus->sih, FISCtrlStatus, 0, 0);
+	DHD_PRINT(("%s: FISCtrlStatus:0x%x\n", __FUNCTION__, FISCtrlStatus));
+	if ((FISCtrlStatus & PMU_CLEAR_FIS_DONE_MASK)) {
+		DHD_ERROR(("%s: FIS Done bit is set, clear it and exit\n",
+			__FUNCTION__));
+		PMU_REG(bus->sih, FISCtrlStatus, PMU_CLEAR_FIS_DONE_MASK,
+			PMU_CLEAR_FIS_DONE_MASK);
+		if (bus->dhd) {
+			DHD_ERROR(("%s : Set do_chip_bighammer\n", __FUNCTION__));
+			bus->dhd->do_chip_bighammer = TRUE;
+		}
+		goto fail;
 	}
 
 	/* Calling after requesting dm1 (Wl) power as there are mac wrapper regs */

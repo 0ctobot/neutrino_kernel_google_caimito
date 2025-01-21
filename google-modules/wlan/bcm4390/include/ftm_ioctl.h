@@ -137,6 +137,9 @@ typedef uint32	wl_ftm_flags_t;
 #define WL_FTM_SESSION_FLAG_DONT_SCAN		0x0008000000000000llu	/* Don't scan when both
 									 * peers are already known.
 									 */
+#define WL_FTM_SESSION_FLAG_USE_BSS_COLOR_LMR	0x0010000000000000llu	/* Set BSS Color in HE LMR
+									 * regardless of assoc
+									 */
 
 #define WL_FTM_SESSION_FLAG_USE_ANT_DIVERSITY	0x0020000000000000llu	/* Use antenna diversity
 									 * for ranging operation
@@ -196,7 +199,8 @@ typedef uint64 wl_ftm_session_flags_t;
 	| WL_FTM_SESSION_FLAG_RNM_MFP_REQ \
 	| WL_FTM_SESSION_FLAG_SEC_LTF_SUPPORTED \
 	| WL_FTM_SESSION_FLAG_SEC_LTF_REQUIRED \
-	| WL_FTM_SESSION_FLAG_TX_HE_LMR)
+	| WL_FTM_SESSION_FLAG_TX_HE_LMR \
+	| WL_FTM_SESSION_FLAG_USE_BSS_COLOR_LMR)
 
 /* flags relevant to NTB sessions */
 #define FTM_NTB_CONFIG_MASK	FTM_TB_NTB_COMMON_CONFIG_MASK
@@ -628,7 +632,8 @@ typedef struct wl_ftm_event {
 /* 11az RTT sample flags */
 enum wl_ftm_az_rtt_sample_flags {
 	WL_FTM_AZ_RTT_SAMPLE_FLAG_NONE		= 0x0000u,
-	WL_FTM_AZ_RTT_SAMPLE_FLAG_VALID		= 0x0001u,
+	WL_FTM_AZ_RTT_SAMPLE_FLAG_VALID		= 0x0001u, /* Valid RTT sample */
+	WL_FTM_AZ_RTT_SAMPLE_FLAG_SIGNED_RTT	= 0x0002u, /* Signed RTT sample */
 	/* add new flag here */
 	WL_FTM_AZ_RTT_SAMPLE_FLAG_ALL		= 0xffffu
 };
@@ -663,6 +668,8 @@ typedef struct wl_ftm_az_rtt_sample_v1 {
 
 #define WL_FTM_AZ_RTT_SAMPLE_VALID(_sp) \
 	(((_sp)->flags & WL_FTM_AZ_RTT_SAMPLE_FLAG_VALID) != 0u)
+#define WL_FTM_AZ_RTT_SAMPLE_IS_SIGNED(_sp) \
+	(((_sp)->flags & WL_FTM_AZ_RTT_SAMPLE_FLAG_SIGNED_RTT) != 0u)
 
 /* 11az RTT result flags */
 enum wl_ftm_az_rtt_result_flags {
@@ -670,6 +677,7 @@ enum wl_ftm_az_rtt_result_flags {
 	WL_FTM_AZ_RTT_RESULT_FLAG_RTT_IN_100PS	= 0x00000001u, /* RTT in 100 ps unit */
 	WL_FTM_AZ_RTT_RESULT_FLAG_DIST_IN_4CM	= 0x00000002u, /* Distance in 1/256 m unit */
 	WL_FTM_AZ_RTT_RESULT_FLAG_SLTF		= 0x00000004u, /* Secure LTF */
+	WL_FTM_AZ_RTT_RESULT_FLAG_SIGNED_RTT	= 0x00000008u, /* RTT result is negative */
 	/* add new flag here */
 	WL_FTM_AZ_RTT_RESULT_FLAG_ALL		= 0xffffffffu
 };
@@ -681,6 +689,8 @@ typedef uint32 wl_ftm_az_rtt_result_flags_t;
 	(((_rp)->flags & WL_FTM_AZ_RTT_RESULT_FLAG_DIST_IN_4CM) != 0u)
 #define WL_FTM_AZ_RTT_RESULT_SLTF(_rp) \
 	(((_rp)->flags & WL_FTM_AZ_RTT_RESULT_FLAG_SLTF) != 0u)
+#define WL_FTM_AZ_RTT_RESULT_IS_SIGNED(_rp) \
+	(((_rp)->flags & WL_FTM_AZ_RTT_RESULT_FLAG_SIGNED_RTT) != 0u)
 
 /* WL_FTM_TLV_ID_AZ_RTT_RESULT_V1
  * 11az RTT result from a session

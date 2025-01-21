@@ -8851,7 +8851,7 @@ typedef struct _IHV_NIC_SPECIFIC_EXTENSION {
 	uint32			event;      /**< event code */
 	uint8			ihvData[BCM_FLEX_ARRAY];    /**< ihv data */
 } IHV_NIC_SPECIFIC_EXTENSION, *PIHV_NIC_SPECIFIC_EXTENSION;
-#define IHV_NIC_SPECIFIC_EXTENTION_HEADER	OFFSETOF(IHV_NIC_SPECIFIC_EXTENSION, ihvData[0])
+#define IHV_NIC_SPECIFIC_EXTENTION_HEADER	OFFSETOF(IHV_NIC_SPECIFIC_EXTENSION, ihvData)
 /* EXT_STA */
 /** NAT configuration */
 typedef struct {
@@ -10367,6 +10367,9 @@ typedef struct wl_proxd_collect_header_v4 {
 /* NAN S3 ALL maps */
 #define WL_NAN_AVAIL_S3_ALLMAPS			0xFF
 
+/* NAN IE attr max len from host */
+#define WL_NAN_HOST_ATTR_MAX_LEN		255u
+
 /* Post disc attr ID type */
 typedef uint8 wl_nan_post_disc_attr_id_t;
 
@@ -10409,7 +10412,11 @@ typedef struct wl_nan_event_replied {
 	int8			sub_rssi; /* Subscriber RSSI */
 	uint8		attr_num;
 	uint16		attr_list_len;  /* sizeof attributes attached to payload */
+#ifdef BCM_NON_ISO_C
 	uint8		attr_list[0];   /* attributes payload */
+#else
+	uint8		attr_list[];    /* attributes payload */
+#endif
 } wl_nan_event_replied_t;
 
 /* NAN Tx status of transmitted frames */
@@ -10517,7 +10524,11 @@ typedef struct wl_nan_ev_receive {
 	int8	fup_rssi;
 	uint8	attr_num;
 	uint16	attr_list_len;  /* sizeof attributes attached to payload */
+#ifdef BCM_NON_ISO_C
 	uint8	attr_list[0];   /* attributes payload */
+#else
+	uint8	attr_list[];    /* attributes payload */
+#endif
 } wl_nan_ev_receive_t;
 
 /* WL_NAN_EVENT_DISC_CACHE_TIMEOUT */
@@ -10647,6 +10658,7 @@ enum wl_nan_cmd_xtlv_id {
 #define WL_NAN_CMD_TETHER_COMP_ID	0x12
 #define WL_NAN_CMD_SNAP_LLC_CFG_COMP_ID	0x13
 #define WL_NAN_CMD_DATA_STATS_COMP_ID	0x14
+#define WL_NAN_CMD_KP_COMP_ID		0x15	/* Key Plumb */
 
 
 #define WL_NAN_CMD_COMP_SHIFT		8
@@ -10676,6 +10688,7 @@ typedef enum wl_nan_tlv {
 	WL_NAN_XTLV_CFG_FDISC_TBMP	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x0F),
 	WL_NAN_XTLV_CFG_SEC_GTK_CSID    = NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x10),
 	WL_NAN_XTLV_CFG_NO_PEER_CACHE	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x20),
+	WL_NAN_XTLV_CFG_PEER_KEY	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x21),
 
 	/* NAN R4, host constucted NPBA (NAN Pairing Bootstrapping Attribute), the entire
 	 * NPBA attibute is in bcm_xlv_t:
@@ -10687,6 +10700,10 @@ typedef enum wl_nan_tlv {
 	WL_NAN_XTLV_CFG_NPBA_INFO	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x11),
 	/* multicast data slot bitmap config */
 	WL_NAN_XTLV_CFG_MCAST_AVAIL_BMP	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x12),
+	WL_NAN_XTLV_NIK_DATA		= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x13), /* Deprecated */
+	WL_NAN_XTLV_NIK_LIFETIME_DATA	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x14), /* Deprecated */
+	WL_NAN_XTLV_ADD_ATTR_DATA	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x15),
+	WL_NAN_XTLV_NANIE_ATTR_DATA	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x16),
 
 	WL_NAN_XTLV_SD_SVC_INFO		= NAN_CMD(WL_NAN_CMD_SD_COMP_ID, 0x01),
 	WL_NAN_XTLV_SD_FOLLOWUP		= NAN_CMD(WL_NAN_CMD_SD_COMP_ID, 0x02),
@@ -10814,8 +10831,18 @@ typedef enum wl_nan_tlv {
 
 	WL_NAN_XTLV_DATA_STATS_HDR	= NAN_CMD(WL_NAN_CMD_DATA_STATS_COMP_ID, 0x01),
 	WL_NAN_XTLV_DATA_STATS_TX	= NAN_CMD(WL_NAN_CMD_DATA_STATS_COMP_ID, 0x02),
-	WL_NAN_XTLV_DATA_STATS_RX	= NAN_CMD(WL_NAN_CMD_DATA_STATS_COMP_ID, 0x03)
+	WL_NAN_XTLV_DATA_STATS_RX	= NAN_CMD(WL_NAN_CMD_DATA_STATS_COMP_ID, 0x03),
 
+	/* NAN key plumb xtlv sub commands - xtlv_list */
+	WL_NAN_XTLV_KP_TK		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x01),
+	WL_NAN_XTLV_KP_IGTK_TX		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x02),
+	WL_NAN_XTLV_KP_IGTK_RX		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x03),
+	WL_NAN_XTLV_KP_BIGTK_TX		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x04),
+	WL_NAN_XTLV_KP_BIGTK_RX		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x05),
+	WL_NAN_XTLV_KP_GTK_TX		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x06),
+	WL_NAN_XTLV_KP_GTK_RX		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x07),
+	WL_NAN_XTLV_KP_KEK		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x08),
+	WL_NAN_XTLV_KP_KCK		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x09)
 } wl_nan_tlv_t;
 
 /* Sub Module ID's for NAN */
@@ -10888,7 +10915,8 @@ enum wl_nan_sub_cmd_xtlv_id {
 	WL_NAN_CMD_CFG_MCAST_AVAIL = NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x22),
 	WL_NAN_CMD_CFG_DW_DWELL = NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x23),
 	WL_NAN_CMD_CFG_SNAP_HDR = NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x24),
-	WL_NAN_CMD_CFG_MAX = WL_NAN_CMD_CFG_SNAP_HDR,
+	WL_NAN_CMD_CFG_SET_PEER_KEY = NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x25),
+	WL_NAN_CMD_CFG_MAX = WL_NAN_CMD_CFG_SET_PEER_KEY,
 
 	/* Add new commands before and update */
 
@@ -10987,7 +11015,8 @@ enum wl_nan_sub_cmd_xtlv_id {
 	WL_NAN_CMD_GEN_STATS = NAN_CMD(WL_NAN_CMD_GENERIC_COMP_ID, 0x01),
 	WL_NAN_CMD_GEN_FW_CAP = NAN_CMD(WL_NAN_CMD_GENERIC_COMP_ID, 0x02),
 	WL_NAN_CMD_CFG_OOB_AF = NAN_CMD(WL_NAN_CMD_GENERIC_COMP_ID, 0x03),
-	WL_NAN_CMD_GEN_MAX = WL_NAN_CMD_CFG_OOB_AF,
+	WL_NAN_CMD_ADDITIONAL_ATTRIBUTES = NAN_CMD(WL_NAN_CMD_GENERIC_COMP_ID, 0x04),
+	WL_NAN_CMD_GEN_MAX = WL_NAN_CMD_ADDITIONAL_ATTRIBUTES,
 
 	/* NAN Save-Restore */
 	WL_NAN_CMD_NSR2 = NAN_CMD(WL_NAN_CMD_NSR_COMP_ID, 0x20),
@@ -11253,6 +11282,22 @@ typedef struct nan_sec_peer_gtk_stats_s {
 	uint32	gtk_rx;		/* Number of gtk pks rx */
 	uint32  gtk_rx_err;	/* Number of gtk rx error */
 } nan_sec_peer_gtk_stats_t;
+
+#define WL_NAN_ADDN_ATTR_DISC_BCN	(1u << 0)
+#define WL_NAN_ADDN_ATTR_SYNC_BCN	(1u << 1)
+#define WL_NAN_ADDN_ATTR_SVC_DISC	(1u << 2)
+
+/* WL_NAN_CMD_ADDITIONAL_ATTRRIBUTES
+ * List of attributes, with each attribute in below format
+ */
+typedef struct nan_additional_attr {
+	uint16 nan_frame_bitmap; /* bitmap of frames this attribute applies to */
+	uint8 PAD[2];
+	/* attr_data as per NAN spec format
+	 * 1 byte(id) + 2 bytes(len) + data[ ] (of size len)
+	 */
+	uint8 attr_data[];
+} nan_additional_attr_t;
 
 /* WL_NAN_XTLV_GEN_PEER_STATS */
 typedef struct wl_nan_peer_stats {
@@ -11764,6 +11809,45 @@ typedef struct wl_nan_cfg_snap_hdr {
 	uint8  tlv_params[];
 } wl_nan_cfg_snap_hdr_t;
 
+enum wl_nan_cfg_peer_key_add {
+	WL_NAN_CFG_PEER_KEY_ADD			= 0,
+	WL_NAN_CFG_PEER_KEY_DELETE		= 1
+};
+
+/* Peer krc */
+#define NAN_PEER_KEY_KRC_LEN		8u /* MAX KRC LEN */
+/* tk */
+#define NAN_PEER_KEY_256_TK_LEN		32u /* MAX TK len */
+
+#define NAN_KEY_PLUMB_MAX_XTLVS	10u
+/* MAX peer_key XTLV len */
+#define NAN_PEER_KEY_XTLV_MAX_LEN	\
+	(NAN_KEY_PLUMB_MAX_XTLVS * NAN_PEER_KEY_256_TK_LEN)
+
+/* WL_PEER_KEY_INFO tlv data */
+typedef struct wl_peer_key_info {
+	uint16	csid;	/* CSID used */
+	uint16	key_len; /* Length of TK */
+	uint8	key_id; /*  key_id used */
+	uint8	key_krc_len;
+	uint8	PAD[2];
+	uint8	key_buf[]; /* This buffer will have the key */
+} wl_peer_key_info_t;
+
+typedef struct wl_nan_cfg_peer_key {
+	uint8	operation;		/* add , delete */
+	uint8	PAD[3];
+	struct	ether_addr laddr;	/* local mac addr */
+	struct	ether_addr raddr;	/* remote mac addr */
+	uint8	tlv_params[];		/* TLVs */
+} wl_nan_cfg_peer_key_t;
+
+typedef struct wl_peer_key_ret {
+	struct	ether_addr laddr;	/* local mac addr */
+	struct	ether_addr raddr;	/* remote mac addr */
+	uint8 tlv_params[]; /* TLVs */
+} wl_peer_key_ret_t;
+
 /*
  * WL_NAN_CMD_CFG_HOP_CNT, WL_NAN_CMD_CFG_HOP_LIMIT
  */
@@ -12012,7 +12096,11 @@ typedef struct nan_adv_table {
 	uint8  num_adv;
 	uint8	adv_size;
 	uint8	PAD[2];
+#ifdef BCM_NON_ISO_C
 	nan_adv_entry_t adv_nodes[0];
+#else
+	nan_adv_entry_t adv_nodes[];
+#endif
 } nan_adv_table_t;
 
 typedef struct wl_nan_role_cfg {
@@ -12485,7 +12573,11 @@ typedef struct wl_nan_ev_disc_result {
 	wl_nan_instance_id_t pub_id;
 	wl_nan_instance_id_t sub_id;
 	struct ether_addr pub_mac;
+#ifdef BCM_NON_ISO_C
 	uint8 opt_tlvs[0];
+#else
+	uint8 opt_tlvs[];
+#endif
 } wl_nan_ev_disc_result_t;
 
 typedef struct wl_nan_event_disc_result {
@@ -12495,7 +12587,11 @@ typedef struct wl_nan_event_disc_result {
 	int8		publish_rssi;		/* publisher RSSI */
 	uint8		attr_num;
 	uint16		attr_list_len;	/* length of the all the attributes in the SDF */
+#ifdef BCM_NON_ISO_C
 	uint8		attr_list[0];	/* list of NAN attributes */
+#else
+	uint8		attr_list[];	/* list of NAN attributes */
+#endif
 } wl_nan_event_disc_result_t;
 
 typedef struct wl_nan_ev_p2p_avail {
@@ -13025,7 +13121,7 @@ typedef struct wl_nan_dp_opaque_info {
 	uint8 pub_id;     /* publish id where the opaque data is included. */
 	uint8 len;        /* len of opaque_info[]. */
 	uint8 PAD[3];
-	uint8 opaque_info[0];
+	uint8 opaque_info[];
 } wl_nan_dp_opaque_info_t;
 
 /* events */
@@ -13089,7 +13185,11 @@ typedef struct wl_nan_ev_rx_bcn {
 	wl_tsf_t tsf;
 	uint16   bcn_len;
 	uint8    PAD[2];
+#ifdef BCM_NON_ISO_C
 	uint8    bcn[0];
+#else
+	uint8    bcn[];
+#endif
 } wl_nan_ev_rx_bcn_t;
 
 /* reason of host assist request */
@@ -13154,9 +13254,14 @@ enum wl_nan_fw_cap_flag1 {
 	WL_NAN_FW_CAP_FLAG1_6G			= 0x08000000,
 	WL_NAN_FW_CAP_FLAG1_MCAST_AVAIL_BMP	= 0x10000000,
 	WL_NAN_FW_CAP_FLAG1_WOW_OFFLOAD		= 0x20000000,
-	WL_NAN_FW_CAP_FLAG1_SUSPENSION		= 0x40000000
+	WL_NAN_FW_CAP_FLAG1_SUSPENSION		= 0x40000000,
+	WL_NAN_FW_CAP_FLAG1_HOST_PAIRING	= 0x80000000
 };
 
+enum wl_nan_fw_cap_flag2 {
+	WL_NAN_FW_CAP_FLAG2_NONE		= 0x00000000, /* dummy */
+	WL_NAN_FW_CAP_FLAG2_SLOT_DATA_STATS	= 0x00000001
+};
 
 /* WL_NAN_XTLV_GEN_FW_CAP */
 typedef struct wl_nan_fw_cap {
@@ -13440,7 +13545,7 @@ typedef struct wl_nan_data_stats_hdr {
 	uint16	sample_dur;	/* Sample duration in TU */
 	uint16	sample_cnt;
 	uint16	start_dw_idx;
-	uint16	reserved;
+	uint16	filled_samples;
 } wl_nan_data_stats_hdr_t;
 
 /* WL_NAN_XTLV_DATA_STATS_TX */
@@ -13449,10 +13554,8 @@ typedef struct wl_nan_data_stats_tx {
 	uint16 PAD;
 	uint32 avg_cca;
 	uint32 unicast_tx_pkts;
-	uint32 unicast_tx_mpdu;
 	uint32 mcast_tx_rspec;
 	uint32 mcast_tx_pkts;
-	uint32 mcast_tx_mpdu;
 } wl_nan_data_stats_tx_t;
 
 /* WL_NAN_XTLV_DATA_STATS_RX */
@@ -13461,10 +13564,8 @@ typedef struct wl_nan_data_stats_rx {
 	uint16 PAD;
 	uint32 avg_cca;
 	uint32 unicast_rx_pkts;
-	uint32 unicast_rx_mpdu;
 	uint32 mcast_rx_rspec;
 	uint32 mcast_rx_pkts;
-	uint32 mcast_rx_mpdu;
 	uint16 unicast_rx_snr;
 	uint16 mcast_rx_snr;
 } wl_nan_data_stats_rx_t;
@@ -14161,7 +14262,7 @@ typedef struct wl_randmac {
 	uint16 version;
 	uint16 len;			/* total length */
 	wl_randmac_subcmd_t subcmd_id;	/* subcommand id */
-	uint8 data[0];			/* subcommand data */
+	uint8 data[];			/* subcommand data */
 } wl_randmac_t;
 
 #define WL_RANDMAC_IOV_HDR_SIZE OFFSETOF(wl_randmac_t, data)
@@ -14625,7 +14726,7 @@ typedef enum net_detect_wake_reason {
 typedef struct net_detect_wake_data {
 	net_detect_wake_reason_t    nd_wake_reason;
 	uint32			    nd_wake_date_length;
-	uint8			    nd_wake_data[0];	    /**< Wake data (currently unused) */
+	uint8			    nd_wake_data[];	    /**< Wake data (currently unused) */
 } net_detect_wake_data_t;
 
 /* endif NET_DETECT */
@@ -19174,6 +19275,7 @@ typedef struct wl_utrace_capture_args_v2 {
 #define WLC_REGVAL_DUMP_RADREG 1
 #define WLC_REGVAL_DUMP_RFEMREG 2
 #define WLC_REGVAL_DUMP_SRCBREG 3
+#define WLC_REGVAL_DUMP_RFEMLUT 4
 
 #define PHYREGVAL_CAPTURE_BUFFER_LEN 2048
 
@@ -20001,6 +20103,10 @@ typedef struct wl_twt_range_cmd {
 	uint16	length;
 	struct ether_addr peer;
 	uint8	PAD[2];
+	uint32 wake_dur_min;		/* Minimum Wake duration */
+	uint32 wake_dur_max;		/* Maximum Wake duration */
+	uint32 wake_int_min;		/* Minimum Wake interval */
+	uint32 wake_int_max;		/* Maximum Wake interval */
 } wl_twt_range_cmd_t;
 
 /* EHT sub command IDs */
@@ -20051,6 +20157,7 @@ enum {
 	WL_MLO_CMD_EPCS_TEARDN		= 0x1007u,	/* send a EPCS Pri Access Teardown frame */
 	WL_MLO_CMD_MAX_CST		= 0x1008u,	/* send a MCST IE in the bcn frame */
 	WL_MLO_CMD_TEST			= 0x1009u,	/* invoke an internal test case */
+	WL_MLO_CMD_FORCE_PS		= 0x100au,	/* Force PS state to all links (CTT) */
 	WL_MLO_CMD_MLOSIM		= 0x2000u,	/* to set mlo simulation option */
 };
 
@@ -22804,7 +22911,13 @@ typedef enum {
 	NAN_KA_OOB_OPS_MAX
 } nan_ka_oob_ops_t;
 
-/* NAN KEEPALIVE(KA) oob flags */
+/* generic oob ops */
+typedef enum {
+	NAN_OOB_OPS_TX = 0,	/* Packet TX */
+	NAN_OOB_OPS_MAX
+} nan_oob_ops_t;
+
+/* NAN KEEPALIVE(KA) oob flags, Deprecated */
 typedef enum {
 	NAN_KA_OOB_FLAG_LEGACY,
 	NAN_KA_OOB_FLAG_PER_PEER_TX,
@@ -22812,11 +22925,36 @@ typedef enum {
 	NAN_KA_OOB_FLAG_MAX
 } nan_ka_oob_flag_t;
 
-/* NAN KEEPALIVE(KA) oob param */
+/* NAN Generic oob flags */
+typedef enum {
+	NAN_OOB_FLAG_LEGACY,
+	NAN_OOB_FLAG_PER_PEER_TX,
+	NAN_OOB_FLAG_PER_PEER_RX,
+	NAN_OOB_FLAG_AUTH, /* auth transfer for host based nan pairing */
+	NAN_OOB_FLAG_MAX
+} nan_oob_flag_t;
+
+/* NAN oob palyload xtlv id */
+typedef enum {
+	WL_NAN_OOB_XTLV_PAYLOAD_PASN		= 0u,
+	WL_NAN_OOB_XTLV_PAYLOAD_MIC_F1_AUTH	= 1u,
+	WL_NAN_OOB_XTLV_PAYLOAD_MIC_F2_RSNE	= 2u,
+	WL_NAN_OOB_XTLV_PAYLOAD_MIC_F2_RSNXE	= 3u,
+	WL_NAN_OOB_XTLV_PAYLOAD_MIC_HASH_TYPE	= 4u,
+	WL_NAN_OOB_XTLV_PAYLOAD_LAST
+} wl_nan_oob_xtlv_payload_id_t;
+
+/* NAN KEEPALIVE(KA) oob param, Deprecated */
 typedef struct wl_nan_ka_oob_af_param {
 	uint8 ops;			/* add/del/get */
 	uint8 flags;			/* per peer tx/ rx keepalive oob or legacy oob */
 } wl_nan_ka_oob_af_param_t;
+
+/* NAN Generic oob param */
+typedef struct wl_nan_oob_param {
+	uint8 ops;			/* operation per each flag */
+	uint8 flags;			/* Legacy oob, Keepalive oob, pasn .. */
+} wl_nan_oob_param_t;
 
 typedef struct wl_nan_oob_af {
 	uint64 bitmap;			/* 16 TU slots in 1024 TU window */
@@ -22826,7 +22964,10 @@ typedef struct wl_nan_oob_af {
 	bool   secured;			/* Optional. Default set to 0 (Open) */
 	uint8  map_id;			/* Host selected map id. Default 0 */
 	uint16 timeout;			/* OOB AF session timeout in milliseconds */
-	wl_nan_ka_oob_af_param_t koap;	/* Keep alive oob af additional param */
+	union {
+		wl_nan_ka_oob_af_param_t koap;	/* Keep alive oob af, Deprecated */
+		wl_nan_oob_param_t op;	/* Generic oob parameter */
+	};
 	uint16 PAD[2];			/* Structure padding. Can be used in future */
 	uint16 token;			/* host generated. Used by FW in TX status event */
 	uint16 payload_len;
@@ -22840,6 +22981,48 @@ typedef struct wl_nan_oob_rx_match_payload {
 	uint16 match_length;	/* Length to be used for match */
 	uint8 payload[];	/* Payload to be used for match */
 } wl_nan_oob_rx_match_payload_t;
+
+#define NAN_ATTR_SKDA (1 << 0)
+
+typedef struct wl_nan_oob_pasn_payload {
+	uint32 attr_bitmap;		/* Bitmap representing nan attributes to add to OOB.
+					 * Currently attr_id used in SKDA is uint8
+					 */
+	uint8 pub_id;			/* Publish  id used for the PASN session */
+	uint8 PAD[3];
+	struct ether_addr local_ndi;    /* Local ndi needed For KDE group key elements */
+	uint16 payload_len;		/* Length of payload  */
+	uint8 payload[];		/* Body of an Auth frame added by host */
+} wl_nan_oob_pasn_payload_t;
+
+/* WL_NAN_XTLV_ADD_ATTR_DATA */
+typedef struct nan_fup_additional_attrs {
+	uint32   attr_bitmap;
+} nan_fup_additional_attrs_t;
+
+/* attr_bitmap values */
+#define NAN_FUP_ADD_ATTR_SKDA (1u << 0u)
+
+/* WL_NAN_XTLV_NANIE_ATTR_DATA */
+typedef struct wl_nan_nanie_attr_data_format {
+	uint16 control;		/* Control operation as defined below */
+	uint16 nan_ie_len;	/* Additional attrs by host to be appended to the end of
+				 * NAN IE in the followup frame
+				 */
+	uint16 addn_data_len;	/* Additional attrs by host to be appended to the end of
+				 * SKDA in the followup frame
+				 */
+	uint8 gtk_csid;		/* gtk csid provided by host for fw gtk generation */
+	uint8 pad;
+	uint8 data[];		/* additional NANIE contents + additional SKDA data */
+} wl_nan_nanie_attr_data_format_t;
+
+typedef enum {
+	NANIE_CTRL_NANIE =	1u << 0u,
+	NANIE_CTRL_ADDN_DATA =	1u << 1u,
+	NANIE_CTRL_GTK_CSID =	1u << 2u
+} wl_nanie_attr_data_control_type_t;
+
 
 /*
  * BT log definitions
@@ -25237,7 +25420,6 @@ typedef struct wlc_wlc_roam_rssi_limit {
 	uint8 data[];
 } wlc_roam_rssi_limit_t;
 
-
 #define WLC_ROAM_5G_BANDBOOST_VER_1	1
 typedef struct wlc_roam_5g_band_boost_info_v1 {
 	uint16 ver;
@@ -27137,6 +27319,37 @@ typedef struct wl_phy_noise_v1 {
 	} u;
 } wl_phy_noise_v1_t;
 
+#define WL_PHY_TX_MUTE_VER_1		1u
+#define WL_PHY_RX_BLANK_VER_1		1u
+#define WL_PHY_TX_MUTE_LIMIT		0x1Fu
+#define WL_PHY_RX_BLANK_LIMIT		0x7u
+#define WL_PHY_TX_MUTE_HEADER_LEN	4u
+#define WL_PHY_RX_BLANK_HEADER_LEN	4u
+
+typedef struct wl_phy_tx_mute_info_v1 {
+	uint8 tx_mute_bitmask[WTC_MAX_BAND];
+	uint8 PAD[1];
+} wl_phy_tx_mute_info_v1_t;
+
+typedef struct wl_phy_tx_mute {
+	uint16 ver;
+	uint16 len;
+	uint8  data[WTC_MAX_BAND];
+	uint8  PAD[1];
+} wl_phy_tx_mute_t;
+
+typedef struct wl_phy_rx_blank_info_v1 {
+	uint8 rx_blank_bitmask[WTC_MAX_BAND];
+	uint8   PAD[1];
+} wl_phy_rx_blank_info_v1_t;
+
+typedef struct wl_phy_rx_blank {
+	uint16 ver;
+	uint16 len;
+	uint8  data[WTC_MAX_BAND];
+	uint8  PAD[1];
+} wl_phy_rx_blank_t;
+
 #ifndef CHSPEC2WLC_BAND
 #ifdef WL_BAND6G
 #define CHSPEC2WLC_BAND(chspec) (CHSPEC_IS2G(chspec) ? WLC_BAND_2G : \
@@ -27783,4 +27996,47 @@ typedef struct wl_d11txframe_v0 {
 } wl_d11txframe_v0_t;
 #define WL_D11FRAMETX_IOV_FIXED_LEN	OFFSETOF(wl_d11txframe_v0_t, data)
 
+/* test io buffer format for "scan_parse_test" iovar */
+#define WL_SCAN_PARSE_TEST_V1	1
+struct wl_scan_parse_test_v1 {
+	uint16		version;
+	uint16		length;		/* length of the entire structure */
+	uint8		test;
+	uint8		PAD[3];
+	wlc_ssid_t	ssid;
+	struct ether_addr bssid;
+	chanspec_t	chanspec;
+};
+
+/* WL MRSNO Sub Command IDs */
+#define WL_AKM_MRSNO_IOV_VERSION_1 1u
+enum wl_akm_mrsno_subcmd_ids {
+	WL_AKM_MRSNO_SUBCMD_ENAB		= 0u, /* Enable/Disable */
+	WL_AKM_MRSNO_SUBCMD_MODE		= 1u, /* MRSNO Mode */
+	WL_AKM_MRSNO_SUBCMD_RSNOE		= 2u, /* RSNOE  */
+};
+
+/* WL MRSNO XTLV IDs */
+enum wl_mrsno_xtlv_id {
+	WL_MRSNO_XTLV_ID_ENAB		= 1u,
+	WL_MRSNO_XTLV_ID_MODE		= 2u,
+	WL_MRSNO_XTLV_ID_RSNOE		= 3u
+};
+
+/* All RSNE variants */
+enum wl_mrsno_type {
+	WL_MRSNO_TYPE_RSNE		= 0u,
+	WL_MRSNO_TYPE_RSNO1E		= 1u,
+	WL_MRSNO_TYPE_RSNO2E		= 2u,
+	WL_MRSNO_TYPE_RSNXE		= 3u,
+	WL_MRSNO_TYPE_RSNXEOV		= 4u,
+	WL_MRSNO_TYPE_LAST
+};
+
+#define WL_MRSNO_RSNOE_VERSION_1	1u
+typedef struct wl_mrsno_rsnoe_v1 {
+	uint16 version;
+	uint16 length;
+	uint8 data[];
+} wl_mrsno_rsnoe_v1_t;
 #endif /* _wlioctl_h_ */

@@ -1471,8 +1471,8 @@ typedef uint32 ratespec_t;
 #define WL_OCE_VAL		0x20000000 /* reuse */
 #define WL_PCIE_VAL		0x40000000
 #define WL_PMDUR_VAL		0x80000000
-/* use top-bit for WL_TIME_STAMP_VAL because this is a modifier
- * rather than a message-type of its own
+/* Use top-bit for WL_TIME_STAMP_VAL because this is a modifier
+ * rather than a message-type of its own.
  */
 #define WL_TIMESTAMP_VAL        0x80000000
 
@@ -2832,6 +2832,8 @@ enum wl_cnt_xtlv_id {
 #define WL_CLM_HAS_OFDM_EIRP       0x2000u /**< Flag for HAS_OFDM_EIRP */
 #define WL_CLM_NO_160MHZ           0x4000u /**< Flag for NO_160MHZ */
 #define WL_CLM_NO_80_80MHZ         0x8000u /**< Flag for NO_80_80MHZ */
+#define WL_CLM_EHT                 0x10000u /**< Flag for EHT */
+#define WL_CLM_MRU                 0x20000u /**< Flag for MRU */
 #define WL_CLM_NO_320MHZ           0x200000u /**< Flag for NO_320MHZ */
 #define WL_CLM_NO_160_160MHZ       0x400000u /**< Flag for NO_160_160MHZ */
 #define WL_CLM_CBP_FCC             0x800000u /**< Flag for CBP_FCC */
@@ -2994,9 +2996,6 @@ enum wl_ifstats_xtlv_id {
 	/* missed dtim eCounter */
 	WL_STATS_XTLV_MISSED_DTIM_COUNTER = 0x10D,
 
-	/* GCR-UR ecounters */
-	WL_STATS_XTLV_GCR_UR_ECOUNTERS = 0x10E,
-
 	/* Per-slice information
 	 * Per-interface reporting could also include slice specific data
 	 */
@@ -3089,22 +3088,6 @@ enum wl_ifstats_xtlv_id {
 	WL_STATS_XTLV_NDP_SESSION_STATUS = 0x602,
 	/* NAN disc frame status ecounters */
 	WL_STATS_XTLV_NAN_DISC_FRM_STATUS = 0x603
-};
-
-/* Sub-XTLV IDs for GCR-UR stats */
-enum wl_gcr_ur_xtlv_id {
-	/* Generix RX info */
-	WL_XTLV_GCR_UR_RX_INFO = 0x1,
-	/* RSSI histogram of received AMPDUs */
-	WL_XTLV_GCR_UR_RX_RSSI = 0x2,
-	/* SNR histogram of received AMPDUs */
-	WL_XTLV_GCR_UR_RX_SNR = 0x3,
-	/* MCS histogram of received AMPDUs */
-	WL_XTLV_GCR_UR_RX_MCS = 0x4,
-	/* NSS histogram of received AMPDUs */
-	WL_XTLV_GCR_UR_RX_NSS = 0x5,
-	/* BW histogram of received AMPDUs */
-	WL_XTLV_GCR_UR_RX_BW = 0x6
 };
 
 /* CAPEXT WL partition */
@@ -3402,6 +3385,7 @@ enum wlc_capext_feature_bitpos {
 	WLC_CAPEXT_FEATURE_BITPOS_MONITOR_MULTI		= 137,
 	WLC_CAPEXT_FEATURE_BITPOS_MPF_SCAN		= 138,
 	WLC_CAPEXT_FEATURE_BITPOS_MRSNO			= 139,
+	WLC_CAPEXT_FEATURE_BITPOS_AOP_SCAN		= 140,
 
 	WLC_CAPEXT_FEATURE_BITPOS_MAX
 };

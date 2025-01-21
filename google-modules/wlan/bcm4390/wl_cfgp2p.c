@@ -3026,6 +3026,8 @@ wl_cfgp2p_if_add(struct bcm_cfg80211 *cfg, wl_iftype_t wl_iftype,
 	u16 p2p_iftype;
 	int dhd_mode;
 	struct net_device *new_ndev = NULL;
+	long time_to_wait = MAX_WAIT_TIME;
+	unsigned long start_wait_time;
 	struct wiphy *wiphy = bcmcfg_to_wiphy(cfg);
 	struct ether_addr *p2p_addr;
 
@@ -3095,11 +3097,30 @@ wl_cfgp2p_if_add(struct bcm_cfg80211 *cfg, wl_iftype_t wl_iftype,
 	}
 
 	/* Wait for WLC_E_IF event with IF_ADD opcode */
-	timeout = wait_event_interruptible_timeout(cfg->netif_change_event,
-		((wl_get_p2p_status(cfg, IF_ADDING) == false) &&
-		(cfg->if_event_info.valid)),
-		msecs_to_jiffies(MAX_WAIT_TIME));
-	if (timeout > 0 && !wl_get_p2p_status(cfg, IF_ADDING) && cfg->if_event_info.valid) {
+	while (TRUE) {
+		start_wait_time = get_jiffies_64();
+		timeout = wait_event_interruptible_timeout(cfg->netif_change_event,
+			((wl_get_p2p_status(cfg, IF_ADDING) == false) &&
+			(cfg->if_event_info.valid)),
+			msecs_to_jiffies(time_to_wait));
+		if (timeout == -ERESTARTSYS) {
+			WL_ERR(("waitqueue was interrupted by a signal\n"));
+			time_to_wait -= jiffies_to_msecs(get_jiffies_64() - start_wait_time);
+			if (time_to_wait <= 0) {
+				WL_ERR(("Timed out. time_to_wait:%ld, timeout:%ld\n",
+					time_to_wait, timeout));
+				goto fail;
+			}
+		} else if (timeout <= 0) {
+			WL_ERR(("ADD_IF event, didn't come. timeout:%ld\n", time_to_wait));
+			goto fail;
+		} else {
+			/* wait event interrupt, break and process */
+			break;
+		}
+	}
+
+	if (!wl_get_p2p_status(cfg, IF_ADDING) && cfg->if_event_info.valid) {
 		wl_if_event_info *event = &cfg->if_event_info;
 		new_ndev = wl_cfg80211_post_ifcreate(bcmcfg_to_prmry_ndev(cfg), event,
 			event->mac, cfg->p2p->vir_ifname, false);
@@ -3132,9 +3153,13 @@ wl_cfgp2p_if_add(struct bcm_cfg80211 *cfg, wl_iftype_t wl_iftype,
 #endif /* LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0) */
 
 			return new_ndev->ieee80211_ptr;
+	} else {
+		WL_ERR(("iface_creation wrong state. p2p_status:%d event_valid:%d\n",
+			wl_get_p2p_status(cfg, IF_ADDING), cfg->if_event_info.valid));
 	}
 
 fail:
+	WL_ERR(("virtual iface creation failed\n"));
 	return NULL;
 }
 
