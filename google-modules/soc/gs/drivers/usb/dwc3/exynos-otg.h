@@ -39,13 +39,11 @@ struct dwc3_otg {
 	int			otg_connection;
 
 	struct exynos_pm_qos_request	pm_qos_int_req;
-	int				pm_qos_int_usb2_val;
-	int				pm_qos_int_usb3_val;
+	int				pm_qos_int_val;
 
 	struct work_struct	work;
 
 	struct notifier_block	pm_nb;
-	struct notifier_block	psy_notifier;
 	struct completion	resume_cmpl;
 	int			dwc3_suspended;
 	int			in_shutdown;

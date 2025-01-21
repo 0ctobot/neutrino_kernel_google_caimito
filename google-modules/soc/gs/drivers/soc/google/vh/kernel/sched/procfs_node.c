@@ -59,7 +59,7 @@ extern struct vendor_util_group_property *get_vendor_util_group_property(
 	enum utilization_group group);
 #endif
 
-extern void update_adpf_prio(struct task_struct *p, struct vendor_task_struct *vp, bool val);
+extern void update_task_prio(struct task_struct *p, struct vendor_task_struct *vp, bool val);
 
 static void apply_uclamp_change(enum vendor_group group, enum uclamp_id clamp_id);
 
@@ -75,6 +75,10 @@ extern unsigned int sysctl_sched_uclamp_max_filter_divider;
 extern char priority_task_name[LIB_PATH_LENGTH];
 extern spinlock_t priority_task_name_lock;
 
+extern int set_prefer_idle_task_name(void);
+extern char prefer_idle_task_name[LIB_PATH_LENGTH];
+extern spinlock_t prefer_idle_task_name_lock;
+
 #define MAX_PROC_SIZE 128
 
 static const char *GRP_NAME[VG_MAX] = {"sys", "ta", "fg", "cam", "cam_power", "bg", "sys_bg",
@@ -83,6 +87,7 @@ static const char *GRP_NAME[VG_MAX] = {"sys", "ta", "fg", "cam", "cam_power", "b
 enum vendor_procfs_type {
 	DEFAULT_TYPE = 0,
 	GROUPED_CONTROL,
+	SCHED_QOS_CONTROL,
 };
 
 #define PROC_OPS_RW(__name) \
@@ -163,6 +168,14 @@ enum vendor_procfs_type {
 		__PROC_GROUP_ENTRY(uclamp_max_on_nice_high_prio, __group_name, __vg),	\
 		__PROC_GROUP_ENTRY(rampup_multiplier, __group_name, __vg),	\
 		__PROC_GROUP_ENTRY(disable_util_est, __group_name, __vg),	\
+		__PROC_GROUP_ENTRY(qos_adpf_enable, __group_name, __vg),	\
+		__PROC_GROUP_ENTRY(qos_prefer_idle_enable, __group_name, __vg),	\
+		__PROC_GROUP_ENTRY(qos_prefer_fit_enable, __group_name, __vg),	\
+		__PROC_GROUP_ENTRY(qos_boost_prio_enable, __group_name, __vg),	\
+		__PROC_GROUP_ENTRY(qos_preempt_wakeup_enable, __group_name, __vg),	\
+		__PROC_GROUP_ENTRY(qos_auto_uclamp_max_enable, __group_name, __vg),	\
+		__PROC_GROUP_ENTRY(qos_prefer_high_cap_enable, __group_name, __vg),	\
+		__PROC_GROUP_ENTRY(qos_rampup_multiplier_enable, __group_name, __vg),	\
 		__PROC_SET_GROUP_ENTRY(set_task_group, __group_name, __vg),	\
 		__PROC_SET_GROUP_ENTRY(set_proc_group, __group_name, __vg)
 
@@ -175,6 +188,9 @@ enum vendor_procfs_type {
 		__PROC_GROUP_ENTRIES(__group_name, __vg),	\
 		__PROC_GROUP_ENTRY(group_throttle, __group_name, __vg)
 #endif
+
+#define PROC_SCHED_QOS_ENTRY(__name)	\
+		 {__stringify(__name), SCHED_QOS_CONTROL, -1, &__name##_proc_ops}
 
 #define SET_VENDOR_GROUP_STORE(__grp, __vg)						      \
 		static ssize_t set_task_group_##__grp##_store(struct file *filp, \
@@ -318,7 +334,8 @@ enum vendor_procfs_type {
 				return -EINVAL;						      \
 			if (val > 1024 && val != AUTO_UCLAMP_MAX_MAGIC)			      \
 				return -EINVAL;						      \
-			if (val == gp->uc_req[__cid].value)				      \
+			if (val == gp->uc_req[__cid].value && (__cid != UCLAMP_MAX ||	      \
+			    !gp->auto_uclamp_max))					      \
 				return count;						      \
 			if (__cid == UCLAMP_MAX) {					      \
 				if (val == AUTO_UCLAMP_MAX_MAGIC) {			      \
@@ -367,6 +384,39 @@ enum vendor_procfs_type {
 			return ret ?: count;						      \
 		}									      \
 		PROC_OPS_WO(__attr##_clear);
+
+#define PER_TASK_UINT_ATTRIBUTE(__attr)						      \
+		static ssize_t __attr##_set##_store(struct file *filp, \
+			const char __user *ubuf, \
+			size_t count, loff_t *pos) \
+		{									      \
+			char buf[MAX_PROC_SIZE];	\
+			int ret;	\
+			if (count >= sizeof(buf))	\
+				return -EINVAL;	\
+			if (copy_from_user(buf, ubuf, count))	\
+				return -EFAULT;	\
+			buf[count] = '\0';	\
+			ret = update_##__attr(buf, true, count);   \
+			return ret ?: count;						      \
+		}									      \
+		PROC_OPS_WO(__attr##_set);	\
+		static ssize_t __attr##_clear##_store(struct file *filp, \
+			const char __user *ubuf, \
+			size_t count, loff_t *pos) \
+		{									      \
+			char buf[MAX_PROC_SIZE];	\
+			int ret;	\
+			if (count >= sizeof(buf))	\
+				return -EINVAL;	\
+			if (copy_from_user(buf, ubuf, count))	\
+				return -EFAULT;	\
+			buf[count] = '\0';	\
+			ret = update_##__attr(buf, false, count);   \
+			return ret ?: count;						      \
+		}									      \
+		PROC_OPS_WO(__attr##_clear);
+
 
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 #define UTILIZATION_GROUP_UINT_ATTRIBUTE(__grp, __attr, __ug)				      \
@@ -505,6 +555,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(ta, disable_util_est, VG_TOPAPP);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(ta, ug, VG_TOPAPP, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(ta, qos_adpf_enable, VG_TOPAPP);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ta, qos_prefer_idle_enable, VG_TOPAPP);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ta, qos_prefer_fit_enable, VG_TOPAPP);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ta, qos_boost_prio_enable, VG_TOPAPP);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ta, qos_preempt_wakeup_enable, VG_TOPAPP);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ta, qos_auto_uclamp_max_enable, VG_TOPAPP);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ta, qos_prefer_high_cap_enable, VG_TOPAPP);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ta, qos_rampup_multiplier_enable, VG_TOPAPP);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(fg, prefer_idle, VG_FOREGROUND);
 VENDOR_GROUP_BOOL_ATTRIBUTE(fg, prefer_high_cap, VG_FOREGROUND);
@@ -545,6 +603,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(fg, disable_util_est, VG_FOREGROUND);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(fg, ug, VG_FOREGROUND, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg, qos_adpf_enable, VG_FOREGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg, qos_prefer_idle_enable, VG_FOREGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg, qos_prefer_fit_enable, VG_FOREGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg, qos_boost_prio_enable, VG_FOREGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg, qos_preempt_wakeup_enable, VG_FOREGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg, qos_auto_uclamp_max_enable, VG_FOREGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg, qos_prefer_high_cap_enable, VG_FOREGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg, qos_rampup_multiplier_enable, VG_FOREGROUND);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(sys, prefer_idle, VG_SYSTEM);
 VENDOR_GROUP_BOOL_ATTRIBUTE(sys, prefer_high_cap, VG_SYSTEM);
@@ -585,6 +651,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(sys, disable_util_est, VG_SYSTEM);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(sys, ug, VG_SYSTEM, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(sys, qos_adpf_enable, VG_SYSTEM);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sys, qos_prefer_idle_enable, VG_SYSTEM);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sys, qos_prefer_fit_enable, VG_SYSTEM);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sys, qos_boost_prio_enable, VG_SYSTEM);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sys, qos_preempt_wakeup_enable, VG_SYSTEM);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sys, qos_auto_uclamp_max_enable, VG_SYSTEM);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sys, qos_prefer_high_cap_enable, VG_SYSTEM);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sys, qos_rampup_multiplier_enable, VG_SYSTEM);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(cam, prefer_idle, VG_CAMERA);
 VENDOR_GROUP_BOOL_ATTRIBUTE(cam, prefer_high_cap, VG_CAMERA);
@@ -625,6 +699,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(cam, disable_util_est, VG_CAMERA);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(cam, ug, VG_CAMERA, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam, qos_adpf_enable, VG_CAMERA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam, qos_prefer_idle_enable, VG_CAMERA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam, qos_prefer_fit_enable, VG_CAMERA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam, qos_boost_prio_enable, VG_CAMERA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam, qos_preempt_wakeup_enable, VG_CAMERA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam, qos_auto_uclamp_max_enable, VG_CAMERA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam, qos_prefer_high_cap_enable, VG_CAMERA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam, qos_rampup_multiplier_enable, VG_CAMERA);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(cam_power, prefer_idle, VG_CAMERA_POWER);
 VENDOR_GROUP_BOOL_ATTRIBUTE(cam_power, prefer_high_cap, VG_CAMERA_POWER);
@@ -665,6 +747,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(cam_power, disable_util_est, VG_CAMERA_POWER);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(cam_power, ug, VG_CAMERA_POWER, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam_power, qos_adpf_enable, VG_CAMERA_POWER);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam_power, qos_prefer_idle_enable, VG_CAMERA_POWER);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam_power, qos_prefer_fit_enable, VG_CAMERA_POWER);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam_power, qos_boost_prio_enable, VG_CAMERA_POWER);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam_power, qos_preempt_wakeup_enable, VG_CAMERA_POWER);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam_power, qos_auto_uclamp_max_enable, VG_CAMERA_POWER);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam_power, qos_prefer_high_cap_enable, VG_CAMERA_POWER);
+VENDOR_GROUP_BOOL_ATTRIBUTE(cam_power, qos_rampup_multiplier_enable, VG_CAMERA_POWER);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(bg, prefer_idle, VG_BACKGROUND);
 VENDOR_GROUP_BOOL_ATTRIBUTE(bg, prefer_high_cap, VG_BACKGROUND);
@@ -705,6 +795,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(bg, disable_util_est, VG_BACKGROUND);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(bg, ug, VG_BACKGROUND, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(bg, qos_adpf_enable, VG_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(bg, qos_prefer_idle_enable, VG_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(bg, qos_prefer_fit_enable, VG_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(bg, qos_boost_prio_enable, VG_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(bg, qos_preempt_wakeup_enable, VG_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(bg, qos_auto_uclamp_max_enable, VG_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(bg, qos_prefer_high_cap_enable, VG_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(bg, qos_rampup_multiplier_enable, VG_BACKGROUND);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(sysbg, prefer_idle, VG_SYSTEM_BACKGROUND);
 VENDOR_GROUP_BOOL_ATTRIBUTE(sysbg, prefer_high_cap, VG_SYSTEM_BACKGROUND);
@@ -745,6 +843,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(sysbg, disable_util_est, VG_SYSTEM_BACKGROUND);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(sysbg, ug, VG_SYSTEM_BACKGROUND, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(sysbg, qos_adpf_enable, VG_SYSTEM_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sysbg, qos_prefer_idle_enable, VG_SYSTEM_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sysbg, qos_prefer_fit_enable, VG_SYSTEM_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sysbg, qos_boost_prio_enable, VG_SYSTEM_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sysbg, qos_preempt_wakeup_enable, VG_SYSTEM_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sysbg, qos_auto_uclamp_max_enable, VG_SYSTEM_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sysbg, qos_prefer_high_cap_enable, VG_SYSTEM_BACKGROUND);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sysbg, qos_rampup_multiplier_enable, VG_SYSTEM_BACKGROUND);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(nnapi, prefer_idle, VG_NNAPI_HAL);
 VENDOR_GROUP_BOOL_ATTRIBUTE(nnapi, prefer_high_cap, VG_NNAPI_HAL);
@@ -785,6 +891,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(nnapi, disable_util_est, VG_NNAPI_HAL);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(nnapi, ug, VG_NNAPI_HAL, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(nnapi, qos_adpf_enable, VG_NNAPI_HAL);
+VENDOR_GROUP_BOOL_ATTRIBUTE(nnapi, qos_prefer_idle_enable, VG_NNAPI_HAL);
+VENDOR_GROUP_BOOL_ATTRIBUTE(nnapi, qos_prefer_fit_enable, VG_NNAPI_HAL);
+VENDOR_GROUP_BOOL_ATTRIBUTE(nnapi, qos_boost_prio_enable, VG_NNAPI_HAL);
+VENDOR_GROUP_BOOL_ATTRIBUTE(nnapi, qos_preempt_wakeup_enable, VG_NNAPI_HAL);
+VENDOR_GROUP_BOOL_ATTRIBUTE(nnapi, qos_auto_uclamp_max_enable, VG_NNAPI_HAL);
+VENDOR_GROUP_BOOL_ATTRIBUTE(nnapi, qos_prefer_high_cap_enable, VG_NNAPI_HAL);
+VENDOR_GROUP_BOOL_ATTRIBUTE(nnapi, qos_rampup_multiplier_enable, VG_NNAPI_HAL);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(rt, prefer_idle, VG_RT);
 VENDOR_GROUP_BOOL_ATTRIBUTE(rt, prefer_high_cap, VG_RT);
@@ -825,6 +939,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(rt, disable_util_est, VG_RT);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(rt, ug, VG_RT, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(rt, qos_adpf_enable, VG_RT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(rt, qos_prefer_idle_enable, VG_RT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(rt, qos_prefer_fit_enable, VG_RT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(rt, qos_boost_prio_enable, VG_RT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(rt, qos_preempt_wakeup_enable, VG_RT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(rt, qos_auto_uclamp_max_enable, VG_RT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(rt, qos_prefer_high_cap_enable, VG_RT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(rt, qos_rampup_multiplier_enable, VG_RT);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(dex2oat, prefer_idle, VG_DEX2OAT);
 VENDOR_GROUP_BOOL_ATTRIBUTE(dex2oat, prefer_high_cap, VG_DEX2OAT);
@@ -865,6 +987,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(dex2oat, disable_util_est, VG_DEX2OAT);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(dex2oat, ug, VG_DEX2OAT, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(dex2oat, qos_adpf_enable, VG_DEX2OAT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(dex2oat, qos_prefer_idle_enable, VG_DEX2OAT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(dex2oat, qos_prefer_fit_enable, VG_DEX2OAT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(dex2oat, qos_boost_prio_enable, VG_DEX2OAT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(dex2oat, qos_preempt_wakeup_enable, VG_DEX2OAT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(dex2oat, qos_auto_uclamp_max_enable, VG_DEX2OAT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(dex2oat, qos_prefer_high_cap_enable, VG_DEX2OAT);
+VENDOR_GROUP_BOOL_ATTRIBUTE(dex2oat, qos_rampup_multiplier_enable, VG_DEX2OAT);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(ota, prefer_idle, VG_OTA);
 VENDOR_GROUP_BOOL_ATTRIBUTE(ota, prefer_high_cap, VG_OTA);
@@ -905,6 +1035,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(ota, disable_util_est, VG_OTA);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(ota, ug, VG_OTA, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(ota, qos_adpf_enable, VG_OTA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ota, qos_prefer_idle_enable, VG_OTA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ota, qos_prefer_fit_enable, VG_OTA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ota, qos_boost_prio_enable, VG_OTA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ota, qos_preempt_wakeup_enable, VG_OTA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ota, qos_auto_uclamp_max_enable, VG_OTA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ota, qos_prefer_high_cap_enable, VG_OTA);
+VENDOR_GROUP_BOOL_ATTRIBUTE(ota, qos_rampup_multiplier_enable, VG_OTA);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(sf, prefer_idle, VG_SF);
 VENDOR_GROUP_BOOL_ATTRIBUTE(sf, prefer_high_cap, VG_SF);
@@ -945,6 +1083,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(sf, disable_util_est, VG_SF);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(sf, ug, VG_SF, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(sf, qos_adpf_enable, VG_SF);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sf, qos_prefer_idle_enable, VG_SF);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sf, qos_prefer_fit_enable, VG_SF);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sf, qos_boost_prio_enable, VG_SF);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sf, qos_preempt_wakeup_enable, VG_SF);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sf, qos_auto_uclamp_max_enable, VG_SF);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sf, qos_prefer_high_cap_enable, VG_SF);
+VENDOR_GROUP_BOOL_ATTRIBUTE(sf, qos_rampup_multiplier_enable, VG_SF);
 
 VENDOR_GROUP_BOOL_ATTRIBUTE(fg_wi, prefer_idle, VG_FOREGROUND_WINDOW);
 VENDOR_GROUP_BOOL_ATTRIBUTE(fg_wi, prefer_high_cap, VG_FOREGROUND_WINDOW);
@@ -985,6 +1131,14 @@ VENDOR_GROUP_BOOL_ATTRIBUTE(fg_wi, disable_util_est, VG_FOREGROUND_WINDOW);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 VENDOR_GROUP_UINT_ATTRIBUTE_CHECK(fg_wi, ug, VG_FOREGROUND_WINDOW, check_ug);
 #endif
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg_wi, qos_adpf_enable, VG_FOREGROUND_WINDOW);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg_wi, qos_prefer_idle_enable, VG_FOREGROUND_WINDOW);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg_wi, qos_prefer_fit_enable, VG_FOREGROUND_WINDOW);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg_wi, qos_boost_prio_enable, VG_FOREGROUND_WINDOW);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg_wi, qos_preempt_wakeup_enable, VG_FOREGROUND_WINDOW);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg_wi, qos_auto_uclamp_max_enable, VG_FOREGROUND_WINDOW);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg_wi, qos_prefer_high_cap_enable, VG_FOREGROUND_WINDOW);
+VENDOR_GROUP_BOOL_ATTRIBUTE(fg_wi, qos_rampup_multiplier_enable, VG_FOREGROUND_WINDOW);
 
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 #if IS_ENABLED(CONFIG_USE_GROUP_THROTTLE)
@@ -1165,16 +1319,16 @@ fail:
 
 static inline struct task_struct *get_next_task(int group, struct list_head *head)
 {
-	unsigned long flags;
+	unsigned long irqflags;
 	struct task_struct *p;
 	struct vendor_task_struct *vp;
 	struct list_head *cur;
 
-	raw_spin_lock_irqsave(&vendor_group_list[group].lock, flags);
+	raw_spin_lock_irqsave(&vendor_group_list[group].lock, irqflags);
 
 	if (list_empty(head)) {
 		vendor_group_list[group].cur_iterator = NULL;
-		raw_spin_unlock_irqrestore(&vendor_group_list[group].lock, flags);
+		raw_spin_unlock_irqrestore(&vendor_group_list[group].lock, irqflags);
 		return NULL;
 	}
 
@@ -1186,7 +1340,7 @@ static inline struct task_struct *get_next_task(int group, struct list_head *hea
 	do {
 		if (cur->next == head) {
 			vendor_group_list[group].cur_iterator = NULL;
-			raw_spin_unlock_irqrestore(&vendor_group_list[group].lock, flags);
+			raw_spin_unlock_irqrestore(&vendor_group_list[group].lock, irqflags);
 			return NULL;
 		}
 
@@ -1198,7 +1352,7 @@ static inline struct task_struct *get_next_task(int group, struct list_head *hea
 	get_task_struct(p);
 	vendor_group_list[group].cur_iterator = cur;
 
-	raw_spin_unlock_irqrestore(&vendor_group_list[group].lock, flags);
+	raw_spin_unlock_irqrestore(&vendor_group_list[group].lock, irqflags);
 
 	return p;
 }
@@ -1206,7 +1360,7 @@ static inline struct task_struct *get_next_task(int group, struct list_head *hea
 static void apply_uclamp_change(enum vendor_group group, enum uclamp_id clamp_id)
 {
 	struct task_struct *p;
-	unsigned long flags;
+	unsigned long irqflags;
 	struct list_head *head = &vendor_group_list[group].list;
 
 	if (trace_clock_set_rate_enabled()) {
@@ -1218,9 +1372,9 @@ static void apply_uclamp_change(enum vendor_group group, enum uclamp_id clamp_id
 				raw_smp_processor_id());
 	}
 
-	raw_spin_lock_irqsave(&vendor_group_list[group].lock, flags);
+	raw_spin_lock_irqsave(&vendor_group_list[group].lock, irqflags);
 	vendor_group_list[group].cur_iterator = NULL;
-	raw_spin_unlock_irqrestore(&vendor_group_list[group].lock, flags);
+	raw_spin_unlock_irqrestore(&vendor_group_list[group].lock, irqflags);
 
 	while ((p = get_next_task(group, head))) {
 		uclamp_update_active(p, clamp_id);
@@ -1255,6 +1409,11 @@ static int update_prefer_idle(const char *buf, bool val)
 	vp = get_vendor_task_struct(p);
 	vp->prefer_idle = val;
 
+	if (val)
+		vp->sched_qos_user_defined_flag |= SCHED_QOS_PREFER_IDLE_BIT;
+	else
+		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_PREFER_IDLE_BIT;
+
 	put_task_struct(p);
 	rcu_read_unlock();
 
@@ -1268,6 +1427,8 @@ static int update_uclamp_fork_reset(const char *buf, bool val)
 	struct rq_flags rf;
 	struct rq *rq;
 	pid_t pid;
+	bool old_uclamp_fork_reset;
+	unsigned long irqflags;
 
 	if (kstrtoint(buf, 0, &pid) || pid <= 0)
 		return -EINVAL;
@@ -1293,12 +1454,13 @@ static int update_uclamp_fork_reset(const char *buf, bool val)
 	rq = task_rq_lock(p, &rf);
 
 	if (vp->uclamp_fork_reset != val) {
-		bool old_uclamp_fork_reset = get_uclamp_fork_reset(p, true);
-
-		vp->uclamp_fork_reset = val;
-
 		if (vendor_sched_boost_adpf_prio)
-			update_adpf_prio(p, vp, val);
+			update_task_prio(p, vp, val);
+
+		raw_spin_lock_irqsave(&vp->lock, irqflags);
+
+		old_uclamp_fork_reset = get_uclamp_fork_reset(p, true);
+		vp->uclamp_fork_reset = val;
 
 		if (task_on_rq_queued(p)) {
 			if (old_uclamp_fork_reset && !get_uclamp_fork_reset(p, true))
@@ -1306,12 +1468,357 @@ static int update_uclamp_fork_reset(const char *buf, bool val)
 			else if (!old_uclamp_fork_reset && get_uclamp_fork_reset(p, true))
 				inc_adpf_counter(p, task_rq(p));
 		}
+
+		raw_spin_unlock_irqrestore(&vp->lock, irqflags);
 	}
 
 	task_rq_unlock(rq, p, &rf);
 	put_task_struct(p);
 
 	return 0;
+}
+
+static int update_boost_prio(const char *buf, bool val)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+	struct rq_flags rf;
+	struct rq *rq;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+
+	if (vp->boost_prio != val) {
+		vp->boost_prio = val;
+		/* Only allow update_task_prio when group qos_boost_prio_enable is true. */
+		if (vg[vp->group].qos_boost_prio_enable) {
+			rq = task_rq_lock(p, &rf);
+			update_task_prio(p, vp, val);
+			task_rq_unlock(rq, p, &rf);
+		}
+	}
+
+	if (val)
+		vp->sched_qos_user_defined_flag |= SCHED_QOS_BOOST_PRIO_BIT;
+	else
+		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_BOOST_PRIO_BIT;
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int update_prefer_fit(const char *buf, bool val)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->prefer_fit = val;
+
+	if (val)
+		vp->sched_qos_user_defined_flag |= SCHED_QOS_PREFER_FIT_BIT;
+	else
+		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_PREFER_FIT_BIT;
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int update_adpf(const char *buf, bool val)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->adpf = val;
+
+	if (val)
+		vp->sched_qos_user_defined_flag |= SCHED_QOS_ADPF_BIT;
+	else
+		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_ADPF_BIT;
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int update_preempt_wakeup(const char *buf, bool val)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->preempt_wakeup = val;
+
+	if (val)
+		vp->sched_qos_user_defined_flag |= SCHED_QOS_PREEMPT_WAKEUP_BIT;
+	else
+		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_PREEMPT_WAKEUP_BIT;
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int update_auto_uclamp_max(const char *buf, bool val)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->auto_uclamp_max = val;
+
+	if (val)
+		vp->sched_qos_user_defined_flag |= SCHED_QOS_AUTO_UCLAMP_MAX_BIT;
+	else
+		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_AUTO_UCLAMP_MAX_BIT;
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int update_prefer_high_cap(const char *buf, bool val)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->prefer_high_cap = val;
+
+	if (val)
+		vp->sched_qos_user_defined_flag |= SCHED_QOS_PREFER_HIGH_CAP_BIT;
+	else
+		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_PREFER_HIGH_CAP_BIT;
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int update_rampup_multiplier(const char *buf, bool set, int count)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+	unsigned int multiplier;
+	char *str1, *str2, *pid_str, *multiplier_str;
+	int ret = 0;
+
+	if (set) {
+		str1 = kstrndup(buf, count, GFP_KERNEL);
+		if (!str1)
+			return -ENOMEM;
+
+		str2 = str1;
+		pid_str = strsep(&str2, ":");
+		multiplier_str = str2;
+
+		if (pid_str == NULL || multiplier_str == NULL) {
+			ret = -EINVAL;
+			goto error_free;
+		}
+
+		if (kstrtouint(pid_str, 0, &pid) || kstrtouint(multiplier_str, 0, &multiplier)) {
+			ret = -EINVAL;
+			goto error_free;
+		}
+
+		rcu_read_lock();
+		p = find_task_by_vpid(pid);
+		if (!p) {
+			ret = -ESRCH;
+			goto error_unlock_set;
+		}
+
+		get_task_struct(p);
+
+		if (!check_cred(p)) {
+			ret = -EACCES;
+			goto error_put_task_set;
+		}
+
+		vp = get_vendor_task_struct(p);
+		vp->rampup_multiplier = multiplier;
+		vp->sched_qos_user_defined_flag |= SCHED_QOS_RAMPUP_MULTIPLIER_BIT;
+error_put_task_set:
+		put_task_struct(p);
+error_unlock_set:
+		rcu_read_unlock();
+error_free:
+		kfree(str1);
+
+	} else {
+
+		if (kstrtoint(buf, 0, &pid) || pid <= 0)
+			return -EINVAL;
+
+		rcu_read_lock();
+		p = find_task_by_vpid(pid);
+		if (!p) {
+			ret = -ESRCH;
+			goto error_unlock_clear;
+		}
+
+		get_task_struct(p);
+
+		if (!check_cred(p)) {
+			ret = -EACCES;
+			goto error_put_task_clear;
+		}
+
+		vp = get_vendor_task_struct(p);
+		vp->rampup_multiplier = 1;
+		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_RAMPUP_MULTIPLIER_BIT;
+error_put_task_clear:
+		put_task_struct(p);
+error_unlock_clear:
+		rcu_read_unlock();
+	}
+
+	return ret;
+}
+
+static inline void migrate_boost_prio(struct task_struct *p, unsigned int old, unsigned int new)
+{
+	struct rq_flags rf;
+	struct rq *rq;
+	struct vendor_task_struct *vp = get_vendor_task_struct(p);
+
+	if (vp->boost_prio && vg[old].qos_boost_prio_enable != vg[new].qos_boost_prio_enable) {
+		/* Boost prio to 100. */
+		if (vg[new].qos_boost_prio_enable) {
+			rq = task_rq_lock(p, &rf);
+			update_task_prio(p, vp, true);
+			task_rq_unlock(rq, p, &rf);
+		/* Restore to original prio. */
+		} else {
+			rq = task_rq_lock(p, &rf);
+			update_task_prio(p, vp, false);
+			task_rq_unlock(rq, p, &rf);
+		}
+	}
 }
 
 static int update_vendor_group_attribute(const char *buf, enum vendor_group_attribute vta,
@@ -1321,7 +1828,7 @@ static int update_vendor_group_attribute(const char *buf, enum vendor_group_attr
 	struct task_struct *p, *t;
 	enum uclamp_id clamp_id;
 	pid_t pid;
-	unsigned long flags;
+	unsigned long irqflags;
 	int old;
 
 	if (kstrtoint(buf, 0, &pid) || pid <= 0)
@@ -1346,23 +1853,24 @@ static int update_vendor_group_attribute(const char *buf, enum vendor_group_attr
 	switch (vta) {
 	case VTA_TASK_GROUP:
 		vp = get_vendor_task_struct(p);
-		raw_spin_lock_irqsave(&vp->lock, flags);
+		raw_spin_lock_irqsave(&vp->lock, irqflags);
 		old = vp->group;
 		if (old == new || p->flags & PF_EXITING) {
-			raw_spin_unlock_irqrestore(&vp->lock, flags);
+			raw_spin_unlock_irqrestore(&vp->lock, irqflags);
 			break;
 		}
-
-#if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
-		if (p->prio >= MAX_RT_PRIO)
-			migrate_vendor_group_util(p, old, new);
-#endif
 		if (vp->queued_to_list == LIST_QUEUED) {
 			remove_from_vendor_group_list(&vp->node, old);
 			add_to_vendor_group_list(&vp->node, new);
 		}
 		vp->group = new;
-		raw_spin_unlock_irqrestore(&vp->lock, flags);
+		raw_spin_unlock_irqrestore(&vp->lock, irqflags);
+		if (p->prio >= MAX_RT_PRIO) {
+			migrate_boost_prio(p, old, new);
+#if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
+			migrate_vendor_group_util(p, old, new);
+#endif
+		}
 		for (clamp_id = 0; clamp_id < UCLAMP_CNT; clamp_id++)
 			uclamp_update_active(p, clamp_id);
 		break;
@@ -1371,10 +1879,10 @@ static int update_vendor_group_attribute(const char *buf, enum vendor_group_attr
 		for_each_thread(p, t) {
 			get_task_struct(t);
 			vp = get_vendor_task_struct(t);
-			raw_spin_lock_irqsave(&vp->lock, flags);
+			raw_spin_lock_irqsave(&vp->lock, irqflags);
 			old = vp->group;
 			if (old == new || t->flags & PF_EXITING) {
-				raw_spin_unlock_irqrestore(&vp->lock, flags);
+				raw_spin_unlock_irqrestore(&vp->lock, irqflags);
 				put_task_struct(t);
 				continue;
 			}
@@ -1383,11 +1891,13 @@ static int update_vendor_group_attribute(const char *buf, enum vendor_group_attr
 				add_to_vendor_group_list(&vp->node, new);
 			}
 			vp->group = new;
-			raw_spin_unlock_irqrestore(&vp->lock, flags);
+			raw_spin_unlock_irqrestore(&vp->lock, irqflags);
+			if (p->prio >= MAX_RT_PRIO) {
+				migrate_boost_prio(t, old, new);
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
-			if (p->prio >= MAX_RT_PRIO)
 				migrate_vendor_group_util(t, old, new);
 #endif
+			}
 			for (clamp_id = 0; clamp_id < UCLAMP_CNT; clamp_id++)
 				uclamp_update_active(t, clamp_id);
 			put_task_struct(t);
@@ -1421,17 +1931,34 @@ SET_VENDOR_GROUP_STORE(fg_wi, VG_FOREGROUND_WINDOW);
 // Create per-task attribute nodes
 PER_TASK_BOOL_ATTRIBUTE(prefer_idle);
 PER_TASK_BOOL_ATTRIBUTE(uclamp_fork_reset);
+PER_TASK_BOOL_ATTRIBUTE(boost_prio);
+PER_TASK_BOOL_ATTRIBUTE(prefer_fit);
+PER_TASK_BOOL_ATTRIBUTE(adpf);
+PER_TASK_BOOL_ATTRIBUTE(preempt_wakeup);
+PER_TASK_BOOL_ATTRIBUTE(auto_uclamp_max);
+PER_TASK_BOOL_ATTRIBUTE(prefer_high_cap);
+PER_TASK_UINT_ATTRIBUTE(rampup_multiplier);
 
 static int dump_task_show(struct seq_file *m, void *v)
-{									      \
+{
 	struct task_struct *p, *t;
 	struct vendor_task_struct *vp;
-	int pid;
 	unsigned int uclamp_min, uclamp_max, uclamp_eff_min, uclamp_eff_max;
 	enum vendor_group group;
 	const char *grp_name = "unknown";
 	bool uclamp_fork_reset;
+	bool adpf;
 	bool prefer_idle;
+	bool prefer_fit;
+	bool boost_prio;
+	bool preempt_wakeup;
+	bool auto_uclamp_max;
+	bool prefer_high_cap;
+	unsigned int rampup_multiplier;
+
+	seq_printf(m, "pid comm group uclamp_min uclamp_max uclamp_eff_min uclamp_eff_max " \
+		   "uclamp_fork_reset adpf prefer_idle prefer_fit boost_prio " \
+		   "preempt_wakeup auto_uclamp_max prefer_high_cap rampup_multiplier\n");
 
 	rcu_read_lock();
 
@@ -1445,12 +1972,21 @@ static int dump_task_show(struct seq_file *m, void *v)
 		uclamp_max = t->uclamp_req[UCLAMP_MAX].value;
 		uclamp_eff_min = uclamp_eff_value_pixel_mod(t, UCLAMP_MIN);
 		uclamp_eff_max = uclamp_eff_value_pixel_mod(t, UCLAMP_MAX);
-		pid = t->pid;
 		uclamp_fork_reset = vp->uclamp_fork_reset;
+		adpf = vp->adpf;
 		prefer_idle = vp->prefer_idle;
+		prefer_fit = vp->prefer_fit;
+		boost_prio = vp->boost_prio;
+		preempt_wakeup = vp->preempt_wakeup;
+		auto_uclamp_max = vp->auto_uclamp_max;
+		prefer_high_cap = vp->prefer_high_cap;
+		rampup_multiplier = vp->rampup_multiplier;
 		put_task_struct(t);
-		seq_printf(m, "%u %s %u %u %u %u %d %d\n", pid, grp_name, uclamp_min, uclamp_max,
-			uclamp_eff_min, uclamp_eff_max, uclamp_fork_reset, prefer_idle);
+
+		seq_printf(m, "%u %s %s %u %u %u %u %d %d %d %d %d %d %d %d %u\n", t->pid, t->comm,
+			   grp_name, uclamp_min, uclamp_max, uclamp_eff_min, uclamp_eff_max,
+			   uclamp_fork_reset, adpf, prefer_idle, prefer_fit, boost_prio,
+			   preempt_wakeup, auto_uclamp_max, prefer_high_cap, rampup_multiplier);
 	}
 
 	rcu_read_unlock();
@@ -2997,11 +3533,11 @@ PROC_OPS_RW(cpu_skip_mask);
 
 int priority_task_name_show(struct seq_file *m, void *v)
 {
-	unsigned long flags;
+	unsigned long irqflags;
 
-	spin_lock_irqsave(&priority_task_name_lock, flags);
+	spin_lock_irqsave(&priority_task_name_lock, irqflags);
 	seq_printf(m, "%s\n", priority_task_name);
-	spin_unlock_irqrestore(&priority_task_name_lock, flags);
+	spin_unlock_irqrestore(&priority_task_name_lock, irqflags);
 	return 0;
 }
 
@@ -3011,21 +3547,21 @@ int priority_task_name_show(struct seq_file *m, void *v)
 ssize_t priority_task_name_store(struct file *filp, const char __user *ubuf, size_t count,
 				 loff_t *ppos)
 {
-	unsigned long flags;
+	unsigned long irqflags;
 
 	if (count >= sizeof(priority_task_name))
 		return -EINVAL;
 
-	spin_lock_irqsave(&priority_task_name_lock, flags);
+	spin_lock_irqsave(&priority_task_name_lock, irqflags);
 
 	if (copy_from_user(priority_task_name, ubuf, count)) {
 		priority_task_name[0] = '\0';
-		spin_unlock_irqrestore(&priority_task_name_lock, flags);
+		spin_unlock_irqrestore(&priority_task_name_lock, irqflags);
 		return -EFAULT;
 	}
 
 	priority_task_name[count] = '\0';
-	spin_unlock_irqrestore(&priority_task_name_lock, flags);
+	spin_unlock_irqrestore(&priority_task_name_lock, irqflags);
 	return count;
 }
 PROC_OPS_RW(priority_task_name);
@@ -3061,6 +3597,89 @@ static ssize_t priority_task_boost_value_store(struct file *filp, const char __u
 }
 PROC_OPS_RW(priority_task_boost_value);
 
+int prefer_idle_task_name_show(struct seq_file *m, void *v)
+{
+
+	spin_lock(&prefer_idle_task_name_lock);
+	seq_printf(m, "%s\n", prefer_idle_task_name);
+	spin_unlock(&prefer_idle_task_name_lock);
+	return 0;
+}
+
+/*
+ * Accept multiple partial task names with comma separated
+ */
+ssize_t prefer_idle_task_name_store(struct file *filp, const char __user *ubuf, size_t count,
+				 loff_t *ppos)
+{
+
+	if (count >= sizeof(prefer_idle_task_name))
+		return -EINVAL;
+
+	spin_lock(&prefer_idle_task_name_lock);
+
+	if (copy_from_user(prefer_idle_task_name, ubuf, count)) {
+		prefer_idle_task_name[0] = '\0';
+		spin_unlock(&prefer_idle_task_name_lock);
+		return -EFAULT;
+	}
+
+	prefer_idle_task_name[count] = '\0';
+	spin_unlock(&prefer_idle_task_name_lock);
+
+	if (set_prefer_idle_task_name())
+		return -EINVAL;
+
+	return count;
+}
+PROC_OPS_RW(prefer_idle_task_name);
+
+static ssize_t is_tgid_system_ui_store(struct file *filp,
+						const char __user *ubuf,
+						size_t count, loff_t *pos)
+{
+	unsigned int val;
+	char buf[MAX_PROC_SIZE];
+	struct task_struct *p;
+	char tgid_comm[TASK_COMM_LEN] = {0};
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+
+	buf[count] = '\0';
+
+	if (kstrtouint(buf, 0, &val) || val > PID_MAX_LIMIT)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(val);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	strlcpy(tgid_comm, p->comm, TASK_COMM_LEN);
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	if (strstr(tgid_comm, "systemui") || strstr(tgid_comm, "nexuslauncher")) {
+		return count;
+	}  else {
+		return -ENOMSG;
+	}
+}
+PROC_OPS_WO(is_tgid_system_ui);
+
 struct pentry {
 	const char *name;
 	enum vendor_procfs_type type;
@@ -3085,6 +3704,23 @@ static struct pentry entries[] = {
 	PROC_GROUP_ENTRIES(ota, VG_OTA),
 	PROC_GROUP_ENTRIES(sf, VG_SF),
 	PROC_GROUP_ENTRIES(fg_wi, VG_FOREGROUND_WINDOW),
+	// sched qos attributes
+	PROC_SCHED_QOS_ENTRY(boost_prio_set),
+	PROC_SCHED_QOS_ENTRY(boost_prio_clear),
+	PROC_SCHED_QOS_ENTRY(prefer_fit_set),
+	PROC_SCHED_QOS_ENTRY(prefer_fit_clear),
+	PROC_SCHED_QOS_ENTRY(prefer_idle_set),
+	PROC_SCHED_QOS_ENTRY(prefer_idle_clear),
+	PROC_SCHED_QOS_ENTRY(adpf_set),
+	PROC_SCHED_QOS_ENTRY(adpf_clear),
+	PROC_SCHED_QOS_ENTRY(preempt_wakeup_set),
+	PROC_SCHED_QOS_ENTRY(preempt_wakeup_clear),
+	PROC_SCHED_QOS_ENTRY(auto_uclamp_max_set),
+	PROC_SCHED_QOS_ENTRY(auto_uclamp_max_clear),
+	PROC_SCHED_QOS_ENTRY(prefer_high_cap_set),
+	PROC_SCHED_QOS_ENTRY(prefer_high_cap_clear),
+	PROC_SCHED_QOS_ENTRY(rampup_multiplier_set),
+	PROC_SCHED_QOS_ENTRY(rampup_multiplier_clear),
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 	// FG util group attributes
 #if IS_ENABLED(CONFIG_USE_GROUP_THROTTLE)
@@ -3119,8 +3755,6 @@ static struct pentry entries[] = {
 	PROC_ENTRY(pmu_poll_time),
 	PROC_ENTRY(pmu_poll_enable),
 	// per-task attribute
-	PROC_ENTRY(prefer_idle_set),
-	PROC_ENTRY(prefer_idle_clear),
 	PROC_ENTRY(uclamp_fork_reset_set),
 	PROC_ENTRY(uclamp_fork_reset_clear),
 #if IS_ENABLED(CONFIG_RVH_SCHED_LIB)
@@ -3178,6 +3812,10 @@ static struct pentry entries[] = {
 	PROC_ENTRY(priority_task_name),
 	// boost value for the priority task
 	PROC_ENTRY(priority_task_boost_value),
+	// names for the prefer_idle task
+	PROC_ENTRY(prefer_idle_task_name),
+	// check whether tgid belongs to systemui/nexuslauncher
+	PROC_ENTRY(is_tgid_system_ui),
 };
 
 
@@ -3188,6 +3826,7 @@ int create_procfs_node(void)
 	enum uclamp_id clamp_id;
 	struct proc_dir_entry *parent_directory;
 	struct proc_dir_entry *group_root_dir;
+	struct proc_dir_entry *sched_qos_dir;
 	cpumask_t cpumask;
 
 	/* create vendor sched root directory */
@@ -3198,6 +3837,11 @@ int create_procfs_node(void)
 	/* create vendor group directories */
 	group_root_dir = proc_mkdir("groups", vendor_sched);
 	if (!group_root_dir)
+		goto out;
+
+	/* create sched qos directory */
+	sched_qos_dir = proc_mkdir("sched_qos", vendor_sched);
+	if (!sched_qos_dir)
 		goto out;
 
 	for (i = 0; i < VG_MAX; i++) {
@@ -3225,6 +3869,8 @@ int create_procfs_node(void)
 			} else {
 				parent_directory = group_root_dir;
 			}
+		} else if (entries[i].type == SCHED_QOS_CONTROL) {
+			parent_directory = sched_qos_dir;
 		} else {
 			parent_directory = vendor_sched;
 		}

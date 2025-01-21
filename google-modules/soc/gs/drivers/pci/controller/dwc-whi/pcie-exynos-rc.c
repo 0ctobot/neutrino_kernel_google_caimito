@@ -77,6 +77,7 @@ static struct pci_dev *exynos_pcie_get_pci_dev(struct dw_pcie_rp *pp);
 static struct exynos_pm_qos_request exynos_pcie_int_qos[MAX_RC_NUM];
 #endif
 
+#define PMU_CHECK_MASK (BIT(2) | BIT(3) | BIT(10))
 /*
  * PCIe channel0 is in the HSI1 block.
  * PCIe channel1 is in the HSI2 block.
@@ -101,6 +102,7 @@ struct phys_mem {
 
 #define ALIGN_SIZE	0x1000UL
 #define REF_COUNT_UNDERFLOW 255
+
 
 unsigned char *s2mpu_get_refcnt_ptr(struct exynos_pcie *exynos_pcie,
 				    phys_addr_t addr)
@@ -2683,7 +2685,30 @@ void exynos_pcie_rc_resumed_phydown(struct dw_pcie_rp *pp)
 	exynos_pcie_rc_enable_interrupts(pp, 0);
 	exynos_pcie_phy_isolation(exynos_pcie, PCIE_PHY_BYPASS);
 
-	exynos_pcie_rc_assert_phy_reset(pp);
+	if (exynos_pcie->ch_num == 1) {
+		void __iomem *pmu_addr, *cmu_addr;
+		u32 pmu_val, cmu_val;
+
+		pmu_addr = ioremap(exynos_pcie->pmu_alive_pa + 0x3C10, 0x4);
+		cmu_addr = ioremap(0x14400800, 0x4);
+		pmu_val = readl(pmu_addr);
+		cmu_val = readl(cmu_addr);
+
+		/* Make sure TXCO always on was enabled */
+		if ((pmu_val & PMU_CHECK_MASK) != PMU_CHECK_MASK) {
+			dev_err(dev, "ERR pmu+0x3C10=%#x\n", pmu_val);
+			pmu_val |= 0x40C;
+			writel(pmu_val, pmu_addr);
+		}
+
+		/* Disable automatic clock gating on OSCCLK */
+		cmu_val &= ~BIT(28);
+		writel(cmu_val, cmu_addr);
+		logbuffer_log(exynos_pcie->log, "Disable automatic clock gating on OSCCLK");
+
+		iounmap(pmu_addr);
+		iounmap(cmu_addr);
+	}
 
 	if (exynos_pcie->phy_ops.phy_all_pwrdn)
 		exynos_pcie->phy_ops.phy_all_pwrdn(exynos_pcie, exynos_pcie->ch_num);
@@ -3511,6 +3536,21 @@ int exynos_pcie_rc_poweron(int ch_num)
 	dev_dbg(dev, "end poweron, state: %d\n", exynos_pcie->state);
 	logbuffer_log(exynos_pcie->log, "end poweron, state: %d\n", exynos_pcie->state);
 	mutex_unlock(&exynos_pcie->power_onoff_lock);
+
+	if (exynos_pcie->ch_num == 1) {
+		void __iomem *cmu_addr;
+		u32 cmu_val;
+
+		cmu_addr = ioremap(0x14400800, 0x4);
+		cmu_val = readl(cmu_addr);
+
+		/* Enable automatic clock gating on OSCCLK */
+		cmu_val |= BIT(28);
+		writel(cmu_val, cmu_addr);
+		logbuffer_log(exynos_pcie->log, "Enable automatic clock gating on OSCCLK");
+
+		iounmap(cmu_addr);
+	}
 
 	return 0;
 

@@ -33,7 +33,6 @@ extern void rvh_set_iowait_pixel_mod(void *data, struct task_struct *p, struct r
 				     int *should_iowait_boost);
 extern void rvh_select_task_rq_rt_pixel_mod(void *data, struct task_struct *p, int prev_cpu,
 					    int sd_flag, int wake_flags, int *new_cpu);
-extern void rvh_tick_entry_pixel_mod(void *data, struct rq *rq);
 extern void vh_scheduler_tick_pixel_mod(void *data, struct rq *rq);
 extern void vh_sched_switch_pixel_mod(void *data, bool preempt, struct task_struct *prev,
 				      struct task_struct *next, unsigned int prev_state);
@@ -429,10 +428,6 @@ static int vh_sched_init(void)
 		return ret;
 
 	ret = register_trace_android_rvh_select_task_rq_rt(rvh_select_task_rq_rt_pixel_mod, NULL);
-	if (ret)
-		return ret;
-
-	ret = register_trace_android_rvh_tick_entry(rvh_tick_entry_pixel_mod, NULL);
 	if (ret)
 		return ret;
 

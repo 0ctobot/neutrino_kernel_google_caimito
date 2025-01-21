@@ -18,9 +18,6 @@ extern unsigned long cpu_util(int cpu);
 extern unsigned long task_util(struct task_struct *p);
 extern int cpu_is_idle(int cpu);
 extern int sched_cpu_idle(int cpu);
-extern bool get_prefer_high_cap(struct task_struct *p);
-extern void set_prefer_high_cap(struct task_struct *p, bool val);
-
 extern int ___update_load_sum(u64 now, struct sched_avg *sa, unsigned long load,
 			      unsigned long runnable, int running);
 extern void ___update_load_avg(struct sched_avg *sa, unsigned long load);
@@ -425,7 +422,7 @@ void rvh_select_task_rq_rt_pixel_mod(void *data, struct task_struct *p, int prev
 		}
 	}
 
-	set_prefer_high_cap(p, sync && this_cpu >= pixel_cluster_start_cpu[1]);
+	set_auto_prefer_high_cap(p, sync && this_cpu >= pixel_cluster_start_cpu[1]);
 
 	target = find_lowest_rq(p, &backup_mask);
 
@@ -457,7 +454,7 @@ out_unlock:
 out:
 	trace_sched_select_task_rq_rt(p, task_util(p), prev_cpu, target, *new_cpu, sync_wakeup);
 
-	set_prefer_high_cap(p, false);
+	set_auto_prefer_high_cap(p, false);
 
 	return;
 }

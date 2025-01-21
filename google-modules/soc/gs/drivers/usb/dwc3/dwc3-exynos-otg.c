@@ -141,6 +141,13 @@ void dwc3_exynos_set_role(struct dwc3_otg *dotg) {
 	if (dotg->desired_role_kn)
 		sysfs_notify_dirent(dotg->desired_role_kn);
 
+	if (dotg->pm_qos_int_val) {
+		if (new_role != USB_ROLE_NONE)
+			exynos_pm_qos_update_request(&dotg->pm_qos_int_req, dotg->pm_qos_int_val);
+		else
+			exynos_pm_qos_update_request(&dotg->pm_qos_int_req, 0);
+	}
+
 	schedule_work(&dotg->work);
 }
 
@@ -454,7 +461,7 @@ int dwc3_otg_start_gadget(struct dwc3_otg *dotg, int on)
 		device_unlock(&dwc->gadget->dev);
 
 		mutex_lock(&dotg->lock);
-		pm_runtime_put_sync(dev);
+		pm_runtime_put_sync_suspend(dev);
 		exynos->phy_owner_bits &= ~DWC3_EXYNOS_PHY_OWNER_USB;
 		mutex_unlock(&dotg->lock);
 
@@ -635,41 +642,6 @@ static int dwc3_otg_pm_notifier(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
-static int psy_changed(struct notifier_block *nb, unsigned long evt, void *ptr)
-{
-	struct dwc3_otg *dotg = container_of(nb, struct dwc3_otg, psy_notifier);
-	struct power_supply *psy = ptr;
-
-	if (!strstr(psy->desc->name, "usb") || evt != PSY_EVENT_PROP_CHANGED)
-		return NOTIFY_OK;
-
-	if (dotg->dwc->gadget->state == USB_STATE_CONFIGURED && !dotg->usb_charged) {
-		dotg->usb_charged = true;
-		if (dotg->dwc->speed >= DWC3_DSTS_SUPERSPEED) {
-			if (dotg->pm_qos_int_usb3_val) {
-				dev_dbg(dotg->dwc->dev, "pm_qos set value = %d\n",
-					dotg->pm_qos_int_usb3_val);
-				exynos_pm_qos_update_request(&dotg->pm_qos_int_req,
-							     dotg->pm_qos_int_usb3_val);
-			}
-		} else {
-			if (dotg->pm_qos_int_usb2_val) {
-				dev_dbg(dotg->dwc->dev, "pm_qos set value = %d\n",
-					dotg->pm_qos_int_usb2_val);
-				exynos_pm_qos_update_request(&dotg->pm_qos_int_req,
-							     dotg->pm_qos_int_usb2_val);
-			}
-		}
-	} else if (dotg->dwc->gadget->state != USB_STATE_CONFIGURED && dotg->usb_charged) {
-		dotg->usb_charged = false;
-		dev_dbg(dotg->dwc->dev, "clear pm_qos value\n");
-		if (dotg->pm_qos_int_usb2_val || dotg->pm_qos_int_usb3_val)
-			exynos_pm_qos_update_request(&dotg->pm_qos_int_req, 0);
-	}
-
-	return NOTIFY_OK;
-}
-
 int dwc3_exynos_otg_init(struct dwc3 *dwc, struct dwc3_exynos *exynos)
 {
 	struct dwc3_otg *dotg;
@@ -682,17 +654,11 @@ int dwc3_exynos_otg_init(struct dwc3 *dwc, struct dwc3_exynos *exynos)
 	dotg->dwc = dwc;
 	dotg->exynos = exynos;
 
-	ret = of_property_read_u32(exynos->dev->of_node, "usb-pm-qos-usb2-int",
-				   &dotg->pm_qos_int_usb2_val);
-
-	ret = of_property_read_u32(exynos->dev->of_node, "usb-pm-qos-usb3-int",
-				   &dotg->pm_qos_int_usb3_val);
-
+	ret = of_property_read_u32(exynos->dev->of_node, "usb-pm-qos-int", &dotg->pm_qos_int_val);
 	if (ret < 0) {
 		dev_err(dwc->dev, "couldn't read usb-pm-qos-int %s node, error = %d\n",
 			dwc->dev->of_node->name, ret);
-		dotg->pm_qos_int_usb2_val = 0;
-		dotg->pm_qos_int_usb3_val = 0;
+		dotg->pm_qos_int_val = 0;
 	} else {
 		exynos_pm_qos_add_request(&dotg->pm_qos_int_req,
 					  PM_QOS_DEVICE_THROUGHPUT, 0);
@@ -721,11 +687,6 @@ int dwc3_exynos_otg_init(struct dwc3 *dwc, struct dwc3_exynos *exynos)
 	if (ret)
 		dev_err(dwc->dev, "failed register reboot notifier\n");
 
-	dotg->psy_notifier.notifier_call = psy_changed;
-	ret = power_supply_reg_notifier(&dotg->psy_notifier);
-	if (ret)
-		dev_err(dwc->dev, "failed register power supply notifier\n");
-
 	/* Make dwc3_otg accessible after member variable initialization completes */
 	exynos->dotg = dotg;
 
@@ -748,7 +709,6 @@ void dwc3_exynos_otg_exit(struct dwc3 *dwc, struct dwc3_exynos *exynos)
 {
 	struct dwc3_otg *dotg = exynos->dotg;
 
-	power_supply_unreg_notifier(&dotg->psy_notifier);
 	gvotable_destroy_election(dotg->ssphy_restart_votable);
 	sysfs_put(dotg->desired_role_kn);
 	unregister_pm_notifier(&dotg->pm_nb);

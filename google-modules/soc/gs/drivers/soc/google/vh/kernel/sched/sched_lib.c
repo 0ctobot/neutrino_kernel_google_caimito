@@ -22,6 +22,9 @@ extern unsigned int vendor_sched_priority_task_boost_value;
 char priority_task_name[LIB_PATH_LENGTH];
 DEFINE_SPINLOCK(priority_task_name_lock);
 
+char prefer_idle_task_name[LIB_PATH_LENGTH];
+DEFINE_SPINLOCK(prefer_idle_task_name_lock);
+
 static DEFINE_MUTEX(__sched_lib_name_mutex);
 
 ssize_t sched_lib_name_store(struct file *filp,
@@ -175,4 +178,39 @@ void vh_set_task_comm_pixel_mod(void *data, struct task_struct *p)
 			}
 		}
 	}
+}
+
+int set_prefer_idle_task_name(void)
+{
+	char tmp[LIB_PATH_LENGTH];
+	char *tok, *str;
+	struct task_struct *p, *t;
+	int ret = -1;
+
+	spin_lock(&prefer_idle_task_name_lock);
+	strlcpy(tmp, prefer_idle_task_name, LIB_PATH_LENGTH);
+	spin_unlock(&prefer_idle_task_name_lock);
+
+	if (*tmp != '\0') {
+		str = tmp;
+
+		while (1) {
+			tok = strsep(&str, ",");
+
+			if (tok == NULL)
+				break;
+
+			rcu_read_lock();
+			for_each_process_thread(p, t) {
+				if (strstr(t->comm, tok) != NULL) {
+					get_vendor_task_struct(t)->prefer_idle = true;
+					ret = 0;
+					break;
+				}
+			}
+			rcu_read_unlock();
+		}
+	}
+
+	return ret;
 }

@@ -24,6 +24,21 @@
 #define RBL_LOAD_STR		"runnable"
 #endif
 
+#if !defined(_SCHED_CPU_CANDIDATES)
+#define _SCHED_CPU_CANDIDATES
+enum cpu_candidates {
+	IDLE_FIT = 0,
+	IDLE_UNFIT,
+	UNIMPORTANT_FIT,
+	UNIMPORTANT_UNFIT,
+	MAX_SPARE_CAP,
+	PACKING,
+	IDLE_UNPREFERRED,
+	MAX_SPARE_CAP_RUNNING_RT,
+	CC_MAX
+};
+#endif
+
 TRACE_EVENT(sched_pelt_cfs,
 
 	TP_PROTO(int cpu, char *path, const struct sched_avg *avg),
@@ -303,13 +318,9 @@ TRACE_EVENT(set_cpus_allowed_by_task,
 TRACE_EVENT(sched_find_energy_efficient_cpu,
 
 	TP_PROTO(struct task_struct *tsk, bool prefer_idle, bool prefer_fit,
-		 unsigned long task_importance, cpumask_t *idle_fit, cpumask_t *idle_unfit,
-		 cpumask_t *unimportant_fit, cpumask_t *unimportant_unfit, cpumask_t *packing,
-		 cpumask_t *max_spare_cap, cpumask_t *idle_unpreferred, int best_energy_cpu),
+		 unsigned long task_importance, cpumask_t *candidate_mask, int best_energy_cpu),
 
-	TP_ARGS(tsk, prefer_idle, prefer_fit, task_importance, idle_fit, idle_unfit,
-		unimportant_fit, unimportant_unfit, packing, max_spare_cap, idle_unpreferred,
-		best_energy_cpu),
+	TP_ARGS(tsk, prefer_idle, prefer_fit, task_importance, candidate_mask, best_energy_cpu),
 
 	TP_STRUCT__entry(
 		__array(char,		comm, TASK_COMM_LEN)
@@ -333,13 +344,13 @@ TRACE_EVENT(sched_find_energy_efficient_cpu,
 		__entry->prefer_idle       = prefer_idle;
 		__entry->prefer_fit        = prefer_fit;
 		__entry->task_importance   = task_importance;
-		__entry->idle_fit          = *idle_fit->bits;
-		__entry->idle_unfit        = *idle_unfit->bits;
-		__entry->unimportant_fit   = *unimportant_fit->bits;
-		__entry->unimportant_unfit = *unimportant_unfit->bits;
-		__entry->packing           = *packing->bits;
-		__entry->max_spare_cap     = *max_spare_cap->bits;
-		__entry->idle_unpreferred  = *idle_unpreferred->bits;
+		__entry->idle_fit          = *candidate_mask[IDLE_FIT].bits;
+		__entry->idle_unfit        = *candidate_mask[IDLE_UNFIT].bits;
+		__entry->unimportant_fit   = *candidate_mask[UNIMPORTANT_FIT].bits;
+		__entry->unimportant_unfit = *candidate_mask[UNIMPORTANT_UNFIT].bits;
+		__entry->packing           = *candidate_mask[PACKING].bits;
+		__entry->max_spare_cap     = *candidate_mask[MAX_SPARE_CAP].bits;
+		__entry->idle_unpreferred  = *candidate_mask[IDLE_UNPREFERRED].bits;
 		__entry->best_energy_cpu   = best_energy_cpu;
 		),
 

@@ -3210,7 +3210,7 @@ static void exynos_pcie_setup_rc(struct dw_pcie_rp *pp)
 	exynos_pcie_rc_rd_own_conf(pp, pcie_cap_off + PCI_EXP_DEVCTL2, 4, &val);
 	/* pr_info("%s:read:device_ctrl_status2(0x98)=0x%x\n", __func__, val); */
 	val &= ~(PCIE_CAP_CPL_TIMEOUT_VAL_MASK);
-	val |= PCIE_CAP_CPL_TIMEOUT_VAL_44MS_DEFALT;
+	val |= PCIE_CAP_CPL_TIMEOUT_VAL_44MS_DEFAULT;
 	exynos_pcie_rc_wr_own_conf(pp, pcie_cap_off + PCI_EXP_DEVCTL2, 4, val);
 }
 

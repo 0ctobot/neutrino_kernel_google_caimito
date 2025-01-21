@@ -12,13 +12,8 @@ ufs-exynos-gs-$(CONFIG_SCSI_UFS_CRYPTO) += ufs-pixel-crypto.o
 ccflags-y += -I $(srctree)/drivers/ufs
 
 obj-$(CONFIG_SCSI_UFS_PIXEL_FIPS140) += ufs-pixel-fips140.o
-ifeq ($(CONFIG_SOC_GS101),y)
-ufs-pixel-fips140-y += ufs-pixel-fips-swkeys.o
-else
-ufs-pixel-fips140-y += ufs-pixel-fips.o
-endif
-ufs-pixel-fips140-y += ufs-pixel-fips_sha256.o ufs-pixel-fips140-refs.o \
-		       ufs-pixel-fips-exynos.o
+ufs-pixel-fips140-y += ufs-pixel-fips.o ufs-pixel-fips_sha256.o \
+				ufs-pixel-fips140-refs.o ufs-pixel-fips-exynos.o
 # Use -DBUILD_FIPS140_KO to disable dynamic code patching as that would
 # invalidate the hash of the module's .text section
 CFLAGS_ufs-pixel-fips140.o += -DBUILD_FIPS140_KO

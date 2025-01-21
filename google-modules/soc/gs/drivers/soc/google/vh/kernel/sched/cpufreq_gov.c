@@ -846,7 +846,6 @@ apply_boost:
 	sg_cpu->util = uclamp_rq_util_with(cpu_rq(sg_cpu->cpu), boost, NULL);
 }
 
-#if IS_ENABLED(USE_UPDATE_SINGLE)
 #if IS_ENABLED(CONFIG_NO_HZ_COMMON)
 static bool sugov_cpu_is_busy(struct sugov_cpu *sg_cpu)
 {
@@ -859,7 +858,6 @@ static bool sugov_cpu_is_busy(struct sugov_cpu *sg_cpu)
 #else
 static inline bool sugov_cpu_is_busy(struct sugov_cpu *sg_cpu) { return false; }
 #endif /* CONFIG_NO_HZ_COMMON */
-#endif
 
 /*
  * Make sugov_should_update_freq() ignore the rate limit when DL
@@ -981,7 +979,27 @@ sugov_update_shared(struct update_util_data *hook, u64 time, unsigned int flags)
 	ignore_dl_rate_limit(sg_cpu);
 
 	if (sugov_should_update_freq(sg_cpu->sg_policy, time)) {
+		bool busy;
+
 		next_f = sugov_next_freq_shared(sg_cpu, time);
+
+		/* Limits may have changed, don't skip frequency update */
+		busy = !sg_cpu->sg_policy->need_freq_update && sugov_cpu_is_busy(sg_cpu);
+
+		/*
+		 * Do not reduce the frequency if a single cpu policy has not
+		 * been idle recently, as the reduction is likely to be
+		 * premature then.
+		 */
+		if (static_branch_likely(&auto_dvfs_headroom_enable) &&
+		    cpumask_weight(sg_cpu->sg_policy->policy->cpus) == 1 &&
+		    !uclamp_rq_is_capped(cpu_rq(sg_cpu->cpu)) &&
+		    busy && next_f < sg_cpu->sg_policy->next_freq) {
+			next_f = sg_cpu->sg_policy->next_freq;
+
+			/* Reset cached freq as next_freq has changed */
+			sg_cpu->sg_policy->cached_raw_freq = sg_cpu->sg_policy->prev_cached_raw_freq;
+		}
 
 		if (!sugov_update_next_freq(sg_cpu->sg_policy, time, next_f))
 			goto unlock;
