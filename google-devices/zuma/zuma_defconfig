@@ -209,6 +209,7 @@ CONFIG_SERIAL_EXYNOS=m
 
 # private/google-modules/soc/gs/drivers/ufs/Kconfig
 CONFIG_SCSI_UFS_EXYNOS_GS=m
+CONFIG_SCSI_UFS_CRYPTO_SW_KEYS_MODE=y
 CONFIG_SCSI_UFS_PIXEL_FIPS140=m
 
 # private/google-modules/soc/gs/drivers/usb/Kconfig
