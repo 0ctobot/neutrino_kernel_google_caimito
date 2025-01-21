@@ -2677,7 +2677,7 @@ int goog_process_vendor_cmd(struct goog_touch_interface *gti, enum gti_cmd_type 
 		GOOG_DBG(gti, "unsupported request cmd_type %#x!\n", cmd_type);
 		ret = 0;
 	} else if (ret == -ESRCH) {
-		GOOG_WARN(gti, "No handler for cmd_type %#x!\n", cmd_type);
+		GOOG_DBG(gti, "No handler for cmd_type %#x!\n", cmd_type);
 		ret = 0;
 	}
 
