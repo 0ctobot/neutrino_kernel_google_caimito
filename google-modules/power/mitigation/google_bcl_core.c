@@ -748,10 +748,10 @@ static int google_bcl_register_zone(struct bcl_device *bcl_dev, int idx, const c
 	INIT_WORK(&zone->irq_triggered_work, google_irq_triggered_work);
 	INIT_DELAYED_WORK(&zone->warn_work, google_warn_work);
 	if (idx == SMPL_WARN) {
-		latched_intr_flag = IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING;
+		latched_intr_flag = IRQF_TRIGGER_FALLING;
 		zone->polarity = 0;
 	} else {
-		latched_intr_flag = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING;
+		latched_intr_flag = IRQF_TRIGGER_RISING;
 		zone->polarity = 1;
 	}
 	latched_intr_flag = latched_intr_flag | default_intr_flag;
