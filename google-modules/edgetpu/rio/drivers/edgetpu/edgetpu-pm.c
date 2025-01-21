@@ -104,7 +104,7 @@ int edgetpu_pm_set_freq_limits(struct edgetpu_dev *etdev, u32 *min_freq, u32 *ma
 		limits_updated = true;
 	}
 
-	if (limits_updated && (edgetpu_always_on() || !edgetpu_poll_block_off(etdev)))
+	if (limits_updated && (edgetpu_always_on() || !edgetpu_soc_pm_is_block_off(etdev)))
 		ret = mobile_pwr_update_freq_limits_locked(etdev);
 
 	mutex_unlock(&etdev->pm->freq_limits_lock);
@@ -119,7 +119,8 @@ static int mobile_pwr_state_set_locked(struct edgetpu_dev *etdev, u64 val)
 
 	dev_dbg(dev, "Power state to %llu\n", val);
 
-	if (val > TPU_OFF && (edgetpu_always_on() || !edgetpu_poll_block_off(etdev))) {
+	if (val > EDGETPU_OFF_STATE &&
+	    (edgetpu_always_on() || !edgetpu_soc_pm_is_block_off(etdev))) {
 		ret = pm_runtime_get_sync(dev);
 		if (ret) {
 			pm_runtime_put_noidle(dev);
@@ -130,7 +131,8 @@ static int mobile_pwr_state_set_locked(struct edgetpu_dev *etdev, u64 val)
 
 	/* TODO(b/308903519): Implement set rate code. */
 
-	if (val == TPU_OFF && (edgetpu_always_on() || !edgetpu_poll_block_off(etdev))) {
+	if (val == EDGETPU_OFF_STATE &&
+	    (edgetpu_always_on() || !edgetpu_soc_pm_is_block_off(etdev))) {
 		ret = pm_runtime_put_sync(dev);
 		if (ret) {
 			dev_err(dev, "%s: pm_runtime_put_sync returned %d\n", __func__, ret);
@@ -291,8 +293,11 @@ static int mobile_power_up(void *data)
 				break;
 			usleep_range(BLOCK_DOWN_MIN_DELAY_US, BLOCK_DOWN_MAX_DELAY_US);
 		} while (++times < BLOCK_DOWN_RETRY_TIMES);
-		if (times >= BLOCK_DOWN_RETRY_TIMES && !edgetpu_poll_block_off(etdev))
+		if (times >= BLOCK_DOWN_RETRY_TIMES && !edgetpu_poll_block_off(etdev)) {
+			etdev_err(etdev, "power up failed: device not in correct power state");
+			edgetpu_soc_pm_dump_block_state(etdev);
 			return -EAGAIN;
+		}
 	}
 
 	etdev_info(etdev, "Powering up\n");
@@ -382,8 +387,14 @@ static void mobile_firmware_down(struct edgetpu_dev *etdev)
 	if (!edgetpu_always_on())
 		ret = edgetpu_kci_shutdown(etdev->etkci);
 
+	if (!ret)
+		return;
+
+	etdev_warn(etdev, "firmware shutdown failed (%d), resetting", ret);
+	edgetpu_firmware_watchdog_restart(etdev, true);
+	ret = edgetpu_kci_shutdown(etdev->etkci);
 	if (ret)
-		etdev_warn(etdev, "firmware shutdown failed: %d", ret);
+		etdev_warn(etdev, "firmware shutdown retry failed (%d)", ret);
 }
 
 static int mobile_power_down(void *data)
@@ -396,7 +407,7 @@ static int mobile_power_down(void *data)
 
 	edgetpu_sw_wdt_stop(etdev);
 
-	if (!edgetpu_always_on() && edgetpu_poll_block_off(etdev)) {
+	if (!edgetpu_always_on() && edgetpu_soc_pm_is_block_off(etdev)) {
 		etdev_dbg(etdev, "Device already off, skipping shutdown\n");
 		return 0;
 	}
@@ -522,7 +533,7 @@ int edgetpu_pm_create(struct edgetpu_dev *etdev)
 		return -ENOMEM;
 
 	mutex_init(&etdev->pm->policy_lock);
-	etdev->pm->curr_policy = TPU_POLICY_MAX;
+	etdev->pm->curr_policy = etdev->max_active_state;
 	etdev->pm->gpm = gcip_pm_create(&args);
 	if (IS_ERR(etdev->pm->gpm)) {
 		ret = PTR_ERR(etdev->pm->gpm);

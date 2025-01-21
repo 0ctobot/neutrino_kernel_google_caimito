@@ -143,8 +143,12 @@ void edgetpu_firmware_set_status_locked(struct edgetpu_dev *etdev, enum gcip_fw_
 int edgetpu_firmware_restart_locked(struct edgetpu_dev *etdev,
 				    bool force_reset);
 
-/* Called on software watchdog timeout to restart firmware. */
-void edgetpu_firmware_watchdog_restart(struct edgetpu_dev *etdev);
+/*
+ * Called on software watchdog timeout or crash/lockup recovery to restart firmware.
+ * @in_powerdown: if true we're in the power down sequence and must leave power state alone,
+ *    we are called to restart firmware so it can execute its graceful shutdown sequence.
+ */
+void edgetpu_firmware_watchdog_restart(struct edgetpu_dev *etdev, bool in_powerdown);
 
 /* Returns the current firmware image name. */
 ssize_t edgetpu_firmware_get_name(struct edgetpu_dev *etdev, char *buf,

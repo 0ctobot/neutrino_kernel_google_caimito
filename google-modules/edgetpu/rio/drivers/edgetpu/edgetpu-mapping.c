@@ -175,3 +175,39 @@ u64 edgetpu_mappings_encode_gcip_map_flags(edgetpu_map_flag_t flags, unsigned lo
 
 	return gcip_iommu_encode_gcip_map_flags(dir, coherent, dma_attrs, restrict_iova);
 }
+
+/*
+ * Compare the range of device addresses for @map with @iova.
+ *
+ * Returns -1, 0, 1 if the @map address range is "less than", "equal to", or "greater than" the
+ * iova, respectively.
+ */
+static int iova_in_mapping(struct edgetpu_mapping *map, tpu_addr_t iova)
+{
+	if (map->gcip_mapping->device_address + map->gcip_mapping->size <= iova)
+		return -1;
+	if (iova < map->gcip_mapping->device_address)
+		return 1;
+	return 0;
+}
+
+struct edgetpu_mapping *
+edgetpu_mapping_find_iova_range(struct edgetpu_mapping_root *mappings, tpu_addr_t iova)
+{
+	struct rb_node *node = mappings->rb.rb_node;
+
+	while (node) {
+		struct edgetpu_mapping *map =
+			container_of(node, struct edgetpu_mapping, node);
+		const int cmp = iova_in_mapping(map, iova);
+
+		if (cmp > 0)
+			node = node->rb_left;
+		else if (cmp < 0)
+			node = node->rb_right;
+		else
+			return map;
+	}
+
+	return NULL;
+}

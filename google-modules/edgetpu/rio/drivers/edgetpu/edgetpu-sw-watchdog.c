@@ -16,9 +16,32 @@
 #include "edgetpu-internal.h"
 #include "edgetpu-kci.h"
 #include "edgetpu-sw-watchdog.h"
+#include "edgetpu-pm.h"
+#include "edgetpu.h"
 
 static bool wdt_disable;
 module_param(wdt_disable, bool, 0660);
+
+/* Worker to handle firmware crash reset. */
+static void sw_crash_reset_work(struct work_struct *work)
+{
+	struct edgetpu_sw_wdt_action_work *crash_reset_work =
+		container_of(work, struct edgetpu_sw_wdt_action_work, work);
+	struct edgetpu_dev *etdev = crash_reset_work->etdev;
+	int ret;
+
+	/* Take a PM reference, prevent power down while FW is in crashed state. */
+	ret = edgetpu_pm_get(etdev);
+	if (ret) {
+		etdev_warn(etdev, "device off, firmware crash restart canceled");
+		return;
+	}
+
+	etdev_err(etdev, "firmware crash restart");
+	edgetpu_firmware_watchdog_restart(etdev, false);
+	edgetpu_pm_put(etdev);
+	edgetpu_fatal_error_notify(etdev, EDGETPU_ERROR_FW_CRASH);
+}
 
 /* Worker to handle sw watchdog timeout. */
 static void sw_wdt_handler_work(struct work_struct *work)
@@ -32,7 +55,7 @@ static void sw_wdt_handler_work(struct work_struct *work)
 	edgetpu_debug_dump_cpu_regs(etdev);
 	edgetpu_debug_dump(etdev, DUMP_REASON_SW_WATCHDOG_TIMEOUT);
 	edgetpu_fatal_error_notify(etdev, EDGETPU_ERROR_WATCHDOG_TIMEOUT);
-	edgetpu_firmware_watchdog_restart(etdev);
+	edgetpu_firmware_watchdog_restart(etdev, false);
 }
 
 static void sw_wdt_start(struct edgetpu_sw_wdt *wdt)
@@ -76,6 +99,24 @@ void edgetpu_watchdog_bite(struct edgetpu_dev *etdev)
 	 */
 	cancel_delayed_work(&etdev->etdev_sw_wdt->dwork);
 	schedule_work(&etdev->etdev_sw_wdt->et_action_work.work);
+}
+
+/* Called by RKCI firmware crash event handler to trigger a TPU block reset. */
+void edgetpu_watchdog_crash_reset(struct edgetpu_dev *etdev)
+{
+	if (!etdev->etdev_sw_wdt)
+		return;
+	/*
+	 * Stop sw wdog delayed worker, to reduce chance this races with a sw wdog timeout reset.
+	 * No sync to prevent RKCI backlog processing delays (worker may be active).
+	 */
+	cancel_delayed_work(&etdev->etdev_sw_wdt->dwork);
+	/*
+	 * The device is currently powered.  It's not safe to take the PM lock here in the RKCI
+	 * worker (potential deadlock), but the worker will take one as soon as it executes.
+	 * The runtime fatal error is sent after reset is invoked to sequence appropriately.
+	 */
+	schedule_work(&etdev->etdev_sw_wdt->crash_reset_work.work);
 }
 
 /*
@@ -122,6 +163,8 @@ int edgetpu_sw_wdt_create(struct edgetpu_dev *etdev, unsigned long active_ms,
 	INIT_DELAYED_WORK(&etdev_sw_wdt->dwork, sw_wdt_work);
 	INIT_WORK(&etdev_sw_wdt->et_action_work.work, sw_wdt_handler_work);
 	etdev_sw_wdt->et_action_work.etdev = etdev;
+	INIT_WORK(&etdev_sw_wdt->crash_reset_work.work, sw_crash_reset_work);
+	etdev_sw_wdt->crash_reset_work.etdev = etdev;
 	etdev_sw_wdt->is_wdt_disabled = wdt_disable;
 	etdev->etdev_sw_wdt = etdev_sw_wdt;
 	return 0;

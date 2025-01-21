@@ -12,7 +12,6 @@
 #include <linux/dma-direction.h>
 #include <linux/dma-mapping.h>
 #include <linux/eventfd.h>
-#include <linux/iommu.h>
 #include <linux/kconfig.h>
 #include <linux/kernel.h>
 #include <linux/kthread.h>
@@ -1444,4 +1443,62 @@ void edgetpu_device_group_untrack_fence_task(struct edgetpu_device_group *group,
 
 out:
 	spin_unlock_irqrestore(&group->pending_cmd_tasks_lock, flags);
+}
+
+/*
+ * Return the group with pasid @pasid for device @etdev, with a reference held on the group, or
+ * NULL if no group with that pasid is found.
+ */
+static struct edgetpu_device_group *get_group_by_pasid(struct edgetpu_dev *etdev, uint pasid)
+{
+	struct edgetpu_device_group *group = NULL;
+	struct edgetpu_device_group *tgroup;
+	struct edgetpu_list_group *g;
+
+	if (pasid == IOMMU_PASID_INVALID || !pasid)
+		return NULL;
+
+	mutex_lock(&etdev->groups_lock);
+	etdev_for_each_group(etdev, g, tgroup) {
+		if (tgroup->etdomain && tgroup->etdomain->pasid == pasid) {
+			group = edgetpu_device_group_get(tgroup);
+			break;
+		}
+	}
+	mutex_unlock(&etdev->groups_lock);
+	return group;
+}
+
+/*
+ * Currently always returns a negative error to indicate caller should proceed with fault error
+ * processing.
+ */
+int edgetpu_device_group_handle_fault(struct edgetpu_dev *etdev, u64 iova, uint pasid)
+{
+	struct edgetpu_device_group *group;
+	struct edgetpu_mapping *map;
+
+	group = get_group_by_pasid(etdev, pasid);
+	if (!group) {
+		etdev_dbg(etdev, "fault iova=%#llx pasid=%u group not found\n", iova, pasid);
+		return -EIO;
+	}
+
+	edgetpu_mapping_lock(&group->host_mappings);
+	map = edgetpu_mapping_find_iova_range(&group->host_mappings, iova);
+	if (!map) {
+		if (EDGETPU_REPORT_PAGE_FAULT_ERRORS)
+			etdev_warn(etdev, "fault iova=%#llx pasid=%u not mapped\n", iova, pasid);
+		else
+			etdev_dbg(etdev, "fault iova=%#llx pasid=%u not mapped\n", iova, pasid);
+		edgetpu_mapping_unlock(&group->host_mappings);
+		edgetpu_device_group_put(group);
+		return -EIO;
+	}
+
+	etdev_warn(etdev, "fault iova=%#llx pasid=%u mapped %s\n", iova, pasid,
+		   edgetpu_dma_dir_rw_s(map->gcip_mapping->dir));
+	edgetpu_mapping_unlock(&group->host_mappings);
+	edgetpu_device_group_put(group);
+	return -EIO;
 }

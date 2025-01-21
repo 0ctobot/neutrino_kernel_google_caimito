@@ -50,4 +50,8 @@
 #define EDGETPU_HAS_FW_DEBUG 0
 #endif
 
+#ifndef EDGETPU_REPORT_PAGE_FAULT_ERRORS
+#define EDGETPU_REPORT_PAGE_FAULT_ERRORS 0
+#endif
+
 #endif /* __EDGETPU_CONFIG_H__ */

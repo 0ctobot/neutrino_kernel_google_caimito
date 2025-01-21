@@ -55,6 +55,9 @@ void edgetpu_soc_pm_lpm_down(struct edgetpu_dev *etdev);
 /* Called after firmware is started on power up. */
 void edgetpu_soc_pm_post_fw_start(struct edgetpu_dev *etdev);
 
+/* Log TPU block power state for debugging.  Control cluster and core may be inaccessible. */
+void edgetpu_soc_pm_dump_block_state(struct edgetpu_dev *etdev);
+
 /*
  * Handle Reverse KCI commands for SoC family.
  * Note: This will get called from the system's work queue.

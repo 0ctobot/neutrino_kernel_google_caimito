@@ -95,7 +95,7 @@
 #define EDGETPU_LPM_IMEM_OPS_SET(etdev, n, value)                                                  \
 	edgetpu_dev_write_32_sync(etdev, EDGETPU_LPM_IMEM_OPS(n), value)
 
-u32 edgetpu_active_states[EDGETPU_NUM_STATES] = {
+static u32 _edgetpu_active_states[EDGETPU_NUM_STATES] = {
 	TPU_ACTIVE_MIN, TPU_ACTIVE_ULTRA_LOW, TPU_ACTIVE_VERY_LOW, TPU_ACTIVE_SUB_LOW,
 	TPU_ACTIVE_LOW, TPU_ACTIVE_MEDIUM,    TPU_ACTIVE_NOM,
 };
@@ -211,6 +211,10 @@ int edgetpu_soc_early_init(struct edgetpu_dev *etdev)
 	etdev->soc_data = devm_kzalloc(&pdev->dev, sizeof(*etdev->soc_data), GFP_KERNEL);
 	if (!etdev->soc_data)
 		return -ENOMEM;
+
+	etdev->num_active_states = EDGETPU_NUM_STATES;
+	etdev->active_states = _edgetpu_active_states;
+	etdev->max_active_state = TPU_ACTIVE_NOM;
 
 	mutex_init(&etdev->soc_data->scenario_lock);
 	ret = gsx01_parse_ssmt(etdev);
@@ -740,6 +744,16 @@ int edgetpu_soc_pm_lpm_up(struct edgetpu_dev *etdev)
 	edgetpu_dev_write_32_sync(etdev, EDGETPU_TOP_CLOCK_GATE_CONTROL_CSR, 3);
 
 	return 0;
+}
+
+/* Log TPU block power state for debugging.  Control cluster and core may be inaccessible. */
+void edgetpu_soc_pm_dump_block_state(struct edgetpu_dev *etdev)
+{
+	if (IS_ENABLED(CONFIG_EDGETPU_TEST))
+		return;
+
+	if (etdev->soc_data->pmu_status)
+		etdev_warn(etdev, "pmu_status=%#x\n", readl(etdev->soc_data->pmu_status));
 }
 
 int edgetpu_soc_pm_init(struct edgetpu_dev *etdev)

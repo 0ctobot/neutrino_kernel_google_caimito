@@ -171,6 +171,13 @@ struct edgetpu_dev {
 	uint num_ifaces;		   /* Number of device interfaces */
 	uint num_cores; /* Number of cores */
 	uint num_telemetry_buffers; /* Number of telemetry buffers */
+        /*
+         * Available frequencies the TPU can operate at.
+         * Initialized in edgetpu_soc_early_init() and will not change after.
+         */
+        u32 num_active_states;
+        u32 *active_states;
+        u32 max_active_state;
 	size_t log_buffer_size;
 	size_t trace_buffer_size;
 	/*

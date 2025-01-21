@@ -143,4 +143,11 @@ size_t edgetpu_mappings_total_size(struct edgetpu_mapping_root *mappings);
 u64 edgetpu_mappings_encode_gcip_map_flags(edgetpu_map_flag_t flags, unsigned long dma_attrs,
 					   bool adjust_dir);
 
+/*
+ * Returns the mapping struct that contains @iova (within the @mappings tree), or NULL if none.
+ * Caller must hold the group->host_mappings lock.
+ */
+struct edgetpu_mapping *
+edgetpu_mapping_find_iova_range(struct edgetpu_mapping_root *mappings, tpu_addr_t iova);
+
 #endif /* __EDGETPU_MAPPING_H__ */

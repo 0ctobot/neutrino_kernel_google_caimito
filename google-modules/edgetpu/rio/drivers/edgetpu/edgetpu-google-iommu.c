@@ -16,6 +16,7 @@
 #include <gcip/gcip-iommu.h>
 
 #include "edgetpu-config.h"
+#include "edgetpu-device-group.h"
 #include "edgetpu-firmware.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-mapping.h"
@@ -54,29 +55,62 @@ bool edgetpu_mmu_is_domain_default_domain(struct edgetpu_dev *etdev,
 	return etdomain == &etiommu->default_etdomain;
 }
 
+#if EDGETPU_REPORT_PAGE_FAULT_ERRORS
+static void report_page_fault(struct edgetpu_dev *etdev, u64 addr, u32 pasid, u32 flags, u32 perm)
+{
+	etdev_warn(etdev, "page fault addr=%#llx pasid=%u flags=%#x perm=%#x\n",
+		   addr, pasid, flags, perm);
+}
+#else
+static void report_page_fault(struct edgetpu_dev *etdev, u64 addr, u32 pasid, u32 flags, u32 perm)
+{
+	etdev_dbg(etdev, "page fault addr=%#llx pasid=%u flags=%#x perm=%#x\n",
+		  addr, pasid, flags, perm);
+}
+#endif
+
+static int edgetpu_check_fault(struct edgetpu_dev *etdev, struct iommu_fault *fault)
+{
+	u64 iova;
+	uint pasid;
+
+	if (fault->type == IOMMU_FAULT_DMA_UNRECOV) {
+		iova = fault->event.addr;
+		pasid = fault->event.pasid;
+	} else if (fault->type == IOMMU_FAULT_PAGE_REQ) {
+		iova = fault->prm.addr;
+		pasid = fault->prm.pasid;
+	} else {
+		return -EAGAIN;
+	}
+
+	edgetpu_device_group_handle_fault(etdev, iova, pasid);
+	return -EAGAIN;
+}
+
 static int edgetpu_iommu_dev_fault_handler(struct iommu_fault *fault, void *token)
 {
 	struct edgetpu_dev *etdev = (struct edgetpu_dev *)token;
 	static DEFINE_RATELIMIT_STATE(rs, DEFAULT_RATELIMIT_INTERVAL, DEFAULT_RATELIMIT_BURST);
 
+	/* Optional debugging info / other fixup/handling for an IOMMU fault. */
+	edgetpu_check_fault(etdev, fault);
+	/* Ignore return, continue on with error reporting. */
+
 	if (!__ratelimit(&rs))
 		return -EAGAIN;
 
 	if (fault->type == IOMMU_FAULT_DMA_UNRECOV) {
-		etdev_warn(etdev, "Unrecoverable IOMMU fault!\n");
-		etdev_warn(etdev, "Reason = %08X\n", fault->event.reason);
-		etdev_warn(etdev, "flags = %08X\n", fault->event.flags);
-		etdev_warn(etdev, "pasid = %08X\n", fault->event.pasid);
-		etdev_warn(etdev, "perms = %08X\n", fault->event.perm);
-		etdev_warn(etdev, "addr = %llX\n", fault->event.addr);
-		etdev_warn(etdev, "fetch_addr = %llX\n", fault->event.fetch_addr);
+		if (fault->event.reason == IOMMU_FAULT_REASON_PTE_FETCH)
+			report_page_fault(etdev, fault->event.addr, fault->event.pasid,
+					  fault->event.flags, fault->event.perm);
+		else
+			etdev_warn(etdev, "iommu fault reason=%u addr=%#llx pasid=%u flags=%#x perm=%#x fetch_addr=%llx\n",
+				   fault->event.reason, fault->event.addr, fault->event.pasid,
+				   fault->event.flags, fault->event.perm, fault->event.fetch_addr);
 	} else if (fault->type == IOMMU_FAULT_PAGE_REQ) {
-		etdev_dbg(etdev, "IOMMU page request fault!\n");
-		etdev_dbg(etdev, "flags = %08X\n", fault->prm.flags);
-		etdev_dbg(etdev, "pasid = %08X\n", fault->prm.pasid);
-		etdev_dbg(etdev, "grpid = %08X\n", fault->prm.grpid);
-		etdev_dbg(etdev, "perms = %08X\n", fault->prm.perm);
-		etdev_dbg(etdev, "addr = %llX\n", fault->prm.addr);
+		report_page_fault(etdev, fault->prm.addr, fault->prm.pasid, fault->prm.flags,
+				  fault->prm.perm);
 	}
 	/* Tell the IOMMU driver to carry on */
 	return -EAGAIN;

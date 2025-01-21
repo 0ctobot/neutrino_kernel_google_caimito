@@ -31,6 +31,8 @@ struct edgetpu_sw_wdt {
 	unsigned long hrtbeat_dormant;
 	/* Work information for watchdog bite. */
 	struct edgetpu_sw_wdt_action_work et_action_work;
+	/* Work information for watchdog crash reset. */
+	struct edgetpu_sw_wdt_action_work crash_reset_work;
 	/* Flag to mark that watchdog is disabled. */
 	bool is_wdt_disabled;
 	/*
@@ -70,5 +72,8 @@ void edgetpu_sw_wdt_dec_active_ref(struct edgetpu_dev *etdev);
  * Trigger immediate sw watchdog timeout.  Called on fatal errors.
  */
 void edgetpu_watchdog_bite(struct edgetpu_dev *etdev);
+
+/* Called by RKCI firmware crash event handler to trigger a TPU block reset. */
+void edgetpu_watchdog_crash_reset(struct edgetpu_dev *etdev);
 
 #endif /* __EDGETPU_SW_WDT_H__ */

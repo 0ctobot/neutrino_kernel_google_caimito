@@ -470,4 +470,12 @@ int edgetpu_device_group_track_fence_task(struct edgetpu_device_group *group,
 void edgetpu_device_group_untrack_fence_task(struct edgetpu_device_group *group,
 					     struct task_struct *task);
 
+/*
+ * Handle IOMMU fault: check client mappings for valid IOVA, log status.
+ * Always returns a negative error code to tell caller to propceed with page fault error
+ * processing for now.
+ * TODO(b/264449079): Fault in page if appropriate, tell caller to retry TPU access.
+ */
+int edgetpu_device_group_handle_fault(struct edgetpu_dev *etdev, u64 iova, uint pasid);
+
 #endif /* __EDGETPU_DEVICE_GROUP_H__ */

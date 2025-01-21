@@ -377,6 +377,9 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
 	int ret;
 	struct task_struct *wait_task;
 	struct dma_fence *in_fence;
+	int fence_status;
+	u16 resp_code;
+	u64 resp_data;
 
 	if (!etikv->enabled)
 		return -ENODEV;
@@ -394,12 +397,15 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
 	if (in_fence && !group_to_notify) {
 		etdev_err(etikv->etdev,
 			  "Cannot send a command with an in-fence without an owning device_group");
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_put_in_fence;
 	}
 
 	ikv_resp = kzalloc(sizeof(*ikv_resp), GFP_KERNEL);
-	if (!ikv_resp)
-		return -ENOMEM;
+	if (!ikv_resp) {
+		ret = -ENOMEM;
+		goto err_put_in_fence;
+	}
 
 	ikv_resp->resp = kzalloc(edgetpu_vii_response_packet_size(etikv->etdev), GFP_KERNEL);
 	if (!ikv_resp->resp) {
@@ -451,13 +457,13 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
 	memcpy(args->cmd, cmd, edgetpu_vii_command_packet_size(etikv->etdev));
 
 	/* Send the command immediately if there's no fence to wait on. */
-	if (!in_fence || dma_fence_is_signaled(in_fence)) {
-		if (in_fence)
-			dma_fence_put(in_fence);
+	if (!in_fence || dma_fence_get_status(in_fence) == 1) {
 		ret = do_send_cmd(args);
 		if (ret)
 			goto err_put_out_fence_array;
 		/* If the command was successfully sent, args is no longer needed. */
+		if (in_fence)
+			dma_fence_put(in_fence);
 		kfree(args->cmd);
 		kfree(args);
 		return 0;
@@ -476,6 +482,26 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
 	if (!args->err_resp_awaiter) {
 		ret = -ENOMEM;
 		goto err_put_out_fence_array;
+	}
+
+	fence_status = in_fence ? dma_fence_get_status(in_fence) : 0;
+	if (fence_status < 0) {
+		/*
+		 * If the in-fence has an error status, the command must not be sent.
+		 * Instead enqueue a VII error response which indicates the command failed to send.
+		 *
+		 * Since the `ikv_resp` is being used to track this error response, cleanup is tied
+		 * to the life of the `ikv_resp` and doesn't have to happen here.
+		 */
+		resp_code = VII_RESPONSE_CODE_KERNEL_FENCE_ERROR;
+		resp_data = fence_status;
+		build_awaiter_for_error_resp(etikv, args->err_resp_awaiter, ikv_resp);
+		edgetpu_ikv_process_response(ikv_resp, &resp_code, &resp_data, fence_status);
+		if (in_fence)
+			dma_fence_put(in_fence);
+		kfree(args->cmd);
+		kfree(args);
+		return 0;
 	}
 
 	wait_task = kthread_create(send_cmd_thread_fn, args,
@@ -511,6 +537,9 @@ err_free_ikv_resp_resp:
 	kfree(ikv_resp->resp);
 err_free_ikv_resp:
 	kfree(ikv_resp);
+err_put_in_fence:
+	if (in_fence)
+		dma_fence_put(in_fence);
 	return ret;
 }
 

@@ -44,7 +44,7 @@
 
 #define KCI_TIMEOUT EDGETPU_KCI_TIMEOUT
 
-#elif IS_ENABLED(CONFIG_EDGETPU_TEST)
+#elif IS_ENABLED(CONFIG_EDGETPU_TEST) && !IS_ENABLED(CONFIG_DEBUG_KMEMLEAK)
 /* fake-firmware could respond in a short time */
 #define KCI_TIMEOUT	(200)
 #else

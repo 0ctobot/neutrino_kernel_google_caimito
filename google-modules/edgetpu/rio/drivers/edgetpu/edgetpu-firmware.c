@@ -1204,6 +1204,9 @@ int edgetpu_firmware_restart_locked(struct edgetpu_dev *etdev, bool force_reset)
 	edgetpu_firmware_set_loading(et_fw);
 	edgetpu_sw_wdt_stop(etdev);
 	edgetpu_firmware_reset_boot_stage(et_fw);
+	/* Reset KCI mailbox before starting f/w, don't process anything old.*/
+	edgetpu_mailbox_reset(etdev->etkci->mailbox);
+
 	/*
 	 * Try restarting the firmware first, fall back to normal firmware start
 	 * if this fails.
@@ -1334,14 +1337,16 @@ static const struct attribute_group edgetpu_firmware_attr_group = {
 	.attrs = dev_attrs,
 };
 
-void edgetpu_firmware_watchdog_restart(struct edgetpu_dev *etdev)
+void edgetpu_firmware_watchdog_restart(struct edgetpu_dev *etdev, bool in_powerdown)
 {
 	int ret;
 	struct edgetpu_firmware *et_fw = etdev->firmware;
 
-	/* Don't attempt f/w restart if device is off. */
-	if (!edgetpu_pm_is_powered(etdev))
-		return;
+	if (!in_powerdown) {
+		/* Don't attempt f/w restart if device is off. */
+		if (!edgetpu_pm_is_powered(etdev))
+			return;
+	}
 
 	/*
 	 * Zero the FW state of open mailboxes and enabled pasids so that when the runtime releases
@@ -1350,18 +1355,29 @@ void edgetpu_firmware_watchdog_restart(struct edgetpu_dev *etdev)
 	edgetpu_handshake_clear_fw_state(&etdev->mailbox_manager->open_devices);
 	edgetpu_handshake_clear_fw_state(&etdev->mailbox_manager->enabled_pasids);
 
-	/* Another procedure is loading the firmware, let it do the work. */
-	if (edgetpu_firmware_is_loading(etdev))
-		return;
+	if (!in_powerdown) {
+		/* Another procedure is loading the firmware, let it do the work. */
+		if (edgetpu_firmware_is_loading(etdev))
+			return;
+	}
 
 	/* edgetpu_firmware_lock() here never fails */
 	edgetpu_firmware_lock(etdev);
 
-	ret = edgetpu_firmware_pm_get(et_fw);
-	if (!ret) {
-		ret = edgetpu_firmware_restart_locked(etdev, true);
-		edgetpu_pm_put(etdev);
+	if (!in_powerdown) {
+		ret = edgetpu_firmware_pm_get(et_fw);
+		if (ret)
+			goto out;
 	}
+
+	ret = edgetpu_firmware_restart_locked(etdev, true);
+	if (ret)
+		etdev_warn(etdev, "restart returns %d\n", ret);
+
+	if (!in_powerdown)
+		edgetpu_pm_put(etdev);
+
+out:
 	edgetpu_firmware_unlock(etdev);
 }
 

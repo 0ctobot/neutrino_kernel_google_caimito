@@ -22,7 +22,6 @@
 #include <linux/types.h>
 #include <linux/uidgid.h>
 
-#include <gcip/gcip-config.h>
 #include <gcip/gcip-firmware.h>
 
 #include "edgetpu-config.h"
@@ -315,11 +314,7 @@ int edgetpu_mmap(struct edgetpu_client *client, struct vm_area_struct *vma)
 	/* Mark the VMA's pages as uncacheable. */
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 	/* Disable fancy things to ensure our event counters work. */
-#if GCIP_HAS_VMA_FLAGS_API
 	vm_flags_set(vma, VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP);
-#else
-	vma->vm_flags |= VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP;
-#endif
 
 	/* map all CSRs for debug purpose */
 	if (type == VMA_FULL_CSR) {
@@ -723,9 +718,8 @@ void edgetpu_handle_firmware_crash(struct edgetpu_dev *etdev,
 		etdev_err(etdev, "firmware unrecoverable crash");
 		etdev->firmware_crash_count++;
 		edgetpu_debug_dump(etdev, DUMP_REASON_UNRECOVERABLE_FAULT);
-		edgetpu_fatal_error_notify(etdev, EDGETPU_ERROR_FW_CRASH);
 		/* Restart firmware */
-		edgetpu_watchdog_bite(etdev);
+		edgetpu_watchdog_crash_reset(etdev);
 	} else {
 		etdev_err(etdev, "firmware non-fatal crash event: %u",
 			  crash_type);

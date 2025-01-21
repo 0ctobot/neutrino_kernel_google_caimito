@@ -18,14 +18,14 @@ static u32 edgetpu_devfreq_get_freq_table(void *data, u32 *dvfs_table, u32 max_s
 	int i, j;
 	u32 distinct_freqs = 0;
 
-	for (i = 0; i < EDGETPU_NUM_STATES; i++) {
+	for (i = 0; i < etdev->num_active_states; i++) {
 		/* Ignore the null frequency value. */
-		if (!edgetpu_active_states[i])
+		if (!etdev->active_states[i])
 			continue;
 
 		/* Check if frequency value already exists in dvfs_table[]. */
 		for (j = 0; j < distinct_freqs; j++) {
-			if (dvfs_table[j] == edgetpu_active_states[i])
+			if (dvfs_table[j] == etdev->active_states[i])
 				break;
 		}
 		if (j != distinct_freqs)
@@ -44,8 +44,8 @@ static u32 edgetpu_devfreq_get_freq_table(void *data, u32 *dvfs_table, u32 max_s
 			return 0;
 		}
 
-		/* `edgetpu_active_states` values are already in kHz. */
-		dvfs_table[distinct_freqs++] = edgetpu_active_states[i];
+		/* `etdev->active_states` values are already in kHz. */
+		dvfs_table[distinct_freqs++] = etdev->active_states[i];
 	}
 
 	return distinct_freqs;
