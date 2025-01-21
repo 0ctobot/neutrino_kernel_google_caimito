@@ -639,6 +639,7 @@ struct batt_drv {
 	int aacr_algo;
 	int aacr_min_capacity_rate;
 	int aacr_cliff_capacity_rate;
+	struct mutex aacr_state_lock;
 
 	/* AAFV: Aged Adjusted Float Voltage */
 	enum batt_aafv_state aafv_state;
@@ -3945,6 +3946,7 @@ static u32 aacr_get_capacity(struct batt_drv *batt_drv)
 	if (batt_drv->aacr_state == BATT_AACR_DISABLED)
 		goto exit_done;
 
+	mutex_lock(&batt_drv->aacr_state_lock);
 	if (cycle_count <= batt_drv->aacr_cycle_grace) {
 		batt_drv->aacr_state = BATT_AACR_UNDER_CYCLES;
 	} else {
@@ -3958,6 +3960,7 @@ static u32 aacr_get_capacity(struct batt_drv *batt_drv)
 			capacity = aacr_capacity;
 		}
 	}
+	mutex_unlock(&batt_drv->aacr_state_lock);
 
 exit_done:
 	return (u32)capacity;
@@ -7699,8 +7702,10 @@ static ssize_t aacr_state_store(struct device *dev,
 
 	pr_info("aacr_state: %d -> %d, aacr_algo: %d -> %d\n",
 		batt_drv->aacr_state, state, batt_drv->aacr_algo, algo);
+	mutex_lock(&batt_drv->aacr_state_lock);
 	batt_drv->aacr_state = state;
 	batt_drv->aacr_algo = algo;
+	mutex_unlock(&batt_drv->aacr_state_lock);
 
 	aacr_update_chg_table(batt_drv);
 
@@ -7734,7 +7739,10 @@ static ssize_t aacr_cycle_grace_store(struct device *dev,
 	if (value < 0)
 		return -ERANGE;
 
+	mutex_lock(&batt_drv->aacr_state_lock);
 	batt_drv->aacr_cycle_grace = value;
+	mutex_unlock(&batt_drv->aacr_state_lock);
+
 	return count;
 }
 
@@ -7765,7 +7773,10 @@ static ssize_t aacr_cycle_max_store(struct device *dev,
 	if (value < 0 || value > 3000) /* unexpected cycles */
 		return -ERANGE;
 
+	mutex_lock(&batt_drv->aacr_state_lock);
 	batt_drv->aacr_cycle_max = value;
+	mutex_unlock(&batt_drv->aacr_state_lock);
+
 	return count;
 }
 
@@ -7803,7 +7814,10 @@ static ssize_t aacr_min_capacity_rate_store(struct device *dev,
 	if (ret < 0 || rate > 100 || rate <= 0)
 		return ret;
 
+	mutex_lock(&batt_drv->aacr_state_lock);
 	batt_drv->aacr_min_capacity_rate = rate;
+	mutex_unlock(&batt_drv->aacr_state_lock);
+
 	return count;
 }
 
@@ -7833,7 +7847,10 @@ static ssize_t aacr_cliff_capacity_rate_store(struct device *dev,
 	if(rate > 100 || rate <= 0)
 		return -ERANGE;
 
+	mutex_lock(&batt_drv->aacr_state_lock);
 	batt_drv->aacr_cliff_capacity_rate = rate;
+	mutex_unlock(&batt_drv->aacr_state_lock);
+
 	return count;
 }
 
@@ -7847,6 +7864,72 @@ static ssize_t aacr_cliff_capacity_rate_show(struct device *dev,
 }
 
 static const DEVICE_ATTR_RW(aacr_cliff_capacity_rate);
+
+static ssize_t aacr_profile_store(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t count)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct batt_drv *batt_drv = power_supply_get_drvdata(psy);
+	struct gbms_chg_profile *profile = &batt_drv->chg_profile;
+	u32 cc[GBMS_AACR_DATA_MAX] = { 0 };
+	u32 fd[GBMS_AACR_DATA_MAX] = { 0 };
+	int cnt = 0, batt_id;
+
+	cnt = sscanf(buf, "%d,%u:%u,%u:%u,%u:%u,%u:%u,%u:%u,%u:%u,%u:%u,%u:%u,%u:%u,%u:%u",
+		     &batt_id, &cc[0], &fd[0], &cc[1], &fd[1], &cc[2], &fd[2], &cc[3], &fd[3],
+		     &cc[4], &fd[4], &cc[5], &fd[5], &cc[6], &fd[6], &cc[7], &fd[7],
+		     &cc[8], &fd[8], &cc[9], &fd[9]);
+
+	/* The number entered must be an odd number (include batt_id) */
+	if (cnt % 2 == 0 || cnt < 3)
+		return -ERANGE;
+
+	/* validity check */
+	for (cnt = 0; cnt < GBMS_AACR_DATA_MAX - 1; cnt++) {
+		if (cc[cnt + 1] == 0)
+			break;
+
+		if (cc[cnt] > cc[cnt + 1] || fd[cnt] > fd[cnt + 1])
+			return -ERANGE;
+	}
+
+	if (batt_id == batt_drv->batt_id) {
+		mutex_lock(&batt_drv->aacr_state_lock);
+		memcpy(&profile->aacr_reference_cycles, cc, sizeof(cc));
+		memcpy(&profile->aacr_reference_fade10, fd, sizeof(fd));
+		profile->aacr_nb_limits = (u32)(cnt + 1);
+		mutex_unlock(&batt_drv->aacr_state_lock);
+	}
+
+	return count;
+}
+
+static ssize_t aacr_profile_show(struct device *dev,
+				      struct device_attribute *attr, char *buf)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct batt_drv *batt_drv = power_supply_get_drvdata(psy);
+	struct gbms_chg_profile *profile = &batt_drv->chg_profile;
+	ssize_t cnt = 0;
+	int i;
+
+	if (profile->aacr_nb_limits == 0)
+		return cnt;
+
+	cnt += sysfs_emit_at(buf, cnt, "%d", batt_drv->batt_id);
+
+	for (i = 0; i < profile->aacr_nb_limits; i++)
+		cnt += sysfs_emit_at(buf, cnt, ",%u:%u",
+				     profile->aacr_reference_cycles[i],
+				     profile->aacr_reference_fade10[i]);
+
+	cnt += sysfs_emit_at(buf, cnt, "\n");
+
+	return cnt;
+}
+
+static const DEVICE_ATTR_RW(aacr_profile);
 
 /* AAFV ------------------------------------------------------------------- */
 
@@ -9235,6 +9318,9 @@ static int batt_init_fs(struct batt_drv *batt_drv)
 	ret = device_create_file(&batt_drv->psy->dev, &dev_attr_aacr_cliff_capacity_rate);
 	if (ret)
 		dev_err(&batt_drv->psy->dev, "Failed to create aacr cliff capacity rate\n");
+	ret = device_create_file(&batt_drv->psy->dev, &dev_attr_aacr_profile);
+	if (ret)
+		dev_err(&batt_drv->psy->dev, "Failed to create aacr profile\n");
 	/* aafv */
 	ret = device_create_file(&batt_drv->psy->dev, &dev_attr_aafv_state);
 	if (ret)
@@ -11318,6 +11404,7 @@ static void google_battery_init_work(struct work_struct *work)
 	mutex_init(&batt_drv->cc_data.lock);
 	mutex_init(&batt_drv->bpst_state.lock);
 	mutex_init(&batt_drv->hda_tz_lock);
+	mutex_init(&batt_drv->aacr_state_lock);
 	mutex_init(&batt_drv->aafv_state_lock);
 
 	ret = of_property_read_u32(node, "google,batt-init-delay", &init_delay_ms);

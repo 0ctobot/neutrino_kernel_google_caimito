@@ -5687,6 +5687,17 @@ static void google_charger_init_work(struct work_struct *work)
 	if (ret == -EPROBE_DEFER)
 		goto retry_init_work;
 
+	/* pass logbuffer_bd addr to google_battery to log AACP */
+	if (chg_drv->bd_state.bd_log) {
+		ret = GPSY_SET_INT64_PROP(chg_drv->bat_psy,
+					 GBMS_PROP_LOGBUFFER_BD,
+					 chg_drv->bd_state.bd_log);
+		if (ret == -EAGAIN)
+			goto retry_init_work;
+		if (ret < 0)
+			pr_info("send logbuffer_bd addr failed %d", ret);
+	}
+
 	/* PPS negotiation handled in google_charger */
 	if (!chg_drv->tcpm_psy) {
 		pr_info("PPS not available\n");
@@ -5739,17 +5750,6 @@ static void google_charger_init_work(struct work_struct *work)
 	ret = power_supply_reg_notifier(&chg_drv->psy_nb);
 	if (ret < 0)
 		pr_err("Cannot register power supply notifer, ret=%d\n", ret);
-
-	/* pass logbuffer_bd addr to google_battery to log AACP */
-	if (chg_drv->bd_state.bd_log) {
-		ret = GPSY_SET_INT64_PROP(chg_drv->bat_psy,
-					 GBMS_PROP_LOGBUFFER_BD,
-					 chg_drv->bd_state.bd_log);
-		if (ret == -EAGAIN)
-			goto retry_init_work;
-		if (ret < 0)
-			pr_info("send logbuffer_bd addr failed %d", ret);
-	}
 
 	chg_drv->init_done = true;
 	pr_info("google_charger chg=%d bat=%d wlc=%d usb=%d ext=%d tcpm=%d init_work done\n",
