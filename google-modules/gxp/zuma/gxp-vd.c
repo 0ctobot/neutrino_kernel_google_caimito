@@ -1664,6 +1664,12 @@ void gxp_vd_release_vmbox(struct gxp_dev *gxp, struct gxp_virtual_device *vd)
 	uint core_list;
 	int ret;
 
+	/*
+	 * We should increase the refcount of @vd because @gxp->vd_semaphore may be released
+	 * by gxp_vd_generate_debug_dump() below and the client can release it asynchronously.
+	 */
+	vd = gxp_vd_get(vd);
+
 	if (vd->client_id < 0 || vd->mcu_crashed)
 		goto out;
 
@@ -1711,6 +1717,7 @@ void gxp_vd_release_vmbox(struct gxp_dev *gxp, struct gxp_virtual_device *vd)
 	}
 out:
 	vd->client_id = -1;
+	gxp_vd_put(vd);
 }
 
 void gxp_vd_unlink_offload_vmbox(struct gxp_dev *gxp, struct gxp_virtual_device *vd,
