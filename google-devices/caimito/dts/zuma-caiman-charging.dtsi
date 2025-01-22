@@ -7,6 +7,8 @@
  */
 
 &google_cpm {
+	google,dc_limit-vbatt_min = <3500000>;
+
 	// thermal budgets
 	google,mdis-thermal-mitigation =
 	<3710000 3571000 3443000 3297000 3162000 3040000 2918000 2810000 2703000
