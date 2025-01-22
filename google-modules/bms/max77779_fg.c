@@ -1673,6 +1673,9 @@ static int max77779_gbms_fg_get_property(struct power_supply *psy,
 	case GBMS_PROP_RECAL_FG:
 		/* TODO: under porting */
 		break;
+	case GBMS_PROP_AAFV:
+		val->prop.intval = chip->aafv;
+		break;
 	default:
 		pr_debug("%s: route to max77779_fg_get_property, psp:%d\n", __func__, psp);
 		err = -ENODATA;
@@ -1722,11 +1725,11 @@ static int max77779_gbms_fg_set_property(struct power_supply *psy,
 
 		} else if (ce->cable_in) {
 			if (ce->estimate_state == ESTIMATE_PENDING)
-				cancel_delayed_work_sync(&ce->settle_timer);
+				cancel_delayed_work(&ce->settle_timer);
 
 			/* race with batt_ce_capacityfiltered_work() */
-			batt_ce_stop_estimation(ce, ESTIMATE_NONE);
 			batt_ce_dump_data(ce, chip->ce_log);
+			batt_ce_stop_estimation(ce, ESTIMATE_NONE);
 			ce->cable_in = false;
 		}
 		mutex_unlock(&ce->batt_ce_lock);
@@ -1745,6 +1748,9 @@ static int max77779_gbms_fg_set_property(struct power_supply *psy,
 	case GBMS_PROP_RECAL_FG:
 		/* TODO: under porting */
 		break;
+	case GBMS_PROP_AAFV:
+		chip->aafv = val->prop.intval;
+		break;
 	default:
 		pr_debug("%s: route to max77779_fg_set_property, psp:%d\n", __func__, psp);
 		return -ENODATA;
@@ -1762,6 +1768,7 @@ static int max77779_gbms_fg_property_is_writeable(struct power_supply *psy,
 	switch (psp) {
 	case GBMS_PROP_BATT_CE_CTRL:
 	case GBMS_PROP_HEALTH_ACT_IMPEDANCE:
+	case GBMS_PROP_AAFV:
 		return 1;
 	default:
 		break;

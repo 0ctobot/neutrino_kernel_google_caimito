@@ -4947,9 +4947,9 @@ static int chg_therm_set_wlc_online(struct chg_drv *chg_drv)
 	if (ret < 0 || pval.intval == PPS_PSY_OFFLINE) {
 		int dc_icl;
 
-		/* OFFLINE goes to online if dc_icl allows */
+		/* OFFLINE goes to online if dc_icl allows or votable not available */
 		dc_icl = gvotable_get_current_int_vote(chg_drv->dc_icl_votable);
-		if (dc_icl > 0)
+		if (dc_icl != 0)
 			pval.intval = PPS_PSY_FIXED_ONLINE;
 
 		/* will reset offline just in case */
@@ -4999,7 +4999,7 @@ static int chg_therm_set_wlc_offline(struct chg_drv *chg_drv, int from_state)
 		if (from_state == PPS_PSY_PROG_ONLINE) {
 			dc_icl = gvotable_get_current_int_vote(
 					chg_drv->dc_icl_votable);
-			if (dc_icl > 0)
+			if (dc_icl != 0)
 				pval.intval = PPS_PSY_FIXED_ONLINE;
 		}
 

@@ -37,7 +37,7 @@
 #define LN8411_ENABLE_WLC_DELAY_T	300	/* 300ms */
 
 /* Battery Threshold */
-#define LN8411_DC_VBAT_MIN		3400000 /* uV */
+#define LN8411_DC_VBAT_MIN		3000000 /* uV */
 /* Input Current Limit default value */
 #define LN8411_IIN_CFG_DFT		2500000 /* uA*/
 /* Charging Float Voltage default value */

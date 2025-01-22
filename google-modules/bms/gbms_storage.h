@@ -54,6 +54,9 @@
 /* Date of manufacturing and first use */
 #define BATT_EEPROM_TAG_XYMD_LEN 3
 
+/* Allowing update FCR per every N cycles */
+#define GBMS_FCRU_LEN	2
+
 /*
  * Tags are u32 constants: hardcoding as hex since characters constants of more
  * than one byte such as 'BGCE' are frown upon.
@@ -76,6 +79,7 @@ enum gbms_tags {
 	GBMS_TAG_DINF = 0x44494e46,
 	GBMS_TAG_DSNM = 0x44534e4d,
 	GBMS_TAG_DXAC = 0x44584143,
+	GBMS_TAG_FCRU = 0x46435255,
 	GBMS_TAG_FGST = 0x46475354,
 	GBMS_TAG_GCFE = 0x47434645,
 	GBMS_TAG_GMSR = 0x474d5352,

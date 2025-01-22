@@ -37,6 +37,7 @@ struct device_node;
 #define GBMS_CHG_TOPOFF_NB_LIMITS_MAX 6
 #define GBMS_AACR_DATA_MAX 10
 #define GBMS_AAFV_DATA_MAX 16
+#define GBMS_AACT_NB_LIMITS_MAX 10
 
 struct gbms_chg_profile {
 	const char *owner_name;
@@ -77,6 +78,12 @@ struct gbms_chg_profile {
 	u32 aafv_offsets[GBMS_AAFV_DATA_MAX];
 	u32 aafv_nb_limits;
 	u32 aafv_offset;
+
+	/* AACT feature */
+	int aact_nb_limits;
+	s32 aact_limits[GBMS_AACT_NB_LIMITS_MAX];
+	int aact_idx;
+	bool aact_init_profile;
 
 	bool debug_chg_profile;
 	bool enable_switch_chg_profile;
@@ -402,6 +409,9 @@ struct gbms_charging_event {
 	uint16_t csi_aggregate_status;
 	uint16_t csi_aggregate_type;
 
+	int aacp_version;
+	int aacc;
+
 	/* health based charging */
 	struct batt_chg_health		ce_health;	/* updated on close */
 	struct gbms_ce_tier_stats	health_stats;	/* updated in HC */
@@ -422,8 +432,15 @@ struct gbms_charging_event {
 #define GBMS_CCCM_LIMITS_SET(profile, ti, vi) \
 	profile->cccm_limits[((ti) * profile->volt_nb_limits) + (vi)]
 
-#define GBMS_CCCM_LIMITS(profile, ti, vi) \
+#define GBMS_CCCM_LIMITS_GET(profile, ti, vi) \
 	(((ti) >= 0 && (vi) >= 0) ? profile->cccm_limits[((ti) * profile->volt_nb_limits) + (vi)] : 0)
+
+#define GBMS_AACT_IDX(profile) \
+	(profile->aact_idx * (profile->temp_nb_limits - 1))
+
+#define GBMS_CCCM_LIMITS(profile, ti, vi) \
+	(((ti) >= 0 && (vi) >= 0) ? \
+	profile->cccm_limits[((ti + GBMS_AACT_IDX(profile)) * profile->volt_nb_limits) + (vi)] : 0)
 
 /* newgen charging */
 #define GBMS_CS_FLAG_BUCK_EN		BIT(0)
@@ -452,6 +469,11 @@ int gbms_init_chg_profile_internal(struct gbms_chg_profile *profile,
 			  struct device_node *node, const char *owner_name);
 #define gbms_init_chg_profile(p, n) \
 	gbms_init_chg_profile_internal(p, n, KBUILD_MODNAME)
+int gbms_init_aact_profile_internal(struct gbms_chg_profile *profile,
+			  struct device_node *node, const char *owner_name);
+#define gbms_init_aact_profile(p, n) \
+	gbms_init_aact_profile_internal(p, n, KBUILD_MODNAME)
+int gbms_aact_get_index(const struct gbms_chg_profile *profile, const int cycles);
 
 void gbms_init_chg_table(struct gbms_chg_profile *profile,
 			 struct device_node *node, u32 capacity);
@@ -811,6 +833,7 @@ enum charging_policy_vote {
        CHARGING_POLICY_VOTE_ADAPTIVE_AON = 2,
        CHARGING_POLICY_VOTE_ADAPTIVE_AC = 3,
        CHARGING_POLICY_VOTE_LONGLIFE = 4,
+       CHARGING_POLICY_VOTE_FORCE_FULL_CHARGE = 5,
 };
 
 #define to_cooling_device(_dev)	\

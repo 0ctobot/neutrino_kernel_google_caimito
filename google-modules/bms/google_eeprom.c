@@ -48,8 +48,10 @@
 #define BATT_EEPROM_TAG_EXTRA_START	(BATT_EEPROM_TAG_HIST_OFFSET + BATT_TOTAL_HIST_LEN)
 
 // 0x3E2 is the first free with 75 history entries
-#define BATT_EEPROM_TAG_FGST_OFFSET      0x3E4
-#define BATT_EEPROM_TAG_FGST_LEN         1
+#define BATT_EEPROM_TAG_FCRU_OFFSET	0x3E2
+#define BATT_EEPROM_TAG_FCRU_LEN	GBMS_FCRU_LEN
+#define BATT_EEPROM_TAG_FGST_OFFSET	0x3E4
+#define BATT_EEPROM_TAG_FGST_LEN 	1
 #define BATT_EEPROM_TAG_AYMD_OFFSET	0x3E5
 #define BATT_EEPROM_TAG_AYMD_LEN	BATT_EEPROM_TAG_XYMD_LEN
 #define BATT_EEPROM_TAG_GCFE_OFFSET	0x3E8
@@ -155,6 +157,10 @@ int gbee_storage_info(gbms_tag_t tag, size_t *addr, size_t *count, void *ptr)
 		*addr = BATT_EEPROM_TAG_MYMD_OFFSET;
 		*count = BATT_EEPROM_TAG_MYMD_LEN;
 		break;
+	case GBMS_TAG_FCRU:
+		*addr = BATT_EEPROM_TAG_FCRU_OFFSET;
+		*count = BATT_EEPROM_TAG_FCRU_LEN;
+		break;
 	case GBMS_TAG_FGST:
 		*addr = BATT_EEPROM_TAG_FGST_OFFSET;
 		*count = BATT_EEPROM_TAG_FGST_LEN;
@@ -179,7 +185,7 @@ static int gbee_storage_iter(int index, gbms_tag_t *tag, void *ptr)
 					   GBMS_TAG_GCFE, GBMS_TAG_RAVG,
 					   GBMS_TAG_RFCN, GBMS_TAG_THAS,
 					   GBMS_TAG_AYMD, GBMS_TAG_MYMD,
-					   GBMS_TAG_FGST };
+					   GBMS_TAG_FGST, GBMS_TAG_FCRU };
 	const int count = ARRAY_SIZE(keys);
 
 	if (index < 0 || index >= count)
@@ -243,6 +249,7 @@ static bool gbee_storage_is_writable(gbms_tag_t tag)
 	case GBMS_TAG_THAS:
 	case GBMS_TAG_AYMD:
 	case GBMS_TAG_FGST:
+	case GBMS_TAG_FCRU:
 		return true;
 	default:
 		return false;

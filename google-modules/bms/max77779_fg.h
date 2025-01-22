@@ -194,6 +194,9 @@ struct max77779_fg_chip {
 
 	/* mutex lock to access FG USR reg */
 	struct mutex usr_lock;
+
+	/* AAFV: Aged Adjusted Float Voltage */
+	int aafv;
 };
 
 /** ------------------------------------------------------------------------ */

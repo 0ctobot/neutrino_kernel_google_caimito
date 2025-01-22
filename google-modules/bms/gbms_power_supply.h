@@ -96,6 +96,7 @@ enum gbms_property {
 	GBMS_PROP_BATT_ID,			/* GBMS battery id */
 	GBMS_PROP_RECAL_FG,			/* GBMS FG reset */
 	GBMS_PROP_LOGBUFFER_BD,			/* GBMS pass logbuffer_bd address */
+	GBMS_PROP_AAFV,				/* GBMS pass aafv to FG */
 };
 
 union gbms_propval {
