@@ -4,7 +4,7 @@ if PWM
 
 config PWM_EXYNOS
 	tristate "Samsung PWM support"
-	depends on PLAT_SAMSUNG || ARCH_EXYNOS || SOC_ZUMA 
+	depends on PLAT_SAMSUNG || ARCH_EXYNOS || SOC_ZUMA || SOC_GS201
 	help
 	  Generic PWM framework driver for Samsung.
 	  To compile this driver as a module, choose M here: the module
