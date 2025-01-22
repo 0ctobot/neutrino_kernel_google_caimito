@@ -603,8 +603,12 @@ static bool s6e3hc4_set_self_refresh(struct exynos_panel *ctx, bool enable)
 		return false;
 
 	/* self refresh is not supported in lp mode since that always makes use of early exit */
-	if (pmode->exynos_mode.is_lp_mode)
+	if (pmode->exynos_mode.is_lp_mode) {
+		/* set 10Hz while self refresh is active, otherwise clear it */
+		ctx->panel_idle_vrefresh = enable ? 10 : 0;
+		notify_panel_mode_changed(ctx, true);
 		return false;
+	}
 
 	idle_vrefresh = s6e3hc4_get_min_idle_vrefresh(ctx, pmode);
 
