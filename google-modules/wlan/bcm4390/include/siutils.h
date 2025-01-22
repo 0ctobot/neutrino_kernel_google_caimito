@@ -1159,6 +1159,7 @@ bool si_buscore_prep(si_t *sih, uint bustype, uint devid, void *sdh);
 bool si_ispcie(const si_t *sih);
 int si_bpind_access(si_t *sih, uint32 addr_high, uint32 addr_low,
 	int32 * data, bool read, uint32 us_timeout);
+int si_reset_5g_rffe_vio(si_t *sih);
 int si_get_amni_slave_cfg_cc_reg_addrs(si_t *sih, volatile uint32 **idm_errstatus_addr,
 	volatile uint32 **idm_intstatus_addr);
 #endif	/* _siutils_h_ */

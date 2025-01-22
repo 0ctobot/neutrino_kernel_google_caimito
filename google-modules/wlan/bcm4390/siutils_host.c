@@ -385,3 +385,26 @@ int si_get_amni_slave_cfg_cc_reg_addrs(si_t *sih, volatile uint32 **idm_errstatu
 	}
 }
 #endif /* SOCI_NCI_BUS */
+
+/*
+ * Reset 5G RFFE Gpio lines on reboot from DHD.
+ * JIRA:SWDHD-4585 RB:302458
+ *
+ * Clear bit 10 of GCI CHIPCTRL14 AND Clear bit 12 of GCI CHIPCTRL38
+ */
+#define RF_SWCTRL_LINE10_CCGCI14_MASK 0x400
+#define RF_SWCTRL_LINE27_CCGCI38_MASK 0x1000
+int
+si_reset_5g_rffe_vio(si_t *sih)
+{
+	uint32 gcicc14, gcicc38;
+	gcicc14 = si_gci_chipcontrol(sih, CC_GCI_CHIPCTRL_14, 0, 0);
+	gcicc38 = si_gci_chipcontrol(sih, CC_GCI_CHIPCTRL_38, 0, 0);
+	SI_PRINT(("si_reset_5g_rffe_vio Read GCI_CC14  %d:0x%08x \t GCI_CC38: %d:0x%x\n",
+			CC_GCI_CHIPCTRL_14, gcicc14, CC_GCI_CHIPCTRL_38, gcicc38));
+	gcicc14 = si_gci_chipcontrol(sih, CC_GCI_CHIPCTRL_14, RF_SWCTRL_LINE10_CCGCI14_MASK, 0);
+	gcicc38 = si_gci_chipcontrol(sih, CC_GCI_CHIPCTRL_38, RF_SWCTRL_LINE27_CCGCI38_MASK, 0);
+	SI_PRINT(("si_reset_5g_rffe_vio After Clear GCI_CC14  %d:0x%08x \t GCI_CC38: %d:0x%x\n",
+			CC_GCI_CHIPCTRL_14, gcicc14, CC_GCI_CHIPCTRL_38, gcicc38));
+	return 0;
+}

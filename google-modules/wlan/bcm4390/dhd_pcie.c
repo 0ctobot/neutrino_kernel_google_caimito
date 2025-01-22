@@ -3275,6 +3275,31 @@ dhdpcie_advertise_bus_cleanup(dhd_pub_t *dhdp)
 				__FUNCTION__));
 		}
 #endif /* DHD_DONGLE_TRAP_IN_DETACH */
+
+		/*
+		 * Reset 5G RFFE Gpio lines on reboot from DHD.
+		 * JIRA:SWDHD-4585 RB:302458
+		 *
+		 * Reset the Gpio lines only when all conditions are satisfied
+		 * 1. Reboot path 2. link state is good.
+		 */
+		if (dhdp->reset_5g_rffe_vio == TRUE) {
+#ifdef DHD_RESET_FEM_5G_RFFE_VI0
+			uint16 chipid;
+			dhdp->bus->link_state = dhdpcie_get_link_state(dhdp->bus);
+			if (dhdp->bus->link_state == DHD_PCIE_ALL_GOOD) {
+				chipid = dhd_get_chipid(dhdp->bus);
+				if (BCM4390_CHIP(chipid)) {
+					si_reset_5g_rffe_vio(dhdp->bus->sih);
+				}
+			} else {
+				DHD_PRINT(("%s: link already bad, link state %u\n",
+					__func__, dhdp->bus->link_state));
+			}
+#endif /* DHD_RESET_FEM_5G_RFFE_VI0 */
+			dhdp->reset_5g_rffe_vio = FALSE;
+		}
+
 		DHD_GENERAL_LOCK(dhdp, flags);
 		dhdp->busstate = DHD_BUS_DOWN_IN_PROGRESS;
 		DHD_GENERAL_UNLOCK(dhdp, flags);
