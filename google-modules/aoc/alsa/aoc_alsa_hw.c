@@ -2602,9 +2602,9 @@ int aoc_compr_offload_playback_rate_set(struct aoc_chip *chip, long *val)
 	AocCmdHdrSet(&(cmd.parent), CMD_AUDIO_OUTPUT_DECODER_CFG_SPEED_ID, sizeof(cmd));
 
 	tmp = (uint32_t)val[0];
-	cmd.speed = *(float *)(&tmp);
+	memcpy(&cmd.speed, &tmp, sizeof(tmp));
 	tmp = (uint32_t)val[1];
-	cmd.pitch = *(float *)(&tmp);
+	memcpy(&cmd.pitch, &tmp, sizeof(tmp));
 	cmd.stretch_mode = (int32_t)val[2];
 	cmd.fallback_mode = (int32_t)val[3];
 
