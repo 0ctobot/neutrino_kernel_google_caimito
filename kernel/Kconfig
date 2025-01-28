@@ -16,4 +16,105 @@ config KSU_DEBUG
 	help
 	  Enable KernelSU debug mode.
 
+menu "KernelSU - SUSFS"
+
+config KSU_SUSFS
+	bool "KernelSU addon - SUSFS"
+	depends on KSU
+	default y
+	help
+	  An addon root hiding service for KernelSU.
+
+config KSU_SUSFS_HAS_MAGIC_MOUNT
+	bool "Support Magic Mount for KSU"
+	depends on KSU
+	default y
+	help
+	  Enable cross-compatibility with Magic Mount variants
+	  of KernelSU. Mounts from /debug_ramdisk/workdir will
+	  be automatically hidden. 
+
+config KSU_SUSFS_SUS_PATH
+	bool "Hide suspicious paths (experimental)"
+	depends on KSU_SUSFS
+	default y
+	help
+	  Allow hiding user-defined paths from various system
+	  calls, effective on zygote spawned user app process.
+	  Not recommended due to potential performance loss
+	  and side-channel vulnerability.
+
+config KSU_SUSFS_SUS_MOUNT
+	bool "Hide suspicious mounts"
+	depends on KSU_SUSFS
+	default y
+	help
+	  Allow hiding user-defined mount points from
+	  /proc/self/mount*, effective on all processes. Mount
+	  points from processes in KSU domain are assigned the
+	  dev name "KSU".
+
+config KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+	bool "Hide KSU's default mount points"
+	depends on KSU_SUSFS_SUS_MOUNT
+	default y
+	help
+	  Automatically add KSU's default mount points to
+	  sus_mount, no userspace interaction required. Only
+	  mount points from processes in KSU domain will be
+	  checked.
+
+config KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+	bool "Hide suspicious bind mounts"
+	depends on KSU_SUSFS_SUS_MOUNT
+	default y
+	help
+	  Automatically add binded mounts to sus_mount, no
+	  userspace interaction required. Only mount points from
+	  processes in KSU domain will be checked.
+
+config KSU_SUSFS_TRY_UMOUNT
+	bool "Integrate with KSU's try_umount"
+	depends on KSU_SUSFS
+	default y
+	help
+	  Allow using try_umount on other user-defined mount
+	  points prior to KSU's default umount paths, effective
+	  on all non-root processes.
+
+config KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+	bool "Add bind mounts to KSU's try_umount"
+	depends on KSU_SUSFS_TRY_UMOUNT
+	default y
+	help
+	  Automatically add binded mounts to KSU's try_umount,
+	  no userspace interaction required. Only mount points
+	  from processes in KSU domain will be checked.
+      
+config KSU_SUSFS_ENABLE_LOG
+	bool "Enable SUSFS kernel logging"
+	depends on KSU_SUSFS
+	default y
+	help
+	  Allow SUSFS kernel logging, select 'n' to disable.
+
+config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+	bool "Hide KSU and SUSFS symbols from /proc/kallsyms"
+	depends on KSU_SUSFS
+	default y
+	help
+	  Automatically hide KSU and SUSFS symbols from
+	  '/proc/kallsyms', effective on all processes.
+
+config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+	bool "Spoof /proc/(bootconfig|cmdline)"
+	depends on KSU_SUSFS
+	default y
+	help
+	  Allow spoofing the output of /proc/bootconfig (GKI),
+	  or /proc/cmdline (non-GKI) with user-defined values,
+	  effective on all processes.
+
+endmenu
+
 endmenu
