@@ -19,6 +19,9 @@
 #include <linux/pagemap.h>
 #include <linux/compat.h>
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+#include <linux/susfs_def.h>
+#endif
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
 
@@ -185,6 +188,10 @@ int vfs_fstat(int fd, struct kstat *stat)
 	return error;
 }
 
+#ifdef CONFIG_KSU
+extern int ksu_handle_stat(int *dfd, struct filename **filename_user, int *flags);
+#endif
+
 int getname_statx_lookup_flags(int flags)
 {
 	int lookup_flags = 0;
@@ -220,7 +227,13 @@ static int vfs_statx(int dfd, struct filename *filename, int flags,
 	struct path path;
 	unsigned int lookup_flags = getname_statx_lookup_flags(flags);
 	int error;
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	struct mount *mnt;
+#endif
 
+#ifdef CONFIG_KSU
+	ksu_handle_stat(&dfd, &filename, &flags);
+#endif
 	if (flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT | AT_EMPTY_PATH |
 		      AT_STATX_SYNC_TYPE))
 		return -EINVAL;
@@ -232,7 +245,15 @@ retry:
 
 	error = vfs_getattr(&path, stat, request_mask, flags);
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	mnt = real_mount(path.mnt);
+	if (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC)) {
+		for (; mnt->mnt_id >= DEFAULT_SUS_MNT_ID; mnt = mnt->mnt_parent) {}
+	}
+	stat->mnt_id = mnt->mnt_id;
+#else
 	stat->mnt_id = real_mount(path.mnt)->mnt_id;
+#endif
 	stat->result_mask |= STATX_MNT_ID;
 
 	if (path.mnt->mnt_root == path.dentry)
