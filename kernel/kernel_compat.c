@@ -48,6 +48,10 @@ void ksu_android_ns_fs_check()
 	task_unlock(current);
 }
 
+int ksu_access_ok(const void *addr, unsigned long size) {
+	return access_ok(addr, size);
+}
+
 struct file *ksu_filp_open_compat(const char *filename, int flags, umode_t mode)
 {
 	// switch mnt_ns even if current is not wq_worker, to ensure what we open is the correct file in android mnt_ns, rather than user created mnt_ns
