@@ -3,7 +3,7 @@
  * Also, see WFA QoS Management spec:
  * https://drive.google.com/file/d/1dj4D92kUhLKrImWkOJZ0__Meg9fZm9fL/view?usp=share_link
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you

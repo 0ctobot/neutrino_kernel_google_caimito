@@ -4,7 +4,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -694,7 +694,11 @@ enum dhd_dongledump_type {
 	DUMP_TYPE_COREDUMP_BY_USER		= 38,
 	DUMP_TYPE_WL_BP_DOWN			= 39,
 	DUMP_TYPE_COMMON_BP_DOWN		= 40,
-	DUMP_TYPE_COEXCPU_BP_DOWN		= 41
+	DUMP_TYPE_COEXCPU_BP_DOWN		= 41,
+	DUMP_TYPE_STA_ASSOC_TIMEOUT		= 42,
+	DUMP_TYPE_STA_4WAY_HS_TIMEOUT		= 43,
+	DUMP_TYPE_STA_ROAM_TIMEOUT		= 44,
+	DUMP_TYPE_SAR_CONF_NOTFOUND		= 45
 };
 
 enum dhd_hang_reason {
@@ -2690,43 +2694,76 @@ extern void dhd_cleanup_m4_state_work(dhd_pub_t *dhdp, int ifidx);
 extern void dhd_bus_wakeup_work(dhd_pub_t *dhdp);
 #endif /* DHD_PCIE_NATIVE_RUNTIMEPM */
 
-#define WIFI_FEATURE_INFRA              0x0001      /* Basic infrastructure mode        */
-#define WIFI_FEATURE_INFRA_5G           0x0002      /* Support for 5 GHz Band           */
-#define WIFI_FEATURE_HOTSPOT            0x0004      /* Support for GAS/ANQP             */
-#define WIFI_FEATURE_P2P                0x0008      /* Wifi-Direct                      */
-#define WIFI_FEATURE_SOFT_AP            0x0010      /* Soft AP                          */
-#define WIFI_FEATURE_GSCAN              0x0020      /* Google-Scan APIs                 */
-#define WIFI_FEATURE_NAN                0x0040      /* Neighbor Awareness Networking    */
-#define WIFI_FEATURE_D2D_RTT            0x0080      /* Device-to-device RTT             */
-#define WIFI_FEATURE_D2AP_RTT           0x0100      /* Device-to-AP RTT                 */
-#define WIFI_FEATURE_BATCH_SCAN         0x0200      /* Batched Scan (legacy)            */
-#define WIFI_FEATURE_PNO                0x0400      /* Preferred network offload        */
-#define WIFI_FEATURE_ADDITIONAL_STA     0x0800      /* Support for two STAs             */
-#define WIFI_FEATURE_TDLS               0x1000      /* Tunnel directed link setup       */
-#define WIFI_FEATURE_TDLS_OFFCHANNEL    0x2000      /* Support for TDLS off channel     */
-#define WIFI_FEATURE_EPR                0x4000      /* Enhanced power reporting         */
-#define WIFI_FEATURE_AP_STA             0x8000      /* Support for AP STA Concurrency   */
-#define WIFI_FEATURE_LINKSTAT           0x10000     /* Support for Linkstats            */
-#define WIFI_FEATURE_LOGGER             0x20000     /* WiFi Logger			*/
-#define WIFI_FEATURE_HAL_EPNO           0x40000	    /* WiFi PNO enhanced                */
-#define WIFI_FEATURE_RSSI_MONITOR       0x80000     /* RSSI Monitor                     */
-#define WIFI_FEATURE_MKEEP_ALIVE        0x100000    /* WiFi mkeep_alive			*/
-#define WIFI_FEATURE_CONFIG_NDO         0x200000    /* ND offload configure             */
-#define WIFI_FEATURE_TX_TRANSMIT_POWER  0x400000    /* Capture Tx transmit power levels */
-#define WIFI_FEATURE_CONTROL_ROAMING    0x800000    /* Enable/Disable firmware roaming  */
-#define WIFI_FEATURE_FILTER_IE          0x1000000   /* Probe req ie filter              */
-#define WIFI_FEATURE_SCAN_RAND          0x2000000   /* MAC & Prb SN randomization       */
-#define WIFI_FEATURE_SET_TX_POWER_LIMIT 0x4000000   /* Support Tx Power Limit setting   */
-#define WIFI_FEATURE_USE_BODY_HEAD_SAR  0x8000000   /* Support Body/Head Proximity SAR  */
-#define WIFI_FEATURE_SET_LATENCY_MODE   0x40000000  /* Support Latency mode setting     */
-#define WIFI_FEATURE_P2P_RAND_MAC       0x80000000  /* Support P2P MAC randomization    */
-#define WIFI_FEATURE_INVALID            0xFFFFFFFF  /* Invalid Feature                  */
+/* Basic infrastructure mode */
+#define WIFI_FEATURE_INFRA                           0x0001
+/* Support for 5 GHz Band */
+#define WIFI_FEATURE_INFRA_5G                        0x0002
+/* Support for GAS/ANQP */
+#define WIFI_FEATURE_HOTSPOT                         0x0004
+/* Wifi-Direct */
+#define WIFI_FEATURE_P2P                             0x0008
+/* Soft AP */
+#define WIFI_FEATURE_SOFT_AP                         0x0010
+/* Google-Scan APIs */
+#define WIFI_FEATURE_GSCAN                           0x0020
+/* Neighbor Awareness Networking */
+#define WIFI_FEATURE_NAN                             0x0040
+/* Device-to-device RTT */
+#define WIFI_FEATURE_D2D_RTT                         0x0080
+/* Device-to-AP RTT */
+#define WIFI_FEATURE_D2AP_RTT                        0x0100
+/* Batched Scan (legacy) */
+#define WIFI_FEATURE_BATCH_SCAN                      0x0200
+/* Preferred network offload */
+#define WIFI_FEATURE_PNO                             0x0400
+/* Support for two STAs */
+#define WIFI_FEATURE_ADDITIONAL_STA                  0x0800
+/* Tunnel directed link setup */
+#define WIFI_FEATURE_TDLS                            0x1000
+/* Support for TDLS off channel */
+#define WIFI_FEATURE_TDLS_OFFCHANNEL                 0x2000
+/* Enhanced power reporting */
+#define WIFI_FEATURE_EPR                             0x4000
+/* Support for AP STA Concurrency */
+#define WIFI_FEATURE_AP_STA                          0x8000
+/* Support for Linkstats */
+#define WIFI_FEATURE_LINKSTAT                        0x10000
+/* WiFi Logger */
+#define WIFI_FEATURE_LOGGER                          0x20000
+/* WiFi PNO enhanced */
+#define WIFI_FEATURE_HAL_EPNO                        0x40000
+/* RSSI Monitor */
+#define WIFI_FEATURE_RSSI_MONITOR                    0x80000
+/* WiFi mkeep_alive */
+#define WIFI_FEATURE_MKEEP_ALIVE                     0x100000
+/* ND offload configure */
+#define WIFI_FEATURE_CONFIG_NDO                      0x200000
+/* Capture Tx transmit power levels */
+#define WIFI_FEATURE_TX_TRANSMIT_POWER               0x400000
+/* Enable/Disable firmware roaming  */
+#define WIFI_FEATURE_CONTROL_ROAMING                 0x800000
+/* Probe req ie filter */
+#define WIFI_FEATURE_FILTER_IE                       0x1000000
+/* MAC & Prb SN randomization */
+#define WIFI_FEATURE_SCAN_RAND                       0x2000000
+/* Support Tx Power Limit setting */
+#define WIFI_FEATURE_SET_TX_POWER_LIMIT              0x4000000
+/* Support Body/Head Proximity SAR */
+#define WIFI_FEATURE_USE_BODY_HEAD_SAR               0x8000000
+/* Support Latency mode setting */
+#define WIFI_FEATURE_SET_LATENCY_MODE                0x40000000
+/* Support P2P MAC randomization */
+#define WIFI_FEATURE_P2P_RAND_MAC                    0x80000000
+/* Support for configuring roaming mode */
+#define WIFI_FEATURE_ROAMING_MODE_CONTROL            0x800000000
+/* Invalid Feature */
+#define WIFI_FEATURE_INVALID                         0xFFFFFFFF
 
 #define MAX_FEATURE_SET_CONCURRRENT_GROUPS  3
 
 #if defined(__linux__)
-extern int dhd_dev_get_feature_set(struct net_device *dev);
-extern int dhd_dev_get_feature_set_matrix(struct net_device *dev, int num);
+extern uint64 dhd_dev_get_feature_set(struct net_device *dev);
+extern uint64 dhd_dev_get_feature_set_matrix(struct net_device *dev, int num);
 extern int dhd_dev_cfg_rand_mac_oui(struct net_device *dev, uint8 *oui);
 extern int dhd_update_rand_mac_addr(dhd_pub_t *dhd);
 #ifdef CUSTOM_FORCE_NODFS_FLAG

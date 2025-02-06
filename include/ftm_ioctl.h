@@ -1,7 +1,7 @@
 /*
  * FTM module IOCTL structure definitions.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -424,6 +424,7 @@ typedef enum {
 	WL_FTM_TLV_ID_HAL_COUNTERS_V1		= 526,	/* wl_ftm_hal_counters_v1_t */
 	WL_FTM_TLV_ID_AZ_COUNTERS_V2		= 527,	/* wl_ftm_az_counters_v2_t */
 	WL_FTM_TLV_ID_AZ_RTT_RESULT_V2		= 528,	/* wl_ftm_az_rtt_result_v2_t */
+	WL_FTM_TLV_ID_AZ_RTT_RESULT_V3		= 529,	/* wl_ftm_az_rtt_result_v3_t */
 
 	/* debug tlvs can be added starting 1024 */
 	WL_FTM_TLV_ID_DEBUG_MASK		= 1024,
@@ -678,6 +679,7 @@ enum wl_ftm_az_rtt_result_flags {
 	WL_FTM_AZ_RTT_RESULT_FLAG_DIST_IN_4CM	= 0x00000002u, /* Distance in 1/256 m unit */
 	WL_FTM_AZ_RTT_RESULT_FLAG_SLTF		= 0x00000004u, /* Secure LTF */
 	WL_FTM_AZ_RTT_RESULT_FLAG_SIGNED_RTT	= 0x00000008u, /* RTT result is negative */
+	WL_FTM_AZ_RTT_RESULT_FLAG_SECURE_SN	= 0x00000010u, /* RNG MFP enabled */
 	/* add new flag here */
 	WL_FTM_AZ_RTT_RESULT_FLAG_ALL		= 0xffffffffu
 };
@@ -689,6 +691,8 @@ typedef uint32 wl_ftm_az_rtt_result_flags_t;
 	(((_rp)->flags & WL_FTM_AZ_RTT_RESULT_FLAG_DIST_IN_4CM) != 0u)
 #define WL_FTM_AZ_RTT_RESULT_SLTF(_rp) \
 	(((_rp)->flags & WL_FTM_AZ_RTT_RESULT_FLAG_SLTF) != 0u)
+#define WL_FTM_AZ_RTT_RESULT_SECURE_SN(_rp) \
+	(((_rp)->flags & WL_FTM_AZ_RTT_RESULT_FLAG_SECURE_SN) != 0u)
 #define WL_FTM_AZ_RTT_RESULT_IS_SIGNED(_rp) \
 	(((_rp)->flags & WL_FTM_AZ_RTT_RESULT_FLAG_SIGNED_RTT) != 0u)
 
@@ -743,6 +747,37 @@ typedef struct wl_ftm_az_rtt_result_v2 {
 	uint8				rtt_samples[];	/* optional variable length fields */
 } wl_ftm_az_rtt_result_v2_t;
 
+/* WL_FTM_TLV_ID_AZ_RTT_RESULT_V3
+ * 11az RTT result from a session
+ */
+typedef struct wl_ftm_az_rtt_result_v3 {
+	wl_ftm_session_id_t		sid;
+	struct ether_addr		peer;
+	wl_ftm_az_rtt_result_flags_t	flags;
+	wl_ftm_status_t			status;		/* session status */
+	wl_ftm_session_state_t		state;		/* session state */
+	uint16				max_num_meas;	/* configured num of measurement */
+	uint16				num_meas;	/* num of measurement done */
+	uint16				num_rtt;	/* num of rtt */
+	uint32				rtt_mean;	/* mean RTT (in ps by default) */
+	uint32				rtt_sd;		/* standard deviation of RTT */
+	uint32				dist;		/* Distance (in cm unit by default) */
+	int8				rssi_mean[WL_RSSI_ANT_MAX];
+	wl_ftm_intvl_t			min_delta;	/* min delta bet meas for ntb ranging */
+	wl_ftm_intvl_t			max_delta;	/* min delta bet meas for ntb ranging */
+	uint8				i2r_ltf_rep;	/* initiator to responder ltf repetitions */
+	uint8				r2i_ltf_rep;	/* responder to initiator ltf repetitions */
+	uint16				num_sample;	/* number of rtt sample */
+	uint16				sample_fmt;	/* format of rtt sample (TLV ID) */
+	chanspec_t			chanspec;	/* ranging chanspec */
+	wl_ftm_ranging_format_bw_t	format_bw;	/* format bw used for ranging */
+	uint8				i2r_sts;	/* initiator to responder spatial stream */
+	uint8				r2i_sts;	/* responder to initiator spatial stream */
+	uint8				sec_ltf_proto_ver; /* secure ltf protocol version */
+	uint16				akm_type;	 /* akm type used for secure ranging */
+	uint16				cipher_type;	 /* cipher type used for secure ranging */
+	uint8				rtt_samples[];	 /* optional variable length fields */
+} wl_ftm_az_rtt_result_v3_t;
 
 /* WL_FTM_TLV_ID_AZ_COUNTERS_V1
  * 11az ranging counters

@@ -1,7 +1,7 @@
 /*
  * DHD debugability support
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -247,6 +247,73 @@ dhd_debug_dump_ring_push(dhd_pub_t *dhdp, int ring_id, uint32 len, void *data)
 	return ret;
 }
 #endif /* DHD_DEBUGABILITY_DEBUG_DUMP */
+
+static void*
+dhd_dbg_fill_logbuf(dhd_pub_t *dhdp, void *data, int datalen, int *fill_len, int msgtrace_seqnum)
+{
+	char *logbuf;
+	struct tracelog_header *logentry_header;
+	int hdr_len = sizeof(struct tracelog_header);
+	uint ring_data_len = hdr_len + datalen;
+	int ret;
+
+	if (!dhdp || !dhdp->dbg) {
+		DHD_ERROR(("%s: dhdp=%p, dhdp->dbg=%p\n",
+			__FUNCTION__, dhdp, (dhdp ? dhdp->dbg : NULL)));
+		goto fail;
+	}
+
+	if (ring_data_len > PAYLOAD_MAX_LEN) {
+		DHD_ERROR(("%s:Payload len=%u exceeds max len\n",
+			__FUNCTION__, ring_data_len));
+		goto fail;
+	}
+
+	logbuf = dhdp->dbg->logbuf.buf;
+	bzero(logbuf, PAYLOAD_MAX_LEN);
+
+	logentry_header = (struct tracelog_header *)logbuf;
+	logentry_header->magic_num = TRACE_LOG_MAGIC_NUMBER;
+	logentry_header->buf_size = datalen;
+	logentry_header->seq_num = msgtrace_seqnum;
+
+	ret = memcpy_s(logbuf + hdr_len, PAYLOAD_MAX_LEN - hdr_len, data, datalen);
+	if (ret) {
+		DHD_ERROR(("%s:Failed to copy logbuf. datalen:%u\n",
+			__FUNCTION__, datalen));
+		goto fail;
+	}
+
+	*fill_len = ring_data_len;
+	return logbuf;
+
+fail:
+	return NULL;
+}
+
+void
+dhd_dbg_push_to_ring_with_hdr(dhd_pub_t *dhdp, int ring_id, void *data,
+	int datalen, int msgtrace_seqnum)
+{
+	char *logbuf;
+	int fill_len;
+	dhd_dbg_ring_entry_t msg_hdr;
+
+	bzero(&msg_hdr, sizeof(dhd_dbg_ring_entry_t));
+
+	logbuf = dhd_dbg_fill_logbuf(dhdp, data, datalen, &fill_len, msgtrace_seqnum);
+	if (!logbuf) {
+		DHD_ERROR(("Failed to fill logbuf. datalen:%u\n", datalen));
+		return;
+	}
+
+	msg_hdr.type = DBG_RING_ENTRY_DATA_TYPE;
+	msg_hdr.len = fill_len;
+
+	dhd_dbg_push_to_ring(dhdp, ring_id, &msg_hdr, logbuf);
+
+	return;
+}
 
 int
 dhd_dbg_push_to_ring(dhd_pub_t *dhdp, int ring_id, dhd_dbg_ring_entry_t *hdr, void *data)
@@ -1172,34 +1239,46 @@ exit:
 #if defined(EWP_BCM_TRACE) || defined(EWP_RTT_LOGGING) || \
 	defined(EWP_ECNTRS_LOGGING) || defined(EWP_EVENTTS_LOG) || defined(EWP_CX_TIMELINE)
 static int
-dhd_dbg_send_evtlog_to_ring(prcd_event_log_hdr_t *plog_hdr,
-	dhd_dbg_ring_entry_t *msg_hdr, dhd_dbg_ring_t *ring,
-	uint16 max_payload_len, uint8 *logbuf)
+dhd_dbg_send_evtlog_to_ring(dhd_pub_t *dhdp, prcd_event_log_hdr_t *plog_hdr,
+	dhd_dbg_ring_t *ring,
+	uint16 max_payload_len, void *data, int datalen, int msgtrace_seqnum)
 {
 	event_log_hdr_t *log_hdr;
-	struct tracelog_header *logentry_header;
 	uint16 len_chk = 0;
+	char *logbuf;
+	int fill_len;
+	dhd_dbg_ring_entry_t msg_hdr;
 
 	BCM_REFERENCE(log_hdr);
-	BCM_REFERENCE(logentry_header);
 	/*
 	 * check msg hdr len before pushing.
-	 * FW msg_hdr.len includes length of event log hdr,
-	 * logentry header and payload.
+	 * datalen includes length of event log hdr and payload.
 	 */
-	len_chk = (sizeof(*logentry_header) + sizeof(*log_hdr) +
-			max_payload_len);
+	len_chk = (sizeof(*log_hdr) + max_payload_len);
 	/* account extended event log header(extended_event_log_hdr) */
 	if (plog_hdr->ext_event_log_hdr) {
 		len_chk += sizeof(*log_hdr);
 	}
-	if (msg_hdr->len > len_chk) {
+
+	if (datalen > len_chk) {
 		DHD_ERROR(("%s: EVENT_LOG_VALIDATION_FAILS: "
-			"msg_hdr->len=%u, max allowed for %s=%u\n",
-			__FUNCTION__, msg_hdr->len, ring->name, len_chk));
+			"datalen=%u, max allowed for %s=%u\n",
+			__FUNCTION__, datalen, ring->name, len_chk));
 		return BCME_ERROR;
 	}
-	dhd_dbg_ring_push(ring, msg_hdr, logbuf);
+
+	bzero(&msg_hdr, sizeof(dhd_dbg_ring_entry_t));
+	logbuf = dhd_dbg_fill_logbuf(dhdp, data, datalen, &fill_len, msgtrace_seqnum);
+	if (!logbuf) {
+		DHD_ERROR(("%s: Failed to fill logbuf. datalen:%u\n",
+			__FUNCTION__, datalen));
+		return BCME_ERROR;
+	}
+
+	msg_hdr.type = DBG_RING_ENTRY_DATA_TYPE;
+	msg_hdr.len = fill_len;
+	dhd_dbg_ring_push(ring, &msg_hdr, logbuf);
+
 	return BCME_OK;
 }
 #endif /* EWP_BCM_TRACE || EWP_RTT_LOGGING || EWP_ECNTRS_LOGGING || EWP_CX_TIMELINE */
@@ -1323,10 +1402,6 @@ dhd_dbg_msgtrace_log_parser(dhd_pub_t *dhdp, void *event_data,
 	prcd_event_log_hdr_t *plog_hdr;
 	dll_t list_head, *cur;
 	loglist_item_t *log_item;
-	dhd_dbg_ring_entry_t msg_hdr;
-	char *logbuf;
-	struct tracelog_header *logentry_header;
-	uint ring_data_len = 0;
 	bool ecntr_pushed = FALSE;
 	bool rtt_pushed = FALSE;
 	bool bcm_trace_pushed = FALSE;
@@ -1398,31 +1473,10 @@ dhd_dbg_msgtrace_log_parser(dhd_pub_t *dhdp, void *event_data,
 	if (dhd_dbg_msgtrace_seqchk(&seqnum_prev, msgtrace_seqnum))
 		return;
 
-	/* Save the whole message to event log ring */
-	bzero(&msg_hdr, sizeof(dhd_dbg_ring_entry_t));
-	logbuf = VMALLOC(dhdp->osh, sizeof(*logentry_header) + datalen);
-	if (logbuf == NULL)
-		return;
-	logentry_header = (struct tracelog_header *)logbuf;
-	logentry_header->magic_num = TRACE_LOG_MAGIC_NUMBER;
-	logentry_header->buf_size = datalen;
-	logentry_header->seq_num = msgtrace_seqnum;
-	msg_hdr.type = DBG_RING_ENTRY_DATA_TYPE;
-
-	ring_data_len = datalen + sizeof(*logentry_header);
-
-	if ((sizeof(*logentry_header) + datalen) > PAYLOAD_MAX_LEN) {
-		DHD_ERROR(("%s:Payload len=%u exceeds max len\n", __FUNCTION__,
-			((uint)sizeof(*logentry_header) + datalen)));
-		goto exit;
-	}
-
-	msg_hdr.len = sizeof(*logentry_header) + datalen;
-	memcpy(logbuf + sizeof(*logentry_header), data, datalen);
-	DHD_DBGIF(("%s: datalen %d %d\n", __FUNCTION__, msg_hdr.len, datalen));
+	DHD_DBGIF(("%s: datalen %d\n", __FUNCTION__, datalen));
 
 #if defined(DEBUGABILITY) && defined(CUSTOMER_HW6)
-	dhd_dbg_push_to_ring(dhdp, FW_VERBOSE_RING_ID, &msg_hdr, logbuf);
+	dhd_dbg_push_to_ring_with_hdr(dhdp, FW_VERBOSE_RING_ID, data, datalen, msgtrace_seqnum);
 #endif /* DEBUGABILITY && CUSTOMER_HW6 */
 
 	/* Print sequence number, originating set and length of received
@@ -1530,12 +1584,13 @@ dhd_dbg_msgtrace_log_parser(dhd_pub_t *dhdp, void *event_data,
 			if (dbgring && push_evtlog) {
 #ifdef DHD_ECNTRS_EXPOSED_DBGRING
 				if (dbgring == dhdp->ecntr_dbg_ring) {
-					dhd_dbg_push_to_ring(dhdp, ECNTRS_RING_ID,
-						&msg_hdr, logbuf);
+					dhd_dbg_push_to_ring_with_hdr(dhdp, ECNTRS_RING_ID,
+						data, datalen, msgtrace_seqnum);
 				}
 #endif /* DHD_ECNTRS_EXPOSED_DBGRING */
-				if (dhd_dbg_send_evtlog_to_ring(plog_hdr, &msg_hdr, dbgring,
-					EVENT_LOG_MAX_BLOCK_SIZE, logbuf) != BCME_OK) {
+				if (dhd_dbg_send_evtlog_to_ring(dhdp, plog_hdr, dbgring,
+						EVENT_LOG_MAX_BLOCK_SIZE, data, datalen,
+						msgtrace_seqnum) != BCME_OK) {
 					goto exit;
 				}
 			}
@@ -1583,8 +1638,6 @@ exit:
 		dll_delete(cur);
 		MFREE(dhdp->osh, log_item, sizeof(*log_item));
 	}
-
-	VMFREE(dhdp->osh, logbuf, ring_data_len);
 }
 #else /* !SHOW_LOGTRACE */
 static INLINE void dhd_dbg_verboselog_handler(dhd_pub_t *dhdp,
@@ -3739,6 +3792,15 @@ dhd_dbg_attach(dhd_pub_t *dhdp, dbg_pullreq_t os_pullreq,
 	}
 	dbg->wrapper_buf.len = DHD_PCIE_WRAPPER_LEN;
 
+	dbg->logbuf.buf = VMALLOCZ(dhdp->osh, PAYLOAD_MAX_LEN);
+	if (!dbg->logbuf.buf) {
+		DHD_ERROR(("%s:%d: VMALLOC failed for logbuf, size %d\n",
+			__FUNCTION__, __LINE__, PAYLOAD_MAX_LEN));
+		ret = BCME_NOMEM;
+		goto error;
+	}
+	dbg->logbuf.len = PAYLOAD_MAX_LEN;
+
 	dbg->private = os_priv;
 	dbg->pullreq = os_pullreq;
 	dbg->urgent_notifier = os_urgent_notifier;
@@ -3751,6 +3813,10 @@ dhd_dbg_attach(dhd_pub_t *dhdp, dbg_pullreq_t os_pullreq,
 	return BCME_OK;
 
 error:
+	if (dbg->logbuf.buf) {
+		dbg->logbuf.len = 0;
+		VMFREE(dhdp->osh, dbg->logbuf.buf, PAYLOAD_MAX_LEN);
+	}
 	if (dbg->wrapper_buf.buf) {
 		dbg->wrapper_buf.len = 0;
 		VMFREE(dhdp->osh, dbg->wrapper_buf.buf, DHD_PCIE_WRAPPER_LEN);
@@ -3836,6 +3902,10 @@ dhd_dbg_detach(dhd_pub_t *dhdp)
 	if (dbg->wrapper_buf.buf) {
 		dbg->wrapper_buf.len = 0;
 		VMFREE(dhdp->osh, dbg->wrapper_buf.buf, DHD_PCIE_WRAPPER_LEN);
+	}
+	if (dbg->logbuf.buf) {
+		dbg->logbuf.len = 0;
+		VMFREE(dhdp->osh, dbg->logbuf.buf, PAYLOAD_MAX_LEN);
 	}
 
 	VMFREE(dhdp->osh, dhdp->dbg, sizeof(dhd_dbg_t));

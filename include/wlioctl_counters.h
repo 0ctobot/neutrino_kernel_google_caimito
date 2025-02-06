@@ -6,7 +6,7 @@
  *
  * Definitions subject to change without notice.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1897,6 +1897,11 @@ typedef struct wl_cnt_mcst_tx_v3 {
 	uint32	saqm_sendfrm_agg_cnt;		/**< # SAQM Send frame aggregation */
 	uint32	txbcn_phyerr_cnt;		/**< # Tx Beacon Phy error */
 	uint32	he_txtrig;			/**< # Tx Trigger Frames */
+
+	uint32	txctsfrm_infra;			/**< # CTS sent out by the MAC for infra */
+	uint32	norxfrm_aftertxcts;		/**< # rxframe after cts total */
+	uint32	norxfrm_aftertxcts_infra;	/**< # rxframe after cts only for infra */
+	uint32	norxfrm_aftertxcts_mu_cnt;	/**< # rxframe after TX cts for MU */
 } wl_cnt_mcst_tx_v3_t;
 
 typedef struct wl_cnt_mcst_tx_wrap_v2 {
@@ -3047,8 +3052,26 @@ typedef struct {
 	wl_traffic_stats_t forward[AC_COUNT];	/**< Packets forwarded by AP */
 
 	wl_traffic_stats_t tx_expired[AC_COUNT]; /**< packets dropped due to lifetime expiry */
-
 } wl_wme_cnt_t;
+
+
+typedef struct wl_wme_cnt_v2 {
+	uint16	version;	/**< see definition of WL_WME_CNT_VERSION */
+	uint16	length;		/**< length of entire structure */
+
+	wl_traffic_stats_t tx[AC_COUNT];	/**< Packets transmitted */
+	wl_traffic_stats_t tx_failed[AC_COUNT];	/**< Packets dropped or failed to transmit */
+	wl_traffic_stats_t rx[AC_COUNT];	/**< Packets received */
+	wl_traffic_stats_t rx_failed[AC_COUNT];	/**< Packets failed to receive */
+
+	wl_traffic_stats_t forward[AC_COUNT];	/**< Packets forwarded by AP */
+
+	wl_traffic_stats_t tx_expired[AC_COUNT]; /**< packets dropped due to lifetime expiry */
+	wl_traffic_stats_t tx_retry[AC_COUNT];  /**< Packets retried */
+} wl_wme_cnt_v2_t;
+
+#define WL_WME_CNT_VER_1	1u
+#define WL_WME_CNT_VER_2	2u
 
 /* #ifdef WLBA */
 
@@ -4421,7 +4444,7 @@ typedef struct wlc_btc_stats_v2 {
 #define ACPHY_OBSS_SUBBAND_CNT		8u	/* Max sub band counts i.e., 160Mhz = 8 * 20MHZ */
 
 #define	PHY_RX_GAIN_INDICES		16u	/* num of Rx gain indices */
-#define	PHY_TX_GAIN_CAL			3u	/* num of Tx gain indices */
+#define	PHY_TX_GAIN_CAL			4u	/* num of Tx gain indices */
 
 typedef struct phy_ecounter_v1 {
 	chanspec_t	chanspec;
@@ -4479,6 +4502,7 @@ typedef struct phy_ecounter_log_core_v4 {
 	int8	obss_pwrest[ACPHY_OBSS_SUBBAND_CNT];	/* OBSS signal power per sub-band in dBm */
 } phy_ecounter_log_core_v4_t;
 
+#define PHY_ECOUNTER_LOG_CORE_VER5_SIZE		48u
 typedef struct phy_ecounter_log_core_v5 {
 	uint16	bad_txbaseidx_cnt;	/* cntr for tx_baseidx=127 in healthcheck */
 	uint16	curr_tssival;		/* TxPwrCtrlInit_path[01].TSSIVal */
@@ -4933,6 +4957,7 @@ typedef struct phy_ecounter_v6 {
 	phy_ecounter_log_core_v4_t phy_ecounter_core[2];
 } phy_ecounter_v6_t;
 
+#define PHY_ECOUNTER_VER7_SIZE	344u
 typedef struct phy_ecounter_v7 {
 	chanspec_t	chanspec;
 	uint16		phy_wdg;		/* Count of times watchdog happened */
@@ -5125,8 +5150,8 @@ typedef struct phy_ecounter_v255 {
 	uint32		fbcx_info06;		/* Indicates FBCX debug information */
 	uint16		scan_info;		/* Indicates scan information */
 	uint16		scan_starts;		/* Indicates frame starts */
-	uint16		scan_detect[3];		/* Indicates frame detections */
-	uint16		scan_good_fcs[3];	/* Indicates good FCS Rx counter */
+	uint16		scan_detect[4];		/* Indicates frame detections */
+	uint16		scan_good_fcs[4];	/* Indicates good FCS Rx counter */
 	uint16		scan_bad_fcs;		/* Indicates bad FCS Rx counter */
 	uint16		scan_busy;		/* Indicates hardware busy */
 	uint16		scan_errors;		/* Indicates error counter */
@@ -5142,7 +5167,7 @@ typedef struct phy_ecounter_v255 {
 	uint16		ml_resp_match_rxcnt;	/* Indicates ML notif resp all conds matched */
 	uint8		ml_req_retry_cnt;	/* ML notification request retry count */
 	uint8		pa_mode;		/* PA mode */
-	uint8		debug_01;		/* for future debugging */
+	uint8		scan_channel_mask;	/* Indicates scan mask */
 	uint8		debug_02;		/* for future debugging */
 	uint16		debug_03;		/* for future debugging */
 	phy_ecounter_log_core_v255_t phy_ecounter_core[2];
@@ -5266,6 +5291,7 @@ typedef struct phy_phycal_core_v2 {
 	uint32	debug_12;
 } phy_phycal_core_v2_t;
 
+#define PHY_PHYCAL_CORE_VER3_SIZE		224u
 typedef struct phy_phycal_core_v3 {
 	/* RxIQ imbalance coeff */
 	uint16	rxa;
@@ -5316,7 +5342,7 @@ typedef struct phy_phycal_core_v3 {
 	int16	dc_est_q;		/* Residual DC Estimate */
 	int16	kappa_theta[PHY_RX_GAIN_INDICES][2u];	/* RX-IQ comp coefficients */
 	int16	dc_re_im[PHY_RX_GAIN_INDICES][2u];	/* DC compensation coefficients */
-	int16	txgaincal[PHY_TX_GAIN_CAL];		/* txgaincal correction factor */
+	int16	txgaincal[3];		/* txgaincal correction factor */
 
 	/* Misc general purpose debug counters (will be used for future debugging) */
 	uint16	debug_01;
@@ -5519,6 +5545,7 @@ typedef struct phy_phycal_v2 {
 	phy_phycal_core_v2_t phy_phycal_core[2];
 } phy_phycal_v2_t;
 
+#define PHY_PHYCAL_VER3_SIZE	540u
 typedef struct phy_phycal_v3 {
 	/* General info */
 	uint32	last_cal_time; /* in [sec], covers 136 years if 32 bit */
@@ -5676,7 +5703,8 @@ typedef struct phy_ecounter_phycal_stats_v2 {
 	phy_phycal_v2_t		phy_counter[];
 } phy_ecounter_phycal_stats_v2_t;
 
-#define PHY_ECOUNTERS_PHYCAL_STATS_VER3	3u
+#define PHY_ECOUNTERS_PHYCAL_STATS_VER3		3u
+#define PHY_ECOUNTERS_PHYCAL_STATS_VER3_SIZE	8u
 typedef struct phy_ecounter_phycal_stats_v3 {
 	uint16			version;
 	uint16			length;
@@ -5760,6 +5788,7 @@ typedef struct phy_ecounter_stats_v6 {
 } phy_ecounter_stats_v6_t;
 
 #define PHY_ECOUNTERS_STATS_VER7	7u
+#define PHY_ECOUNTERS_STATS_VER7_SIZE	8u
 typedef struct phy_ecounter_stats_v7 {
 	uint16			version;
 	uint16			length;
@@ -7604,6 +7633,65 @@ typedef struct wl_sc_multi_scan_cnts_v1 {
 	uint32	fe_tot_fcs_pass[WL_SC_MULTI_SCAN_FES_V1];	/* Added from dsss and ofdm */
 } wl_sc_multi_scan_cnts_v1_t;
 
+#define WL_SC_MULTI_SCAN_CNT_VER_V2		2u
+#define WL_SC_MULTI_SCAN_FES_V2			4u
+
+typedef struct wl_sc_multi_scan_cnts_v2 {
+	uint16  version;	/* WL_SC_MULTI_SCAN_CNT_VER_V2 */
+	uint16  len;
+	uint32  ofdm_crs_detect;
+	uint32  ofdm_be_busy;
+	uint32  ofdm_false_detect;
+	uint32  ofdm_cstr_timeout;
+	uint32  ofdm_fstr_timeout;
+	uint32  ofdm_sig1_error;
+	uint32  ofdm_sig2_error;
+	uint32  ofdm_filt_reject;
+	uint32  ofdm_fifo_drop;
+	uint32  ofdm_unsupported;
+	uint32  ofdm_be_timeout;
+	uint32  ofdm_fcs_fail;
+	uint32  ofdm_fcs_pass;
+	uint32  dsss_crs_detect;
+	uint32  dsss_be_busy;
+	uint32  dsss_false_detect;
+	uint32  dsss_fos_timeout;
+	uint32  dsss_sfd_timeout;
+	uint32  dsss_phr_error;
+	uint32  dsss_filt_reject;
+	uint32  dsss_fifo_drop;
+	uint32  dsss_unsupported;
+	uint32  dsss_be_timeout;
+	uint32  dsss_fcs_fail;
+	uint32  dsss_fcs_pass;
+	uint32  tot_queue_drop;
+	uint32  tot_aborted;
+	uint32	tot_be_busy;		/* Added from dsss and ofdm */
+	uint32	tot_filt_reject;	/* Added from dsss and ofdm */
+	uint32	tot_fifo_drop;		/* Added from dsss and ofdm */
+	uint32	tot_unsupported;	/* Added from dsss and ofdm */
+	uint32	tot_fcs_fail;		/* Added from dsss and ofdm */
+	uint32	tot_fcs_pass;		/* Added from dsss and ofdm */
+	uint32  fe_ofdm_crs_detect[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_ofdm_be_busy[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_ofdm_fcs_fail[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_ofdm_fcs_pass[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_ofdm_depri_detect[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_ofdm_be_reassign[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_dsss_crs_detect[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_dsss_be_busy[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_dsss_fcs_fail[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_dsss_fcs_pass[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_dsss_depri_detect[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_dsss_be_reassign[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_tot_aborted[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_tot_timeout[WL_SC_MULTI_SCAN_FES_V2];
+	uint32  fe_tot_reset[WL_SC_MULTI_SCAN_FES_V2];
+	uint32	fe_tot_be_busy[WL_SC_MULTI_SCAN_FES_V2];	/* Added from dsss and ofdm */
+	uint32	fe_tot_fcs_fail[WL_SC_MULTI_SCAN_FES_V2];	/* Added from dsss and ofdm */
+	uint32	fe_tot_fcs_pass[WL_SC_MULTI_SCAN_FES_V2];	/* Added from dsss and ofdm */
+} wl_sc_multi_scan_cnts_v2_t;
+
 /* LLW stats */
 typedef enum wl_llw_xtlv {
 	WL_LLW_XTLV_STATS = 0,
@@ -7694,4 +7782,52 @@ typedef struct wl_cnt_phy_rx_stats_v1_t {
 	/* Per ML Link PHY RX counters (esp. eMLSR) */
 	uint8	counters[];
 } wl_cnt_phy_rx_stats_v1_t;
+
+typedef struct sbi_sc_pkt_stats_v1 {
+	uint32 ucast_data_cnt;          /* Ucast data pkt */
+	uint32 bcmc_data_cnt;           /* BCMC data pkt */
+	uint32 mgmt_pkt_cnt;            /* MGMT pkt */
+	uint32 ctl_pkt_cnt;             /* CTL pkt  */
+} sbi_sc_pkt_stats_v1_t;
+
+typedef struct sbi_sc_infra_stats_v1 {
+	uint32 tbtt_cnt;                /* TBTT */
+	uint32 tbtt_offchan_cnt;        /* TBTT when SC is not on infra chan */
+	uint32 bcn_cnt;                 /* BCN RX */
+	uint32 tim_bcn_cnt;             /* BCN with TIM set */
+	uint32 dtim_bcn_cnt;            /* DTIM BCN with BCMC set */
+	uint32 bcn_miss_cnt;            /* BCN miss */
+	uint32 bcmc_loss_evt_cnt;       /* BCMC loss after dtim */
+	sbi_sc_pkt_stats_v1_t pkt_stats; /* Infra pkt stats */
+} sbi_sc_infra_stats_v1_t;
+
+typedef struct sbi_sc_stats_v1 {
+	sbi_sc_infra_stats_v1_t infra_stats; /* Infra specific stats */
+	sbi_sc_pkt_stats_v1_t sbss_stats;    /* SBSS specific stats */
+	uint32 slot_skip_cnt;                /* Slot skip count */
+} sbi_sc_stats_v1_t;
+
+typedef struct sbi_sc_chan_stats_v1 {
+	chanspec_t chan;
+	uint16 flags;
+	uint32 dur_ms;
+	sbi_sc_stats_v1_t stats;
+} sbi_sc_chan_stats_v1_t;
+
+#define WLC_SBI_SC_STATS_CTR_FIXED_LEN_V1    OFFSETOF(wlc_sbi_sc_stats_ctr_v1_t, chstats)
+
+#define WLC_SBI_SC_STATS_CTR_VER_V1           1u
+
+typedef struct wlc_sbi_sc_stats_ctr_v1 {
+	uint16	version;
+	uint16	len;
+	sbi_sc_chan_stats_v1_t chstats[];
+} wlc_sbi_sc_stats_ctr_v1_t;
+
+#define WLC_SBI_SC_AGG_STATS_VER_V1          1u
+typedef struct sbi_sc_agg_stats_v1 {
+	uint16 version;
+	uint16 len;
+	sbi_sc_stats_v1_t stats;
+} sbi_sc_agg_stats_v1_t;
 #endif /* _wlioctl_counters_h_ */

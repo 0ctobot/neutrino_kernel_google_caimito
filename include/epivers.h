@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -29,45 +29,45 @@
 
 #define EPI_RC_NUMBER		407
 
-#define EPI_INCREMENTAL_NUMBER	29
+#define EPI_INCREMENTAL_NUMBER	40
 
 #define EPI_BUILD_NUMBER	0
 
-#define EPI_VERSION		103, 10, 407, 29
+#define EPI_VERSION		103, 10, 407, 40
 
-#define EPI_VERSION_NUM		0x670a1971
+#define EPI_VERSION_NUM		0x670a1972
 
-#define EPI_UNIQUE_NUM		0x670a1971d
+#define EPI_UNIQUE_NUM		0x670a19728
 
 #define EPI_VERSION_DEV		103.10.407
 
 /* Driver Version String, ASCII, 32 chars max */
 #if defined (WLTEST)
-#define EPI_VERSION_STR		"103.10.407.29 (wlan=r1083414 WLTEST)"
+#define EPI_VERSION_STR		"103.10.407.40 (wlan=r1091838 WLTEST)"
 #elif (defined (BCMDBG_ASSERT) && \
 	!defined (BCMDBG_ASSERT_DISABLED) && \
 	!defined (ASSERT_FP_DISABLE))
-#define EPI_VERSION_STR		"103.10.407.29 (wlan=r1083414 ASSRT)"
+#define EPI_VERSION_STR		"103.10.407.40 (wlan=r1091838 ASSRT)"
 #else
-#define EPI_VERSION_STR		"103.10.407.29 (wlan=r1083414)"
+#define EPI_VERSION_STR		"103.10.407.40 (wlan=r1091838)"
 #endif /* BCMINTERNAL */
 
 /* Macros for coex firmware. */
-#define CXFW_MAJOR_VERSION	2024
+#define CXFW_MAJOR_VERSION	2025
 
-#define CXFW_MINOR_VERSION	11
+#define CXFW_MINOR_VERSION	2
 
-#define CXFW_RC_NUMBER		1
+#define CXFW_RC_NUMBER		6
 
 #define CXFW_INCREMENTAL_NUMBER	0
 
-#define CXFW_VERSION		2024, 11, 1, 0
+#define CXFW_VERSION		2025, 2, 6, 0
 
-#define CXFW_VERSION_NUM	0x670a1971
+#define CXFW_VERSION_NUM	0x670a1972
 
-#define CXFW_UNIQUE_NUM		0x670a1971d
+#define CXFW_UNIQUE_NUM		0x670a19728
 
 /* COEX Firmware Version String, ASCII */
-#define CXFW_VERSION_STR	"2024.11.01 (coex=r1064907)"
+#define CXFW_VERSION_STR	"2025.02.06 (coex=r1064907)"
 
 #endif /* _epivers_h_ */

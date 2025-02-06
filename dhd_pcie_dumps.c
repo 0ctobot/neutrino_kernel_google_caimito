@@ -2,7 +2,7 @@
 * DHD PCIE for various dumps - all pcie related
 * register, intr, counter etc.. dumps and sdtc dumps
 *
-* Copyright (C) 2024, Broadcom.
+* Copyright (C) 2025, Broadcom.
 *
 *      Unless you and Broadcom execute a separate written software license
 * agreement governing use of this software, this software is licensed to you

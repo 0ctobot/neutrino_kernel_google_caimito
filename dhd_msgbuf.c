@@ -3,7 +3,7 @@
  * Provides type definitions and function prototypes used to link the
  * DHD OS, bus, and protocol modules.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -7915,6 +7915,13 @@ dhd_prot_process_edl_complete(dhd_pub_t *dhd, void *evt_decode_data)
 	n = max_items_to_process;
 	while (n > 0) {
 		msg = (cmn_msg_hdr_t *)msg_addr;
+
+		/* Don't process further if any bus error has occurred */
+		if (dhd_query_bus_erros(dhd)) {
+			DHD_ERROR_RLMT(("%s: quitting due to dhd_query_bus_erros\n", __FUNCTION__));
+			return 0;
+		}
+
 		/* wait for DMA of work item to complete */
 		if ((err = dhd->prot->d2h_edl_sync_cb(dhd, ring, msg)) != BCME_OK) {
 			DHD_ERROR(("%s: Error waiting for DMA to cmpl in EDL ring; err = %d\n",
@@ -8205,6 +8212,13 @@ BCMFASTPATH(dhd_prot_process_msgbuf_rxcpl)(dhd_pub_t *dhd, int ringtype, uint32 
 
 		while (msg_len > 0) {
 			msg = (host_rxbuf_cmpl_t *)msg_addr;
+
+			/* Don't process further if any bus error has occurred */
+			if (dhd_query_bus_erros(dhd)) {
+				DHD_ERROR_RLMT(("%s: quitting due to dhd_query_bus_erros\n",
+					__FUNCTION__));
+				break;
+			}
 
 			/* Wait until DMA completes, then fetch msg_type */
 			sync = prot->d2h_sync_cb(dhd, ring, &msg->cmn_hdr, item_len);
@@ -8834,6 +8848,12 @@ BCMFASTPATH(dhd_prot_process_msgtype)(dhd_pub_t *dhd, msgbuf_ring_t *ring, uint8
 
 		msg = (cmn_msg_hdr_t *)buf;
 
+		/* Don't process further if any bus error has occurred */
+		if (dhd_query_bus_erros(dhd)) {
+			DHD_ERROR_RLMT(("%s: quitting due to dhd_query_bus_erros\n", __FUNCTION__));
+			ret = BCME_ERROR;
+			goto done;
+		}
 		/* Wait until DMA completes, then fetch msg_type */
 		msg_type = dhd->prot->d2h_sync_cb(dhd, ring, msg, item_len);
 
