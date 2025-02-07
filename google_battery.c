@@ -65,6 +65,9 @@
 #define AAFV_CLIFF_CYCLE_DEFAULT	1000
 #define AAFV_CLIFF_OFFSET_DEFAULT	100
 
+/* AACP */
+#define AACP_CUT_OFF_CYCLES_DEFAULT	-1 /* no cutoff */
+
 /* qual time is 0 minutes of charge or 0% increase in SOC */
 #define DEFAULT_CHG_STATS_MIN_QUAL_TIME		0
 #define DEFAULT_CHG_STATS_MIN_DELTA_SOC		0
@@ -669,6 +672,7 @@ struct batt_drv {
 	int aacp_version;
 	enum batt_aacp_opt_out aacp_opt_out;
 	struct mutex aacp_state_lock;
+	int aacp_cut_off_cycles;
 
 	/* AACC: Age adjusted cycle count */
 	int aacc;
@@ -3949,6 +3953,27 @@ static u32 aacr_get_reference_capacity(const struct batt_drv *batt_drv, int cycl
 	return design_capacity - (design_capacity * fade10 / 1000);
 }
 
+/* AACP ------------------------------------------------------------------- */
+
+static int aacp_get_cc(const struct batt_drv *batt_drv)
+{
+	return batt_drv->fake_aacp_cc ? batt_drv->fake_aacp_cc : batt_drv->aacc;
+}
+
+static void aacp_reset_opt_out(struct batt_drv *batt_drv)
+{
+	const int cycle_count = aacp_get_cc(batt_drv);
+
+	mutex_lock(&batt_drv->aacp_state_lock);
+
+	if (batt_drv->aacp_opt_out && cycle_count >= batt_drv->aacp_cut_off_cycles)
+		batt_drv->aacp_opt_out = 0;
+
+	mutex_unlock(&batt_drv->aacp_state_lock);
+}
+
+/* AACR ------------------------------------------------------------------- */
+
 /* 80% of design_capacity min, design_capacity in grace, aacr or negative */
 static int aacr_get_capacity_for_algo(const struct batt_drv *batt_drv, int cycle_count,
 				      int aacr_algo)
@@ -4011,14 +4036,10 @@ static u32 aacr_get_capacity_locked(struct batt_drv *batt_drv)
 	int capacity = batt_drv->battery_capacity;
 	int cycle_count;
 
-	if (batt_drv->fake_aacp_cc)
-		cycle_count = batt_drv->fake_aacp_cc;
-	else
-		cycle_count = batt_drv->aacc;
-
 	if (batt_drv->aacp_opt_out || batt_drv->aacr_state == BATT_AACR_DISABLED)
 		goto exit_done;
 
+	cycle_count = aacp_get_cc(batt_drv);
 	if (cycle_count <= batt_drv->aacr_cycle_grace) {
 		batt_drv->aacr_state = BATT_AACR_UNDER_CYCLES;
 	} else {
@@ -4335,8 +4356,7 @@ static int bhi_calc_cap_index(int algo, struct batt_drv *batt_drv)
 	capacity_health = bhi_health_get_capacity(algo, bhi_data);
 
 	if (bhi_algo_has_bounds(algo)) {
-		const int cycle_count = batt_drv->fake_aacp_cc ?
-					batt_drv->fake_aacp_cc : batt_drv->aacc;
+		const int cycle_count = aacp_get_cc(batt_drv);
 
 		capacity_health = bhi_algo_apply_bounds(algo, capacity_health, cycle_count,
 							bhi_data);
@@ -4932,16 +4952,13 @@ static int batt_init_aafv_profile(struct batt_drv *batt_drv)
 
 static u32 aafv_update_state(struct batt_drv *batt_drv)
 {
-	int cycle_count = batt_drv->aacc;
+	const int cycle_count = aacp_get_cc(batt_drv);
 	int aafv_offset = 0;
 
 	mutex_lock(&batt_drv->aacp_state_lock);
 
 	if (batt_drv->aacp_opt_out || batt_drv->aafv_state == BATT_AAFV_DISABLED)
 		goto exit_done;
-
-	if (batt_drv->fake_aacp_cc)
-		cycle_count = batt_drv->fake_aacp_cc;
 
 	if (batt_drv->aafv_apply_max)
 		aafv_offset = batt_drv->aafv_max_offset;
@@ -5512,10 +5529,7 @@ static void aact_reset(struct gbms_chg_profile *profile)
 /* call holding mutex_lock(&batt_drv->aacp_state_lock); */
 static int aact_get_index(const struct batt_drv *batt_drv)
 {
-	int cycle_count = batt_drv->aacc;
-
-	if (batt_drv->fake_aacp_cc)
-		cycle_count = batt_drv->fake_aacp_cc;
+	const int cycle_count = aacp_get_cc(batt_drv);
 
 	return gbms_aact_get_index(&batt_drv->chg_profile, cycle_count);
 }
@@ -5654,6 +5668,8 @@ static int batt_chg_logic(struct batt_drv *batt_drv)
 		/* google_resistance is calculated while charging */
 		if (bhi_data->res_state.estimate_filter)
 			batt_res_state_set(&bhi_data->res_state, true);
+
+		aacp_reset_opt_out(batt_drv);
 
 		mutex_lock(&batt_drv->aacp_state_lock);
 		err = aact_update_chg_table(batt_drv);
@@ -8752,6 +8768,7 @@ static ssize_t aacp_opt_out_store(struct device *dev,
 	struct power_supply *psy = container_of(dev, struct power_supply, dev);
 	struct batt_drv *batt_drv = power_supply_get_drvdata(psy);
 	int value, ret = 0;
+	int cycle_count;
 
 	ret = kstrtoint(buf, 0, &value);
 	if (ret < 0)
@@ -8761,7 +8778,9 @@ static ssize_t aacp_opt_out_store(struct device *dev,
 		return count;
 
 	mutex_lock(&batt_drv->aacp_state_lock);
-	batt_drv->aacp_opt_out = value;
+	cycle_count = aacp_get_cc(batt_drv);
+	batt_drv->aacp_opt_out = value && batt_drv->aacp_cut_off_cycles >= 0 &&
+				 cycle_count < batt_drv->aacp_cut_off_cycles;
 	mutex_unlock(&batt_drv->aacp_state_lock);
 
 	return count;
@@ -12169,6 +12188,12 @@ static void google_battery_init_work(struct work_struct *work)
 				   &batt_drv->health_data.bhi_data.first_usage_date);
 	if (ret < 0)
 		batt_drv->health_data.bhi_data.first_usage_date = -1;
+
+	/* AACP opt-out */
+	ret = of_property_read_u32(node, "google,aacp-cut-off-cycles",
+				   &batt_drv->aacp_cut_off_cycles);
+	if (ret < 0)
+		batt_drv->aacp_cut_off_cycles = AACP_CUT_OFF_CYCLES_DEFAULT;
 
 	/* single battery disconnect */
 	(void)batt_bpst_init_debugfs(batt_drv);
