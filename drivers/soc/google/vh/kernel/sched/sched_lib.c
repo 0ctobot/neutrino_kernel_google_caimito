@@ -25,6 +25,10 @@ DEFINE_SPINLOCK(priority_task_name_lock);
 char prefer_idle_task_name[LIB_PATH_LENGTH];
 DEFINE_SPINLOCK(prefer_idle_task_name_lock);
 
+char boost_at_fork_task_name[LIB_PATH_LENGTH];
+raw_spinlock_t boost_at_fork_task_name_lock;
+unsigned long vendor_sched_boost_at_fork_value = SCHED_CAPACITY_SCALE/2;
+
 static DEFINE_MUTEX(__sched_lib_name_mutex);
 
 ssize_t sched_lib_name_store(struct file *filp,
@@ -224,4 +228,20 @@ int set_prefer_idle_task_name(void)
 	}
 
 	return ret;
+}
+
+bool should_boost_at_fork(struct task_struct *p)
+{
+	int group = get_vendor_group(p);
+	unsigned long irqflags;
+	bool boost = false;
+
+	raw_spin_lock_irqsave(&boost_at_fork_task_name_lock, irqflags);
+	if (strlen(boost_at_fork_task_name) &&
+	    strstr(p->parent->comm, boost_at_fork_task_name) &&
+	    (group == VG_FOREGROUND || group == VG_TOPAPP))
+		boost = true;
+	raw_spin_unlock_irqrestore(&boost_at_fork_task_name_lock, irqflags);
+
+	return boost;
 }

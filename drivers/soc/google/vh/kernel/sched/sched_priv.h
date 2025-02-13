@@ -78,6 +78,10 @@ extern unsigned int vh_sched_min_granularity_ns;
 extern unsigned int vh_sched_wakeup_granularity_ns;
 extern unsigned int vh_sched_latency_ns;
 
+extern char boost_at_fork_task_name[LIB_PATH_LENGTH];
+extern raw_spinlock_t boost_at_fork_task_name_lock;
+extern unsigned long vendor_sched_boost_at_fork_value;
+
 DECLARE_STATIC_KEY_FALSE(auto_migration_margins_enable);
 DECLARE_STATIC_KEY_FALSE(auto_dvfs_headroom_enable);
 
@@ -85,6 +89,7 @@ DECLARE_STATIC_KEY_FALSE(auto_dvfs_headroom_enable);
 unsigned long approximate_util_avg(unsigned long util, u64 delta);
 u64 approximate_runtime(unsigned long util);
 inline void __reset_task_affinity(struct task_struct *p);
+bool should_boost_at_fork(struct task_struct *p);
 
 #define cpu_overutilized(cap, max, cpu)	\
 		((cap) * sched_capacity_margin[cpu] > (max) << SCHED_CAPACITY_SHIFT)
