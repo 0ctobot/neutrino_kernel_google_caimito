@@ -32,9 +32,7 @@
 #define DP_RXCAPS_REPEATER             (0x1 << 0)
 #define DP_RXCAPS_HDCP_VERSION_2       (0x2)
 
-static struct hdcp_link_data lkd;
-
-static int auth22_determine_rx_hdcp_cap(struct hdcp_link_data *lk)
+static int auth22_determine_rx_hdcp_cap(bool *is_repeater)
 {
 	int ret;
 	uint8_t rxcaps[HDCP_CAPS_BYTE_LEN];
@@ -58,97 +56,94 @@ static int auth22_determine_rx_hdcp_cap(struct hdcp_link_data *lk)
 		return -EIO;
 	}
 
-	lk->is_repeater = rxcaps[2] & DP_RXCAPS_REPEATER;
+	*is_repeater = rxcaps[2] & DP_RXCAPS_REPEATER;
 	return 0;
 }
 
-int hdcp22_dplink_authenticate(void)
+static int hdcp22_dplink_repeater_auth(void)
 {
-	struct hdcp_link_data *lk_data = &lkd;
-	bool rp_ready = lk_data->rp_ready;
+	if (auth22_wait_for_receiver_id_list())
+		return -EAGAIN;
 
-	memset(&lkd, 0, sizeof(lkd));
-	if (rp_ready)
-		UPDATE_LINK_STATE(lk_data, LINK_ST_A7_VERIFY_RECEIVER_ID_LIST);
-	else
-		UPDATE_LINK_STATE(lk_data, LINK_ST_A0_DETERMINE_RX_HDCP_CAP);
+	if (auth22_verify_receiver_id_list())
+		return -EAGAIN;
 
-	do {
-		switch (lk_data->state) {
-		case LINK_ST_H1_TX_LOW_VALUE_CONTENT:
-			return -EIO;
-		case LINK_ST_A0_DETERMINE_RX_HDCP_CAP:
-			if (auth22_determine_rx_hdcp_cap(lk_data) == 0) {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_A1_EXCHANGE_MASTER_KEY);
-			} else {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_H1_TX_LOW_VALUE_CONTENT);
-				return -EOPNOTSUPP;
-			}
-			break;
-		case LINK_ST_A1_EXCHANGE_MASTER_KEY:
-			if (auth22_exchange_master_key(lk_data) == 0) {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_A2_LOCALITY_CHECK);
-			} else {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_H1_TX_LOW_VALUE_CONTENT);
-				return -EAGAIN;
-			}
-			break;
-		case LINK_ST_A2_LOCALITY_CHECK:
-			if (auth22_locality_check(lk_data) == 0) {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_A3_EXCHANGE_SESSION_KEY);
-			} else {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_H1_TX_LOW_VALUE_CONTENT);
-				return -EAGAIN;
-			}
-			break;
-		case LINK_ST_A3_EXCHANGE_SESSION_KEY:
-			if (auth22_exchange_session_key(lk_data) == 0) {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_A4_TEST_REPEATER);
-			} else {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_H1_TX_LOW_VALUE_CONTENT);
-			}
-			break;
-		case LINK_ST_A4_TEST_REPEATER:
-			if (lk_data->is_repeater) {
-				/* if it is a repeater, verify Rcv ID list */
-				UPDATE_LINK_STATE(lk_data, LINK_ST_A6_WAIT_RECEIVER_ID_LIST);
-				hdcp_info("It`s repeater link !\n");
-			} else {
-				/* if it is not a repeater, complete authentication */
-				UPDATE_LINK_STATE(lk_data, LINK_ST_A5_AUTHENTICATED);
-				hdcp_info("It`s Rx link !\n");
-			}
-			break;
-		case LINK_ST_A5_AUTHENTICATED:
+	if (auth22_stream_manage())
+		return -EIO;
+
+	return 0;
+}
+
+static int hdcp22_dplink_authenticate(bool* second_stage_required)
+{
+	if (auth22_determine_rx_hdcp_cap(second_stage_required))
+		return -EOPNOTSUPP;
+
+	if (auth22_exchange_master_key())
+		return -EAGAIN;
+
+	if (auth22_locality_check())
+		return -EAGAIN;
+
+	if (auth22_exchange_session_key(*second_stage_required))
+		return -EIO;
+
+	return 0;
+}
+
+int run_hdcp2_auth(void)
+{
+	int ret;
+	int i;
+	bool second_stage_required;
+
+	if (hdcp_get_auth_state() == HDCP2_AUTH_RP) {
+		SET_HDCP_STATE_OR_RETURN(HDCP2_AUTH_PROGRESS, -EBUSY);
+
+		ret = hdcp22_dplink_repeater_auth();
+		if (ret == 0) {
+			SET_HDCP_STATE_OR_RETURN(HDCP2_AUTH_DONE, -EBUSY);
 			return 0;
-		case LINK_ST_A6_WAIT_RECEIVER_ID_LIST:
-			if (auth22_wait_for_receiver_id_list(lk_data) == 0) {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_A7_VERIFY_RECEIVER_ID_LIST);
-			} else {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_H1_TX_LOW_VALUE_CONTENT);
-				return -EAGAIN;
-			}
-			break;
-		case LINK_ST_A7_VERIFY_RECEIVER_ID_LIST:
-			if (auth22_verify_receiver_id_list(lk_data) == 0) {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_A9_CONTENT_STREAM_MGT);
-			} else {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_H1_TX_LOW_VALUE_CONTENT);
-				return -EAGAIN;
-			}
-			break;
-		case LINK_ST_A9_CONTENT_STREAM_MGT:
-			if (auth22_stream_manage(lk_data) == 0) {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_A5_AUTHENTICATED);
-			} else {
-				UPDATE_LINK_STATE(lk_data, LINK_ST_H1_TX_LOW_VALUE_CONTENT);
-			}
-			break;
-		default:
-			UPDATE_LINK_STATE(lk_data, LINK_ST_H1_TX_LOW_VALUE_CONTENT);
-			break;
 		}
-	} while (1);
+
+		SET_HDCP_STATE_OR_RETURN(HDCP_AUTH_IDLE, -EBUSY);
+		if (ret != -EAGAIN)
+			return ret;
+	}
+
+	for (i = 0; i < 3; ++i) {
+		hdcp_info("HDCP22 Try (%d)...\n", i);
+
+		SET_HDCP_STATE_OR_RETURN(HDCP2_AUTH_PROGRESS, -EBUSY);
+
+		ret = hdcp22_dplink_authenticate(&second_stage_required);
+		if (ret) {
+			SET_HDCP_STATE_OR_RETURN(HDCP_AUTH_IDLE, -EBUSY);
+			if (ret == -EAGAIN)
+				continue;
+			else
+				break;
+		}
+
+		if (!second_stage_required) {
+			SET_HDCP_STATE_OR_RETURN(HDCP2_AUTH_DONE, -EBUSY);
+			return 0;
+		}
+
+		ret = hdcp22_dplink_repeater_auth();
+		if (ret) {
+			SET_HDCP_STATE_OR_RETURN(HDCP_AUTH_IDLE, -EBUSY);
+			if (ret == -EAGAIN)
+				continue;
+			else
+				break;
+		}
+
+		SET_HDCP_STATE_OR_RETURN(HDCP2_AUTH_DONE, -EBUSY);
+		return 0;
+	}
+
+	return ret;
 }
 
 int hdcp22_dplink_handle_irq(void) {
@@ -169,21 +164,12 @@ int hdcp22_dplink_handle_irq(void) {
 	} else if (HDCP_2_2_DP_RXSTATUS_REAUTH_REQ(rxstatus)) {
 		hdcp_info("reauth requested.\n");
 		return -EFAULT;
-	} else if (HDCP_2_2_DP_RXSTATUS_PAIRING(rxstatus)) {
-		hdcp_info("pairing avaible\n");
-		lkd.pairing_ready = 1;
-		return 0;
-	} else if (HDCP_2_2_DP_RXSTATUS_H_PRIME(rxstatus)) {
-		hdcp_info("h-prime avaible\n");
-		lkd.hprime_ready = 1;
-		return 0;
 	} else if (HDCP_2_2_DP_RXSTATUS_READY(rxstatus)) {
 		hdcp_info("ready avaible\n");
-		lkd.rp_ready = 1;
-		hdcp_set_auth_state(HDCP2_AUTH_RP);
+		SET_HDCP_STATE_OR_RETURN(HDCP2_AUTH_RP, -EBUSY);
 		return -EAGAIN;
 	}
 
-	hdcp_err("undefined RxStatus(0x%x). ignore\n", rxstatus);
+	hdcp_err("unexpected RxStatus(0x%x). ignore\n", rxstatus);
 	return -EINVAL;
 }

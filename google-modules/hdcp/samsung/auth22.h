@@ -11,7 +11,7 @@
 #ifndef __EXYNOS_HDCP2_AUTH_H__
 #define __EXYNOS_HDCP2_AUTH_H__
 
-int hdcp22_dplink_authenticate(void);
+int run_hdcp2_auth(void);
 int hdcp22_dplink_handle_irq(void);
 
 #endif

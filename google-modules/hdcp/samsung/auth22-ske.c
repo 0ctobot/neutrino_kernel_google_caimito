@@ -17,7 +17,7 @@
 #include "teeif.h"
 #include "hdcp-log.h"
 
-static int do_send_ske_send_eks(struct hdcp_link_data *lk)
+static int do_send_ske_send_eks(bool is_repeater)
 {
 	int ret;
 	uint8_t type = 0x00;
@@ -53,7 +53,7 @@ static int do_send_ske_send_eks(struct hdcp_link_data *lk)
 		return -EIO;
 	}
 
-	if (lk->is_repeater)
+	if (is_repeater)
 		return 0;
 
 	ret = hdcp_dplink_send(DP_HDCP_2_2_REG_STREAM_TYPE_OFFSET, &type,
@@ -66,10 +66,10 @@ static int do_send_ske_send_eks(struct hdcp_link_data *lk)
 	return 0;
 }
 
-int auth22_exchange_session_key(struct hdcp_link_data *lk)
+int auth22_exchange_session_key(bool is_repeater)
 {
 	/* Send Tx -> Rx: SKE_Send_Eks */
-	if (do_send_ske_send_eks(lk) < 0) {
+	if (do_send_ske_send_eks(is_repeater) < 0) {
 		hdcp_err("send_ske_send_eks fail\n");
 		return -EIO;
 	}

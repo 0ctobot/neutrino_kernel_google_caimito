@@ -84,7 +84,7 @@ static int read_ksv_list(u8* hdcp_ksv, u32 len)
 		-EIO : read_len;
 }
 
-int hdcp13_dplink_repeater_auth(void)
+static int hdcp13_dplink_repeater_auth(void)
 {
 	uint8_t ksv_list[HDCP_KSV_MAX_LEN];
 	uint8_t *ksv_list_ptr = ksv_list;
@@ -172,7 +172,7 @@ int hdcp13_dplink_repeater_auth(void)
 	return -EIO;
 }
 
-int hdcp13_dplink_authenticate(bool* second_stage_required)
+static int hdcp13_dplink_authenticate(bool* second_stage_required)
 {
 	uint64_t aksv, bksv, an;
 	uint8_t bcaps;
@@ -225,6 +225,31 @@ int hdcp13_dplink_authenticate(bool* second_stage_required)
 	hdcp_info("Done 1st Authentication\n");
 	*second_stage_required = bcaps & DP_BCAPS_REPEATER_PRESENT;
 	return 0;
+}
+
+int run_hdcp1_auth(void) {
+	int ret;
+	bool second_stage_required;
+
+	SET_HDCP_STATE_OR_RETURN(HDCP1_AUTH_PROGRESS, -EBUSY);
+
+	ret = hdcp13_dplink_authenticate(&second_stage_required);
+	if (ret) {
+		SET_HDCP_STATE_OR_RETURN(HDCP_AUTH_IDLE, -EBUSY);
+		return ret;
+	}
+
+	SET_HDCP_STATE_OR_RETURN(HDCP1_AUTH_DONE, -EBUSY);
+
+	if (!second_stage_required)
+		return 0;
+
+	ret = hdcp13_dplink_repeater_auth();
+	if (!ret)
+		return 0;
+
+	SET_HDCP_STATE_OR_RETURN(HDCP_AUTH_IDLE, -EBUSY);
+	return ret;
 }
 
 int hdcp13_dplink_handle_irq(void)

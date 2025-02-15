@@ -23,7 +23,7 @@
 #define HDCP_V1   (1)
 #define HDCP_NONE (0)
 
-static enum auth_state hdcp_auth_state = HDCP_AUTH_RESET;
+static enum auth_state hdcp_auth_state = HDCP_AUTH_ABORT;
 static bool enc_enabled = false;
 
 static const char auth_state_str[10][20] = {

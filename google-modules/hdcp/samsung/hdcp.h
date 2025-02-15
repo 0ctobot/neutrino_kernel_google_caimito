@@ -14,6 +14,8 @@ struct hdcp_device {
 	struct delayed_work hdcp_work;
 
 	ktime_t connect_time;
+	bool ns_cp_desired;
+	uint32_t auth_try_count;
 
 	/* HDCP Telemetry */
 	uint32_t hdcp2_success_count;

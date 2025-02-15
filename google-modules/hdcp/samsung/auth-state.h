@@ -11,6 +11,12 @@
 #ifndef __EXYNOS_HDCP_AUTH_STATE_H__
 #define __EXYNOS_HDCP_AUTH_STATE_H__
 
+#define SET_HDCP_STATE_OR_RETURN(state, ret) \
+	do { \
+		if (hdcp_set_auth_state(state)) \
+			return ret; \
+	} while (0)
+
 enum auth_state {
 	HDCP_AUTH_RESET = (1 << 0),
 	HDCP_AUTH_IDLE = (1 << 1),

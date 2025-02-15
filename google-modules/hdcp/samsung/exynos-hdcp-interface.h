@@ -17,6 +17,7 @@ enum dp_state {
 	DP_CONNECT, /* HPD on */
 	DP_PHYSICAL_DISCONNECT,
 	DP_SHUTDOWN, /* Handle Reboot */
+	DP_CP_DESIRED, /* HDCP needed */
 };
 
 void hdcp_dplink_connect_state(enum dp_state state);

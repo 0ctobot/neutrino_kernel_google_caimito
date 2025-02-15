@@ -221,23 +221,21 @@ static void pdp_hdcp22_enable_emu(u32 en)
 }
 
 static int dp_hdcp_protocol_self_test_internal(void) {
-	size_t i;
 	int rc, version;
 
 	hdcp_tee_send_cmd(HDCP_CMD_AUTH_MANUAL_START);
 
 	version = -1;
-	for (i = 0; i < 50; ++i) {
-		rc = hdcp_tee_check_protection(&version);
-		if (rc) {
-			hdcp_err("checking protection failed: %d", rc);
-			return rc;
-		}
-		if (version == HDCP_V2_3) {
-			hdcp_info("SUCCESS selftest\n");
-			return 0;
-		}
-		msleep(200);
+	msleep(10 * 1000);
+	rc = hdcp_tee_check_protection(&version);
+	if (rc) {
+		hdcp_err("checking protection failed: %d", rc);
+		return rc;
+	}
+
+	if (version == HDCP_V2_3) {
+		hdcp_info("SUCCESS selftest\n");
+		return 0;
 	}
 
 	hdcp_err("FAIL selftest: HDCP_VERSION(%d)\n", version);

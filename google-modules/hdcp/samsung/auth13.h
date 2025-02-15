@@ -11,8 +11,7 @@
 #ifndef __EXYNOS_HDCP1_AUTH_H__
 #define __EXYNOS_HDCP1_AUTH_H__
 
-int hdcp13_dplink_authenticate(bool* second_stage_required);
-int hdcp13_dplink_repeater_auth(void);
+int run_hdcp1_auth(void);
 int hdcp13_dplink_handle_irq(void);
 
 #endif

@@ -19,7 +19,7 @@
 
 #define HDCP_DP_STREAM_NUM 1
 
-static int do_send_rp_stream_manage(struct hdcp_link_data *lk)
+static int do_send_rp_stream_manage(void)
 {
 	int ret;
 	uint16_t stream_num = HDCP_DP_STREAM_NUM;
@@ -62,7 +62,7 @@ static int do_send_rp_stream_manage(struct hdcp_link_data *lk)
 	return 0;
 }
 
-static int do_recv_rp_stream_ready(struct hdcp_link_data *lk)
+static int do_recv_rp_stream_ready(void)
 {
 	int ret;
 	uint8_t m_prime[HDCP_RP_HMAC_M_LEN];
@@ -86,10 +86,10 @@ static int do_recv_rp_stream_ready(struct hdcp_link_data *lk)
 	return 0;
 }
 
-int auth22_stream_manage(struct hdcp_link_data *lk)
+int auth22_stream_manage(void)
 {
 	/* Send Tx -> Rx: RepeaterAuth_Stream_Manage */
-	if (do_send_rp_stream_manage(lk) < 0) {
+	if (do_send_rp_stream_manage() < 0) {
 		hdcp_err("send_rp_stream_manage fail\n");
 		return -EIO;
 	}
@@ -98,7 +98,7 @@ int auth22_stream_manage(struct hdcp_link_data *lk)
 	msleep(220);
 
 	/* recv Rx->Tx: RepeaterAuth_Stream_Ready message */
-	if (do_recv_rp_stream_ready(lk) < 0) {
+	if (do_recv_rp_stream_ready() < 0) {
 		hdcp_err("recv_rp_stream_ready fail\n");
 		return -EIO;
 	}

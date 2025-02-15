@@ -19,7 +19,7 @@
 
 #define MAX_LC_RETRY 10
 
-static int do_send_lc_init(struct hdcp_link_data *lk)
+static int do_send_lc_init(void)
 {
 	int ret;
 	uint8_t rn[HDCP_RTX_BYTE_LEN];
@@ -42,7 +42,7 @@ static int do_send_lc_init(struct hdcp_link_data *lk)
 	return 0;
 }
 
-static int do_recv_lc_send_l_prime(struct hdcp_link_data *lk)
+static int do_recv_lc_send_l_prime(void)
 {
 	int ret;
 	uint8_t lprime[HDCP_HMAC_SHA256_LEN];
@@ -66,13 +66,13 @@ static int do_recv_lc_send_l_prime(struct hdcp_link_data *lk)
 	return 0;
 }
 
-int auth22_locality_check(struct hdcp_link_data *lk)
+int auth22_locality_check(void)
 {
 	int i;
 
 	for (i = 0; i < MAX_LC_RETRY; i++) {
 		/* send Tx -> Rx: LC_init */
-		if (do_send_lc_init(lk) < 0) {
+		if (do_send_lc_init() < 0) {
 			hdcp_err("send_lc_init fail\n");
 			return -EIO;
 		}
@@ -81,7 +81,7 @@ int auth22_locality_check(struct hdcp_link_data *lk)
 		msleep(16);
 
 		/* recv Rx -> Tx: LC_Send_L_Prime */
-		if (do_recv_lc_send_l_prime(lk) < 0) {
+		if (do_recv_lc_send_l_prime() < 0) {
 			hdcp_err("recv_lc_send_l_prime fail\n");
 			/* retry */
 			continue;
