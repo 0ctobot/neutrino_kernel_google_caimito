@@ -49,7 +49,6 @@ enum vendor_inheritnace_t {
 
 struct vendor_inheritance_struct {
 	unsigned int uclamp[VI_MAX][UCLAMP_CNT];
-	short int uclamp_fork_reset;
 	short int adpf;
 	short int prefer_idle;
 	short int prefer_fit;
@@ -78,7 +77,6 @@ struct vendor_task_struct {
 	unsigned long direct_reclaim_ts;
 	struct list_head node;
 	int queued_to_list;
-	bool uclamp_fork_reset;
 	bool auto_prefer_high_cap;
 	int auto_uclamp_max_flags;	// Relative to cpu instead of absolute
 	struct uclamp_filter uclamp_filter;
@@ -116,6 +114,14 @@ struct vendor_task_struct {
 	 * - get_and_reset_vendor_task_struct_private
 	 */
 	unsigned long private;
+	// ADPF scheduler hint value.
+	int adpf_adj;
+	// Definition of real_cap: the current cpu_cap that a task was actually running on.
+	u64 real_cap_avg;
+	// The total durtion for real_cap calculation.
+	u64 real_cap_total_ns;
+	// Last updated timestamp of real_cap calculation.
+	u64 real_cap_update_ns;
 };
 
 ANDROID_VENDOR_CHECK_SIZE_ALIGN(u64 android_vendor_data1[64], struct vendor_task_struct t);
@@ -157,4 +163,7 @@ static inline unsigned long get_and_reset_vendor_task_struct_private(struct vend
 }
 
 int sched_thermal_freq_cap(unsigned int cpu, unsigned int freq);
+
+void update_task_real_cap(struct task_struct *p);
+
 #endif

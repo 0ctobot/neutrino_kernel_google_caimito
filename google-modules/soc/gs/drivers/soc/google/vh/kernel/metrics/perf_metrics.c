@@ -87,6 +87,7 @@ static struct long_irq long_irq_stat;
 static DEFINE_PER_CPU(struct top_rt_runnable, top_rt_runnable);
 static DEFINE_PER_CPU(spinlock_t, rt_runnable_lock);
 unsigned long long_rt_runnable_threshold_ns = 1500000UL;
+const unsigned long task_real_cap_window_ns = 16000000UL;
 
 /*********************************************************************
  *                          HELPER FUNCTIONS                         *
@@ -361,6 +362,10 @@ void vh_sched_switch_pixel_mod(void *data, bool preempt,
 	now = sched_clock();
 	vprev = get_vendor_task_struct(prev);
 
+	if (vprev->adpf_adj) {
+		update_task_real_cap(prev);
+	}
+
 	/*
 	 * Update previous task's runnable_start_ns if it is in TASK_RUNNING state,
 	 * which means it remains in rq. Otherwise, invalidate runnable_start_ns,
@@ -372,6 +377,17 @@ void vh_sched_switch_pixel_mod(void *data, bool preempt,
 		vprev->runnable_start_ns = -1;
 
 	vnext = get_vendor_task_struct(next);
+
+	if (vnext->adpf_adj) {
+		raw_spin_lock(&vnext->lock);
+		if (vnext->real_cap_total_ns > task_real_cap_window_ns) {
+			vnext->real_cap_avg = 0;
+			vnext->real_cap_total_ns = 0;
+		}
+		vnext->real_cap_update_ns = now;
+		raw_spin_unlock(&vnext->lock);
+	}
+
 	if (!rt_task(next) || vnext->runnable_start_ns > now)
 		return;
 

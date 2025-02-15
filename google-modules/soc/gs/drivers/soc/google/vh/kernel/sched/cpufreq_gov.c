@@ -957,6 +957,20 @@ static unsigned int sugov_next_freq_shared(struct sugov_cpu *sg_cpu, u64 time)
 	return get_next_freq(sg_policy, util, max);
 }
 
+static void update_avg_real_cap_cluster(struct cpufreq_policy *policy)
+{
+	unsigned int j;
+	for_each_cpu(j, policy->cpus) {
+		struct task_struct *curr = cpu_rq(j)->curr;
+		struct vendor_task_struct *vcurr = get_vendor_task_struct(curr);
+		if (vcurr->adpf_adj) {
+			get_task_struct(curr);
+			update_task_real_cap(curr);
+			put_task_struct(curr);
+		}
+	}
+}
+
 static void
 sugov_update_shared(struct update_util_data *hook, u64 time, unsigned int flags)
 {
@@ -1003,6 +1017,7 @@ sugov_update_shared(struct update_util_data *hook, u64 time, unsigned int flags)
 
 		if (!sugov_update_next_freq(sg_cpu->sg_policy, time, next_f))
 			goto unlock;
+		update_avg_real_cap_cluster(sg_cpu->sg_policy->policy);
 
 		if (trace_sugov_util_update_enabled())
 			trace_sugov_util_update(sg_cpu->cpu, sg_cpu->util, sg_cpu->max, flags);

@@ -259,6 +259,8 @@ source "$(KCONFIG_SOC_GS_PREFIX)drivers/soc/google/gcma/Kconfig"
 
 source "$(KCONFIG_SOC_GS_PREFIX)drivers/soc/google/pa_kill/Kconfig"
 
+source "$(KCONFIG_SOC_GS_PREFIX)drivers/soc/google/smra/Kconfig"
+
 source "$(KCONFIG_SOC_GS_PREFIX)drivers/soc/google/s2mpu/Kconfig"
 
 source "$(KCONFIG_SOC_GS_PREFIX)drivers/soc/google/vh/kernel/Kconfig"
@@ -307,5 +309,12 @@ config KERNEL_TOP
 	help
 	  This module exposes kernel function for modules to debugging
 	  processes statistic.
+
+config GOOGLE_MODEMCTL
+	tristate "Common modem control interfaces"
+	default n
+	help
+	  This module provides common helpers and control interfaces for modems
+	  and clients that may want to interact with them.
 
 endmenu

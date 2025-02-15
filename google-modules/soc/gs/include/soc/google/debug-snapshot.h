@@ -72,6 +72,7 @@ extern void dbg_snapshot_register_debug_ops(int (*halt)(void), int (*arraydump)(
 extern void dbg_snapshot_save_context(struct pt_regs *regs, bool stack_dump);
 extern void cache_flush_all(void);
 extern int dbg_snapshot_stop_all_cpus(void);
+extern void dbg_snapshot_set_usb_otg(unsigned int val);
 extern void dbg_snapshot_set_core_pmu_val(unsigned int val, unsigned int cpu);
 extern unsigned int dbg_snapshot_get_core_pmu_val(unsigned int cpu);
 extern void dbg_snapshot_set_core_ehld_stat(unsigned int val, unsigned int cpu);

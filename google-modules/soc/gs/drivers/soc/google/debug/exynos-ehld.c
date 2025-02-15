@@ -22,6 +22,7 @@
 #include <linux/io.h>
 #include <linux/time64.h>
 #include <linux/irqchip/arm-gic-v3.h>
+#include <linux/perf/arm_pmuv3.h>
 
 #include <soc/google/acpm_ipc_ctrl.h>
 #include <soc/google/exynos-cpupm.h>
@@ -222,9 +223,21 @@ void exynos_ehld_do_policy(void)
 	}
 }
 
+/*
+ * This implementation uses the code in `drivers/perf/arm_pmuv3.c` to access low-level ARMv8 PMU
+ * events. The `ARMV8_IDX_TO_COUNTER` is cloned to convert the `event->hw.idx` to the corresponding
+ * ARMv8 counter ID.
+ */
+#define ARMV8_IDX_COUNTER0 1
+#define ARMV8_IDX_TO_COUNTER(x) (((x) - ARMV8_IDX_COUNTER0) & ARMV8_PMU_COUNTER_MASK)
+
 static u32 exynos_ehld_read_pmu_counter(void)
 {
-	write_sysreg(0, pmselr_el0);
+	unsigned int cpu = raw_smp_processor_id();
+	struct exynos_ehld_ctrl *ctrl = per_cpu_ptr(&ehld_ctrl, cpu);
+	struct perf_event *event = ctrl->event;
+
+	write_sysreg(ARMV8_IDX_TO_COUNTER(event->hw.idx), pmselr_el0);
 	isb();
 	return read_sysreg(pmxevcntr_el0);
 }
@@ -324,6 +337,8 @@ static int exynos_ehld_start_cpu(unsigned int cpu)
 		exynos_ehld_start_cpu(0);
 
 	if (!event) {
+		int ret;
+
 		event = perf_event_create_kernel_counter(&exynos_ehld_attr,
 							 cpu,
 							 NULL,
@@ -338,6 +353,15 @@ static int exynos_ehld_start_cpu(unsigned int cpu)
 		ehld_debug(1, "@%s: cpu%u event make success\n", __func__, cpu);
 		ctrl->event = event;
 		perf_event_enable(event);
+
+		ret = adv_tracer_ehld_set_pmu_cntr_id(cpu, 1, ARMV8_IDX_TO_COUNTER(event->hw.idx));
+		if (ret) {
+			ehld_err(1, "@%s: cpu%u set_pmu_cntr_id failed: %d\n", __func__, cpu, ret);
+			ctrl->event = NULL;
+			perf_event_disable(event);
+			perf_event_release_kernel(event);
+			return ret;
+		}
 	}
 
 	ctrl->ehld_running = 1;
@@ -374,6 +398,11 @@ static int exynos_ehld_stop_cpu(unsigned int cpu)
 	if (ehld_main.suspending && cpu == 1)
 		exynos_ehld_stop_cpu(0);
 
+	if (ehld_main.dbgc.support && !ehld_main.dbgc.use_tick_timer) {
+		ehld_debug(1, "@%s: cpu%u hrtimer cancel\n", __func__, cpu);
+		hrtimer_cancel(hrtimer);
+	}
+
 	ctrl->ehld_running = 0;
 	ctrl->ehld_cpupm = 1;
 
@@ -381,15 +410,10 @@ static int exynos_ehld_stop_cpu(unsigned int cpu)
 
 	event = ctrl->event;
 	if (event) {
+		adv_tracer_ehld_set_pmu_cntr_id(cpu, 0, 0);
 		ctrl->event = NULL;
 		perf_event_disable(event);
 		perf_event_release_kernel(event);
-	}
-
-	if (ehld_main.dbgc.support && !ehld_main.dbgc.use_tick_timer) {
-		ehld_debug(1, "@%s: cpu%u hrtimer cancel\n",
-						__func__, cpu);
-		hrtimer_cancel(hrtimer);
 	}
 
 	dbg_snapshot_set_core_pmu_val(EHLD_VAL_PM, cpu);

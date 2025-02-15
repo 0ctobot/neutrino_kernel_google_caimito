@@ -117,11 +117,24 @@ int exynos_usbdrd_phy_tune(struct phy *phy, int phy_state);
 void exynos_usbdrd_phy_conn(struct phy *phy, int is_conn);
 void exynos_usbdrd_phy_vol_set(struct phy *phy, int voltage);
 int exynos_usbdrd_phy_set(struct phy *phy, int option, void *info);
+extern void exynos_usbdrd_usbdp_tca_set(struct phy *phy, int mux, int low_power_en);
 
 enum dwc3_phy_owner {
 	DWC3_PHY_OWNER_SELF =  0,
 	DWC3_PHY_OWNER_DP = 1,
 	DWC3_PHY_OWNER_EMEG = 8,
+};
+
+enum dwc3_phy_tca_mux {
+	DWC_PHY_TCA_NC = 0,
+	DWC_PHY_TCA_USB_ONLY = 1,
+	DWC_PHY_TCA_DP_ONLY = 2,
+	DWC_PHY_TCA_USB_DP = 3,
+};
+
+enum dwc3_phy_tca_low_power_en {
+	DWC_PHY_TCA_LOW_PWR_DISABLE = 0,
+	DWC_PHY_TCA_LOW_PWR_ENABLE = 1,
 };
 
 #define CHG_CONNECTED_DELAY_TIME	(HZ * 3) /* 3s */

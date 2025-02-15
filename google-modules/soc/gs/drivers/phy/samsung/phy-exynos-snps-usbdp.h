@@ -17,4 +17,5 @@ extern u16 phy_exynos_snps_usbdp_cr_read(struct exynos_usbphy_info *info, u16 ad
 extern void phy_exynos_snps_usbdp_cr_write(struct exynos_usbphy_info *info, u16 addr, u16 data);
 extern void phy_exynos_snps_usbdp_tune(struct exynos_usbphy_info *info);
 
+extern void phy_exynos_snps_usbdp_tca_set(struct exynos_usbphy_info *info, int mux, int low_power_en);
 #endif

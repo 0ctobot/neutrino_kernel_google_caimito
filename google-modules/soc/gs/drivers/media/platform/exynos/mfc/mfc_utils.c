@@ -137,6 +137,16 @@ static void __mfc_set_dec_stride(struct mfc_ctx *ctx, struct mfc_raw_info *raw, 
 		raw->stride[0] = ALIGN(ctx->img_width * 2, stride_align);
 		raw->stride[1] = ALIGN(ctx->img_width * 2, stride_align);
 		break;
+	case V4L2_PIX_FMT_YVU420N:
+		if (stride_align < 64) {
+			mfc_ctx_info("[FRAME] Forced to change stride align %d -> %dbyte\n",
+					stride_align, 64);
+			stride_align = 64;
+		}
+		raw->stride[0] = ALIGN(y_stride, stride_align);
+		raw->stride[1] = ALIGN(y_stride >> 1, stride_align);
+		raw->stride[2] = ALIGN(y_stride >> 1, stride_align);
+		break;
 	/* for compress format (SBWC) */
 	case V4L2_PIX_FMT_NV12M_SBWC_8B:
 	case V4L2_PIX_FMT_NV12N_SBWC_8B:
@@ -183,6 +193,7 @@ static void __mfc_set_enc_stride(struct mfc_ctx *ctx, struct mfc_raw_info *raw, 
 	case V4L2_PIX_FMT_YUV420M:
 	case V4L2_PIX_FMT_YUV420N:
 	case V4L2_PIX_FMT_YVU420M:
+	case V4L2_PIX_FMT_YVU420N:
 		/* use user stride */
 		for (i = 0; i < ctx->src_fmt->num_planes; i++) {
 			raw->stride[i] = ctx->bytesperline[i];
@@ -280,7 +291,8 @@ static void __mfc_set_enc_stride(struct mfc_ctx *ctx, struct mfc_raw_info *raw, 
 	 * - single 8bit: 64byte aligned stride
 	 * - single 10bit: 128byte aligned stride
 	 */
-	if (fmt->fourcc == V4L2_PIX_FMT_NV12N)
+	if (fmt->fourcc == V4L2_PIX_FMT_NV12N ||
+	    fmt->fourcc == V4L2_PIX_FMT_YVU420N)
 		stride_align = 64;
 	else if (fmt->fourcc == V4L2_PIX_FMT_NV12N_P010)
 		stride_align = 128;
@@ -384,6 +396,11 @@ void mfc_dec_calc_dpb_size(struct mfc_ctx *ctx, struct mfc_raw_info *raw, struct
 		raw->plane_size[0] = raw->stride[0] * ALIGN(ctx->img_height, 16);
 		raw->plane_size[1] = raw->stride[1] * ALIGN(ctx->img_height, 16) / 2;
 		break;
+	case V4L2_PIX_FMT_YVU420N:
+		raw->plane_size[0] = raw->stride[0] * ALIGN(ctx->img_height, 16);
+		raw->plane_size[1] = raw->stride[1] * ALIGN(ctx->img_height, 16) / 2;
+		raw->plane_size[2] = raw->stride[2] * ALIGN(ctx->img_height, 16) / 2;
+		break;
 	/* for compress format (SBWC) */
 	case V4L2_PIX_FMT_NV12M_SBWC_8B:
 	case V4L2_PIX_FMT_NV12N_SBWC_8B:
@@ -416,8 +433,7 @@ void mfc_dec_calc_dpb_size(struct mfc_ctx *ctx, struct mfc_raw_info *raw, struct
 	 * if the driver does not force change the DPB size,
 	 * No.57(INSUFFICIENT_DPB_SIZE) error occurs in F/W.
 	 */
-	if (ctx->is_10bit || ctx->sbwc_disabled || (fmt->fourcc == V4L2_PIX_FMT_NV12N) ||
-			(fmt->fourcc == V4L2_PIX_FMT_NV12N_P010))
+	if (ctx->is_10bit || ctx->sbwc_disabled || (fmt->mem_planes == 1))
 		check_min_dpb_size = 0;
 
 	if (check_min_dpb_size) {
@@ -544,6 +560,11 @@ void mfc_enc_calc_src_size(struct mfc_ctx *ctx)
 		raw->plane_size[0] = raw->stride[0] * ALIGN(ctx->img_height, 16);
 		raw->plane_size[1] = raw->stride[1] * ALIGN(ctx->img_height, 16) / 2;
 		break;
+	case V4L2_PIX_FMT_YVU420N:
+		raw->plane_size[0] = raw->stride[0] * ALIGN(ctx->img_height, 16);
+		raw->plane_size[1] = raw->stride[1] * ALIGN(ctx->img_height, 16) / 2;
+		raw->plane_size[2] = raw->stride[2] * ALIGN(ctx->img_height, 16) / 2;
+		break;
 	/* for compress format (SBWC) */
 	case V4L2_PIX_FMT_NV12M_SBWC_8B:
 	case V4L2_PIX_FMT_NV21M_SBWC_8B:
@@ -631,6 +652,11 @@ void mfc_calc_base_addr(struct mfc_ctx *ctx, struct vb2_buffer *vb,
 	case V4L2_PIX_FMT_NV12N_P010:
 		buf->addr[0][0] = start_raw;
 		buf->addr[0][1] = start_raw + raw->plane_size[0];
+		break;
+	case V4L2_PIX_FMT_YVU420N:
+		buf->addr[0][0] = start_raw;
+		buf->addr[0][1] = start_raw + raw->plane_size[0];
+		buf->addr[0][2] = buf->addr[0][1] + raw->plane_size[1];
 		break;
 	case V4L2_PIX_FMT_NV12N_SBWC_8B:
 		buf->addr[0][0] = start_raw;

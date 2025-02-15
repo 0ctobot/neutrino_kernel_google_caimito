@@ -383,7 +383,7 @@ static int rt4539_parse_dt(struct rt4539 *rt)
 	struct device *dev = rt->dev;
 	struct device_node *node = dev->of_node;
 	struct rt4539_platform_data *pdata;
-	u8 resolution;
+	u8 resolution = BIT_SELECTION_MIN_BITS;
 	int ret;
 
 	if (!node) {

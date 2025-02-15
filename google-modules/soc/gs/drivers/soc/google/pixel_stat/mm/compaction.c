@@ -13,7 +13,6 @@
 #include <linux/types.h>
 #include <linux/jiffies.h>
 #include <linux/sched.h>
-#include "../../vh/include/sched.h"
 #include "compaction.h"
 
 #define COMPACTION_ATTR_RW(_name) \
@@ -35,6 +34,7 @@ struct compaction_pixel_stat {
 	struct kobject kobj;
 };
 static struct compaction_pixel_stat stat = {
+	.lock = __SPIN_LOCK_UNLOCKED(stat.lock),
 	.thresholds = {5, 50, 100, 500}
 };
 

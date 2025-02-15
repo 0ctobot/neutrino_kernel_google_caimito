@@ -2039,6 +2039,12 @@ int exynos_usbdrd_pipe3_disable(struct phy *phy)
 }
 EXPORT_SYMBOL_GPL(exynos_usbdrd_pipe3_disable);
 
+void exynos_usbdrd_usbdp_tca_set(struct phy *phy, int mux, int low_power_en)
+{
+	return;
+}
+EXPORT_SYMBOL_GPL(exynos_usbdrd_usbdp_tca_set);
+
 static struct phy *exynos_usbdrd_phy_xlate(struct device *dev,
 					   struct of_phandle_args *args)
 {

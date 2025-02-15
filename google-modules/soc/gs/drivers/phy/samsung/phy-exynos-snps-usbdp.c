@@ -219,53 +219,86 @@ static void lane0_reset(struct exynos_usbphy_info *info, int val)
 #define TCA_USB31_DPALT_2L 3
 #define FLD_OP_MODE 1
 
-int phy_exynos_snps_usbdp_nc2usb_mode(struct exynos_usbphy_info *info, int val)
+int phy_exynos_snps_usbdp_tca_ctrl_sync(struct exynos_usbphy_info *info, int mux, int low_power_en)
 {
 	u32 reg;
 	void *tca_base = info->regs_base_2nd;
 	int time_out;
 
+	/* Controller Synced Mode */
+	reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_CTRLSYNCMODE_CFG0);
+	((SNPS_USBDPPHY_TCA_TCA_CTRLSYNCMODE_CFG0_p)(&reg))->b.auto_safe_state = 0;
+	writel(reg, tca_base + SNPS_USBDPPHY_TCA_TCA_CTRLSYNCMODE_CFG0);
+
+	/* Clear any pending status */
+	reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_STS);
+	writel(reg, tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_STS);
+
+	/* Ack and Timeout interrupts enabled */
+	reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_EN);
+	((SNPS_USBDPPHY_TCA_TCA_INTR_EN_p)(&reg))->b.xa_ack_evt_en = 1;
+	((SNPS_USBDPPHY_TCA_TCA_INTR_EN_p)(&reg))->b.xa_timeout_evt_en = 1;
+	writel(reg, tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_EN);
+
+	/* Enable USB mode */
+	reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_TCPC);
+	/* tcpc_mux_ctrl = NC(0), USB(1), DPalt-4lane(2), USB31+DP=lane0/1(3) */
+	((SNPS_USBDPPHY_TCA_TCA_TCPC_p)(&reg))->b.tcpc_mux_control = mux;
+	((SNPS_USBDPPHY_TCA_TCA_TCPC_p)(&reg))->b.tcpc_connector_orientation = 0;
+	((SNPS_USBDPPHY_TCA_TCA_TCPC_p)(&reg))->b.tcpc_low_power_en = low_power_en;
+	((SNPS_USBDPPHY_TCA_TCA_TCPC_p)(&reg))->b.tcpc_valid = 1;
+	writel(reg, tca_base + SNPS_USBDPPHY_TCA_TCA_TCPC);
+
+	/* check xa_act_evt */
+	for (time_out = 1000; time_out > 0; --time_out) {
+		reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_STS);
+		if (reg & (0x1 << 0))
+			break;
+		udelay(1);
+	}
+
+	pr_info("TCA switch %s, tcpc_mux: %d low_power_en %d",
+		time_out <= 0 ? "successful" : "failed", mux, low_power_en);
+
+	/* Clear any pending status */
+	reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_STS);
+	writel(reg, tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_STS);
+
+	/* Ack and Timeout interrupts disabled */
+	reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_EN);
+	((SNPS_USBDPPHY_TCA_TCA_INTR_EN_p)(&reg))->b.xa_ack_evt_en = 0;
+	((SNPS_USBDPPHY_TCA_TCA_INTR_EN_p)(&reg))->b.xa_timeout_evt_en = 0;
+	writel(reg, tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_EN);
+
+	return time_out <= 0 ? -1 : 0;
+}
+
+/*
+ * phy_exynos_snps_usbdp_usb_tca_set
+ *
+ * Used in POGO use case to set TCA on Type-C plug-in
+ */
+void phy_exynos_snps_usbdp_tca_set(struct exynos_usbphy_info *info, int mux, int low_power_en)
+{
+	u32 tca_config;
+
+	/* Use polarity when setting TCA */
+	/* Okay to use used_phy_port value, can only be 0 or 1 */
+	tca_config = readl(info->regs_base + SNPS_USBDPPHY_REG_TCA_CONFIG);
+	((SNPS_USBDPPHY_REG_TCA_CONFIG_p)(&tca_config))->b.typec_flip_invert = info->used_phy_port;
+	writel(tca_config, info->regs_base + SNPS_USBDPPHY_REG_TCA_CONFIG);
+
+	phy_exynos_snps_usbdp_tca_ctrl_sync(info, mux, low_power_en);
+}
+
+int phy_exynos_snps_usbdp_nc2usb_mode(struct exynos_usbphy_info *info, int val)
+{
+	u32 reg;
+	void *tca_base = info->regs_base_2nd;
+	int ret = 0;
+
 	if (val == FLD_OP_MODE) {
-		/* Controller Synced Mode */
-		reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_CTRLSYNCMODE_CFG0);
-		((SNPS_USBDPPHY_TCA_TCA_CTRLSYNCMODE_CFG0_p)(&reg))->b.auto_safe_state = 0;
-		writel(reg, tca_base + SNPS_USBDPPHY_TCA_TCA_CTRLSYNCMODE_CFG0);
-		/* Clear any pending status */
-		writel(0xFFFF, tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_STS);
-		/* Ack and Timeout interrupts enabled */
-		reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_EN);
-		((SNPS_USBDPPHY_TCA_TCA_INTR_EN_p)(&reg))->b.xa_ack_evt_en = 1;
-		((SNPS_USBDPPHY_TCA_TCA_INTR_EN_p)(&reg))->b.xa_timeout_evt_en = 1;
-		writel(reg, tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_EN);
-
-		/* Enable USB mode */
-		reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_TCPC);
-		/* tcpc_mux_ctrl = NC(0), USB(1), DPalt-4lane(2), USB31+DP=lane0/1(3) */
-		((SNPS_USBDPPHY_TCA_TCA_TCPC_p)(&reg))->b.tcpc_mux_control = TCA_USB31;
-		((SNPS_USBDPPHY_TCA_TCA_TCPC_p)(&reg))->b.tcpc_connector_orientation = 0;
-		((SNPS_USBDPPHY_TCA_TCA_TCPC_p)(&reg))->b.tcpc_low_power_en = 0;
-		((SNPS_USBDPPHY_TCA_TCA_TCPC_p)(&reg))->b.tcpc_valid = 1;
-		writel(reg, tca_base + SNPS_USBDPPHY_TCA_TCA_TCPC);
-
-		/* check xa_act_evt */
-		for (time_out = 1000; time_out > 0; --time_out) {
-			reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_STS);
-			if (reg & (0x1 << 0))
-				break;
-			udelay(1);
-		}
-		if (time_out <= 0) {
-			pr_info("Timeout on the TCA!!\n");
-			return -1;
-		}
-		/* Clear any pending status */
-		writel(0xffff, tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_STS);
-
-		/* Ack and Timeout interrupts enabled */
-		reg = readl(tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_EN);
-		((SNPS_USBDPPHY_TCA_TCA_INTR_EN_p)(&reg))->b.xa_ack_evt_en = 0;
-		((SNPS_USBDPPHY_TCA_TCA_INTR_EN_p)(&reg))->b.xa_timeout_evt_en = 0;
-		writel(reg, tca_base + SNPS_USBDPPHY_TCA_TCA_INTR_EN);
+		ret = phy_exynos_snps_usbdp_tca_ctrl_sync(info, TCA_USB31, 0);
 	} else {
 		/* System Configuration Mode */
 		/* Read current xbar configuration */
@@ -292,7 +325,7 @@ int phy_exynos_snps_usbdp_nc2usb_mode(struct exynos_usbphy_info *info, int val)
 		writel(reg, tca_base + SNPS_USBDPPHY_TCA_TCA_SYSMODE_CFG);
 	}
 
-	return 0;
+	return ret;
 }
 
 void phy_exynos_snps_dptx_reset(struct exynos_usbphy_info *info, int val)

@@ -1901,6 +1901,21 @@ int exynos_usbdrd_pipe3_disable(struct phy *phy)
 }
 EXPORT_SYMBOL_GPL(exynos_usbdrd_pipe3_disable);
 
+void exynos_usbdrd_usbdp_tca_set(struct phy *phy, int mux, int low_power_en)
+{
+	struct phy_usb_instance *inst = phy_get_drvdata(phy);
+	struct exynos_usbdrd_phy *phy_drd = to_usbdrd_phy(inst);
+	union extcon_property_value property = { 0 };
+
+	extcon_get_property(phy_drd->edev, EXTCON_USB_HOST, EXTCON_PROP_USB_TYPEC_POLARITY,
+			    &property);
+	phy_drd->usbphy_info.used_phy_port = property.intval;
+	phy_drd->usbphy_sub_info.used_phy_port = property.intval;
+
+	phy_exynos_snps_usbdp_tca_set(&phy_drd->usbphy_sub_info, mux, low_power_en);
+}
+EXPORT_SYMBOL_GPL(exynos_usbdrd_usbdp_tca_set);
+
 void exynos_usbdrd_dp_use_notice(int lane)
 {
 	struct exynos_usbdrd_phy *phy_drd;

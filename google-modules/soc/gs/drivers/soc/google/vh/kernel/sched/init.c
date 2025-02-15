@@ -75,6 +75,9 @@ extern void vh_binder_set_priority_pixel_mod(void *data, struct binder_transacti
 	struct task_struct *task);
 extern void vh_binder_restore_priority_pixel_mod(void *data, struct binder_transaction *t,
 	struct task_struct *task);
+extern void vh_binder_proc_transaction_finish(void *data, struct binder_proc *proc,
+		struct binder_transaction *t, struct task_struct *binder_th_task,
+		bool pending_async, bool sync);
 extern void rvh_rtmutex_prepare_setprio_pixel_mod(void *data, struct task_struct *p,
 	struct task_struct *pi_task);
 extern void vh_dump_throttled_rt_tasks_mod(void *data, int cpu, u64 clock, ktime_t rt_period,
@@ -523,6 +526,10 @@ static int vh_sched_init(void)
 
 	ret = register_trace_android_vh_binder_restore_priority(
 		vh_binder_restore_priority_pixel_mod, NULL);
+	if (ret)
+		return ret;
+
+	ret = register_trace_android_vh_binder_proc_transaction_finish(vh_binder_proc_transaction_finish, NULL);
 	if (ret)
 		return ret;
 

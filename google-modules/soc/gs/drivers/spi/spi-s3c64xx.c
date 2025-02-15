@@ -645,7 +645,7 @@ static inline void enable_cs(struct s3c64xx_spi_driver_data *sdd,
 			/* Deselect the last toggled device */
 			cs = sdd->tgl_spi->controller_data;
 			if (spi->cs_gpiod)
-				gpiod_set_value_cansleep(spi->cs_gpiod, 0);
+				gpiod_set_value(spi->cs_gpiod, 0);
 			/* Quiesce the signals */
 			writel(spi->mode & SPI_CS_HIGH ?
 				0 : S3C64XX_SPI_SLAVE_SIG_INACT,
@@ -656,7 +656,7 @@ static inline void enable_cs(struct s3c64xx_spi_driver_data *sdd,
 
 	cs = spi->controller_data;
 	if (spi->cs_gpiod) {
-		gpiod_set_value_cansleep(spi->cs_gpiod, 1);
+		gpiod_set_value(spi->cs_gpiod, 1);
 		if (cs->cs_delay)
 			udelay(cs->cs_delay);
 	}
@@ -762,7 +762,7 @@ static inline void disable_cs(struct s3c64xx_spi_driver_data *sdd,
 		sdd->tgl_spi = NULL;
 
 	if (spi->cs_gpiod)
-		gpiod_set_value_cansleep(spi->cs_gpiod, 0);
+		gpiod_set_value(spi->cs_gpiod, 0);
 
 	if (cs->cs_mode != AUTO_CS_MODE) {
 		/* Quiesce the signals */
@@ -1339,7 +1339,7 @@ static int s3c64xx_spi_setup(struct spi_device *spi)
 		 * b/181043058 for more details.
 		 */
 		if (spi->cs_gpiod)
-			gpiod_set_raw_value_cansleep(spi->cs_gpiod, 0);
+			gpiod_set_raw_value(spi->cs_gpiod, 0);
 	}
 
 #ifdef CONFIG_PM
@@ -1368,7 +1368,7 @@ setup_exit:
 		 * b/181043058 for more details.
 		 */
 		if (spi->cs_gpiod)
-			gpiod_set_raw_value_cansleep(spi->cs_gpiod, 0);
+			gpiod_set_raw_value(spi->cs_gpiod, 0);
 	}
 
 	spi_set_ctldata(spi, NULL);

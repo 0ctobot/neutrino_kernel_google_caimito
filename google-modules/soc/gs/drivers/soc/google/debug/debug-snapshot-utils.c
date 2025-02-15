@@ -118,6 +118,15 @@ void dbg_snapshot_set_core_pmu_val(unsigned int val, unsigned int cpu)
 }
 EXPORT_SYMBOL_GPL(dbg_snapshot_set_core_pmu_val);
 
+void dbg_snapshot_set_usb_otg(unsigned int val)
+{
+	void __iomem *header = dbg_snapshot_get_header_vaddr();
+
+	if (header)
+		__raw_writel(val, header + DSS_OFFSET_PMIC_REG_INT_5_S);
+}
+EXPORT_SYMBOL_GPL(dbg_snapshot_set_usb_otg);
+
 unsigned int dbg_snapshot_get_core_pmu_val(unsigned int cpu)
 {
 	void __iomem *header = dbg_snapshot_get_header_vaddr();

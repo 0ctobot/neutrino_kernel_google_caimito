@@ -47,6 +47,9 @@ obj-$(CONFIG_GCMA) += gcma/
 # Proactive Kill
 obj-$(CONFIG_PROACTIVE_KILL) += pa_kill/
 
+# Smart Readahead
+obj-$(CONFIG_SMRA) += smra/
+
 # S2MPU
 obj-$(CONFIG_GS_S2MPU)			+= s2mpu/
 
@@ -75,3 +78,6 @@ obj-$(CONFIG_PERF_TRACE_CTRS)		+= perf_trace_counters.o
 obj-$(CONFIG_BOOT_CONTROL)	 	+= boot_control/
 
 obj-$(CONFIG_KERNEL_TOP)		+= kernel-top.o
+
+# Modem control interfaces
+obj-$(CONFIG_GOOGLE_MODEMCTL)		+= modemctl/

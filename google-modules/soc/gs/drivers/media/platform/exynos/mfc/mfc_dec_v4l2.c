@@ -246,6 +246,7 @@ static void __mfc_dec_change_format_8bit(struct mfc_ctx *ctx)
 	case V4L2_PIX_FMT_YUV420M:
 	case V4L2_PIX_FMT_YUV420N:
 	case V4L2_PIX_FMT_YVU420M:
+	case V4L2_PIX_FMT_YVU420N:
 		/* It is right format */
 		break;
 	case V4L2_PIX_FMT_NV12N_P010:
@@ -288,6 +289,7 @@ static void __mfc_dec_change_format_8bit_422(struct mfc_ctx *ctx)
 	case V4L2_PIX_FMT_NV21M_SBWC_8B:
 	case V4L2_PIX_FMT_NV21M_SBWC_10B:
 	case V4L2_PIX_FMT_YVU420M:
+	case V4L2_PIX_FMT_YVU420N:
 		/* change to CrCb order format */
 		ctx->dst_fmt = __mfc_dec_find_format(ctx, V4L2_PIX_FMT_NV61M);
 		break;
@@ -312,6 +314,7 @@ static void __mfc_dec_change_format_10bit(struct mfc_ctx *ctx)
 		case V4L2_PIX_FMT_NV12N_10B:
 		case V4L2_PIX_FMT_NV12N_SBWC_8B:
 		case V4L2_PIX_FMT_NV12N_SBWC_10B:
+		case V4L2_PIX_FMT_YVU420N:
 			/* change to single plane format */
 			ctx->dst_fmt = __mfc_dec_find_format(ctx, V4L2_PIX_FMT_NV12N_P010);
 			break;
@@ -341,6 +344,7 @@ static void __mfc_dec_change_format_10bit(struct mfc_ctx *ctx)
 		case V4L2_PIX_FMT_NV12N_P010:
 		case V4L2_PIX_FMT_NV12N_SBWC_8B:
 		case V4L2_PIX_FMT_NV12N_SBWC_10B:
+		case V4L2_PIX_FMT_YVU420N:
 			/* change to single plane format */
 			ctx->dst_fmt = __mfc_dec_find_format(ctx, V4L2_PIX_FMT_NV12N_10B);
 			break;
@@ -380,6 +384,7 @@ static void __mfc_dec_change_format_10bit_422(struct mfc_ctx *ctx)
 		case V4L2_PIX_FMT_NV21M_SBWC_8B:
 		case V4L2_PIX_FMT_NV21M_SBWC_10B:
 		case V4L2_PIX_FMT_YVU420M:
+		case V4L2_PIX_FMT_YVU420N:
 			/* change to CrCb order format */
 			ctx->dst_fmt = __mfc_dec_find_format(ctx, V4L2_PIX_FMT_NV61M_P210);
 			break;
@@ -401,6 +406,7 @@ static void __mfc_dec_change_format_10bit_422(struct mfc_ctx *ctx)
 		case V4L2_PIX_FMT_NV21M_SBWC_8B:
 		case V4L2_PIX_FMT_NV21M_SBWC_10B:
 		case V4L2_PIX_FMT_YVU420M:
+		case V4L2_PIX_FMT_YVU420N:
 			/* change to CrCb order format */
 			ctx->dst_fmt = __mfc_dec_find_format(ctx, V4L2_PIX_FMT_NV61M_S10B);
 			break;

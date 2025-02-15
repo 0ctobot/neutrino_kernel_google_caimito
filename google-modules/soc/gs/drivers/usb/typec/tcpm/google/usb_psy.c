@@ -44,6 +44,8 @@
 /* At least get one more try to meet sub state sync requirement */
 #define ERR_RETRY_DELAY_MS 20
 #define ERR_RETRY_COUNT    3
+/* EAGAIN is only returned when charger init is pending */
+#define EAGAIN_RETRY_DELAY_MS 100
 
 /*
  * Fall back to DCP when neither SDP_*_CONN_UA nor SDP_*_CONFIG_UA is signalled
@@ -709,11 +711,13 @@ static void icl_work_item(struct kthread_work *work)
 	struct usb_psy_data *usb =
 		container_of(container_of(work, struct kthread_delayed_work, work),
 			     struct usb_psy_data, icl_work);
+	int ret;
 
-	if (usb_set_current_max_ma(usb, usb->current_max_cache) < 0 &&
-	    !atomic_sub_and_test(1, &usb->retry_count))
+	ret = usb_set_current_max_ma(usb, usb->current_max_cache);
+	if (ret < 0 && !atomic_sub_and_test(1, &usb->retry_count))
 		kthread_mod_delayed_work(usb->wq, &usb->icl_work,
-					 msecs_to_jiffies(ERR_RETRY_DELAY_MS));
+					 msecs_to_jiffies(ret == -EAGAIN ?
+					 EAGAIN_RETRY_DELAY_MS : ERR_RETRY_DELAY_MS));
 }
 
 static void bc_icl_work_item(struct kthread_work *work)

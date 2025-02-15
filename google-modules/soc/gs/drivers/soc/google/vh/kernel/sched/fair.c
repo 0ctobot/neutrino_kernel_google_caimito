@@ -6,6 +6,7 @@
  * Copyright 2020 Google LLC
  */
 #include <linux/cpuidle.h>
+#include <linux/sched/clock.h>
 #include <linux/sched/cputime.h>
 #include <kernel/sched/autogroup.h>
 #include <kernel/sched/sched.h>
@@ -594,7 +595,7 @@ static inline const cpumask_t *get_preferred_idle_mask(struct task_struct *p)
 {
 	int vendor_group = get_vendor_group(p);
 
-	if (p->wake_q_count || get_uclamp_fork_reset(p, false))
+	if (p->wake_q_count || get_adpf(p, false))
 		return cpu_possible_mask;
 
 	if (p->prio <= THREAD_PRIORITY_TOP_APP_BOOST) {
@@ -627,6 +628,7 @@ void init_vendor_group_data(void)
 		INIT_LIST_HEAD(&vendor_group_list[i].list);
 		raw_spin_lock_init(&vendor_group_list[i].lock);
 		vendor_group_list[i].cur_iterator = NULL;
+		mutex_init(&vendor_group_list[i].iter_mutex);
 	}
 
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
@@ -1592,7 +1594,7 @@ int find_energy_efficient_cpu(struct task_struct *p, int prev_cpu,
 
 	p_util_min = max(p_util_min, get_vendor_task_struct(p)->iowait_boost);
 
-	if (get_uclamp_fork_reset(p, true) || get_prefer_fit(p) || get_auto_prefer_fit(p))
+	if (get_prefer_fit(p) || get_auto_prefer_fit(p))
 		prefer_fit = true;
 
 	for (; pd; pd = pd->next) {
@@ -2113,7 +2115,7 @@ uclamp_tg_restrict_pixel_mod(struct task_struct *p, enum uclamp_id clamp_id)
 	struct uclamp_se uc_req = p->uclamp_req[clamp_id];
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
 	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
-	bool is_adpf = get_uclamp_fork_reset(p, true);
+	bool is_adpf = get_adpf(p, true);
 	int i = 0;
 
 #if IS_ENABLED(CONFIG_UCLAMP_TASK_GROUP)
@@ -2160,6 +2162,10 @@ uclamp_tg_restrict_pixel_mod(struct task_struct *p, enum uclamp_id clamp_id)
 	// prefer high capacity cpu
 	if (clamp_id == UCLAMP_MIN && get_prefer_high_cap(p))
 		value = max(value, (unsigned int)capacity_orig_of(pixel_cluster_start_cpu[0]) + 1);
+
+	/* Boost tasks during suspend/resume */
+	if (clamp_id == UCLAMP_MIN && cpuhp_tasks_frozen)
+		value = max(value, SCHED_CAPACITY_SCALE/2);
 
 	// For uclamp min, if task has a valid per-task setting that is lower than or equal to its
 	// group value, increase the final uclamp value by 1. This would have effect only on
@@ -2286,13 +2292,7 @@ void rvh_check_preempt_wakeup_pixel_mod(void *data, struct rq *rq, struct task_s
 	if (!entity_is_task(se) || !entity_is_task(pse))
 		return;
 
-	/*
-	 * Let ADPF task preempt non-ADPF task.
-	 */
-	if((!get_uclamp_fork_reset(task_of(se), true) &&
-	    get_uclamp_fork_reset(task_of(pse), true)) ||
-	   (!get_uclamp_fork_reset(task_of(se), true) && !get_preempt_wakeup(task_of(se)) &&
-	    get_preempt_wakeup(task_of(pse)))) {
+	if(!get_preempt_wakeup(task_of(se)) && get_preempt_wakeup(task_of(pse))) {
 		if (!next_buddy_marked)
 			set_next_buddy(pse);
 
@@ -2501,7 +2501,7 @@ static inline void uclamp_fork_pixel_mod(struct task_struct *p, struct task_stru
 {
 	enum uclamp_id clamp_id;
 
-	if (likely(!get_uclamp_fork_reset(orig, false)))
+	if (likely(!get_adpf(orig, false) && !get_power_efficiency(p)))
 		return;
 
 	for_each_clamp_id(clamp_id) {
@@ -2577,9 +2577,8 @@ void rvh_select_task_rq_fair_pixel_mod(void *data, struct task_struct *p, int pr
 out:
 	if (trace_sched_select_task_rq_fair_enabled())
 		trace_sched_select_task_rq_fair(p, task_util_est(p),
-						sync_wakeup, prefer_prev,
-						get_uclamp_fork_reset(p, true),
-						get_prefer_high_cap(p),
+						sync_wakeup, get_adpf(p, true), prefer_prev,
+						get_vendor_task_struct(p)->auto_prefer_high_cap,
 						get_vendor_group(p),
 						uclamp_eff_value_pixel_mod(p, UCLAMP_MIN),
 						uclamp_eff_value_pixel_mod(p, UCLAMP_MAX),
@@ -2600,7 +2599,7 @@ void rvh_set_user_nice_locked_pixel_mod(void *data, struct task_struct *p, long 
 		return;
 
 	vp = get_vendor_task_struct(p);
-	if (get_uclamp_fork_reset(p, false) || vp->boost_prio) {
+	if (vp->boost_prio) {
 		raw_spin_lock_irqsave(&vp->lock, irqflags);
 		p->normal_prio = p->static_prio = vp->orig_prio = NICE_TO_PRIO(*nice);
 		raw_spin_unlock_irqrestore(&vp->lock, irqflags);
@@ -2624,7 +2623,7 @@ void rvh_setscheduler_pixel_mod(void *data, struct task_struct *p)
 		return;
 
 	vp = get_vendor_task_struct(p);
-	if (get_uclamp_fork_reset(p, false) || vp->boost_prio) {
+	if (vp->boost_prio) {
 		raw_spin_lock_irqsave(&vp->lock, irqflags);
 		vp->orig_prio = p->static_prio;
 		raw_spin_unlock_irqrestore(&vp->lock, irqflags);
@@ -2657,7 +2656,7 @@ static struct task_struct *detach_important_task(struct rq *src_rq, int dst_cpu)
 		if (!get_prefer_idle(p))
 			continue;
 
-		if (get_uclamp_fork_reset(p, true))
+		if (get_adpf(p, true))
 			is_ui = true;
 		else if (uclamp_eff_value_pixel_mod(p, UCLAMP_MIN) > 0)
 			is_boost = true;
@@ -2948,7 +2947,7 @@ void rvh_enqueue_task_fair_pixel_mod(void *data, struct rq *rq, struct task_stru
 		}
 	}
 
-	if (get_uclamp_fork_reset(p, true))
+	if (get_adpf(p, true))
 		inc_adpf_counter(p, rq);
 
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
@@ -2987,7 +2986,7 @@ void rvh_dequeue_task_fair_pixel_mod(void *data, struct rq *rq, struct task_stru
 		vp->prev_util_enqueued = vp->util_enqueued;
 	}
 
-	if (get_uclamp_fork_reset(p, true))
+	if (get_adpf(p, true))
 		dec_adpf_counter(p, rq);
 
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
@@ -3124,3 +3123,30 @@ void update_thermal_freq_cap(unsigned int cpu)
 	mutex_unlock(&thermal_cap_mutex);
 }
 EXPORT_SYMBOL_GPL(update_thermal_freq_cap);
+
+void update_task_real_cap(struct task_struct *p)
+{
+	struct vendor_task_struct *vp = get_vendor_task_struct(p);
+	u64 now = sched_clock();
+	u64 dur_ns = now - vp->real_cap_update_ns;
+	unsigned long irqflags;
+
+	raw_spin_lock_irqsave(&vp->lock, irqflags);
+	if (vp->real_cap_avg) {
+		u64 workload = vp->real_cap_avg * (vp->real_cap_total_ns >> 10)
+			+ (dur_ns >> 10) * capacity_curr_of(task_cpu(p));
+		vp->real_cap_total_ns += dur_ns;
+		vp->real_cap_avg = workload / (vp->real_cap_total_ns >> 10);
+	} else {
+		vp->real_cap_total_ns = dur_ns;
+		vp->real_cap_avg = capacity_curr_of(task_cpu(p));
+	}
+	vp->real_cap_update_ns = now;
+	raw_spin_unlock_irqrestore(&vp->lock, irqflags);
+	if (trace_clock_set_rate_enabled()) {
+		char trace_name[32] = {0};
+		scnprintf(trace_name, sizeof(trace_name), "%d_REAL_CAP_AVG", (int)(p->pid));
+		trace_clock_set_rate(trace_name, vp->real_cap_avg, raw_smp_processor_id());
+	}
+}
+EXPORT_SYMBOL_GPL(update_task_real_cap);

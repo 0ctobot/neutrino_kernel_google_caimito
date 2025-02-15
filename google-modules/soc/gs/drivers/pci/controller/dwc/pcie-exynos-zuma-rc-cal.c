@@ -300,13 +300,22 @@ void exynos_pcie_rc_pcie_phy_config(struct exynos_pcie *exynos_pcie, int ch_num)
 		}
 		 */
 
-		/* set de-emphasis level, 1b'1 = -3.5 dB, 1b'0 = -6 dB */
-		val = readl(exynos_pcie->rc_dbi_base + PCIE_GEN2_CTRL_OFF);
-		if (exynos_pcie->de_emphasis_level)
-			val |= BIT(20);
-		else
-			val &= ~BIT(20);
-		writel(val, exynos_pcie->rc_dbi_base + PCIE_GEN2_CTRL_OFF);
+		if (exynos_pcie->customized_de_emphasis) {
+			/* set customized de-emphasis level */
+			val = readl(phy_pcs_base_regs + 0x4CC);
+			val &= ~(0x1f << 12);
+			val |= (exynos_pcie->de_emphasis_value << 12);
+
+			writel(val, phy_pcs_base_regs +  0x4CC);
+			writel(val, phy_pcs_base_regs +  0x4D0);
+			writel(val, phy_pcs_base_regs +  0x4D4);
+			writel(val, phy_pcs_base_regs +  0x4D8);
+			writel(val, phy_pcs_base_regs +  0x4DC);
+			writel(val, phy_pcs_base_regs +  0x4E0);
+			writel(val, phy_pcs_base_regs +  0x4E4);
+			writel(val, phy_pcs_base_regs +  0x4E8);
+			writel(val, phy_pcs_base_regs +  0x4EC);
+		}
 
 		writel(0x3, phy_base_regs + 0x032C);    //PHY input clock un-gating
 

@@ -20,6 +20,7 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/sizes.h>
 #include <linux/slab.h>
 #include <linux/smc.h>
 #include <linux/swap.h>
@@ -1344,8 +1345,8 @@ static struct exynos_iommu_domain *exynos_iommu_domain_alloc(struct device *dev)
 {
 	struct exynos_iommu_domain *domain;
 	int __maybe_unused i;
-	/* Mem to allocate (2 ^ (18 - PAGE_SHIFT)) * PAGE_SIZE = 256kb */
-	const int sz_256kb_order = 18 - PAGE_SHIFT;
+	const int pgtable_order = get_order(sizeof(sysmmu_pte_t) * NUM_LV1ENTRIES);
+	const int lv2entcnt_order = get_order(sizeof(atomic_t) * NUM_LV1ENTRIES);
 
 	domain = devm_kzalloc(dev, sizeof(*domain), GFP_KERNEL);
 	if (!domain)
@@ -1353,12 +1354,12 @@ static struct exynos_iommu_domain *exynos_iommu_domain_alloc(struct device *dev)
 
 	/* 36bit VA FLPD must be aligned in 256KB */
 	domain->pgtable =
-		(sysmmu_pte_t *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, sz_256kb_order);
+		(sysmmu_pte_t *)__get_free_pages(GFP_KERNEL | __GFP_ZERO, pgtable_order);
 	if (!domain->pgtable)
 		goto err_pgtable;
 
 	domain->lv2entcnt = (atomic_t *)
-			__get_free_pages(GFP_KERNEL | __GFP_ZERO, sz_256kb_order);
+			__get_free_pages(GFP_KERNEL | __GFP_ZERO, lv2entcnt_order);
 	if (!domain->lv2entcnt)
 		goto err_counter;
 
@@ -1396,11 +1397,11 @@ static struct exynos_iommu_domain *exynos_iommu_domain_alloc(struct device *dev)
 
 #ifdef USE_DYNAMIC_MEM_ALLOC
 err_ext_buff:
-	free_pages((unsigned long)domain->lv2entcnt, sz_256kb_order);
+	free_pages((unsigned long)domain->lv2entcnt, lv2entcnt_order);
 #endif
 
 err_counter:
-	free_pages((unsigned long)domain->pgtable, sz_256kb_order);
+	free_pages((unsigned long)domain->pgtable, pgtable_order);
 err_pgtable:
 	kfree(domain);
 	return NULL;

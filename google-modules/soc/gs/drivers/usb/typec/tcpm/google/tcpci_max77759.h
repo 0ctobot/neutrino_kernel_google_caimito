@@ -10,6 +10,7 @@
 #include <linux/alarmtimer.h>
 #include <linux/interrupt.h>
 #include <linux/kthread.h>
+#include <linux/ktime.h>
 #include <linux/usb/tcpm.h>
 #include <linux/gpio.h>
 #include <linux/gpio/driver.h>
@@ -185,12 +186,6 @@ struct max77759_plat {
 	/* non compliant reasons */
 	struct max77759_compliance_warnings *compliance_warnings;
 
-	/*
-	 * When set missing Rp detection has a longer delay to overcome
-	 * additional delay during boot.
-	 */
-	bool first_rp_missing_timeout;
-
 	/* GPIO state for SBU pin pull up/down */
 	int current_sbu_state;
 	/* IRQ_HPD event count */
@@ -221,6 +216,9 @@ struct max77759_plat {
 
 	int device_id;
 	int product_id;
+
+	/* Timestamp to record first_toggle */
+	ktime_t first_toggle_time_since_boot;
 
 	/* EXT_BST_EN exposed as GPIO */
 #ifdef CONFIG_GPIOLIB

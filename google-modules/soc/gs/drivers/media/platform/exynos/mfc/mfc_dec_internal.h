@@ -41,6 +41,14 @@ struct mfc_fmt dec_formats[] = {
 		.mem_planes = 3,
 	},
 	{
+		.name = "4:2:0 3 Planes Y/Cr/Cb single",
+		.fourcc = V4L2_PIX_FMT_YVU420N,
+		.codec_mode = MFC_FORMATS_NO_CODEC,
+		.type = MFC_FMT_FRAME,
+		.num_planes = 3,
+		.mem_planes = 1,
+	},
+	{
 		.name = "4:2:0 2 Planes Y/CbCr",
 		.fourcc = V4L2_PIX_FMT_NV12M,
 		.codec_mode = MFC_FORMATS_NO_CODEC,

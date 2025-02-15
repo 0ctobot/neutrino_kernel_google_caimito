@@ -44,6 +44,7 @@
 
 /* 1 plane -- one Y, one Cb, one Cr, non contiguous */
 #define V4L2_PIX_FMT_YUV420N		v4l2_fourcc('Y', 'N', '1', '2')
+#define V4L2_PIX_FMT_YVU420N		v4l2_fourcc('Y', 'N', '2', '1')
 
 /* 1 plane -- 8bit Y, 2bit Y, 8bit Cb + Cr interleaved, 2bit Cb + Cr interleaved, non contiguous */
 #define V4L2_PIX_FMT_NV12N_10B		v4l2_fourcc('B', 'N', '1', '2')

@@ -27,7 +27,7 @@ void rvh_meminfo_proc_show(void *data, struct seq_file *m)
 	struct meminfo *meminfo;
 	struct sysinfo i;
 	int lru;
-	unsigned long misc_kb = 0;
+	long long misc_kb = 0;
 	unsigned long pages[NR_LRU_LISTS];
 	unsigned long sreclaimable, sunreclaim;
 	unsigned long known_pages = 0;
@@ -61,7 +61,7 @@ void rvh_meminfo_proc_show(void *data, struct seq_file *m)
 			        global_node_page_state(NR_KERNEL_STACK_KB) +
 			        others_kb);
 
-	seq_printf(m, "Misc:           %8lu kB\n", misc_kb);
+	seq_printf(m, "Misc:           %8lld kB\n", misc_kb < 0 ? 0 : misc_kb);
 }
 
 void register_meminfo(struct meminfo *info)

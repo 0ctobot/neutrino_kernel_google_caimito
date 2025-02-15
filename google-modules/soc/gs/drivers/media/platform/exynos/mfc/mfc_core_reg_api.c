@@ -677,6 +677,7 @@ void mfc_core_set_pixel_format(struct mfc_core *core, struct mfc_ctx *ctx,
 		pix_val = 1;
 		break;
 	case V4L2_PIX_FMT_YVU420M:
+	case V4L2_PIX_FMT_YVU420N:
 		pix_val = 2;
 		break;
 	case V4L2_PIX_FMT_YUV420M:

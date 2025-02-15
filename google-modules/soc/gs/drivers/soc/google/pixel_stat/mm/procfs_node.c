@@ -9,6 +9,7 @@
 #include <linux/mm.h>
 
 struct proc_dir_entry *vendor_mm;
+EXPORT_SYMBOL_GPL(vendor_mm);
 
 struct task_group {
 	int oom_adj;

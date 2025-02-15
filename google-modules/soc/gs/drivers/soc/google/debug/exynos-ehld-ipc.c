@@ -31,6 +31,7 @@ enum ehld_ipc_cmd {
 	eEHLD_IPC_CMD_LOCKUP_DETECT_WARN,
 	eEHLD_IPC_CMD_LOCKUP_DETECT_SW,
 	eEHLD_IPC_CMD_LOCKUP_DETECT_HW,
+	eEHLD_IPC_CMD_SET_PMU_CNTR_ID,
 };
 
 static struct plugin_ehld_info {
@@ -178,6 +179,26 @@ int adv_tracer_ehld_noti_cpu_state(int cpu, int en)
 		cmd.cmd_raw.cmd = eEHLD_IPC_CMD_NOTI_CPU_OFF;
 
 	cmd.buffer[1] = cpu;
+
+	ret = adv_tracer_ipc_send_data_polling(plugin_ehld.ehld_dev->id, &cmd);
+	if (ret < 0) {
+		pr_err("ehld ipc cannot cmd state\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+int adv_tracer_ehld_set_pmu_cntr_id(int cpu, int en, int cntr_id)
+{
+	struct adv_tracer_ipc_cmd cmd;
+	int ret = 0;
+
+	cmd.cmd_raw.cmd = eEHLD_IPC_CMD_SET_PMU_CNTR_ID;
+
+	cmd.buffer[1] = cpu;
+	cmd.buffer[2] = en;
+	cmd.buffer[3] = cntr_id;
 
 	ret = adv_tracer_ipc_send_data_polling(plugin_ehld.ehld_dev->id, &cmd);
 	if (ret < 0) {

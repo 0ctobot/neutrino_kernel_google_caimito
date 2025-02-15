@@ -51,6 +51,7 @@ TRACE_EVENT(zcomp_decompress_end,
 			__entry->index)
 );
 
+#if IS_ENABLED(CONFIG_ZRAM_GS_WRITEBACK)
 TRACE_EVENT(zram_read_from_bdev,
 
 	TP_PROTO(struct zram *zram, unsigned long entry_element),
@@ -71,6 +72,8 @@ TRACE_EVENT(zram_read_from_bdev,
 			__entry->nr_bd_read,
 			__entry->entry_element)
 );
+#endif
+
 #endif /* _TRACE_ZRAM_H */
 
 /* This part must be outside protection */

@@ -189,6 +189,7 @@ retry:
 	 */
 	p = pa_find_lock_task_mm(victim);
 	if (!p) {
+		mutex_unlock(&victim_lookup_lock);
 		/* The process is already existing. Skip it */
 		ret = -EAGAIN;
 		goto release_tsk;
@@ -244,7 +245,7 @@ static void restore_vm_knobs(void)
 	int wmf, swappines;
 
 	get_reclaim_params(&wmf, &swappines);
-	if (wmf != origin_vm_swappiness) {
+	if (wmf != origin_watermark_scale_factor || swappines != origin_vm_swappiness) {
 		set_reclaim_params(origin_watermark_scale_factor, origin_vm_swappiness);
 		origin_watermark_scale_factor = 0;
 		origin_vm_swappiness = 0;
