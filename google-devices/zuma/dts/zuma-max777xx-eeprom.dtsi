@@ -7,9 +7,18 @@
  *
  */
 
+#ifdef BATTERY_EEPROM_1K
 pack_bee: m24c08@50 {
 	status = "okay";
 	compatible = "at,24c08";
 
 	reg = <0x50>;
 };
+#else
+pack_bee: m24c64@50 {
+	status = "okay";
+	compatible = "at,24c64";
+
+	reg = <0x50>;
+};
+#endif

@@ -57,6 +57,7 @@ extra/private/google-modules/soc/gs/drivers/soc/google/acpm/acpm_flexpmu_dbg.ko
 extra/private/google-modules/soc/gs/drivers/soc/google/acpm/power_stats.ko
 extra/private/google-modules/soc/gs/drivers/soc/google/exynos-dm.ko
 extra/private/google-modules/soc/gs/drivers/soc/google/exynos_pm_qos.ko
+extra/private/google-modules/soc/gs/drivers/soc/google/modemctl/google_modemctl.ko
 extra/private/google-modules/soc/gs/drivers/soc/google/pt/slc_pt.ko
 extra/private/google-modules/soc/gs/drivers/soc/google/pt/slc_dummy.ko
 extra/private/google-modules/soc/gs/drivers/soc/google/pt/slc_acpm.ko

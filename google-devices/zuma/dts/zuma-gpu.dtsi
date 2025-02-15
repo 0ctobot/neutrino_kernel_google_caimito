@@ -20,7 +20,7 @@
 
 	mali: mali@1F000000 {
 		compatible = "arm,malit6xx";
-		reg = <0x0 0x1F000000 0x1000000>;
+		reg = <0x0 0x1F000000 0x480000>;
 		l2-hash-values = <0x0036DB6D 0x005B6DB6 0x0>;
 		interrupts =
 			<GIC_SPI IRQ_G3D_IRQJOB_G3D IRQ_TYPE_LEVEL_HIGH 0>,
