@@ -59,12 +59,24 @@ properties:
     description: BATOILO2 threshold during normal usage
     $ref: /schemas/types.yaml#/definitions/int32
 
+  batoilo_otg_trig_lvl:
+    description: BATOILO threshold when OTG enabled
+    $ref: /schemas/types.yaml#/definitions/int32
+
+  batoilo2_otg_trig_lvl:
+    description: BATOILO2 threshold when OTG enabled
+    $ref: /schemas/types.yaml#/definitions/int32
+
   batoilo_usb_trig_lvl:
     description: BATOILO threshold when plugged in
     $ref: /schemas/types.yaml#/definitions/int32
 
   batoilo2_usb_trig_lvl:
     description: BATOILO2 threshold when plugged in
+    $ref: /schemas/types.yaml#/definitions/int32
+
+  batoilo_otg_bat_open_to:
+    description: BATOILO timer when BATFET opens and OTG enabled
     $ref: /schemas/types.yaml#/definitions/int32
 
   batoilo_bat_open_to:
@@ -127,6 +139,22 @@ properties:
     description: Event Counter Enable
     $ref: /schemas/types.yaml#/definitions/uint32
 
+  usb_otg_conf:
+    description: USB OTG Enable
+    $ref: /schemas/types.yaml#/definitions/bool
+
   evt_cnt_rate:
     description: Event Counter Sampling Rate
     $ref: /schemas/types.yaml#/definitions/uint32
+
+  vimon_pwr_loop_thresh:
+    description: Battery current threshold for vimon power loop
+    $ref: /schemas/types.yaml#/definitions/uint32
+
+  vimon_pwr_loop_cnt:
+    description: vimon sample num to start power loop
+    $ref: /schemas/types.yaml#/definitions/uint32
+
+  vimon_pwr_loop_en:
+    description: vimon power loop enable
+    $ref: /schemas/types.yaml#/definitions/flag

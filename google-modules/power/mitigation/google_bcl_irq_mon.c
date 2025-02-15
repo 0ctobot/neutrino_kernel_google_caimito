@@ -10,9 +10,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <trace/events/power.h>
-#if IS_ENABLED(CONFIG_EXYNOS_MODEM_IF)
-#include "soc/google/exynos-modem-ctrl.h"
-#endif
+#include <soc/google/modem_notifier.h>
 #include "bcl.h"
 
 #if IS_ENABLED(CONFIG_SOC_ZUMA)

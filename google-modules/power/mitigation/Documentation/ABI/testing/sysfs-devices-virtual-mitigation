@@ -308,6 +308,13 @@ Contact:	"George Lee" <geolee@google.com>
 Description:
 		stats: brownout information (see uapi/brownout_stats.h)
 
+What:		/sys/devices/virtual/pmic/mitigation/br_stats/trigger_br_stats
+Date:		Sep, 2024
+Contact:	"George Lee" <geolee@google.com>
+		"Sam Ou" <samou@google.com>
+Description:
+		trigger_br_stats: write triggered_idx to trigger data logging
+
 What:		/sys/devices/virtual/pmic/mitigation/br_stats/meter_channels
 Date:		Aug, 2024
 Contact:	"Sam Ou" <samou@google.com>

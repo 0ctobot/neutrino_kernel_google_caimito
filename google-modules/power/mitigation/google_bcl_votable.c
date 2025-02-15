@@ -11,9 +11,11 @@
 #include <linux/types.h>
 #include <misc/gvotable.h>
 #include "bcl.h"
+#include "soc/google/debug-snapshot.h"
 
 #define BCL_WLC "BCL_WLC"
 #define BCL_USB "BCL_USB"
+#define BCL_USB_OTG "BCL_USB_OTG"
 
 enum {
 	WLC_ENABLED_TX,
@@ -44,6 +46,7 @@ static int google_bcl_wlc_votable_callback(struct gvotable_election *el,
 			return ret;
 		}
 	}
+
 	/* b/335695535 outlines max77759 configuration */
 
 	return 0;
@@ -52,20 +55,42 @@ static int google_bcl_wlc_votable_callback(struct gvotable_election *el,
 static int google_bcl_usb_votable_callback(struct gvotable_election *el,
 					   const char *reason, void *value)
 {
-	int ret = 0;
+	int ret = 0, err = 0;
 	struct bcl_device *bcl_dev = gvotable_get_data(el);
 	u8 usb_enable = (long)value ? USB_PLUGGED: USB_UNPLUGGED;
+	union power_supply_propval prop = { };
 
 	if (!smp_load_acquire(&bcl_dev->enabled))
 		return -EINVAL;
-	if (bcl_dev->ifpmic == MAX77779) {
+	if (bcl_dev->ifpmic != MAX77779)
+		return 0;
+	if (bcl_dev->usb_otg_conf && bcl_dev->otg_psy)
+		err = power_supply_get_property(bcl_dev->otg_psy,
+						POWER_SUPPLY_PROP_STATUS, &prop);
+	else
+		err = power_supply_get_property(bcl_dev->batt_psy,
+						POWER_SUPPLY_PROP_STATUS, &prop);
+	if ((err == 0) && (prop.intval == POWER_SUPPLY_STATUS_DISCHARGING) &&
+	    bcl_dev->usb_otg_conf) {
+
 		ret = max77779_adjust_batoilo_lvl(bcl_dev, usb_enable,
-	                                  	  bcl_dev->batt_irq_conf1.batoilo_usb_trig_lvl,
-	                                  	  bcl_dev->batt_irq_conf2.batoilo_usb_trig_lvl);
+						  bcl_dev->batt_irq_conf1.batoilo_otg_trig_lvl,
+						  bcl_dev->batt_irq_conf2.batoilo_otg_trig_lvl);
+		if (ret < 0)
+			dev_err(bcl_dev->device, "USB: BATOILO cannot be adjusted\n");
+
+		dbg_snapshot_set_usb_otg(usb_enable);
+
+		ret = max77779_adjust_bat_open_to(bcl_dev, usb_enable);
+		if (ret < 0)
+			dev_err(bcl_dev->device, "USB: BAT OPEN cannot be adjusted\n");
+	} else {
+		ret = max77779_adjust_batoilo_lvl(bcl_dev, usb_enable,
+						  bcl_dev->batt_irq_conf1.batoilo_usb_trig_lvl,
+						  bcl_dev->batt_irq_conf2.batoilo_usb_trig_lvl);
 		if (ret < 0)
 			dev_err(bcl_dev->device, "USB: BATOILO cannot be adjusted\n");
 	}
-	/* b/335695535 outlines max77759 configuration */
 
 	return ret;
 }
@@ -94,6 +119,7 @@ int google_bcl_setup_votable(struct bcl_device *bcl_dev)
 	}
 	gvotable_set_vote2str(bcl_dev->toggle_usb, gvotable_v2s_int);
 	gvotable_election_set_name(bcl_dev->toggle_usb, BCL_USB);
+
 	return 0;
 }
 

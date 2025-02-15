@@ -38,6 +38,9 @@
         max77759_clr_irq(bcl, v) : max77779_clr_irq(bcl, v))
 #define bcl_vimon_read(bcl) (((bcl)->ifpmic == MAX77759) ? \
        max77759_vimon_read(bcl) : max77779_vimon_read(bcl))
+#define bcl_req_vimon_conv(bcl, idx) (((bcl)->ifpmic == MAX77759) ? \
+				max77759_req_vimon_conv(bcl, idx) :\
+				max77779_req_vimon_conv(bcl, idx))
 
 #define DELTA_5MS			(5 * NSEC_PER_MSEC)
 #define DELTA_10MS			(10 * NSEC_PER_MSEC)
@@ -46,6 +49,8 @@
 #define IRQ_ENABLE_DELAY_MS		50
 #define NOT_USED			9999
 #define TIMEOUT_5S			5000
+#define TIMEOUT_5000US			5000
+#define TIMEOUT_10000US			10000
 #define TIMEOUT_10MS			10
 #define TIMEOUT_5MS			5
 #define TIMEOUT_1MS			1
@@ -67,6 +72,10 @@
 #define DEFAULT_VDROOP_INT_MASK 0xDF /* Only BATOILO is passed */
 #define DEFAULT_INTB_MASK 0x0 /* All IRQs are passed */
 #define DEFAULT_SMPL 0xCB /* 3.2V, 200mV HYS, 38us debounce */
+#define DEFAULT_VIMON_PWR_LOOP_CNT 0
+#define DEFAULT_VIMON_PWR_LOOP_THRESH 20000
+#define MAX77779_VIMON_NV_PRE_LSB 78122
+#define MAX77779_VIMON_NA_PRE_LSB 781250
 
 
 #if IS_ENABLED(CONFIG_SOC_GS101)
@@ -95,6 +104,9 @@
 #else
 #define SMPL_ZONE_NAME "smpl_warn"
 #endif
+
+#define PSY_NAME "google,power-supply"
+#define PSY_OTG_NAME "google,plc"
 
 #if !IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 #define BATOILO_DET_SHIFT 2
@@ -208,6 +220,11 @@ struct qos_throttle_limit {
 	int cpu2_limit;
 	int gpu_limit;
 	int tpu_limit;
+	int cpu0_freq;
+	int cpu1_freq;
+	int cpu2_freq;
+	int gpu_freq;
+	int tpu_freq;
 };
 
 struct zone_triggered_stats {
@@ -241,6 +258,7 @@ struct bcl_zone {
 	bool conf_qos;
 	const char *devname;
 	u32 current_state;
+	bool throttle;
 };
 
 struct bcl_core_conf {
@@ -280,7 +298,9 @@ struct bcl_batt_irq_conf {
 	u8 batoilo_trig_lvl;
 	u8 batoilo_wlc_trig_lvl;
 	u8 batoilo_usb_trig_lvl;
+	u8 batoilo_otg_trig_lvl;
 	u8 batoilo_bat_open_to;
+	u8 batoilo_bat_otg_open_to;
 	u8 batoilo_rel;
 	u8 batoilo_det;
 	u8 batoilo_int_rel;
@@ -305,12 +325,10 @@ struct bcl_mitigation_conf {
 	u32 threshold;
 };
 
-#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 struct bcl_vimon_intf {
 	uint16_t data[VIMON_BUF_SIZE];
 	size_t count;
 };
-#endif
 
 struct bcl_device {
 	struct device *device;
@@ -321,6 +339,7 @@ struct bcl_device {
 	struct odpm_info *sub_odpm;
 	void __iomem *sysreg_cpucl0;
 	struct power_supply *batt_psy;
+	struct power_supply *otg_psy;
 
 	struct notifier_block psy_nb;
 	struct bcl_zone *zone[TRIGGERED_SOURCE_MAX];
@@ -342,11 +361,9 @@ struct bcl_device {
 	struct device *intf_pmic_dev;
 	struct device *irq_pmic_dev;
 	struct device *fg_pmic_dev;
-#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	struct device *vimon_dev;
-#endif
-	struct mutex cpu_ratio_lock;
 	struct mutex qos_update_lock;
+	struct mutex cpu_ratio_lock;
 	struct bcl_core_conf core_conf[SUBSYSTEM_SOURCE_MAX];
 	struct bcl_cpu_buff_conf cpu_buff_conf[CPU_CLUSTER_MAX];
 	struct notifier_block cpu_nb;
@@ -425,11 +442,12 @@ struct bcl_device {
 #if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	struct gvotable_election *toggle_wlc;
 	struct gvotable_election *toggle_usb;
+	struct gvotable_election *toggle_otg;
 	struct bcl_evt_count evt_cnt;
 	struct bcl_evt_count evt_cnt_latest;
+#endif
 
 	struct bcl_vimon_intf vimon_intf;
-#endif
 	bool config_modem;
 	bool rffe_mitigation_enable;
 
@@ -446,6 +464,13 @@ struct bcl_device {
 	bool oilo1_vdrp2_en;
 	bool oilo2_vdrp1_en;
 	bool oilo2_vdrp2_en;
+	bool vimon_pwr_loop_en;
+	bool vimon_pwr_loop_cnt;
+	int vimon_pwr_loop_thresh;
+
+	struct delayed_work qos_work;
+
+	bool usb_otg_conf;
 };
 
 extern void google_bcl_irq_update_lvl(struct bcl_device *bcl_dev, int index, unsigned int lvl);
@@ -483,9 +508,14 @@ int google_bcl_init_data_logging(struct bcl_device *bcl_dev);
 void google_bcl_start_data_logging(struct bcl_device *bcl_dev, int idx);
 void google_bcl_remove_data_logging(struct bcl_device *bcl_dev);
 void google_bcl_upstream_state(struct bcl_zone *zone, enum MITIGATION_MODE state);
+int google_pwr_loop_trigger_mitigation(struct bcl_device *bcl_dev);
 int max77759_vimon_read(struct bcl_device *bcl_dev);
 int max77779_vimon_read(struct bcl_device *bcl_dev);
+int max77759_req_vimon_conv(struct bcl_device *bcl_dev, int idx);
+int max77779_req_vimon_conv(struct bcl_device *bcl_dev, int idx);
+
 #if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
+int max77779_adjust_bat_open_to(struct bcl_device *bcl_dev, bool enable);
 int max77779_adjust_batoilo_lvl(struct bcl_device *bcl_dev, u8 lower_enable, u8 set_batoilo1_lvl,
                                 u8 set_batoilo2_lvl);
 int google_bcl_setup_votable(struct bcl_device *bcl_dev);

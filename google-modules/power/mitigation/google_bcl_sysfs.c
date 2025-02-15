@@ -4153,18 +4153,16 @@ static ssize_t trigger_br_stats_store(struct device *dev, struct device_attribut
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
 	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
-	int value;
+	unsigned int value;
 
 	if (!bcl_dev->data_logging_initialized)
 		return -EINVAL;
 
-	if (kstrtouint(buf, 16, &value) < 0)
+	if (kstrtouint(buf, 16, &value) != 0 || value >= TRIGGERED_SOURCE_MAX)
 		return -EINVAL;
 
-	if (value > -1 && value < TRIGGERED_SOURCE_MAX) {
-		dev_info(bcl_dev->device, "Triggered: %d\n", value);
-		google_bcl_start_data_logging(bcl_dev, value);
-	}
+	dev_dbg(bcl_dev->device, "Triggered: %d\n", value);
+	google_bcl_start_data_logging(bcl_dev, value);
 
 	return size;
 }

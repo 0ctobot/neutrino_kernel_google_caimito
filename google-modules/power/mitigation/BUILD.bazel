@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("//build/kernel/kleaf:kernel.bzl", "kernel_module")
 
 filegroup(
@@ -15,7 +14,6 @@ filegroup(
         "//private/google-modules/gpu:__subpackages__",
         "//private/google-modules/gxp:__subpackages__",
         "//private/google-modules/power/mitigation:__subpackages__",
-        "//private/google-modules/radio:__subpackages__",
         "//private/google-modules/soc/gs:__pkg__",
     ],
 )
@@ -29,25 +27,6 @@ filegroup(
     ],
 )
 
-config_setting(
-    name = "radio_s5300",
-    flag_values = {
-        "radio": "s5300",
-    },
-)
-
-config_setting(
-    name = "radio_s5400",
-    flag_values = {
-        "radio": "s5400",
-    },
-)
-
-string_flag(
-    name = "radio",
-    build_setting_default = "undefined",
-)
-
 kernel_module(
     name = "bcl",
     srcs = glob([
@@ -57,11 +36,7 @@ kernel_module(
         "//private/google-modules/bms:headers",
         "//private/google-modules/bms/misc:headers",
         "//private/google-modules/soc/gs:gs_soc_headers",
-    ] + select({
-        "//private/google-modules/power/mitigation:radio_s5300": ["//private/google-modules/radio/samsung/s5300:cpif_headers"],
-        "//private/google-modules/power/mitigation:radio_s5400": ["//private/google-modules/radio/samsung/s5400:cpif_headers"],
-        "//conditions:default": [],
-    }),
+    ],
     outs = [
         "google_bcl.ko",
     ],
@@ -77,9 +52,5 @@ kernel_module(
         "//private/google-modules/bms",
         "//private/google-modules/bms/misc:bms-misc",
         "//private/google-modules/soc/gs:gs_soc_module",
-    ] + select({
-        "//private/google-modules/power/mitigation:radio_s5300": ["//private/google-modules/radio/samsung/s5300:cpif"],
-        "//private/google-modules/power/mitigation:radio_s5400": ["//private/google-modules/radio/samsung/s5400:cpif"],
-        "//conditions:default": [],
-    }),
+    ],
 )
