@@ -398,6 +398,9 @@ static int tas25xx_mute_stream(struct snd_soc_dai *dai, int mute, int stream)
 	if (mute)
 		ret = tas25xx_set_power_state(p_tas25xx, TAS_POWER_MUTE,
 			(0xf & tas25xx_get_drv_channel_opmode()));
+	else if (p_tas25xx->m_power_state == TAS_POWER_MUTE)
+		ret = tas25xx_set_power_state(p_tas25xx, TAS_POWER_ACTIVE,
+			(0xf & tas25xx_get_drv_channel_opmode()));
 	mutex_unlock(&p_tas25xx->codec_lock);
 
 	if (mute) {
@@ -479,6 +482,7 @@ static int tas25xx_setup_irq(struct tas25xx_priv *p_tas25xx)
 
 	/* register for interrupts */
 	for (i = 0; i < p_tas25xx->ch_count; i++) {
+		p_tas25xx->irq_registered[i] = 0;
 		if (gpio_is_valid(p_tas25xx->devs[i]->irq_gpio)) {
 			ret = gpio_request(p_tas25xx->devs[i]->irq_gpio,
 					irq_gpio_label[i]);
@@ -504,6 +508,7 @@ static int tas25xx_setup_irq(struct tas25xx_priv *p_tas25xx)
 			if (ret) {
 				dev_err(plat_data->dev, "request_irq failed, error=%d\n", ret);
 			} else {
+				p_tas25xx->irq_registered[i] = 1;
 				p_tas25xx->irq_enabled[i] = 1;
 				dev_info(plat_data->dev, "Interrupt registration successful!!!");
 			}

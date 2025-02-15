@@ -253,8 +253,10 @@ static ssize_t owt_free_space_show(struct device *dev,
 	if (error)
 		return error;
 
+	mutex_lock(&cs40l26->cl_dsp_lock);
 	error = cl_dsp_get_reg(cs40l26->dsp, "OWT_SIZE_XM",
 			CL_DSP_XM_UNPACKED_TYPE, CS40L26_VIBEGEN_ALGO_ID, &reg);
+	mutex_unlock(&cs40l26->cl_dsp_lock);
 	if (error)
 		goto err_pm;
 
@@ -391,8 +393,10 @@ static ssize_t f0_offset_store(struct device *dev, struct device_attribute *attr
 
 	mutex_lock(&cs40l26->lock);
 
+	mutex_lock(&cs40l26->cl_dsp_lock);
 	error = cl_dsp_get_reg(cs40l26->dsp, "F0_OFFSET", CL_DSP_XM_UNPACKED_TYPE,
 			CS40L26_VIBEGEN_ALGO_ID, &reg);
+	mutex_unlock(&cs40l26->cl_dsp_lock);
 	if (error)
 		goto err_mutex;
 
@@ -1021,6 +1025,51 @@ err_mutex:
 }
 static DEVICE_ATTR_RO(braking_time_ms);
 
+static ssize_t reset_show(struct device *dev,
+			  struct device_attribute *attr, char *buf)
+{
+	struct cs40l26_private *cs40l26 = dev_get_drvdata(dev);
+
+	dev_info(cs40l26->dev, "Reset: Event: %d; Count: %d; Time: (%lld,%lld).\n",
+		 cs40l26->reset_event, cs40l26->reset_count, cs40l26->reset_time_s,
+		 cs40l26->reset_time_e);
+	return sysfs_emit(buf, "%d\n", cs40l26->reset_event);
+}
+
+static ssize_t reset_store(struct device *dev,
+			   struct device_attribute *attr,
+			   const char *buf, size_t count)
+{
+	struct cs40l26_private *cs40l26 = dev_get_drvdata(dev);
+	int error;
+	int choice;
+
+	if (!cs40l26->reset_enabled) {
+		dev_warn(cs40l26->dev, "Haptic IC reset is not enabled");
+		return count;
+	}
+
+	error = kstrtou32(buf, 10, &choice);
+	if (error)
+		return error;
+
+	/*
+	 * Calling flush_work() within sysfs function will cause KP.
+	 * cs40l26_make_reset_decision(cs40l26, __func__);
+	 */
+
+	if (choice == 1) {
+		cs40l26->reset_event = CS40L26_RESET_EVENT_NONEED;
+		cs40l26->reset_count = 0;
+		queue_work(cs40l26->vibe_workqueue, &cs40l26->reset_work);
+	} else {
+		return -EINVAL;
+	}
+
+	return count;
+}
+static DEVICE_ATTR_RW(reset);
+
 static struct attribute *cs40l26_dev_attrs[] = {
 	&dev_attr_num_waves.attr,
 	&dev_attr_die_temp.attr,
@@ -1043,6 +1092,7 @@ static struct attribute *cs40l26_dev_attrs[] = {
 	&dev_attr_braking_time_bank.attr,
 	&dev_attr_braking_time_index.attr,
 	&dev_attr_braking_time_ms.attr,
+	&dev_attr_reset.attr,
 	NULL,
 };
 

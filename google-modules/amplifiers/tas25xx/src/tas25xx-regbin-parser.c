@@ -216,7 +216,8 @@ static int8_t *find_block_for_channel(struct tas25xx_priv *p_tas25xx,
 
 	plat_data = p_tas25xx->platform_data;
 
-	if (inp && header_check(p_tas25xx, inp, blk_name))
+	if (inp && (inp + HDR_STR_SZ < p_tas25xx->fw_data + p_tas25xx->fw_size) &&
+		header_check(p_tas25xx, inp, blk_name))
 		return inp;
 
 	/* start from begginging */
@@ -581,7 +582,7 @@ int32_t tas25xx_process_block(struct tas25xx_priv *p_tas25xx, char *mem, int32_t
 			dev_dbg(plat_data->dev, "ch=%d Cmd = %s delay=%x(%d)\n",
 				chn, CMD_ID[cmd], delay, delay);
 			ret |= 0;
-			msleep(delay);
+			usleep_range(delay*1000, delay*1000);
 			break;
 		}
 	}
@@ -1304,7 +1305,7 @@ static int32_t tas25xx_int_put_idx_value(struct tas25xx_priv *p_tas25xx,
 		dev_info(plat_data->dev, "%s kcontrol=%s with value index=%d", __func__,
 			g_kctrl_data[ctrl_idx].kcontrol.int_type.name, value_idx);
 
-		if (value_idx < count_w) {
+		if (value_idx >= 0 && value_idx < count_w) {
 			switch (g_kctrl_data[ctrl_idx].kcontrol.int_type.reg_type) {
 			case CMD_SINGLE_WRITE:
 				value_w = g_kctrl_data[ctrl_idx].kcontrol.int_type.chardata[value_idx];

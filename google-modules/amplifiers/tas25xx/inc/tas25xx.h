@@ -400,6 +400,7 @@ struct tas25xx_priv {
 	wait_queue_head_t dev_init_wait;
 	atomic_t dev_init_status;
 	int device_used;
+	int irq_registered[MAX_CHANNELS];
 	int irq_enabled[MAX_CHANNELS];
 	struct tas25xx_interrupts intr_data[MAX_CHANNELS];
 #if IS_ENABLED(CONFIG_TAS25XX_IRQ_BD)

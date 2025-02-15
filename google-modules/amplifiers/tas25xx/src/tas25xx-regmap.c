@@ -547,6 +547,9 @@ static void tas25xx_enable_irq(struct tas25xx_priv *p_tas25xx)
 		if (!gpio_is_valid(irq_gpio))
 			continue;
 
+		if (p_tas25xx->irq_registered[i] == 0)
+			continue;
+
 		// Update IRQZ setting
 		if (p_tas25xx->irqz_value != -1) {
 			value = p_tas25xx->irqz_value;
@@ -592,6 +595,8 @@ static void tas25xx_disable_irq(struct tas25xx_priv *p_tas25xx)
 		irq_gpio = p_tas25xx->devs[i]->irq_gpio;
 		irq_no = p_tas25xx->devs[i]->irq_no;
 		if (!gpio_is_valid(irq_gpio))
+			continue;
+		if (p_tas25xx->irq_registered[i] == 0)
 			continue;
 		if (p_tas25xx->irq_enabled[i] == 1) {
 			dev_info(plat_data->dev, "irq_no=%d(gpio=%d), disabling IRQ", irq_no, irq_gpio);

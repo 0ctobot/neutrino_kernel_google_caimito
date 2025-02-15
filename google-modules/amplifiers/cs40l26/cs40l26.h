@@ -43,6 +43,7 @@
 #include <sound/soc.h>
 #include <sound/initval.h>
 #include <sound/tlv.h>
+#include <linux/timekeeping.h>
 #include <trace/hooks/systrace.h>
 
 #include "cl_dsp.h"
@@ -179,6 +180,10 @@
 #define CS40L26_TEST_KEY_UNLOCK_CODE1	0x00000055
 #define CS40L26_TEST_KEY_UNLOCK_CODE2	0x000000AA
 #define CS40L26_TEST_KEY_LOCK_CODE	0x00000000
+
+/* Reset Recovery */
+#define CS40L26_RESET_MAX_COUNT			10
+#define CS40L26_RESET_COOLDOWN_TIMEOUT_SEC	300
 
 /* DSP State */
 #define CS40L26_DSP_STATE_HIBERNATE	0
@@ -1014,6 +1019,14 @@ enum cs40l26_irq_list {
 	CS40L26_VBBR_ATT_CLR_IRQ
 };
 
+enum cs40l26_reset_event {
+	CS40L26_RESET_EVENT_NONEED,
+	CS40L26_RESET_EVENT_TRIGGER,
+	CS40L26_RESET_EVENT_ONGOING,
+	CS40L26_RESET_EVENT_COOLDOWN,
+	CS40L26_RESET_EVENT_FAILED,
+};
+
 /* structs */
 struct cs40l26_log_src {
 	u8 sign;
@@ -1236,6 +1249,13 @@ struct cs40l26_private {
 	const char *device_name;
 	bool cs40l26_not_probed;
 	u8 device_id;
+	struct mutex cl_dsp_lock;
+	bool reset_enabled;
+	struct work_struct reset_work;
+	enum cs40l26_reset_event reset_event;
+	u8 reset_count;
+	time64_t reset_time_s;
+	time64_t reset_time_e;
 };
 
 struct cs40l26_codec {
@@ -1325,5 +1345,7 @@ extern const struct attribute_group *cs40l26_attr_groups[];
 void cs40l26_debugfs_init(struct cs40l26_private *cs40l26);
 void cs40l26_debugfs_cleanup(struct cs40l26_private *cs40l26);
 #endif /* CONFIG_DEBUG_FS */
+
+void cs40l26_make_reset_decision(struct cs40l26_private *cs40l26, const char *func);
 
 #endif /* __CS40L26_H__ */
