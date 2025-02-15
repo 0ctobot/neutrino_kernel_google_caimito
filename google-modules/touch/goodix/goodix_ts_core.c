@@ -2175,7 +2175,7 @@ static int goodix_ts_input_dev_config(struct goodix_ts_core *core_data)
 	sprintf(core_data->input_name, "%s%d", GOODIX_CORE_DRIVER_NAME, dev_id);
 	input_dev->dev.parent = &core_data->pdev->dev; /* [GOOG] */
 	input_dev->name = core_data->input_name;
-	input_dev->uniq = input_dev->name;
+        input_dev->uniq = "google_touchscreen";
 	input_dev->phys = input_dev->name;
 	input_dev->id.bustype = core_data->bus->bus_type;
 	input_dev->id.product = 0x0100 + dev_id;
