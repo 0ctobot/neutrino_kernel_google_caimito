@@ -141,6 +141,12 @@ static int qbt_touch_connect(struct input_handler *handler,
 	struct qbt_drvdata *drvdata;
 	int ret;
 
+	/* Only connect to the built in touchscreen. */
+	if (!(dev->uniq && strncmp(dev->uniq, "google_touchscreen", 18) == 0)) {
+		pr_info("Skip connecting device: %s\n", dev_name(&dev->dev));
+		return 0;
+	}
+
 	drvdata = handler->private;
 
 	handle = kzalloc(sizeof(struct input_handle), GFP_KERNEL);
@@ -163,9 +169,7 @@ static int qbt_touch_connect(struct input_handler *handler,
 		return ret;
 	}
 
-	/* Get the specific input device. */
-	if (handle->dev->uniq && strncmp(handle->dev->uniq, "google_touchscreen", 18) == 0)
-		drvdata->input_touch_dev = handle->dev;
+	drvdata->input_touch_dev = handle->dev;
 
 	pr_info("Connected device: %s\n", dev_name(&dev->dev));
 	return ret;
@@ -194,24 +198,29 @@ static void qbt_touch_report_event(struct input_handle *handle,
 
 	if (type != EV_SYN && type != EV_ABS)
 		return;
-	if (fd_touch->current_slot >= MT_MAX_FINGERS) {
-		pr_warn("Touch event current slot: %d received out of bound\n",
-			fd_touch->current_slot);
-		return;
-	}
+
 	if (drvdata->input_touch_dev) {
 		touch_width = input_abs_get_max(drvdata->input_touch_dev, ABS_MT_POSITION_X) + 1;
 		display_width = fd_touch->config.left + fd_touch->config.right;
 	}
 
+	if (code == ABS_MT_SLOT) {
+		if (!report_event && fd_touch->current_slot < MT_MAX_FINGERS) {
+			event = &fd_touch->current_events[fd_touch->current_slot];
+			event->updated = true;
+		}
+		fd_touch->current_slot = value;
+		report_event = false;
+	}
+
+	if (fd_touch->current_slot >= MT_MAX_FINGERS) {
+		pr_warn("Touch event current slot: %d received out of bound\n",
+			fd_touch->current_slot);
+		return;
+	}
+
 	event = &fd_touch->current_events[fd_touch->current_slot];
 	switch (code) {
-	case ABS_MT_SLOT:
-		fd_touch->current_slot = value;
-		if (!report_event)
-			event->updated = true;
-		report_event = false;
-		break;
 	case ABS_MT_TRACKING_ID:
 		event->id = value;
 		report_event = false;
