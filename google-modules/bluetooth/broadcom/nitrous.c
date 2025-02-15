@@ -74,7 +74,8 @@ struct nitrous_bt_lpm {
 #define PROC_BTWAKE	0
 #define PROC_LPM	1
 #define PROC_BTWRITE	2
-#define PROC_TIMESYNC	3
+#define PROC_WAKELOCK	3
+#define PROC_TIMESYNC	4
 #define PROC_DIR	"bluetooth/sleep"
 struct proc_dir_entry *bluetooth_dir, *sleep_dir;
 
@@ -292,6 +293,10 @@ static int nitrous_proc_show(struct seq_file *m, void *v)
 			timestamp = 0;
 		seq_printf(m, "%lld", ktime_to_us(timestamp));
 		break;
+	case PROC_WAKELOCK:
+		dev_info(lpm->dev, "%s: current rx wakelock time: %d\n", __func__, lpm->wakelock_ctrl);
+		seq_printf(m, "%d\n", lpm->wakelock_ctrl);
+		break;
 	default:
 		return 0;
 	}
@@ -309,13 +314,15 @@ static ssize_t nitrous_proc_write(struct file *file, const char *buf,
 	struct nitrous_lpm_proc *data = pde_data(file_inode(file));
 	struct nitrous_bt_lpm *lpm = data->lpm;
 	struct timespec64 ts;
-	char lbuf[4];
-	int rc;
+	char lbuf[6];
+	int rc, value;
 
 	if (count >= sizeof(lbuf))
 		count = sizeof(lbuf) - 1;
 	if (copy_from_user(lbuf, buf, count))
 		return -EFAULT;
+        /* Null-terminate the string */
+        lbuf[count] = '\0';
 
 	switch (data->operation) {
 	case PROC_LPM:
@@ -355,6 +362,15 @@ static ssize_t nitrous_proc_write(struct file *file, const char *buf,
 			nitrous_prepare_uart_tx_locked(lpm, false);
 		}
 		break;
+	case PROC_WAKELOCK:
+		rc = kstrtoint(lbuf, 10, &value); // Convert string to integer
+		if (rc) {
+			dev_err(lpm->dev, "Invalid integer input\n");
+			return -EINVAL;
+		}
+		lpm->wakelock_ctrl = value;
+		dev_info(lpm->dev, "%s: set wakelock_ctrl: %d\n", __func__, value);
+		break;
 	default:
 		return 0;
 	}
@@ -386,8 +402,9 @@ static void nitrous_lpm_remove_proc_entries(struct nitrous_bt_lpm *lpm)
 	}
 
 	if (lpm->timesync_state) {
-		remove_proc_entry("timesync", bluetooth_dir);
+		remove_proc_entry("wakelock_ctrl", bluetooth_dir);
 	}
+	remove_proc_entry("timesync", bluetooth_dir);
 	remove_proc_entry("bluetooth", 0);
 	if (lpm->proc) {
 		devm_kfree(lpm->dev, lpm->proc);
@@ -397,7 +414,7 @@ static void nitrous_lpm_remove_proc_entries(struct nitrous_bt_lpm *lpm)
 
 static int nitrous_lpm_init(struct nitrous_bt_lpm *lpm)
 {
-	int rc, proc_size = 3;
+	int rc, proc_size = 4;
 	unsigned long fifo_size = 0;
 	struct proc_dir_entry *entry;
 	struct nitrous_lpm_proc *data;
@@ -480,12 +497,26 @@ static int nitrous_lpm_init(struct nitrous_bt_lpm *lpm)
 		goto fail;
 	}
 
+	if (lpm->wakelock_ctrl) {
+		/* read/write proc entries "wakelock_ctrl" */
+		data[3].operation = PROC_WAKELOCK;
+		data[3].lpm = lpm;
+		entry = proc_create_data("wakelock_ctrl", (S_IRUSR | S_IRGRP | S_IWUSR),
+								 sleep_dir, &nitrous_proc_readwrite_fops, data + 3);
+		if (entry == NULL) {
+			dev_err(lpm->dev, "Unable to create /proc/%s/wakelock_ctrl entry", PROC_DIR);
+			logbuffer_log(lpm->log, "Unable to create /proc/%s/wakelock_ctrl entry", PROC_DIR);
+			rc = -ENOMEM;
+			goto fail;
+		}
+	}
+
 	if (lpm->timesync_state) {
 		/* read/write proc entries "timesync" */
-		data[3].operation = PROC_TIMESYNC;
-		data[3].lpm = lpm;
+		data[4].operation = PROC_TIMESYNC;
+		data[4].lpm = lpm;
 		entry = proc_create_data("timesync", (S_IRUSR | S_IRGRP),
-				bluetooth_dir, &nitrous_proc_read_fops, data + 3);
+				bluetooth_dir, &nitrous_proc_read_fops, data + 4);
 		if (entry == NULL) {
 			dev_err(lpm->dev, "Unable to create /proc/bluetooth/timesync entry");
 			logbuffer_log(lpm->log, "Unable to create /proc/bluetooth/timesync entry");
