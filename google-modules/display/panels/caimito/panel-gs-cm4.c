@@ -2280,7 +2280,7 @@ static const struct gs_panel_mode_array cm4_modes = {
 #ifdef PANEL_FACTORY_BUILD
 		{
 			.mode = {
-				.name = "1280x2856@1:1",
+				.name = "1280x2856x1@1",
 				DRM_MODE_TIMING(1, 1280, 80, 24, 46, 2856, 12, 4, 28),
 				.flags = 0,
 				.width_mm = WIDTH_MM,
@@ -2301,7 +2301,7 @@ static const struct gs_panel_mode_array cm4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1280x2856@10:10",
+				.name = "1280x2856x10@10",
 				DRM_MODE_TIMING(10, 1280, 80, 24, 46, 2856, 12, 4, 28),
 				.flags = 0,
 				.width_mm = WIDTH_MM,
@@ -2322,7 +2322,7 @@ static const struct gs_panel_mode_array cm4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1280x2856@30:30",
+				.name = "1280x2856x30@30",
 				DRM_MODE_TIMING(30, 1280, 80, 24, 46, 2856, 12, 4, 28),
 				.flags = 0,
 				.width_mm = WIDTH_MM,
@@ -2343,7 +2343,7 @@ static const struct gs_panel_mode_array cm4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1280x2856@80:80",
+				.name = "1280x2856x80@80",
 				DRM_MODE_TIMING(80, 1280, 80, 24, 46, 2856, 12, 4, 28),
 				.flags = 0,
 				.width_mm = WIDTH_MM,
@@ -2366,7 +2366,7 @@ static const struct gs_panel_mode_array cm4_modes = {
 		{
 			.mode = {
 				/* 60Hz supports HS/NS, see cm4_get_te_usec for widths used */
-				.name = "1280x2856@60:60",
+				.name = "1280x2856x60@60",
 				DRM_MODE_TIMING(60, 1280, 80, 24, 46, 2856, 12, 4, 28),
 				.flags = DRM_MODE_FLAG_BTS_OP_RATE,
 				.type = DRM_MODE_TYPE_PREFERRED,
@@ -2388,7 +2388,7 @@ static const struct gs_panel_mode_array cm4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1280x2856@120:120",
+				.name = "1280x2856x120@120",
 				DRM_MODE_TIMING(120, 1280, 80, 24, 46, 2856, 12, 4, 28),
 				.flags = DRM_MODE_FLAG_BTS_OP_RATE,
 				.width_mm = WIDTH_MM,
@@ -2412,7 +2412,7 @@ static const struct gs_panel_mode_array cm4_modes = {
 		{
 			.mode = {
 				/* 60Hz supports HS/NS, see cm4_get_te_usec for widths used */
-				.name = "960x2142@60:60",
+				.name = "960x2142x60@60",
 				DRM_MODE_TIMING(60, 960, 80, 24, 46, 2142, 12, 4, 32),
 				.flags = DRM_MODE_FLAG_BTS_OP_RATE,
 				.width_mm = WIDTH_MM,
@@ -2433,7 +2433,7 @@ static const struct gs_panel_mode_array cm4_modes = {
 		},
 		{
 			.mode = {
-				.name = "960x2142@120:120",
+				.name = "960x2142x120@120",
 				DRM_MODE_TIMING(120, 960, 80, 24, 46, 2142, 12, 4, 32),
 				.flags = DRM_MODE_FLAG_BTS_OP_RATE,
 				.width_mm = WIDTH_MM,
@@ -2456,11 +2456,10 @@ static const struct gs_panel_mode_array cm4_modes = {
 		/* VRR modes */
 		{
 			.mode = {
-				.name = "1280x2856@120:240",
-				DRM_MODE_TIMING(120, 1280, 80, 24, 46, 2856, 12, 4, 28),
-				.flags = DRM_MODE_FLAG_TE_FREQ_X2,
+				.name = "1280x2856x120@240",
+				DRM_VRR_MODE_TIMING(120, 240, 1280, 80, 24, 46, 2856, 12, 4, 28),
 				/* aligned to bootloader resolution */
-				.type = DRM_MODE_TYPE_VRR | DRM_MODE_TYPE_PREFERRED,
+				.type = DRM_MODE_TYPE_PREFERRED,
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
 			},
@@ -2480,10 +2479,8 @@ static const struct gs_panel_mode_array cm4_modes = {
 		},
 		{
 			.mode = {
-				.name = "960x2142@120:240",
-				DRM_MODE_TIMING(120, 960, 80, 24, 46, 2142, 12, 4, 32),
-				.flags = DRM_MODE_FLAG_TE_FREQ_X2,
-				.type = DRM_MODE_TYPE_VRR,
+				.name = "960x2142x120@240",
+				DRM_VRR_MODE_TIMING(120, 240, 960, 80, 24, 46, 2142, 12, 4, 32),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
 			},
@@ -2503,10 +2500,8 @@ static const struct gs_panel_mode_array cm4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1280x2856@120:120",
-				DRM_MODE_TIMING(120, 1280, 80, 24, 46, 2856, 12, 4, 28),
-				.flags = DRM_MODE_FLAG_TE_FREQ_X1,
-				.type = DRM_MODE_TYPE_VRR,
+				.name = "1280x2856x120@120",
+				DRM_VRR_MODE_TIMING(120, 120, 1280, 80, 24, 46, 2856, 12, 4, 28),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
 			},
@@ -2526,10 +2521,8 @@ static const struct gs_panel_mode_array cm4_modes = {
 		},
 		{
 			.mode = {
-				.name = "960x2142@120:120",
-				DRM_MODE_TIMING(120, 960, 80, 24, 46, 2142, 12, 4, 32),
-				.flags = DRM_MODE_FLAG_TE_FREQ_X1,
-				.type = DRM_MODE_TYPE_VRR,
+				.name = "960x2142x120@120",
+				DRM_VRR_MODE_TIMING(120, 120, 960, 80, 24, 46, 2142, 12, 4, 32),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
 			},
@@ -2561,7 +2554,7 @@ static const struct gs_panel_mode_array cm4_lp_modes = {
 	.modes = {
 		{
 			.mode = {
-				.name = "1280x2856@30:30",
+				.name = "1280x2856x30@30",
 				/* hsa and hbp are different from normal 30 Hz */
 				DRM_MODE_TIMING(30, 1280, 80, 26, 44, 2856, 12, 4, 28),
 				.width_mm = WIDTH_MM,
@@ -2580,7 +2573,7 @@ static const struct gs_panel_mode_array cm4_lp_modes = {
 #ifndef PANEL_FACTORY_BUILD
 		{
 			.mode = {
-				.name = "960x2142@30:30",
+				.name = "960x2142x30@30",
 				DRM_MODE_TIMING(30, 960, 80, 26, 44, 2142, 12, 4, 32),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,

@@ -2270,7 +2270,7 @@ static const struct gs_panel_mode_array km4_modes = {
 #ifdef PANEL_FACTORY_BUILD
 		{
 			.mode = {
-				.name = "1344x2992@1:1",
+				.name = "1344x2992x1@1",
 				DRM_MODE_TIMING(1, 1344, 80, 24, 52, 2992, 12, 4, 22),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
@@ -2290,7 +2290,7 @@ static const struct gs_panel_mode_array km4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1344x2992@10:10",
+				.name = "1344x2992x10@10",
 				DRM_MODE_TIMING(10, 1344, 80, 24, 42, 2992, 12, 4, 22),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
@@ -2310,7 +2310,7 @@ static const struct gs_panel_mode_array km4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1344x2992@30:30",
+				.name = "1344x2992x30@30",
 				DRM_MODE_TIMING(30, 1344, 80, 22, 44, 2992, 12, 4, 22),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
@@ -2330,7 +2330,7 @@ static const struct gs_panel_mode_array km4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1344x2992@80:80",
+				.name = "1344x2992x80@80",
 				DRM_MODE_TIMING(80, 1344, 80, 24, 42, 2992, 12, 4, 22),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
@@ -2352,7 +2352,7 @@ static const struct gs_panel_mode_array km4_modes = {
 		{
 			.mode = {
 				/* 60Hz supports HS/NS, see km4_get_te_usec for widths used */
-				.name = "1344x2992@60:60",
+				.name = "1344x2992x60@60",
 				DRM_MODE_TIMING(60, 1344, 80, 24, 42, 2992, 12, 4, 22),
 				/* aligned to bootloader resolution */
 				.flags = DRM_MODE_FLAG_BTS_OP_RATE,
@@ -2375,7 +2375,7 @@ static const struct gs_panel_mode_array km4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1344x2992@120:120",
+				.name = "1344x2992x120@120",
 				DRM_MODE_TIMING(120, 1344, 80, 24, 42, 2992, 12, 4, 22),
 				.flags = DRM_MODE_FLAG_BTS_OP_RATE,
 				.width_mm = WIDTH_MM,
@@ -2399,7 +2399,7 @@ static const struct gs_panel_mode_array km4_modes = {
 		{
 			.mode = {
 				/* 60Hz supports HS/NS, see km4_get_te_usec for widths used */
-				.name = "1008x2244@60:60",
+				.name = "1008x2244x60@60",
 				DRM_MODE_TIMING(60, 1008, 80, 24, 38, 2244, 12, 4, 20),
 				.flags = DRM_MODE_FLAG_BTS_OP_RATE,
 				.width_mm = WIDTH_MM,
@@ -2420,7 +2420,7 @@ static const struct gs_panel_mode_array km4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1008x2244@120:120",
+				.name = "1008x2244x120@120",
 				DRM_MODE_TIMING(120, 1008, 80, 24, 38, 2244, 12, 4, 20),
 				.flags = DRM_MODE_FLAG_BTS_OP_RATE,
 				.width_mm = WIDTH_MM,
@@ -2443,11 +2443,10 @@ static const struct gs_panel_mode_array km4_modes = {
 		/* VRR modes */
 		{
 			.mode = {
-				.name = "1344x2992@120:240",
-				DRM_MODE_TIMING(120, 1344, 80, 24, 42, 2992, 12, 4, 22),
-				.flags = DRM_MODE_FLAG_TE_FREQ_X2,
+				.name = "1344x2992x120@240",
+				DRM_VRR_MODE_TIMING(120, 240, 1344, 80, 24, 42, 2992, 12, 4, 22),
 				/* aligned to bootloader resolution */
-				.type = DRM_MODE_TYPE_VRR | DRM_MODE_TYPE_PREFERRED,
+				.type = DRM_MODE_TYPE_PREFERRED,
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
 			},
@@ -2467,10 +2466,8 @@ static const struct gs_panel_mode_array km4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1008x2244@120:240",
-				DRM_MODE_TIMING(120, 1008, 80, 24, 38, 2244, 12, 4, 20),
-				.flags = DRM_MODE_FLAG_TE_FREQ_X2,
-				.type = DRM_MODE_TYPE_VRR,
+				.name = "1008x2244x120@240",
+				DRM_VRR_MODE_TIMING(120, 240, 1008, 80, 24, 38, 2244, 12, 4, 20),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
 			},
@@ -2490,10 +2487,8 @@ static const struct gs_panel_mode_array km4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1344x2992@120:120",
-				DRM_MODE_TIMING(120, 1344, 80, 24, 42, 2992, 12, 4, 22),
-				.flags = DRM_MODE_FLAG_TE_FREQ_X1,
-				.type = DRM_MODE_TYPE_VRR,
+				.name = "1344x2992x120@120",
+				DRM_VRR_MODE_TIMING(120, 120, 1344, 80, 24, 42, 2992, 12, 4, 22),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
 			},
@@ -2513,10 +2508,8 @@ static const struct gs_panel_mode_array km4_modes = {
 		},
 		{
 			.mode = {
-				.name = "1008x2244@120:120",
-				DRM_MODE_TIMING(120, 1008, 80, 24, 38, 2244, 12, 4, 20),
-				.flags = DRM_MODE_FLAG_TE_FREQ_X1,
-				.type = DRM_MODE_TYPE_VRR,
+				.name = "1008x2244x120@120",
+				DRM_VRR_MODE_TIMING(120, 120, 1008, 80, 24, 38, 2244, 12, 4, 20),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
 			},
@@ -2547,7 +2540,7 @@ static const struct gs_panel_mode_array km4_lp_modes = {
 	.modes = {
 		{
 			.mode = {
-				.name = "1344x2992@30:30",
+				.name = "1344x2992x30@30",
 				/* hsa and hbp are different from normal 30 Hz */
 				DRM_MODE_TIMING(30, 1344, 80, 24, 42, 2992, 12, 4, 22),
 				.width_mm = WIDTH_MM,
@@ -2566,7 +2559,7 @@ static const struct gs_panel_mode_array km4_lp_modes = {
 #ifndef PANEL_FACTORY_BUILD
 		{
 			.mode = {
-				.name = "1008x2244@30:30",
+				.name = "1008x2244x30@30",
 				DRM_MODE_TIMING(30, 1008, 80, 24, 38, 2244, 12, 4, 20),
 				.width_mm = WIDTH_MM,
 				.height_mm = HEIGHT_MM,
