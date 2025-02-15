@@ -119,11 +119,16 @@ struct pixel_gpu_pdc_status {
 
 #if MALI_USE_CSF
 void gpu_debug_read_pdc_status(struct kbase_device *kbdev, struct pixel_gpu_pdc_status *status);
+void gpu_debug_dump_pdc_status(struct kbase_device *kbdev);
 #else
 static void __maybe_unused gpu_debug_read_pdc_status(struct kbase_device *kbdev,
 						     struct pixel_gpu_pdc_status *status)
 {
 	(void)kbdev, (void)status;
+}
+static void __maybe_unused gpu_debug_dump_pdc_status(struct kbase_device *kbdev)
+{
+	(void)kbdev;
 }
 #endif
 

@@ -326,8 +326,6 @@ struct kbase_platform_funcs_conf platform_funcs = {
 #ifdef CONFIG_MALI_MIDGARD_DVFS
 	.platform_handler_context_init_func = &gpu_pixel_kctx_init,
 	.platform_handler_context_term_func = &gpu_pixel_kctx_term,
-	.platform_handler_work_begin_func = &gpu_dvfs_metrics_work_begin,
-	.platform_handler_work_end_func = &gpu_dvfs_metrics_work_end,
 #endif /* CONFIG_MALI_MIDGARD_DVFS */
 	.platform_handler_context_active = &gpu_slc_kctx_active,
 	.platform_handler_context_idle = &gpu_slc_kctx_idle,

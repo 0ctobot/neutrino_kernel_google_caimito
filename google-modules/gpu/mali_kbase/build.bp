@@ -59,9 +59,6 @@ bob_defaults {
     mali_dma_buf_legacy_compat: {
         kbuild_options: ["CONFIG_MALI_DMA_BUF_LEGACY_COMPAT=y"],
     },
-    page_migration_support: {
-        kbuild_options: ["CONFIG_PAGE_MIGRATION_SUPPORT=y"],
-    },
     large_page_support: {
         kbuild_options: ["CONFIG_LARGE_PAGE_SUPPORT=y"],
     },
@@ -104,17 +101,11 @@ bob_defaults {
     mali_job_dump: {
         kbuild_options: ["CONFIG_MALI_JOB_DUMP"],
     },
-    mali_pwrsoft_765: {
-        kbuild_options: ["CONFIG_MALI_PWRSOFT_765=y"],
-    },
     mali_hw_errata_1485982_not_affected: {
         kbuild_options: ["CONFIG_MALI_HW_ERRATA_1485982_NOT_AFFECTED=y"],
     },
     mali_hw_errata_1485982_use_clock_alternative: {
         kbuild_options: ["CONFIG_MALI_HW_ERRATA_1485982_USE_CLOCK_ALTERNATIVE=y"],
-    },
-    mali_is_fpga: {
-        kbuild_options: ["CONFIG_MALI_IS_FPGA=y"],
     },
     mali_coresight: {
         kbuild_options: ["CONFIG_MALI_CORESIGHT=y"],

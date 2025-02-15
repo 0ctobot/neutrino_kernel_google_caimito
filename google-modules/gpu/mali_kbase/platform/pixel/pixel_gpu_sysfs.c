@@ -8,6 +8,7 @@
 /* Mali core includes */
 #include <mali_kbase.h>
 #include <trace/events/power.h>
+#include <linux/seq_file.h>
 
 /* Pixel integration includes */
 #include "mali_kbase_config_platform.h"
@@ -227,7 +228,6 @@ static ssize_t power_stats_show(struct device *dev, struct device_attribute *att
 			pc->dvfs.table[i].metrics.time_last_entry / NSEC_PER_MSEC);
 	}
 
-
 	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Summary stats: (times in ms)\n");
 
 	ret += scnprintf(
@@ -247,6 +247,47 @@ static ssize_t power_stats_show(struct device *dev, struct device_attribute *att
 	return ret;
 }
 
+static ssize_t gpu_top_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	ssize_t ret = 0;
+	struct kbase_device *kbdev = dev->driver_data;
+	struct pixel_context *pc = kbdev->platform_context;
+	struct gpu_dvfs_metrics_uid_stats *entry = NULL;
+	unsigned long flags;
+	unsigned bkt;
+
+	if (!pc)
+		return -ENODEV;
+
+	spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
+	hash_for_each(pc->dvfs.metrics.uid_stats_table, bkt, entry, uid_list_node) {
+		const u64 delta_ns = ktime_get_ns() - entry->timestamp_ns_last;
+#if MALI_USE_CSF
+                /* The GPU cycles increase with the top level clock on CSF. */
+		const u64 max_cycles_per_ms = pc->dvfs.table[0].clk[GPU_DVFS_CLK_TOP_LEVEL] / 1000;
+#else
+                /* The GPU cycles increase with the shaders clock on CSF. */
+		const u64 max_cycles_per_ms = pc->dvfs.table[0].clk[GPU_DVFS_CLK_SHADERS] / 1000;
+#endif
+		const u64 max_cycles_since_last_read = (max_cycles_per_ms * delta_ns) / 1000;
+		const u64 dec_precision = 100;
+		const u64 val_cycles_pct =
+                    (entry->gpu_cycles_last * 100 * dec_precision) / max_cycles_since_last_read;
+		const u64 val_cycles_pct_int = val_cycles_pct / dec_precision;
+		const u64 val_cycles_pct_dec = val_cycles_pct - val_cycles_pct_int * dec_precision;
+
+		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%u,%llu.%02llu\n",
+			__kuid_val(entry->uid), val_cycles_pct_int, val_cycles_pct_dec);
+
+		entry->gpu_cycles_last = 0;
+		entry->gpu_active_ns_last = 0;
+		entry->timestamp_ns_last = ktime_get_ns();
+	}
+	spin_unlock_irqrestore(&pc->dvfs.metrics.lock, flags);
+
+	return ret;
+}
+
 static ssize_t uid_time_in_state_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int i;
@@ -254,6 +295,7 @@ static ssize_t uid_time_in_state_show(struct device *dev, struct device_attribut
 	struct kbase_device *kbdev = dev->driver_data;
 	struct pixel_context *pc = kbdev->platform_context;
 	struct gpu_dvfs_metrics_uid_stats *entry = NULL;
+	unsigned bkt;
 
 	if (!pc)
 		return -ENODEV;
@@ -264,7 +306,7 @@ static ssize_t uid_time_in_state_show(struct device *dev, struct device_attribut
 			pc->dvfs.table[i].clk[GPU_DVFS_CLK_SHADERS]);
 	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
 
-	list_for_each_entry(entry, &pc->dvfs.metrics.uid_stats_list, uid_list_link) {
+	hash_for_each(pc->dvfs.metrics.uid_stats_table, bkt, entry, uid_list_node) {
 		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%u: ", __kuid_val(entry->uid));
 		for (i=0; i < pc->dvfs.table_size; i++) {
 			ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%llu ",
@@ -273,56 +315,6 @@ static ssize_t uid_time_in_state_show(struct device *dev, struct device_attribut
 
 		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
 	}
-
-	return ret;
-}
-
-
-static ssize_t uid_time_in_state_h_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	int i;
-	ssize_t ret = 0;
-	struct kbase_device *kbdev = dev->driver_data;
-	struct pixel_context *pc = kbdev->platform_context;
-	struct gpu_dvfs_metrics_uid_stats *entry = NULL;
-	u64 *totals;
-
-	if (!pc)
-		return -ENODEV;
-
-	totals = kzalloc(sizeof(u64) * pc->dvfs.table_size, GFP_KERNEL);
-
-	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "            | ");
-	for (i=0; i < pc->dvfs.table_size; i++)
-		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%9u  ",
-			pc->dvfs.table[i].clk[GPU_DVFS_CLK_SHADERS]);
-	ret += scnprintf(buf + ret, PAGE_SIZE - ret,
-		"\n------------+-----------------------------------------------------------------\n");
-
-	list_for_each_entry(entry, &pc->dvfs.metrics.uid_stats_list, uid_list_link) {
-		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%6d (%2d) | ",
-			__kuid_val(entry->uid), entry->active_kctx_count);
-		for (i=0; i < pc->dvfs.table_size; i++) {
-			totals[i] += entry->tis_stats[i].time_total;
-			ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%9llu  ",
-				entry->tis_stats[i].time_total / NSEC_PER_MSEC);
-		}
-
-		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
-	}
-
-	ret += scnprintf(buf + ret, PAGE_SIZE - ret,
-		"------------+-----------------------------------------------------------------\n");
-
-	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "     Totals | ");
-	for (i=0; i < pc->dvfs.table_size; i++) {
-		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%9llu  ",
-			totals[i] / NSEC_PER_MSEC);
-	}
-
-	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
-
-	kfree(totals);
 
 	return ret;
 }
@@ -377,10 +369,9 @@ DEVICE_ATTR_RO(utilization);
 DEVICE_ATTR_RO(clock_info);
 DEVICE_ATTR_RO(dvfs_table);
 DEVICE_ATTR_RO(power_stats);
+DEVICE_ATTR_RO(gpu_top);
 DEVICE_ATTR_RO(uid_time_in_state);
-DEVICE_ATTR_RO(uid_time_in_state_h);
 DEVICE_ATTR_WO(trigger_core_dump);
-
 
 /* devfreq-like attributes */
 
@@ -869,8 +860,8 @@ static struct {
 	{ "clock_info", &dev_attr_clock_info },
 	{ "dvfs_table", &dev_attr_dvfs_table },
 	{ "power_stats", &dev_attr_power_stats },
+	{ "gpu_top", &dev_attr_gpu_top },
 	{ "uid_time_in_state", &dev_attr_uid_time_in_state },
-	{ "uid_time_in_state_h", &dev_attr_uid_time_in_state_h },
 	{ "available_frequencies", &dev_attr_available_frequencies },
 	{ "cur_freq", &dev_attr_cur_freq },
 	{ "max_freq", &dev_attr_max_freq },
@@ -929,3 +920,167 @@ void gpu_sysfs_term(struct kbase_device *kbdev)
 	for (i = 0; i < ARRAY_SIZE(attribs); i++)
 		device_remove_file(dev, attribs[i].attr);
 }
+
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+
+/**
+ * gpu_top_h_show() - Print the gpu top in a human readable format
+ *
+ * @file: The seq_file for printing to
+ * @data: The debugfs entry private data, a pointer to kbase_context
+ *
+ * Return: Negative error code or 0 on success.
+ */
+static int gpu_top_h_show(struct seq_file *file, void *data)
+{
+	struct kbase_device *kbdev = file->private;
+	struct pixel_context *pc = kbdev->platform_context;
+	struct gpu_dvfs_metrics_uid_stats *entry = NULL;
+	unsigned long flags;
+	unsigned bkt;
+
+	CSTD_UNUSED(data);
+
+	if (!pc)
+		return -ENODEV;
+
+	seq_printf(file, "+-------+---------+-------+\n");
+	seq_printf(file, "|  UID  | CYCLES%% | TIME%% |\n");
+	seq_printf(file, "|-------+---------+-------|\n");
+
+	spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
+	hash_for_each(pc->dvfs.metrics.uid_stats_table, bkt, entry, uid_list_node) {
+		const u64 delta_ns = ktime_get_ns() - entry->timestamp_ns_last;
+#if MALI_USE_CSF
+                /* The GPU cycles increase with the top level clock on CSF. */
+		const u64 max_cycles_per_ms = pc->dvfs.table[0].clk[GPU_DVFS_CLK_TOP_LEVEL] / 1000;
+#else
+                /* The GPU cycles increase with the shaders clock on CSF. */
+		const u64 max_cycles_per_ms = pc->dvfs.table[0].clk[GPU_DVFS_CLK_SHADERS] / 1000;
+#endif
+		const u64 max_cycles_since_last_read = (max_cycles_per_ms * delta_ns) / 1000;
+		const u64 dec_precision = 100;
+		const u64 val_cycles_pct =
+                    (entry->gpu_cycles_last * 100 * dec_precision) / max_cycles_since_last_read;
+		const u64 val_cycles_pct_int = val_cycles_pct / dec_precision;
+		const u64 val_cycles_pct_dec = val_cycles_pct - val_cycles_pct_int * dec_precision;
+		const u64 val_nss_pct =
+                    (delta_ns != 0 ) ? ((entry->gpu_active_ns_last * 100) / delta_ns) : 0;
+
+		seq_printf(file, "|");
+		seq_printf(file, "%6u |", __kuid_val(entry->uid));
+		seq_printf(file, "%5llu.%02llu |", val_cycles_pct_int, val_cycles_pct_dec);
+		seq_printf(file, "%6llu |", val_nss_pct);
+		seq_printf(file, "\n");
+
+		entry->gpu_cycles_last = 0;
+		entry->gpu_active_ns_last = 0;
+		entry->timestamp_ns_last = ktime_get_ns();
+	}
+	spin_unlock_irqrestore(&pc->dvfs.metrics.lock, flags);
+
+	seq_printf(file, "+-------+---------+-------+\n");
+
+	return 0;
+}
+
+/**
+ * uid_time_in_state_h_show() - Print the uid_time_in_state in a human readable format
+ *
+ * @file: The seq_file for printing to
+ * @data: The debugfs entry private data, a pointer to kbase_context
+ *
+ * Return: Negative error code or 0 on success.
+ */
+static int uid_time_in_state_h_show(struct seq_file *file, void *data)
+{
+	int i;
+	struct kbase_device *kbdev = file->private;
+	struct pixel_context *pc = kbdev->platform_context;
+	struct gpu_dvfs_metrics_uid_stats *entry = NULL;
+	u64 *totals;
+	unsigned bkt;
+
+	CSTD_UNUSED(data);
+
+	if (!pc)
+		return -ENODEV;
+
+	totals = kzalloc(sizeof(u64) * pc->dvfs.table_size, GFP_KERNEL);
+
+	seq_printf(file, "            | ");
+	for (i=0; i < pc->dvfs.table_size; i++)
+		seq_printf(file, "%9u  ", pc->dvfs.table[i].clk[GPU_DVFS_CLK_SHADERS]);
+	seq_printf(file, "\n------------+-----------------------------------------------------------------\n");
+
+	hash_for_each(pc->dvfs.metrics.uid_stats_table, bkt, entry, uid_list_node) {
+		seq_printf(file, "%6d (%2d) | ", __kuid_val(entry->uid), entry->active_kctx_count);
+		for (i=0; i < pc->dvfs.table_size; i++) {
+			totals[i] += entry->tis_stats[i].time_total;
+			seq_printf(file, "%9llu  ", entry->tis_stats[i].time_total / NSEC_PER_MSEC);
+		}
+
+		seq_printf(file, "\n");
+	}
+
+	seq_printf(file, "------------+-----------------------------------------------------------------\n");
+
+	seq_printf(file, "     Totals | ");
+	for (i=0; i < pc->dvfs.table_size; i++) {
+		seq_printf(file, "%9llu  ", totals[i] / NSEC_PER_MSEC);
+	}
+	seq_printf(file, "\n");
+
+	kfree(totals);
+
+	return 0;
+}
+
+static int gpu_top_h_open(struct inode *in, struct file *file)
+{
+	return single_open(file, gpu_top_h_show, in->i_private);
+}
+
+static const struct file_operations gpu_top_h_show_fops = {
+	.open = gpu_top_h_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static int uid_time_in_state_h_open(struct inode *in, struct file *file)
+{
+	return single_open(file, uid_time_in_state_h_show, in->i_private);
+}
+
+static const struct file_operations uid_time_in_state_h_show_fops = {
+	.open = uid_time_in_state_h_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+void pixel_gpu_debugfs_init(struct kbase_device *kbdev)
+{
+	struct dentry *file;
+	const mode_t mode = 0444;
+
+	if (WARN_ON(!kbdev || IS_ERR_OR_NULL(kbdev->mali_debugfs_directory)))
+		return;
+
+	file = debugfs_create_file("gpu_top_h", mode, kbdev->mali_debugfs_directory, kbdev,
+				   &gpu_top_h_show_fops);
+
+	if (IS_ERR_OR_NULL(file)) {
+		dev_warn(kbdev->dev, "Unable to create dvfs debugfs entry for gpu_top_h");
+	}
+
+	file = debugfs_create_file("uid_time_in_state_h", mode, kbdev->mali_debugfs_directory, kbdev,
+				   &uid_time_in_state_h_show_fops);
+
+	if (IS_ERR_OR_NULL(file)) {
+		dev_warn(kbdev->dev, "Unable to create dvfs debugfs entry for uid_time_in_state_h");
+	}
+}
+
+#endif /* CONFIG_DEBUG_FS */

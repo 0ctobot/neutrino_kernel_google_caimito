@@ -13,6 +13,7 @@
 #include <linux/platform_device.h>
 #include <linux/protected_memory_allocator.h>
 #include <linux/slab.h>
+#include <linux/version.h>
 
 MODULE_IMPORT_NS(DMA_BUF);
 
@@ -412,8 +413,13 @@ static struct mali_pma_slab *mali_pma_slab_add(
 	slab->dma_attachment = dma_attachment;
 
 	/* Map the DMA buffer into the attached device address space. */
+#if (KERNEL_VERSION(6, 1, 55) <= LINUX_VERSION_CODE)
+	dma_sg_table =
+		dma_buf_map_attachment_unlocked(dma_attachment, DMA_BIDIRECTIONAL);
+#else
 	dma_sg_table =
 		dma_buf_map_attachment(dma_attachment, DMA_BIDIRECTIONAL);
+#endif
 	if (IS_ERR(dma_sg_table)) {
 		dev_err(mali_pma_dev->dev, "Failed to map the DMA buffer\n");
 		goto out;
@@ -452,9 +458,15 @@ static void mali_pma_slab_remove(
 
 	/* Free the Mali protected memory slab allocation. */
 	if (slab->dma_sg_table) {
+#if (KERNEL_VERSION(6, 1, 55) <= LINUX_VERSION_CODE)
+		dma_buf_unmap_attachment_unlocked(
+			slab->dma_attachment,
+			slab->dma_sg_table, DMA_BIDIRECTIONAL);
+#else
 		dma_buf_unmap_attachment(
 			slab->dma_attachment,
 	 		slab->dma_sg_table, DMA_BIDIRECTIONAL);
+#endif
 	}
 	if (slab->dma_attachment) {
 		dma_buf_detach(slab->dma_buf, slab->dma_attachment);

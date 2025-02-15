@@ -194,122 +194,6 @@ void gpu_dvfs_metrics_update(struct kbase_device *kbdev, int old_level, int new_
 	gpu_dvfs_metrics_trace_clock(kbdev, old_level, new_level, power_state);
 }
 
-void gpu_dvfs_metrics_work_begin(void* param)
-{
-#if !MALI_USE_CSF
-	struct kbase_jd_atom* unit = param;
-	const int slot = unit->slot_nr;
-#else
-	struct kbase_queue_group* unit = param;
-	const int slot = unit->csg_nr;
-#endif
-	struct kbase_context* kctx = unit->kctx;
-	struct kbase_device* kbdev = kctx->kbdev;
-	struct pixel_context* pc = kbdev->platform_context;
-	struct pixel_platform_data *pd = kctx->platform_data;
-	struct gpu_dvfs_metrics_uid_stats* uid_stats = pd->stats;
-	struct gpu_dvfs_metrics_uid_stats** work_stats = &pc->dvfs.metrics.work_uid_stats[slot];
-	const u64 curr = ktime_get_ns();
-	unsigned long flags;
-
-	dev_dbg(kbdev->dev, "work_begin, slot: %d, uid: %d", slot, uid_stats->uid.val);
-
-	spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
-
-#if !MALI_USE_CSF
-	/*
-	* JM slots can have 2 Atoms submitted per slot, with different UIDs
-	* Use the secondary slot if the first is occupied
-	*/
-	if (*work_stats != NULL) {
-		work_stats = &pc->dvfs.metrics.work_uid_stats[slot + BASE_JM_MAX_NR_SLOTS];
-	}
-#endif
-
-	/* Nothing should be mapped to this slot */
-	WARN_ON_ONCE(*work_stats != NULL);
-
-	/*
-	 * First new work associated with this UID, start tracking the per UID
-	 * time now
-	 */
-	if (uid_stats->active_work_count == 0)
-	{
-		/*
-		 * This is the start of a new period, the start time shouldn't have
-		 * been set or should have been cleared.
-		 */
-		WARN_ON_ONCE(uid_stats->period_start != 0);
-		uid_stats->period_start = curr;
-	}
-	++uid_stats->active_work_count;
-
-	/* Link the UID stats to the stream slot */
-	*work_stats = uid_stats;
-
-	spin_unlock_irqrestore(&pc->dvfs.metrics.lock, flags);
-}
-
-void gpu_dvfs_metrics_work_end(void *param)
-{
-#if !MALI_USE_CSF
-	struct kbase_jd_atom* unit = param;
-	const int slot = unit->slot_nr;
-#else
-	struct kbase_queue_group* unit = param;
-	const int slot = unit->csg_nr;
-#endif
-	struct kbase_context* kctx = unit->kctx;
-	struct kbase_device* kbdev = kctx->kbdev;
-	struct pixel_context* pc = kbdev->platform_context;
-	struct pixel_platform_data *pd = kctx->platform_data;
-	struct gpu_dvfs_metrics_uid_stats* uid_stats = pd->stats;
-	struct gpu_dvfs_metrics_uid_stats** work_stats = &pc->dvfs.metrics.work_uid_stats[slot];
-	const u64 curr = ktime_get_ns();
-	unsigned long flags;
-
-	dev_dbg(kbdev->dev, "work_end, slot: %d, uid: %d", slot, uid_stats->uid.val);
-
-	spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
-
-#if !MALI_USE_CSF
-	/*
-	* JM slots can have 2 Atoms submitted per slot, with different UIDs
-	* If the primary slot is not for this uid, then check the secondary slot
-	*/
-	if (*work_stats != uid_stats) {
-		work_stats = &pc->dvfs.metrics.work_uid_stats[slot + BASE_JM_MAX_NR_SLOTS];
-	}
-#endif
-
-	/* We should have something mapped to this slot */
-	WARN_ON_ONCE(*work_stats == NULL);
-	/* Should be the same stats */
-	WARN_ON_ONCE(uid_stats != *work_stats);
-	/* Forgot to init the start time? */
-	WARN_ON_ONCE(uid_stats->period_start == 0);
-	/* No jobs so how could have something have completed? */
-	if (!WARN_ON_ONCE(uid_stats->active_work_count == 0))
-		--uid_stats->active_work_count;
-	/*
-	 * We could only update this when the work count equals zero, and
-	 * avoid updating the period_start often. However we get more timely
-	 * updates this way.
-	 */
-	uid_stats->tis_stats[pc->dvfs.level].time_total += (curr - uid_stats->period_start);
-
-	/*
-	 * Reset the period start time when there is no work associated with
-	 * this UID, or update it to prevent double counting.
-	 */
-	uid_stats->period_start = uid_stats->active_work_count == 0 ? 0 : curr;
-
-	/* Unlink the UID stats from the slot stats */
-	*work_stats = NULL;
-
-	spin_unlock_irqrestore(&pc->dvfs.metrics.lock, flags);
-}
-
 /**
  * gpu_dvfs_create_uid_stats() - Allocates and initializes a per-UID stats block
  *
@@ -335,6 +219,10 @@ static struct gpu_dvfs_metrics_uid_stats *gpu_dvfs_create_uid_stats(struct pixel
 		kfree(ret);
 		return ERR_PTR(-ENOMEM);
 	}
+
+	ret->gpu_cycles_last = 0;
+	ret->gpu_active_ns_last = 0;
+	ret->timestamp_ns_last = ktime_get_ns();
 
 	ret->uid = uid;
 
@@ -376,12 +264,12 @@ int gpu_dvfs_kctx_init(struct kbase_context *kctx)
 	struct kbase_device *kbdev = kctx->kbdev;
 	struct pixel_context *pc = kbdev->platform_context;
 	struct pixel_platform_data *pd = kctx->platform_data;
-
 	struct task_struct *task;
 	struct pid *pid;
 	kuid_t uid;
-
-	struct gpu_dvfs_metrics_uid_stats *entry, *stats;
+	u8 uid_hash;
+	struct gpu_dvfs_metrics_uid_stats *entry;
+	struct gpu_dvfs_metrics_uid_stats *stats = NULL;
 	int ret = 0;
 
 	/* Get UID from task_struct */
@@ -390,35 +278,25 @@ int gpu_dvfs_kctx_init(struct kbase_context *kctx)
 	uid = task->cred->uid;
 	put_task_struct(task);
 	put_pid(pid);
+	uid_hash = gpu_dvfs_hash_uid_stats(__kuid_val(uid));
 
 	mutex_lock(&kbdev->kctx_list_lock);
 
 	/*
 	 * Search through the UIDs we have encountered previously, and either return an already
-	 * created stats block, or create one and insert it such that the linked list is sorted
-	 * by UID.
+	 * created stats block, or create one and insert it to the table before returning it.
 	 */
 	stats = NULL;
-	list_for_each_entry(entry, &pc->dvfs.metrics.uid_stats_list, uid_list_link) {
+
+	hash_for_each_possible(pc->dvfs.metrics.uid_stats_table, entry, uid_list_node, uid_hash) {
 		if (uid_eq(entry->uid, uid)) {
 			/* Already created */
 			stats = entry;
 			break;
-		} else if (uid_gt(entry->uid, uid)) {
-			/* Create and insert in list */
-			stats = gpu_dvfs_create_uid_stats(pc, uid);
-			if (IS_ERR(stats)) {
-				ret = PTR_ERR(stats);
-				goto done;
-			}
-
-			list_add_tail(&stats->uid_list_link, &entry->uid_list_link);
-
-			break;
 		}
 	}
 
-	/* Create and append to the end of the list */
+	/* Create and add to the table */
 	if (stats == NULL) {
 		stats = gpu_dvfs_create_uid_stats(pc, uid);
 		if (IS_ERR(stats)) {
@@ -426,7 +304,7 @@ int gpu_dvfs_kctx_init(struct kbase_context *kctx)
 			goto done;
 		}
 
-		list_add_tail(&stats->uid_list_link, &pc->dvfs.metrics.uid_stats_list);
+		hash_add(pc->dvfs.metrics.uid_stats_table, &stats->uid_list_node, uid_hash);
 	}
 
 	stats->active_kctx_count++;
@@ -486,7 +364,7 @@ int gpu_dvfs_metrics_init(struct kbase_device *kbdev)
 		BLOCKING_INIT_NOTIFIER_HEAD(&pc->dvfs.clks[c].notifier);
 
 	/* Initialize per-UID metrics */
-	INIT_LIST_HEAD(&pc->dvfs.metrics.uid_stats_list);
+	hash_init(pc->dvfs.metrics.uid_stats_table);
 
 	memset(pc->dvfs.metrics.work_uid_stats, 0, sizeof(pc->dvfs.metrics.work_uid_stats));
 
@@ -496,12 +374,14 @@ int gpu_dvfs_metrics_init(struct kbase_device *kbdev)
 void gpu_dvfs_metrics_term(struct kbase_device *kbdev)
 {
 	struct pixel_context *pc = kbdev->platform_context;
-	struct gpu_dvfs_metrics_uid_stats *entry, *tmp;
+	struct gpu_dvfs_metrics_uid_stats *entry;
+	struct hlist_node *tmp;
+	unsigned bkt;
 
 	kfree(pc->dvfs.metrics.transtab);
 
-	list_for_each_entry_safe(entry, tmp, &pc->dvfs.metrics.uid_stats_list, uid_list_link) {
-		list_del(&entry->uid_list_link);
+	hash_for_each_safe(pc->dvfs.metrics.uid_stats_table, bkt, tmp, entry, uid_list_node) {
+		hash_del(&entry->uid_list_node);
 		gpu_dvfs_destroy_uid_stats(entry);
 	}
 

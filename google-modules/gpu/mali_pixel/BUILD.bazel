@@ -18,6 +18,7 @@ kernel_module(
     kernel_build = "//private/devices/google/common:kernel",
     visibility = [
         "//private/devices/google:__subpackages__",
+        "//private/google-modules/gpu/borr_mali_kbase:__pkg__",
         "//private/google-modules/gpu/mali_kbase:__pkg__",
         "//private/google-modules/soc/gs:__pkg__",
     ],

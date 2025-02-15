@@ -20,6 +20,7 @@
  */
 
 #include <mali_kbase.h>
+#include <mali_kbase_io.h>
 #include <mali_kbase_config_defaults.h>
 #include <hw_access/mali_kbase_hw_access_regmap.h>
 #include <mali_kbase_gator.h>
@@ -38,7 +39,6 @@
 #include "mali_kbase_mem_pool_debugfs.h"
 #include "mali_kbase_mem_pool_group.h"
 #include "mali_kbase_debugfs_helper.h"
-#include "mali_kbase_regs_history_debugfs.h"
 #include <mali_kbase_hwaccess_backend.h>
 #include <mali_kbase_hwaccess_time.h>
 #if !MALI_USE_CSF
@@ -61,6 +61,7 @@
 #include "csf/mali_kbase_csf_csg_debugfs.h"
 #include "csf/mali_kbase_csf_cpu_queue.h"
 #include "csf/mali_kbase_csf_event.h"
+#include "csf/mali_kbase_csf_ne_debugfs.h"
 #endif
 #include "arbiter/mali_kbase_arbiter_pm.h"
 
@@ -78,6 +79,7 @@
 
 /* Pixel includes */
 #include "platform/pixel/pixel_gpu_slc.h"
+#include "platform/pixel/pixel_gpu_control.h"
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -583,6 +585,42 @@ static int get_irqs(struct kbase_device *kbdev, struct platform_device *pdev)
 	return 0;
 }
 
+#if MALI_USE_CSF
+/**
+ * get_irq_irqaw - Get interrupt information from the device tree.
+ *
+ * @kbdev: Kbase device.
+ * @pdev:  Platform device of the kbase device
+ *
+ * Read interrupt number and flag for IRQAW interrupt from the device tree
+ * and fill them into the struct of the kbase device.
+ *
+ * Return: 0 on success.
+ */
+static int get_irq_irqaw(struct kbase_device *kbdev, struct platform_device *pdev)
+{
+	int irq;
+	struct irq_data *irqdata;
+
+	irq = platform_get_irq_byname(pdev, "IRQAW");
+	if (irq < 0)
+		irq = platform_get_irq_byname(pdev, "irqaw");
+
+	if (irq < 0)
+		return irq;
+
+	kbdev->irqs[0].irq = (u32)irq;
+	irqdata = irq_get_irq_data((unsigned int)irq);
+	if (likely(irqdata)) {
+		kbdev->irqs[0].flags = irqd_get_trigger_type(irqdata);
+		kbdev->nr_irqs = 1;
+	} else {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+#endif /* MALI_USE_CSF */
 
 int kbase_get_irqs(struct kbase_device *kbdev)
 {
@@ -594,6 +632,17 @@ int kbase_get_irqs(struct kbase_device *kbdev)
 	if (!result)
 		return result;
 
+#if MALI_USE_CSF
+	/* return error if any one of the GPU, JOB, MMU
+	 * interrupts missing. Don't lookup for IRQAW.
+	 */
+	if (result && kbdev->nr_irqs) {
+		dev_err(kbdev->dev, "Invalid number of interrupt resources");
+		return result;
+	}
+
+	result = get_irq_irqaw(kbdev, pdev);
+#endif /* MALI_USE_CSF */
 	if (result)
 		dev_err(kbdev->dev, "Invalid or No interrupt resources");
 
@@ -1578,12 +1627,6 @@ static int kbasep_cs_queue_group_create_1_18(struct kbase_context *kctx,
 static int kbasep_cs_queue_group_create(struct kbase_context *kctx,
 					union kbase_ioctl_cs_queue_group_create *create)
 {
-	/* create->in.reserved only present pre-TDRX configuration. */
-
-	if (create->in.reserved != 0) {
-		dev_warn(kctx->kbdev->dev, "Invalid reserved field not 0 in queue group create\n");
-		return -EINVAL;
-	}
 	return kbase_csf_queue_group_create(kctx, create);
 }
 
@@ -1694,31 +1737,31 @@ static int kbase_ioctl_cs_get_glb_iface(struct kbase_context *kctx,
 			kctx->kbdev, group_data, max_group_num, stream_data, max_total_stream_num,
 			&param->out.glb_version, &param->out.features, &param->out.group_num,
 			&param->out.prfcnt_size, &param->out.instr_features);
+	}
 
+	if (!err && group_data) {
 		if (check_mul_overflow((size_t)(MIN(max_group_num, param->out.group_num)),
 				       sizeof(*group_data), &copy_size))
 			err = -EINVAL;
-	}
 
-	if (!err) {
 		if (copy_to_user(user_groups, group_data, copy_size))
 			err = -EFAULT;
 	}
 
-	if (!err) {
+	kfree(group_data);
+
+	if (!err && stream_data) {
 		if (check_mul_overflow(
 			    (size_t)(MIN(max_total_stream_num, param->out.total_stream_num)),
 			    sizeof(*stream_data), &copy_size))
 			err = -EINVAL;
-	}
 
-	if (!err) {
 		if (copy_to_user(user_streams, stream_data, copy_size))
 			err = -EFAULT;
 	}
 
-	kfree(group_data);
 	kfree(stream_data);
+
 	return err;
 }
 
@@ -1739,7 +1782,7 @@ static int kbase_ioctl_read_user_page(struct kbase_context *kctx,
 		return -EINVAL;
 
 	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
-	if (!kbdev->pm.backend.gpu_powered)
+	if (!kbase_io_is_gpu_powered(kbdev))
 		user_page->out.val_lo = POWER_DOWN_LATEST_FLUSH_VALUE;
 	else
 		user_page->out.val_lo = kbase_reg_read32(kbdev, USER_ENUM(LATEST_FLUSH));
@@ -2530,6 +2573,25 @@ static int core_mask_set(struct kbase_device *kbdev, struct kbase_core_mask *con
 		goto exit;
 	}
 
+	if (kbase_csf_dev_has_ne(kbdev)) {
+		u64 neural_present = kbdev->gpu_props.neural_present;
+		u64 sc_with_ne = shader_present & neural_present;
+
+		if (!sc_with_ne) {
+			dev_err(kbdev->dev,
+				"No shader cores with NE cores present in configuration with NE!");
+			ret = -EINVAL;
+			goto exit;
+		}
+
+		if (!(new_core_mask & sc_with_ne)) {
+			dev_err(kbdev->dev,
+				"Invalid requested core mask 0x%llX: need to keep 1 core enabled for NE workloads!",
+				new_core_mask);
+			ret = -EINVAL;
+			goto exit;
+		}
+	}
 
 	if (kbdev->pm.debug_core_mask != new_core_mask)
 		kbase_pm_set_debug_core_mask(kbdev, new_core_mask);
@@ -3275,6 +3337,9 @@ static ssize_t gpuinfo_show(struct device *dev, struct device_attribute *attr, c
 		{ .id = GPU_ID_PRODUCT_LTIX, .name = "Mali-G620" },
 		{ .id = GPU_ID_PRODUCT_TKRX, .name = "Mali-G725" },
 		{ .id = GPU_ID_PRODUCT_LKRX, .name = "Mali-G625" },
+		{ .id = GPU_ID_PRODUCT_IDRX, .name = "Mali-TDRX-Immortalis" },
+		{ .id = GPU_ID_PRODUCT_TDRX, .name = "Mali-TDRX" },
+		{ .id = GPU_ID_PRODUCT_LDRX, .name = "Mali-LDRX" },
 	};
 	const char *product_name = "(Unknown Mali GPU)";
 	struct kbase_device *kbdev;
@@ -3351,6 +3416,36 @@ static ssize_t gpuinfo_show(struct device *dev, struct device_attribute *attr, c
 			product_id, nr_cores);
 	}
 
+	if (product_model == GPU_ID_PRODUCT_IDRX) {
+		const bool has_rt = gpu_props->gpu_features.ray_traversal;
+		const bool has_ne = gpu_props->gpu_features.neural_engine;
+		const u8 nr_cores = gpu_props->num_cores;
+		bool conformant = (nr_cores >= 10) && has_rt && has_ne;
+
+		WARN_ONCE(
+			!conformant,
+			"Nonconforming TDRX-Immortalis: (ID: 0x%x), nr_cores(%u), has_rt(%d), has_ne(%d)\n",
+			product_id, nr_cores, has_rt, has_ne);
+		dev_dbg(kbdev->dev, "GPU ID_Name: %s (ID: 0x%x), nr_cores(%u)\n", product_name,
+			product_id, nr_cores);
+
+	} else if (product_model == GPU_ID_PRODUCT_TDRX) {
+		const u8 nr_cores = gpu_props->num_cores;
+		bool conformant = (nr_cores <= 9) && (nr_cores >= 6);
+
+		WARN_ONCE(!conformant, "Nonconforming TDRX: (ID: 0x%x), nr_cores(%u)\n", product_id,
+			  nr_cores);
+		dev_dbg(kbdev->dev, "GPU ID_Name: %s (ID: 0x%x), nr_cores(%u)\n", product_name,
+			product_id, nr_cores);
+	} else if (product_model == GPU_ID_PRODUCT_LDRX) {
+		const u8 nr_cores = gpu_props->num_cores;
+		bool conformant = nr_cores && (nr_cores <= 6);
+
+		WARN_ONCE(!conformant, "Nonconforming LDRX: (ID: 0x%x), nr_cores(%u)\n", product_id,
+			  nr_cores);
+		dev_dbg(kbdev->dev, "GPU ID_Name: %s (ID: 0x%x), nr_cores(%u)\n", product_name,
+			product_id, nr_cores);
+	}
 #endif /* MALI_USE_CSF */
 
 	return scnprintf(buf, PAGE_SIZE, "%s %d cores r%dp%d 0x%08X\n", product_name,
@@ -4805,6 +4900,9 @@ MAKE_QUIRK_ACCESSORS(sc);
 MAKE_QUIRK_ACCESSORS(tiler);
 MAKE_QUIRK_ACCESSORS(mmu);
 MAKE_QUIRK_ACCESSORS(gpu);
+#if MALI_USE_CSF
+MAKE_QUIRK_ACCESSORS(ne);
+#endif
 
 /**
  * kbase_device_debugfs_reset_write() - Reset the GPU
@@ -5063,6 +5161,19 @@ static struct dentry *init_debugfs(struct kbase_device *kbdev)
 		return dentry;
 	}
 
+#if MALI_USE_CSF
+	if (kbase_csf_dev_has_ne(kbdev)) {
+		dentry = debugfs_create_file("quirks_ne", 0644, kbdev->mali_debugfs_directory,
+					     kbdev, &fops_ne_quirks);
+		if (IS_ERR_OR_NULL(dentry)) {
+			dev_err(kbdev->dev, "Unable to create quirks_ne debugfs entry\n");
+			return dentry;
+		}
+
+		if (kbase_csf_ne_control_debugfs_init(kbdev))
+			return NULL;
+	}
+#endif
 
 	dentry = debugfs_ctx_defaults_init(kbdev);
 	if (IS_ERR_OR_NULL(dentry))
@@ -5109,7 +5220,7 @@ static struct dentry *init_debugfs(struct kbase_device *kbdev)
 	kbase_timeline_io_debugfs_init(kbdev);
 #endif
 	kbase_dvfs_status_debugfs_init(kbdev);
-
+	pixel_gpu_debugfs_init(kbdev);
 
 	return dentry;
 }
@@ -5975,6 +6086,9 @@ static int kbase_platform_device_probe(struct platform_device *pdev)
 	dev_set_drvdata(kbdev->dev, kbdev);
 #if (KERNEL_VERSION(5, 3, 0) <= LINUX_VERSION_CODE)
 	mutex_lock(&kbase_probe_mutex);
+#endif
+#if IS_ENABLED(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD) && !MALI_USE_CSF
+	kbdev->last_cycle_count = 0;
 #endif
 	err = kbase_device_init(kbdev);
 

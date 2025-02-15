@@ -81,6 +81,7 @@ extern struct protected_mode_ops pixel_protected_ops;
 /* Linux includes */
 #ifdef CONFIG_MALI_MIDGARD_DVFS
 #include <linux/atomic.h>
+#include <linux/hashtable.h>
 #include <linux/thermal.h>
 #include <linux/workqueue.h>
 #endif /* CONFIG_MALI_MIDGARD_DVFS */
@@ -303,8 +304,8 @@ struct gpu_uevent_ctx;
  * @dvfs.metrics.work_uid_stats:   An array of pointers to the per-UID stats blocks currently
  *                                 resident in each of the GPU's job slots, or CSG slots.
  *                                 Access is controlled by the dvfs.metrics.lock.
- * @dvfs.metrics.uid_stats_list:   List head pointer to the linked list of per-UID stats blocks.
- *                                 Modification to the linked list itself (not its elements) is
+ * @dvfs.metrics.uid_stats_table:  8-bits hash table of the per-UID stats blocks.
+ *                                 Modification to the hash table itself (not its elements) is
  *                                 protected by the kctx_list lock.
  *
  * @dvfs.governor.curr:  The currently enabled DVFS governor.
@@ -422,7 +423,7 @@ struct pixel_context {
 #else
 			struct gpu_dvfs_metrics_uid_stats *work_uid_stats[MAX_SUPPORTED_CSGS];
 #endif /* !MALI_USE_CSF */
-			struct list_head uid_stats_list;
+			DECLARE_HASHTABLE(uid_stats_table, 8);
 		} metrics;
 #if MALI_USE_CSF
 		struct {

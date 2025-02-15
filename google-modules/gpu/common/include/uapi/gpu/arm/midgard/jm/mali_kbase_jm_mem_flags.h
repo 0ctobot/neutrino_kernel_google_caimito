@@ -51,6 +51,7 @@
 /* A mask of all currently reserved flags */
 #define BASE_MEM_FLAGS_RESERVED ((base_mem_alloc_flags)0)
 
+/* [Pixel-mod] using R51P0 JM value here, not updating to R52P0 CSF */
 /* Number of bits used as flags for base memory management from kernel-side
  * only (ie BASEP_MEM_* flags), located from 63 bit downwards:
  *   < 63 .. (64 - BASEP_MEM_FLAGS_NR_BITS) >

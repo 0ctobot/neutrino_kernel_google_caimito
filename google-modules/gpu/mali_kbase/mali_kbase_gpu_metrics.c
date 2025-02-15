@@ -48,11 +48,25 @@ static inline void validate_tracepoint_data(struct kbase_gpu_metrics_ctx *gpu_me
 #endif
 }
 
+static u64 get_last_cycle_count(struct kbase_device *kbdev)
+{
+	u64 cycles = kbase_backend_get_cycle_cnt(kbdev);
+#if !MALI_USE_CSF
+	if (kbdev->pm.backend.l2_state != KBASE_L2_ON)
+	{
+		cycles = kbdev->last_cycle_count;
+	}
+#endif
+	return cycles;
+}
+
 static void emit_tracepoint_for_active_gpu_metrics_ctx(
 	struct kbase_device *kbdev, struct kbase_gpu_metrics_ctx *gpu_metrics_ctx, u64 current_time)
 {
 	const u64 start_time = gpu_metrics_ctx->active_start_time;
 	u64 total_active, end_time = current_time;
+	const u64 start_cycles = gpu_metrics_ctx->active_start_cycles;
+	u64 total_cycles, end_cycles = get_last_cycle_count(kbdev);
 
 	/* Check if the GPU activity is currently ongoing */
 	if (gpu_metrics_ctx->active_cnt) {
@@ -62,10 +76,32 @@ static void emit_tracepoint_for_active_gpu_metrics_ctx(
 		if (unlikely(end_time == start_time))
 			end_time++;
 		gpu_metrics_ctx->active_start_time = end_time;
+		gpu_metrics_ctx->active_start_cycles = end_cycles;
 	}
 
 	total_active = end_time - start_time;
+	total_cycles = end_cycles - start_cycles;
 	trace_gpu_work_period(kbdev->id, gpu_metrics_ctx->aid, start_time, end_time, total_active);
+
+	if (kbdev->platform_context) {
+		struct pixel_context *pc = kbdev->platform_context;
+		struct gpu_dvfs_metrics_uid_stats *entry = NULL;
+		unsigned long flags;
+		u8 uid_hash = gpu_dvfs_hash_uid_stats(gpu_metrics_ctx->aid);
+		spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
+		hash_for_each_possible(
+				pc->dvfs.metrics.uid_stats_table,
+				entry,
+				uid_list_node, uid_hash) {
+			if(__kuid_val(entry->uid) == gpu_metrics_ctx->aid) {
+				entry->gpu_cycles_last += total_cycles;
+				entry->gpu_active_ns_last += total_active;
+				entry->tis_stats[pc->dvfs.level].time_total += total_active;
+				break;
+			}
+		}
+		spin_unlock_irqrestore(&pc->dvfs.metrics.lock, flags);
+	}
 
 	validate_tracepoint_data(gpu_metrics_ctx, start_time, end_time, total_active);
 	gpu_metrics_ctx->active_end_time = end_time;
@@ -118,6 +154,7 @@ void kbase_gpu_metrics_ctx_init(struct kbase_device *kbdev,
 				struct kbase_gpu_metrics_ctx *gpu_metrics_ctx, unsigned int aid)
 {
 	gpu_metrics_ctx->active_start_time = 0;
+	gpu_metrics_ctx->active_start_cycles = 0;
 	gpu_metrics_ctx->active_end_time = 0;
 	gpu_metrics_ctx->aid = aid;
 	gpu_metrics_ctx->kctx_count = 1;
@@ -132,6 +169,7 @@ void kbase_gpu_metrics_ctx_start_activity(struct kbase_context *kctx, u64 timest
 	gpu_metrics_ctx->active_cnt++;
 	if (gpu_metrics_ctx->active_cnt == 1) {
 		gpu_metrics_ctx->active_start_time = timestamp_ns;
+		gpu_metrics_ctx->active_start_cycles = get_last_cycle_count(kctx->kbdev);
 		list_move_tail(&gpu_metrics_ctx->link, &kctx->kbdev->gpu_metrics.active_list);
 	}
 }

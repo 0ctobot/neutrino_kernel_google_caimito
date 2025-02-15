@@ -66,14 +66,6 @@ config MALI_NO_MALI
 
 endchoice
 
-config MALI_IS_FPGA
-	bool "Enable build of Mali kernel driver for FPGA"
-	depends on MALI_MIDGARD
-	default n
-	default y if PLATFORM_IS_FPGA
-	help
-	  This is the default HW backend.
-
 
 config MALI_CSF_SUPPORT
 	bool "Enable Mali CSF based GPU support"
@@ -186,18 +178,6 @@ config MALI_CORESTACK
 
 	  If unsure, say N.
 
-config PAGE_MIGRATION_SUPPORT
-	bool "Compile with page migration support"
-	depends on MALI_MIDGARD && MALI_EXPERT
-	default y
-	default n if ANDROID
-	help
-	  Compile in support for page migration.
-	  If set to disabled ('n') then page migration cannot
-	  be enabled at all. If set to enabled, then page migration
-	  support is explicitly compiled in. This has no effect when
-	  PAGE_MIGRATION_OVERRIDE is disabled.
-
 config LARGE_PAGE_SUPPORT
 	bool "Support for 2MB page allocations"
 	depends on BACKEND_KERNEL
@@ -282,19 +262,6 @@ config MALI_JOB_DUMP
 	  job dumping. This is typically used for instrumentation but has
 	  minimal overhead when not in use. Enable only if you know what
 	  you are doing.
-
-config MALI_PWRSOFT_765
-	bool "Enable workaround for PWRSOFT-765"
-	depends on MALI_MIDGARD && MALI_EXPERT
-	default n
-	help
-	  PWRSOFT-765 fixes devfreq cooling devices issues. The fix was merged
-	  in kernel v4.10, however if backported into the kernel then this
-	  option must be manually selected.
-
-	  If using kernel >= v4.10 then say N, otherwise if devfreq cooling
-	  changes have been backported say Y to avoid compilation errors.
-
 
 config MALI_HW_ERRATA_1485982_NOT_AFFECTED
 	bool "Disable workaround for KBASE_HW_ISSUE_GPU2017_1336"
