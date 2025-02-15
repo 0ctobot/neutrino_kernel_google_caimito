@@ -28,6 +28,7 @@
 #include "gs_panel/dcs_helper.h"
 
 #define MAX_BL_RANGES 10
+#define COLOR_OPTION_DEPTH 5
 
 struct attribute_range {
 	__u32 min;
@@ -213,6 +214,14 @@ enum gpio_level {
 	GPIO_LEVEL_UNSPECIFIED,
 };
 
+enum color_data_type {
+	COLOR_DATA_TYPE_CIE = 0,
+	COLOR_DATA_TYPE_LUMINANCE,
+	COLOR_DATA_TYPE_MAX,
+	COLOR_DATA_TYPE_FAKE_CIE = COLOR_DATA_TYPE_MAX,
+};
+
+
 struct gs_panel;
 
 /**
@@ -314,6 +323,16 @@ struct gs_panel_funcs {
 	 * TODO(b/279520614): implementation
 	 */
 	void (*set_dimming)(struct gs_panel *gs_panel, bool dimming_on);
+
+	/**
+	 * @get_local_hbm_mode_effective_delay_frames:
+	 *
+	 * This callback is used to implement panel specific logic for gs_panel to
+	 * get local hbm mode effective delay frames. If this is not defined, it uses
+	 * gs_panel_lhbm_desc.effective_delay_frames directly.
+	 *
+	 */
+	u32 (*get_local_hbm_mode_effective_delay_frames)(struct gs_panel *gs_panel);
 
 	/**
 	 * @set_local_hbm_mode:
@@ -614,6 +633,24 @@ struct gs_panel_funcs {
 	 * This callback is used to get TE2 option.
 	 */
 	enum gs_panel_tex_opt (*get_te2_option)(struct gs_panel *gs_panel);
+
+	/**
+	 * @get_color_data
+	 *
+	 * This callback is used to read vendor-provided calibration data from the DDIC.
+	 */
+	ssize_t (*get_color_data)(struct gs_panel *gs_panel, char *buf, size_t buf_len);
+
+	/**
+	 * @set_color_data_config
+	 *
+	 * This callback is used to set the data to be read from the panel's vendor-provided
+	 * calibration data in the next read.
+	 *
+	 * Returns 0 if applied successfully.
+	 */
+	int (*set_color_data_config)(struct gs_panel *gs_panel, enum color_data_type read_type,
+				     int option);
 };
 
 /* PANEL DESC */
@@ -691,6 +728,21 @@ struct gs_panel_lhbm_desc {
 	 * while exiting from AoD mode. Default 0 means no such constraint.
 	 */
 	const u32 lhbm_on_delay_frames;
+};
+
+struct gs_calibration_capability {
+	bool en;
+	size_t data_size;
+	int min_option;
+	int max_option;
+};
+
+/**
+ * struct gs_panel_calibration_desc - Descriptor of calibration data read behaviors.
+ * Some panels allow for reading of vendor-provided DDIC data to calibrate CIQ on-device.
+ */
+struct gs_panel_calibration_desc {
+	struct gs_calibration_capability color_cal[COLOR_DATA_TYPE_MAX];
 };
 
 /**
@@ -788,6 +840,7 @@ struct gs_panel_desc {
 	u32 hdr_formats;
 	const struct gs_panel_brightness_desc *brightness_desc;
 	const struct gs_panel_lhbm_desc *lhbm_desc;
+	const struct gs_panel_calibration_desc *calibration_desc;
 	u32 rr_switch_duration;
 	bool dbv_extra_frame;
 	bool is_partial;
@@ -1098,6 +1151,18 @@ struct gs_error_counter {
 	u32 unknown;
 };
 
+/**
+ * struct gs_panel_color_data - data associated with panel color data
+ * @size: size to allocate for color data panel read
+ * @data: color data read from panel
+ * @ready: whether color data is ready to read
+ */
+struct gs_panel_color_data {
+	size_t size;
+	char *data;
+	bool ready;
+};
+
 #define MAX_VREFRESH_RANGES	10
 #define MAX_RESOLUTION_TABLES	2
 
@@ -1235,14 +1300,20 @@ struct gs_panel {
 	/* use for notify op hz changed */
 	struct blocking_notifier_head op_hz_notifier_head;
 
-	/** @error_counter: use for tracking panel errors */
-	struct gs_error_counter error_counter;
+	/** @color_data: for color data panel read  */
+	struct gs_panel_color_data color_data;
 
 	/** @frame_interval_us: frame interval of new timeline in us */
 	u32 frame_interval_us;
 
 	/** @skip_align: skip cmd align mechanism while this flag is set */
 	bool skip_cmd_align;
+
+	/** @error_counter: use for tracking panel errors */
+	struct gs_error_counter error_counter;
+
+	/** @color_data_size: size to allocate for color data panel read  */
+	size_t color_data_size;
 
 	/** @trace_pid: pid to use for panel trace functions */
 	pid_t trace_pid;
@@ -1390,7 +1461,7 @@ static inline bool gs_is_local_hbm_disabled(struct gs_panel *ctx)
 
 static inline bool gs_is_vrr_mode(const struct gs_panel_mode *pmode)
 {
-	return (pmode->mode.type & DRM_MODE_TYPE_VRR);
+	return (pmode->mode.vscan > 0);
 }
 
 static inline bool gs_is_ns_op_rate(const struct gs_panel_mode *pmode)
@@ -1580,15 +1651,18 @@ void gs_panel_update_te2(struct gs_panel *ctx);
  * gs_panel_update_lhbm_hist_data_helper() - Update lhbm_hist_data on panel connector
  * @ctx: Reference to panel data
  * @enabled: whether to enable or disable updating lhbm histogram roi data
- * @d: Depth of ROI center point off center, in pixels
- * @r: Radius of ROI circle, in pixels
+ * @roi_type: Config different type of roi shape.
+ * @circle_d: Depth of ROI center point off center, in pixels
+ * @circle_r: Radius of ROI circle, in pixels
  *
  * Note that this will update d and r regardless of the enable value
  *
  * This is meant to be called by panel drivers during the `atomic_check` operation
  */
 void gs_panel_update_lhbm_hist_data_helper(struct gs_panel *ctx, struct drm_atomic_state *state,
-					   bool enabled, int d, int r);
+					   bool enabled,
+					   enum gs_drm_connector_lhbm_hist_roi_type roi_type, int d,
+					   int r);
 
 /* Helper Utilities */
 
@@ -1645,6 +1719,19 @@ void gs_dsi_cmd_align(struct gs_panel *ctx);
  * Return: whether it needs to wait
  */
 bool gs_dsi_cmd_need_wait_for_present_time_locked(struct gs_panel *ctx, u64 *waiting_time_us);
+
+/**
+ * gs_panel_disable_normal_feat_locked() - disable normal mode features
+ * @ctx: pointer to gs_panel
+ *
+ * This function disabled features required panel in power on state.
+ * Disabled features:
+ * 1. lhbm
+ * 2. hbm
+ *
+ * Context: Expects ctx->mode_lock to be locked
+ */
+void gs_panel_disable_normal_feat_locked(struct gs_panel *ctx);
 
 /* HBM */
 

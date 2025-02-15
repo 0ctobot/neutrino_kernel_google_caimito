@@ -199,11 +199,19 @@ static void local_hbm_wait_and_send_post_cmd(struct gs_panel *ctx, struct drm_cr
 	}
 }
 
+static u32 get_local_hbm_effective_delay_frames(struct gs_panel *ctx)
+{
+	if (gs_panel_has_func(ctx, get_local_hbm_mode_effective_delay_frames))
+		return ctx->desc->gs_panel_func->get_local_hbm_mode_effective_delay_frames(ctx);
+
+	return ctx->desc->lhbm_desc->effective_delay_frames;
+}
+
 static void local_hbm_wait_and_notify_effectiveness(struct gs_panel *ctx, struct drm_crtc *crtc)
 {
 	const u32 per_frame_us = get_current_frame_duration_us(ctx);
 	const u32 offset_us = per_frame_us * 4 / 5;
-	u32 frames = ctx->desc->lhbm_desc->effective_delay_frames;
+	u32 frames = get_local_hbm_effective_delay_frames(ctx);
 	struct gs_local_hbm *lhbm = &ctx->lhbm;
 
 	if (frames == 0)
@@ -216,11 +224,12 @@ static void local_hbm_wait_and_notify_effectiveness(struct gs_panel *ctx, struct
 		/* take worst case (cmd sent immediately after last vsync) into account */
 		usleep_since_ts(lhbm->timestamps.en_cmd_ts, per_frame_us * frames + offset_us);
 
-	dev_dbg(ctx->dev, "%s: delay(us): %lld(EN), %lld(TE)\n", __func__,
+	dev_dbg(ctx->dev, "%s: delay(us): %lld(EN), %lld(TE) %u(Frames)\n", __func__,
 		ktime_us_delta(ktime_get(), lhbm->timestamps.en_cmd_ts),
 		lhbm->timestamps.next_vblank_ts ?
 			ktime_us_delta(ktime_get(), lhbm->timestamps.next_vblank_ts) :
-			0);
+			0,
+		frames);
 	if (lhbm->effective_state == GLOCAL_HBM_ENABLING) {
 		lhbm->effective_state = GLOCAL_HBM_ENABLED;
 		sysfs_notify(&ctx->bl->dev.kobj, NULL, "local_hbm_mode");

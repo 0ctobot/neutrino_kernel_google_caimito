@@ -43,6 +43,9 @@ void gs_dsi_send_cmdset(struct mipi_dsi_device *dsi, const struct gs_dsi_cmdset 
 				last_cmd = c;
 				break;
 			}
+			/* prevent undefined address even if it's not dereferenced */
+			if (c == cmdset->cmds)
+				break;
 		}
 	}
 

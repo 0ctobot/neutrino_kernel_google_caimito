@@ -718,6 +718,107 @@ static ssize_t error_count_unknown_show(struct device *dev, struct device_attrib
 	return count;
 }
 
+static ssize_t color_data_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	const struct mipi_dsi_device *dsi = to_mipi_dsi_device(dev);
+	struct gs_panel *ctx = mipi_dsi_get_drvdata(dsi);
+	ssize_t raw_len, sysfs_idx = 0;
+
+	if (!ctx->desc->calibration_desc ||
+	    (!gs_panel_has_func(ctx, get_color_data) && !ctx->color_data.ready))
+		return -EOPNOTSUPP;
+
+	if (!gs_is_panel_active(ctx)) {
+		dev_warn(ctx->dev, "%s: panel is not active, state %d\n", __func__,
+			 ctx->panel_state);
+		return -EPERM;
+	}
+
+	mutex_lock(&ctx->mode_lock);
+	if (!ctx->color_data.data) {
+		mutex_unlock(&ctx->mode_lock);
+		return -EINVAL;
+	}
+
+	if (!ctx->color_data.ready) {
+		raw_len = ctx->desc->gs_panel_func->get_color_data(ctx, ctx->color_data.data,
+								   ctx->color_data.size);
+		if (raw_len != ctx->color_data.size) {
+			mutex_unlock(&ctx->mode_lock);
+			dev_err(dev, "Invalid result %zd from color data read\n", raw_len);
+			return raw_len < 0 ? raw_len : -EIO;
+		}
+		ctx->color_data.ready = true;
+	}
+	mutex_unlock(&ctx->mode_lock);
+
+	for (u16 buf_idx = 0; buf_idx < ctx->color_data.size; buf_idx++)
+		sysfs_idx += sysfs_emit_at(buf, sysfs_idx, "%02X", ctx->color_data.data[buf_idx]);
+	dev_dbg(dev, "Wrote color data for %zd into sysfs\n", sysfs_idx);
+
+	return sysfs_idx;
+}
+
+static ssize_t color_data_store(struct device *dev, struct device_attribute *attr, const char *buf,
+				size_t count)
+{
+	const struct mipi_dsi_device *dsi = to_mipi_dsi_device(dev);
+	struct gs_panel *ctx = mipi_dsi_get_drvdata(dsi);
+	char *buf_dup;
+	u32 options[COLOR_OPTION_DEPTH] = { 0 };
+	enum color_data_type type;
+	ssize_t ret;
+	int option_count;
+
+	if (count == 0)
+		return -EINVAL;
+
+	buf_dup = kstrndup(buf, count, GFP_KERNEL);
+	if (!buf_dup)
+		return -ENOMEM;
+
+	if (strlen(buf_dup) != count) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	option_count = parse_u32_buf(buf_dup, count + 1, options, COLOR_OPTION_DEPTH);
+	if (option_count <= 0) {
+		dev_warn(ctx->dev, "Error parsing color_data input buf (%d)\n", option_count);
+		ret = option_count < 0 ? option_count : -EINVAL;
+		goto out;
+	}
+
+	ret = gs_panel_allocate_color_data(ctx, options[0]);
+	if (ret < 0)
+		goto out;
+
+	type = (enum color_data_type)options[0];
+	if (options[0] != COLOR_DATA_TYPE_FAKE_CIE) {
+		dev_info(ctx->dev, "Set color data read_type %u dbv %u\n", type, options[1]);
+		ret = gs_panel_validate_color_option(ctx, type, options[1]);
+		if (ret < 0)
+			goto out;
+
+		mutex_lock(&ctx->mode_lock);
+		ctx->color_data.ready = false;
+		if (gs_panel_has_func(ctx, set_color_data_config))
+			ret = ctx->desc->gs_panel_func->set_color_data_config(ctx, type,
+									      options[1]);
+		mutex_unlock(&ctx->mode_lock);
+	} else {
+		ret = gs_panel_set_fake_color_data(ctx, options, option_count);
+	}
+
+	if (ret != 0)
+		goto out;
+
+	ret = count;
+out:
+	kfree(buf_dup);
+	return ret;
+}
+
 static ssize_t force_power_on_store(struct device *dev, struct device_attribute *attr,
 					const char *buf, size_t count)
 {
@@ -732,14 +833,14 @@ static ssize_t force_power_on_store(struct device *dev, struct device_attribute 
 		return ret;
 	}
 
-	mutex_lock(&ctx->mode_lock);
+	drm_modeset_lock(&ctx->bridge.base.lock, NULL);
 	if (force_on && ctx->panel_state == GPANEL_STATE_OFF) {
 		drm_panel_prepare(&ctx->base);
 		ctx->panel_state = GPANEL_STATE_BLANK;
 	}
 
 	ctx->force_power_on = force_on;
-	mutex_unlock(&ctx->mode_lock);
+	drm_modeset_unlock(&ctx->bridge.base.lock);
 
 	return count;
 }
@@ -910,6 +1011,7 @@ static DEVICE_ATTR_RW(te2_option);
 static DEVICE_ATTR_RO(power_state);
 static DEVICE_ATTR_RO(error_count_te);
 static DEVICE_ATTR_RO(error_count_unknown);
+static DEVICE_ATTR_RW(color_data);
 static DEVICE_ATTR_RW(force_power_on);
 static DEVICE_ATTR_RO(power_mode);
 static DEVICE_ATTR_WO(frame_rate);
@@ -942,6 +1044,7 @@ static const struct attribute *panel_attrs[] = { &dev_attr_serial_number.attr,
 						 &dev_attr_power_state.attr,
 						 &dev_attr_error_count_te.attr,
 						 &dev_attr_error_count_unknown.attr,
+						 &dev_attr_color_data.attr,
 						 &dev_attr_force_power_on.attr,
 						 &dev_attr_power_mode.attr,
 						 &dev_attr_expected_present_time_ns.attr,

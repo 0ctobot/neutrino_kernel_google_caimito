@@ -12,6 +12,7 @@
 #include <linux/device.h>
 #include <drm/drm_bridge.h>
 #include <drm/drm_modeset_helper_vtables.h>
+#include "gs_panel/gs_panel.h"
 
 struct gs_panel;
 struct gs_drm_connector;
@@ -251,5 +252,36 @@ const char *get_disp_state_str(enum display_stats_state state);
  */
 int get_disp_stats_time_state_idx(struct gs_panel *ctx,
 		enum display_stats_state state, int vrefresh, struct display_stats_resolution res);
+
+/**
+ * gs_panel_set_fake_color_data() - Write fake color data to panel data
+ *
+ * @ctx: handle for gs_panel
+ * @options: input array, [X, offset, colordata...]
+ * @count: number of items in colordata
+ */
+int gs_panel_set_fake_color_data(struct gs_panel *ctx, u32 *options, int count);
+
+/**
+ * gs_panel_allocate_color_data() - Sets color data size and updates color_data allocation
+ * if a new data size is required.
+ *
+ * @ctx: handle for gs_panel
+ * @option: type of data to allocate memory for
+ *
+ * Return: 0 on success, or error code on failure.
+ */
+int gs_panel_allocate_color_data(struct gs_panel *ctx, u32 option);
+
+/**
+ * gs_panel_validate_color_option() - Validates read type and option against the supported
+ * options in the panel's calibration description.
+ *
+ * @ctx: handle for gs_panel
+ * @read_type: type of color data
+ * @option: option setting for color data read
+ */
+int gs_panel_validate_color_option(struct gs_panel *ctx, enum color_data_type read_type,
+				   int option);
 
 #endif // _GS_PANEL_INTERNAL_H_

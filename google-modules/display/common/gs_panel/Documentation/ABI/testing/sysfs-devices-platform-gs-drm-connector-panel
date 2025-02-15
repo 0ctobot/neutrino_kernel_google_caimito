@@ -216,6 +216,17 @@ Description:
   This file provides the TE option (fixed/changeable).
   Valid panels are 'primary-panel' or 'secondary-panel'.
 
+What: /sys/class/drm/card0/device/primary-panel/color_data
+Date: Nov 2024
+KernelVersion: 6.1
+Contact: "Kevin Ying" <kevinying@google.com>
+Description:
+  Userspace client uses this to read vendor DDIC color data on supported panels. The client
+  first writes a configuration string, e.g. "1 0" for luminance segment 0, then reads the
+  corresponding color data while the panel is active. For each configuration string, a
+  fixed result will be returned specific to the panel. Fake data can also be injected with
+  "2 <byte offset> <data>" where <data> is up to 3 2-byte integers.
+
 What: /sys/devices/platform/gs-drm-connector/panel/frame_rate
 Date: June 2024
 KernelVersion: 6.1

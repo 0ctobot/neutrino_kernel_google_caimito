@@ -51,6 +51,7 @@
 #define PANEL_REV_GE(rev)       (~((rev) - 1))
 #define PANEL_REV_LT(rev)       ((rev) - 1)
 #define PANEL_REV_ALL_BUT(rev)  (PANEL_REV_ALL & ~(rev))
+#define PANEL_REV_RANGE(rev_min, rev_max) (PANEL_REV_GE(rev_min) & PANEL_REV_LT(rev_max))
 
 /** Command Set data structures **/
 
@@ -88,6 +89,16 @@ struct gs_dsi_cmdset {
 /* Arrays */
 
 /**
+ * CHECK_CMDLIST_NOT_EMPTY() - Check if cmdlist is not empty
+ * @cmdlist: The binary array of data to be sent to the device
+ *
+ * This macro enables checking cmdlist is not empty in compile
+ * time while always returns 0.
+ */
+#define CHECK_CMDLIST_NOT_EMPTY(cmdlist) (0 * sizeof( \
+	struct {static_assert(sizeof(cmdlist) != 0, "CMDLIST is empty."); }))
+
+/**
  * GS_DSI_FLAGS_DELAY_REV_CMDLIST - construct a struct gs_dsi_cmd from inline data
  * @flags: any dsi flags to apply to this command, likely for queuing
  *         Its default value is GS_DSI_MSG_IGNORE_VBLANK if using a nonzero
@@ -110,11 +121,11 @@ struct gs_dsi_cmdset {
  */
 #define GS_DSI_FLAGS_DELAY_REV_CMDLIST(flags, delay, rev, cmdlist) \
 { \
-	sizeof(cmdlist),                              \
-	cmdlist,                                      \
-	delay,                                        \
-	(u32)rev,                                     \
-	(u16)flags,                                   \
+	sizeof(cmdlist) + CHECK_CMDLIST_NOT_EMPTY(cmdlist),  \
+	cmdlist,                                             \
+	delay,                                               \
+	(u32)rev,                                            \
+	(u16)flags,                                          \
 }
 #define GS_DSI_QUEUE_DELAY_REV_CMDLIST(delay, rev, cmdlist) \
 	GS_DSI_FLAGS_DELAY_REV_CMDLIST(GS_DSI_MSG_QUEUE, delay, rev, cmdlist)

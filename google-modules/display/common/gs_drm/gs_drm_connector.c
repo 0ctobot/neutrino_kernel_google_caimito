@@ -54,7 +54,6 @@ EXPORT_SYMBOL_GPL(gs_drm_mode_bts_fps);
 
 int gs_bts_fps_to_drm_mode_clock(const struct drm_display_mode *mode, int bts_fps)
 {
-	/* TODO: calculate required mode clock correctly */
 	return DIV_ROUND_UP(mode->htotal * mode->vtotal * bts_fps, 1000);
 }
 EXPORT_SYMBOL_GPL(gs_bts_fps_to_drm_mode_clock);
@@ -312,7 +311,7 @@ static int gs_drm_connector_create_luminance_properties(struct gs_drm_connector 
 
 	p->min_luminance = drm_property_create_range(dev, DRM_MODE_PROP_IMMUTABLE, "min_luminance",
 						     0, UINT_MAX);
-	if (!p)
+	if (!p->min_luminance)
 		return -ENOMEM;
 
 	return 0;
@@ -349,27 +348,27 @@ int gs_drm_connector_create_properties(struct drm_connector *connector)
 	dev_dbg(dev, "%s+\n", __func__);
 
 	p->lp_mode = drm_property_create(drm_dev, DRM_MODE_PROP_BLOB, "lp_mode", 0);
-	if (IS_ERR(p->lp_mode))
-		return PTR_ERR(p->lp_mode);
+	if (!p->lp_mode)
+		return -ENOMEM;
 
 	p->is_partial = drm_property_create_bool(drm_dev, DRM_MODE_PROP_IMMUTABLE, "is_partial");
-	if (IS_ERR(p->is_partial))
-		return PTR_ERR(p->is_partial);
+	if (!p->is_partial)
+		return -ENOMEM;
 
 	p->panel_idle_support =
 		drm_property_create_bool(drm_dev, DRM_MODE_PROP_IMMUTABLE, "panel_idle_support");
-	if (IS_ERR(p->panel_idle_support))
-		return PTR_ERR(p->panel_idle_support);
+	if (!p->panel_idle_support)
+		return -ENOMEM;
 
 	p->rr_switch_duration = drm_property_create_range(drm_dev, DRM_MODE_PROP_IMMUTABLE,
 							  "rr_switch_duration", 0, UINT_MAX);
-	if (IS_ERR(p->rr_switch_duration))
-		return PTR_ERR(p->rr_switch_duration);
+	if (!p->rr_switch_duration)
+		return -ENOMEM;
 
 	p->refresh_on_lp =
 		drm_property_create_bool(drm_dev, DRM_MODE_PROP_IMMUTABLE, "refresh_on_lp");
-	if (IS_ERR(p->refresh_on_lp))
-		return PTR_ERR(p->refresh_on_lp);
+	if (!p->refresh_on_lp)
+		return -ENOMEM;
 
 	ret = gs_drm_connector_create_luminance_properties(gs_connector);
 	if (ret)
@@ -384,10 +383,12 @@ int gs_drm_connector_create_properties(struct drm_connector *connector)
 		return ret;
 
 	ret = gs_drm_connector_create_hdr_formats_property(gs_connector);
+	if (ret)
+		return ret;
 
 	p->frame_interval = drm_property_create_range(drm_dev, 0, "frame_interval", 0, UINT_MAX);
-	if (IS_ERR(p->frame_interval))
-		return PTR_ERR(p->frame_interval);
+	if (!p->frame_interval)
+		return -ENOMEM;
 
 	dev_dbg(dev, "%s-\n", __func__);
 	return ret;

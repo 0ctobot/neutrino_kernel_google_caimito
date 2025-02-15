@@ -530,13 +530,36 @@ void gs_panel_wait_for_cmd_tx_window(struct drm_crtc *crtc,
 	PANEL_ATRACE_END("mipi_time_window");
 }
 
+void gs_panel_disable_normal_feat_locked(struct gs_panel *ctx)
+{
+	bool is_lhbm_enabled = !gs_is_local_hbm_disabled(ctx);
+	bool is_hbm_enabled = GS_IS_HBM_ON(ctx->hbm_mode);
+
+	if (is_lhbm_enabled && gs_panel_has_func(ctx, set_local_hbm_mode)) {
+		ctx->lhbm.requested_state = GLOCAL_HBM_DISABLED;
+		panel_update_lhbm(ctx);
+		/* restore the state while calling restore function */
+		ctx->lhbm.requested_state = GLOCAL_HBM_ENABLED;
+	}
+	/* TODO: restore hbm if needed */
+	if (is_hbm_enabled && gs_panel_has_func(ctx, set_hbm_mode))
+		ctx->desc->gs_panel_func->set_hbm_mode(ctx, GS_HBM_OFF);
+
+	if (!is_lhbm_enabled && !is_hbm_enabled)
+		return;
+
+	dev_warn(ctx->dev,
+		 "unexpected lhbm(%d) or hbm(%d) @ %s, force off to avoid unpredictable issue\n",
+		 is_lhbm_enabled, is_hbm_enabled, (!gs_is_panel_enabled(ctx)) ? "OFF" : "ON or LP");
+}
+
 static void bridge_mode_set_enter_lp_mode(struct gs_panel *ctx, const struct gs_panel_mode *pmode,
 					  bool is_active)
 {
 	if (!gs_panel_has_func(ctx, set_lp_mode))
 		return;
 	if (is_active) {
-		/*TODO(b/279521693) _gs_panel_disable_normal_feat_locked(ctx);*/
+		gs_panel_disable_normal_feat_locked(ctx);
 		ctx->desc->gs_panel_func->set_lp_mode(ctx, pmode);
 		ctx->panel_state = GPANEL_STATE_LP;
 

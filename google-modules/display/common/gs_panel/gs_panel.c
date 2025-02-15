@@ -1341,10 +1341,13 @@ static int _gs_panel_reg_ctrl(struct gs_panel *ctx, const struct panel_reg_ctrl 
 			u32 avdd_uV = ctx->regulator.avdd_uV;
 			u32 avee_uV = ctx->regulator.avee_uV;
 
-			if (id == PANEL_REG_ID_AVDD)
+			if (id == PANEL_REG_ID_AVDD) {
 				regulator_set_voltage(reg, avdd_uV, avdd_uV);
-			else if (id == PANEL_REG_ID_AVEE)
+				regulator_sync_voltage(reg);
+			} else if (id == PANEL_REG_ID_AVEE) {
 				regulator_set_voltage(reg, avee_uV, avee_uV);
+				regulator_sync_voltage(reg);
+			}
 		}
 
 		if (delay_ms)
@@ -1446,7 +1449,9 @@ static void gs_panel_normal_mode_work(struct work_struct *work)
 }
 
 void gs_panel_update_lhbm_hist_data_helper(struct gs_panel *ctx, struct drm_atomic_state *state,
-					   bool enabled, int d, int r)
+					   bool enabled,
+					   enum gs_drm_connector_lhbm_hist_roi_type roi_type,
+					   int circle_d, int circle_r)
 {
 	struct gs_drm_connector *gs_connector = ctx->gs_connector;
 	struct drm_connector_state *new_conn_state;
@@ -1464,10 +1469,90 @@ void gs_panel_update_lhbm_hist_data_helper(struct gs_panel *ctx, struct drm_atom
 	hist_data = &new_gs_connector_state->lhbm_hist_data;
 
 	hist_data->enabled = enabled;
-	hist_data->d = d;
-	hist_data->r = r;
+	hist_data->roi_type = roi_type;
+
+	if (roi_type == GS_HIST_ROI_CIRCLE) {
+		hist_data->lhbm_circle_d = circle_d;
+		hist_data->lhbm_circle_r = circle_r;
+	}
 }
 EXPORT_SYMBOL_GPL(gs_panel_update_lhbm_hist_data_helper);
+
+int gs_panel_validate_color_option(struct gs_panel *ctx, enum color_data_type read_type, int option)
+{
+	if (read_type >= COLOR_DATA_TYPE_MAX || !ctx->desc->calibration_desc ||
+	    !ctx->desc->calibration_desc->color_cal[read_type].en)
+		return -EOPNOTSUPP;
+
+	if (option < ctx->desc->calibration_desc->color_cal[read_type].min_option ||
+	    option > ctx->desc->calibration_desc->color_cal[read_type].max_option) {
+		dev_warn(ctx->dev, "Invalid option %d for read_type %d\n", option, read_type);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int gs_panel_allocate_color_data(struct gs_panel *ctx, enum color_data_type option)
+{
+	if (option == COLOR_DATA_TYPE_FAKE_CIE) {
+		option = COLOR_DATA_TYPE_CIE;
+	} else if (option > COLOR_DATA_TYPE_MAX) {
+		mutex_lock(&ctx->mode_lock);
+		ctx->color_data.size = 0;
+		ctx->color_data.ready = FALSE;
+		kfree(ctx->color_data.data);
+		ctx->color_data.data = NULL;
+		mutex_unlock(&ctx->mode_lock);
+		return -EINVAL;
+	}
+
+	if (!ctx->desc->calibration_desc || !ctx->desc->calibration_desc->color_cal[option].en)
+		return -EINVAL;
+
+	mutex_lock(&ctx->mode_lock);
+	if (ctx->color_data.data &&
+	    ctx->color_data.size != ctx->desc->calibration_desc->color_cal[option].data_size) {
+		dev_dbg(ctx->dev, "%s: free %zu for color data", __func__, ctx->color_data.size);
+		kfree(ctx->color_data.data);
+		ctx->color_data.data = NULL;
+	}
+	ctx->color_data.size = ctx->desc->calibration_desc->color_cal[option].data_size;
+
+	if (!ctx->color_data.data) {
+		ctx->color_data.data = kzalloc(ctx->color_data.size, GFP_KERNEL);
+		if (!ctx->color_data.data) {
+			mutex_unlock(&ctx->mode_lock);
+			return -ENOMEM;
+		}
+		dev_dbg(ctx->dev, "%s: alloc %zu for color data", __func__, ctx->color_data.size);
+	}
+	mutex_unlock(&ctx->mode_lock);
+
+	return 0;
+}
+
+int gs_panel_set_fake_color_data(struct gs_panel *ctx, u32 *options, int count)
+{
+	size_t buf_idx = options[1];
+	int option_idx = 2; // start after read type and offset
+
+	if (count < 2 || buf_idx >= ctx->color_data.size || !ctx->color_data.data)
+		return -EINVAL;
+
+	mutex_lock(&ctx->mode_lock);
+	ctx->color_data.ready = true; // Fake color data always ready for read
+	while (option_idx < count && buf_idx < ctx->color_data.size) {
+		ctx->color_data.data[buf_idx++] = (options[option_idx] >> 8) & 0xFF;
+		ctx->color_data.data[buf_idx++] = options[option_idx] & 0xFF;
+		option_idx++;
+	}
+	mutex_unlock(&ctx->mode_lock);
+
+	dev_info(ctx->dev, "%s: wrote %d..%zu", __func__, options[1], buf_idx - 1);
+
+	return 0;
+}
 
 /* INITIALIZATION */
 
@@ -1682,6 +1767,10 @@ int gs_dsi_panel_common_init(struct mipi_dsi_device *dsi, struct gs_panel *ctx)
 	mipi_dsi_set_drvdata(dsi, ctx);
 	ctx->dev = dev;
 	ctx->desc = of_device_get_match_data(dev);
+	if (!ctx->desc) {
+		dev_err(dev, "No device match found, exiting init\n");
+		return -EINVAL;
+	}
 
 	/* Set DSI data */
 	dsi->lanes = ctx->desc->data_lane_cnt;
