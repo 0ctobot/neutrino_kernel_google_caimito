@@ -186,6 +186,15 @@ static ssize_t st33spi_state_store(struct device *dev,
 	struct st33spi_data *st33spi;
 	struct s3c64xx_spi_csinfo *cs;
 	int new_spi_state;
+	int new_se_reset_state;
+
+	if (!kstrtoint(buf, 10, &new_spi_state)) {
+		/* Only 0 or 33 allowed */
+		if (new_spi_state != 0 && new_spi_state != 33) {
+			dev_err(dev, "%s: incorrect parameter\n", __func__);
+			return -EINVAL;
+		}
+	}
 
 	spi = to_spi_device(dev);
 	if (spi == NULL)
@@ -199,18 +208,13 @@ static ssize_t st33spi_state_store(struct device *dev,
 	if (cs == NULL)
 		return -ENODEV;
 
-	if (!kstrtoint(buf, 10, &new_spi_state)) {
-		if (new_spi_state == 0) {
-                        st33spi->spi_state = 0;
-			st33spi_pinctrl_configure(st33spi, false);
-		} else if (new_spi_state == 33) {
-                        st33spi->spi_state = 1;
-			st33spi_pinctrl_configure(st33spi, true);
-		} else {
-			dev_err(dev, "%s: incorrect parameter\n", __func__);
-			return -EINVAL;
-		}
-	}
+	st33spi->spi_state = new_spi_state == 33 ? 1 : 0;
+	new_se_reset_state = st33spi->spi_state && st33spi->esereset_state;
+	st33spi_pinctrl_configure(st33spi, st33spi->spi_state);
+	gpiod_set_value_cansleep(st33spi->gpiod_se_reset, new_se_reset_state);
+	dev_info(&st33spi->spi->dev, "st33 set nReset to %s\n",
+		(new_se_reset_state ? "High" : "Low"));
+
 	return count;
 }
 
@@ -1039,13 +1043,8 @@ static int st33spi_parse_dt(struct device *dev, struct st33spi_data *pdata)
 
 	/* Get the Gpio */
 	if (pdata->power_gpio_mode == POWER_MODE_ST33) {
-		if(pdata->esereset_state) {
-			pdata->gpiod_se_reset =
-				devm_gpiod_get(dev, "esereset", GPIOD_OUT_HIGH);
-		} else {
-			pdata->gpiod_se_reset =
-				devm_gpiod_get(dev, "esereset", GPIOD_OUT_LOW);
-		}
+		pdata->gpiod_se_reset =
+			devm_gpiod_get(dev, "esereset", GPIOD_OUT_LOW);
 		if (IS_ERR(pdata->gpiod_se_reset)) {
 			dev_err(dev, "Unable to request esereset %d\n",
 					IS_ERR(pdata->gpiod_se_reset));
