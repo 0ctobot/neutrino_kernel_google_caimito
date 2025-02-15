@@ -886,6 +886,8 @@ static int priv_cmd_errors = 0;
 #endif /* DHD_SEND_HANG_PRIVCMD_ERRORS */
 
 
+#define CMD_GET_RSSI_ROAM_THRESHOLD "GETRSSIROAMTHRESHOLD"
+
 /**
  * Extern function declarations (TODO: move them to dhd_linux.h)
  */
@@ -1209,7 +1211,29 @@ static char* wl_android_get_band_str(u16 band)
 	}
 }
 
-#ifdef WBTEXT
+static int wl_android_bandstr_to_band(char *band, u8 *fw_band)
+{
+	int err = BCME_OK;
+
+	if (strlen(band) != 2) {
+		return WLC_BAND_INVALID;
+	}
+
+	if (!strcasecmp(band, "2g")) {
+		*fw_band = WLC_BAND_2G;
+	} else if (!strcasecmp(band, "5g")) {
+		*fw_band = WLC_BAND_5G;
+#ifdef WL_6G_BAND
+	} else if (!strcasecmp(band, "6g")) {
+		*fw_band = WLC_BAND_6G;
+#endif /* WL_6G_BAND */
+	} else {
+		err = WLC_BAND_INVALID;
+	}
+
+	return err;
+}
+
 static int wl_android_bandstr_to_fwband(char *band, u8 *fw_band)
 {
 	int err = BCME_OK;
@@ -1230,7 +1254,6 @@ static int wl_android_bandstr_to_fwband(char *band, u8 *fw_band)
 
 	return err;
 }
-#endif /* WBTEXT */
 
 #ifdef WLWFDS
 static int wl_android_set_wfds_hash(
@@ -1841,8 +1864,6 @@ static bool wl_android_check_wbtext_support(struct net_device *dev)
 }
 #endif /* WES_SUPPORT && WBTEXT */
 
-#ifdef CUSTOMER_HW4_PRIVATE_CMD
-#ifdef ROAM_API
 static bool
 wl_android_check_wbtext_policy(struct net_device *dev)
 {
@@ -1854,6 +1875,103 @@ wl_android_check_wbtext_policy(struct net_device *dev)
 	return FALSE;
 }
 
+static int
+wl_android_get_rssi_roam_threshold(struct net_device *dev, char *data, char *command, int total_len)
+{
+	int bytes_written, error;
+	int roam_threshold[2] = {0, 0};
+	int i;
+	wl_roamprof_band_t rp;
+	uint8 roam_prof_ver = 0, roam_prof_size = 0;
+	char band_str[BUFSZN];
+	uint8 fw_band = 0;
+
+	sscanf(data, "%"BCM_STR(BUFSZ)"s *", band_str);
+	if (WLC_BAND_INVALID == wl_android_bandstr_to_band(band_str, &fw_band)) {
+		WL_ERR(("Unsupported band : %d, Expected cmd format: "
+			"GETRSSIROAMTHRESHOLD <2g/5g/6g>\n", fw_band));
+		return BCME_ERROR;
+	}
+
+	if (wl_android_check_wbtext_policy(dev)) {
+		memset_s(&rp, sizeof(rp), 0, sizeof(rp));
+		error = wlc_wbtext_get_roam_prof(dev, &rp, fw_band, &roam_prof_ver,
+			&roam_prof_size);
+		if (error) {
+			WL_ERR(("Getting roam_profile failed with err=%d \n", error));
+			return -EINVAL;
+		}
+
+		switch (roam_prof_ver) {
+			case WL_ROAM_PROF_VER_1:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v2.roam_prof[i].channel_usage == 0) {
+						roam_threshold[0] = rp.v2.roam_prof[i].roam_trigger;
+						break;
+					}
+				}
+			}
+			break;
+			case WL_ROAM_PROF_VER_2:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v3.roam_prof[i].channel_usage == 0) {
+						roam_threshold[0] = rp.v3.roam_prof[i].roam_trigger;
+						break;
+					}
+				}
+			}
+			break;
+			case WL_ROAM_PROF_VER_3:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v4.roam_prof[i].channel_usage == 0) {
+						roam_threshold[0] = rp.v4.roam_prof[i].roam_trigger;
+						break;
+					}
+				}
+			}
+			break;
+			case WL_ROAM_PROF_VER_4:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v4.roam_prof[i].channel_usage == 0) {
+						roam_threshold[0] = rp.v4.roam_prof[i].roam_trigger;
+						break;
+					}
+				}
+			}
+			break;
+			case WL_ROAM_PROF_VER_5:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v6.roam_prof[i].channel_usage == 0) {
+						roam_threshold[0] = rp.v6.roam_prof[i].roam_trigger;
+						break;
+					}
+				}
+			}
+			break;
+
+			default:
+				WL_ERR(("bad version = %d \n", roam_prof_ver));
+				return BCME_VERSION;
+		}
+		if (roam_threshold[0] == 0) {
+			WL_ERR(("rssi roam threshold was not set properly\n"));
+			return BCME_ERROR;
+		}
+	}
+
+	bytes_written = snprintf(command, total_len, "fw_band:%s roam_threshold:%d",
+			wl_android_get_band_str(fw_band), roam_threshold[0]);
+
+	return bytes_written;
+}
+
+#ifdef CUSTOMER_HW4_PRIVATE_CMD
+#ifdef ROAM_API
 static int
 wl_android_set_roam_trigger(struct net_device *dev, char* command)
 {
@@ -14673,7 +14791,12 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 			priv_cmd.total_len, FALSE);
 	}
 #endif /* WL_BSS_STA_INFO */
-	else {
+	else if (strnicmp(command, CMD_GET_RSSI_ROAM_THRESHOLD,
+		strlen(CMD_GET_RSSI_ROAM_THRESHOLD)) == 0) {
+		char *data = (command + strlen(CMD_GET_RSSI_ROAM_THRESHOLD) + 1);
+		bytes_written = wl_android_get_rssi_roam_threshold(net, data,
+				command, priv_cmd.total_len);
+	} else {
 		DHD_ERROR(("Unknown PRIVATE command %s - ignored\n", command));
 #ifdef CUSTOMER_HW4_DEBUG
 		bytes_written = BCME_UNSUPPORTED;
