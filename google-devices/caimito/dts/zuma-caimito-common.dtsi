@@ -33,5 +33,5 @@
 #include "zuma/zuma-ripcurrent-bluetooth.dtsi"
 #include "zuma-caimito-usb.dtsi"
 #include "zuma-caimito-typec.dtsi"
-#include "zumapro-cp-s5400-thermal-zone.dtsi"
+#include "zumapro/zumapro-cp-s5400-thermal-zone.dtsi"
 #include "zuma/gs101-faceauth-dma-heap.dtsi"

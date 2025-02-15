@@ -43,6 +43,7 @@
 	#include "zuma/zuma-max777xx.dtsi"
 };
 
+#define BATTERY_EEPROM_1K
 #ifndef ZUMA_BMS_I2CM
 &hsi2c_10 {
 	#address-cells = <1>;

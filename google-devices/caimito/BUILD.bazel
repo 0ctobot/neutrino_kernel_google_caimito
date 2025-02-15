@@ -71,6 +71,8 @@ kernel_build(
     name = "kernel",
     srcs = [":kernel_sources"],
     outs = [
+        ".config",
+    ] + [
         "zuma/{}".format(dtb)
         for dtb in ZUMA_DTBS + ZUMA_DPM_DTBOS
     ] + [
@@ -160,12 +162,6 @@ create_file(
 )
 
 create_file(
-    name = "system_dlkm_modules_blocklist",
-    srcs = ["//private/devices/google/zumapro:system_dlkm_modules_blocklist"],
-    out = "system_dlkm.blocklist",
-)
-
-create_file(
     name = "system_dlkm_props",
     srcs = ["//private/devices/google/zumapro:system_dlkm_props"],
     out = "system_dlkm.props",
@@ -216,7 +212,6 @@ kernel_images(
     kernel_modules_install = ":kernel_modules_install",
     modules_list = ":vendor_ramdisk_modules_list",
     ramdisk_compression = "lz4",
-    system_dlkm_modules_blocklist = ":system_dlkm_modules_blocklist",
     system_dlkm_modules_list = ":system_dlkm_modules_list",
     system_dlkm_props = ":system_dlkm_props",
     vendor_dlkm_archive = True,
@@ -240,8 +235,8 @@ copy_to_dist_dir(
         "//common:android/abi_gki_aarch64_pixel",
         "//common:kernel_aarch64",
         "//common:kernel_aarch64_gki_boot_image",
-        "//common:kernel_aarch64_gki_modules",
         "//common:kernel_aarch64_headers",
+        "//private/devices/google/common:kernel_gki_modules",
     ] + select({
         "//private/devices/google/common:enable_download_fips140": ["@gki_prebuilt_fips140//fips140.ko"],
         "//private/devices/google/common:disable_download_fips140": [],

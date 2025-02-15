@@ -10,12 +10,12 @@
 
 #include "zuma-24-common.dtsi"
 #include "zumapro/zumapro-board-ignss.dtsi"
-#include "zuma-ripcurrent24-ultrasonic-udfps.dtsi"
+#include "zuma/zuma-ripcurrent24-ultrasonic-udfps.dtsi"
 #include "zuma-ripcurrent24-battery.dtsi"
 #include "zuma/zuma-board-bcl.dtsi"
 #include "zuma/zuma-ripcurrent-charging.dtsi"
 #include "zuma/zuma-ripcurrent-usecases.dtsi"
-#include "zuma-ripcurrent24-display.dtsi"
+#include "zuma/zuma-ripcurrent24-display.dtsi"
 #include "zuma/zuma-ripcurrent-wcharger.dtsi"
 #include "zuma/zuma-ripcurrent-typec.dtsi"
 

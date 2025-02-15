@@ -9,10 +9,10 @@
 /plugin/;
 
 
-#include "zumapro-board-common.dtsi"
+#include "zumapro/zumapro-board-common.dtsi"
 #include "zuma/zuma-ripcurrent-camera-pmic.dtsi"
 #include "zuma/zuma-ripcurrent-camera.dtsi"
-#include "zumapro-ripcurrentpro-usb.dtsi"
+#include "zumapro/zumapro-ripcurrentpro-usb.dtsi"
 /*
 #include "zuma-24-common.dtsi"
 #include "zuma-ripcurrent24-ultrasonic-udfps.dtsi"

@@ -10,7 +10,7 @@
 
 #include "zuma-ripcurrent24-sapwood-caimito-common.dtsi"
 #include "zumapro/zumapro-board-gps.dtsi"
-#include "zuma-ripcurrent24-ultrasonic-udfps.dtsi"
+#include "zuma/zuma-ripcurrent24-ultrasonic-udfps.dtsi"
 #include "zuma-ripcurrent24-sapwood-komodo-caiman-common.dtsi"
 #include "zuma-komodo-wcharger.dtsi"
 
