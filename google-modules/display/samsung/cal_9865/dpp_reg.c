@@ -1015,7 +1015,7 @@ static void rcd_reg_set_block_mode(u32 id, bool en, int x, int y, u32 w, u32 h)
 	dma_write(id, RCD_BLOCK_OFFSET,
 			RCD_BLK_OFFSET_Y(y) | RCD_BLK_OFFSET_X(x));
 	dma_write(id, RCD_BLOCK_SIZE, RCD_BLK_HEIGHT(h) | RCD_BLK_WIDTH(w));
-	dma_write(id, RCD_BLOCK_VALUE, 255 << 24);
+	dma_write(id, RCD_BLOCK_VALUE, 255U << 24);
 	dma_write_mask(id, RCD_IN_CTRL_0, ~0, RCD_BLOCK_EN);
 
 	cal_log_debug(id, "block x(%d) y(%d) w(%d) h(%d)\n", x, y, w, h);

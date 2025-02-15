@@ -319,27 +319,27 @@ int exynos_drm_connector_create_properties(struct drm_device *dev)
 	int ret;
 
 	p->lp_mode = drm_property_create(dev, DRM_MODE_PROP_BLOB, "lp_mode", 0);
-	if (IS_ERR(p->lp_mode))
-                return PTR_ERR(p->lp_mode);
+	if (!p->lp_mode)
+		return -ENOMEM;
 
 	p->is_partial = drm_property_create_bool(dev, DRM_MODE_PROP_IMMUTABLE,
 			"is_partial");
-	if (IS_ERR(p->is_partial))
-		return PTR_ERR(p->is_partial);
+	if (!p->is_partial)
+		return -ENOMEM;
 
 	p->panel_idle_support = drm_property_create_bool(dev, DRM_MODE_PROP_IMMUTABLE,
 			"panel_idle_support");
-	if (IS_ERR(p->panel_idle_support))
-		return PTR_ERR(p->panel_idle_support);
+	if (!p->panel_idle_support)
+		return -ENOMEM;
 
 	p->rr_switch_duration = drm_property_create_range(dev, DRM_MODE_PROP_IMMUTABLE,
 						"rr_switch_duration", 0, UINT_MAX);
-	if (IS_ERR(p->rr_switch_duration))
-		return PTR_ERR(p->rr_switch_duration);
+	if (!p->rr_switch_duration)
+		return -ENOMEM;
 
 	p->refresh_on_lp = drm_property_create_bool(dev, DRM_MODE_PROP_IMMUTABLE, "refresh_on_lp");
-	if (IS_ERR(p->refresh_on_lp))
-		return PTR_ERR(p->refresh_on_lp);
+	if (!p->refresh_on_lp)
+		return -ENOMEM;
 
 	ret = exynos_drm_connector_create_luminance_properties(dev);
 	if (ret)
@@ -360,10 +360,8 @@ int exynos_drm_mode_te_freq(const struct drm_display_mode *mode)
 {
 	int freq = drm_mode_vrefresh(mode);
 
-	if (mode->flags & DRM_MODE_FLAG_TE_FREQ_X2)
-		freq *= 2;
-	else if (mode->flags & DRM_MODE_FLAG_TE_FREQ_X4)
-		freq *= 4;
+	if (mode->vscan > 1)
+		return freq * mode->vscan;
 
 	return freq;
 }

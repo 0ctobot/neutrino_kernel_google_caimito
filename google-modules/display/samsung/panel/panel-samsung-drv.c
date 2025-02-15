@@ -28,6 +28,7 @@
 #include <drm/drm_vblank.h>
 #include <video/mipi_display.h>
 
+#define CREATE_TRACE_POINTS
 #include <trace/dpu_trace.h>
 #include "../exynos_drm_connector.h"
 #include "../exynos_drm_decon.h"
@@ -3067,6 +3068,7 @@ static ssize_t exynos_dsi_dcs_transfer(struct mipi_dsi_device *dsi, u8 type,
 				     const void *data, size_t len, u16 flags)
 {
 	const struct mipi_dsi_host_ops *ops = dsi->host->ops;
+	bool is_last;
 	struct mipi_dsi_msg msg = {
 		.channel = dsi->channel,
 		.tx_buf = data,
@@ -3078,6 +3080,9 @@ static ssize_t exynos_dsi_dcs_transfer(struct mipi_dsi_device *dsi, u8 type,
 		return -ENOSYS;
 
 	msg.flags = flags;
+
+	is_last = ((flags & EXYNOS_DSI_MSG_QUEUE) == 0) || (flags & EXYNOS_DSI_MSG_FORCE_FLUSH);
+	trace_dsi_tx(msg.type, msg.tx_buf, msg.tx_len, is_last, 0);
 	if (dsi->mode_flags & MIPI_DSI_MODE_LPM)
 		msg.flags |= MIPI_DSI_MSG_USE_LPM;
 
@@ -5660,6 +5665,10 @@ int exynos_panel_common_init(struct mipi_dsi_device *dsi,
 	mipi_dsi_set_drvdata(dsi, ctx);
 	ctx->dev = dev;
 	ctx->desc = of_device_get_match_data(dev);
+	if (!ctx->desc) {
+		dev_err(dev, "No device match found, exiting init\n");
+		return -EINVAL;
+	}
 
 	dsi->lanes = ctx->desc->data_lane_cnt;
 	dsi->format = MIPI_DSI_FMT_RGB888;

@@ -1983,9 +1983,9 @@ static int dsim_remap_regs(struct dsim_device *dsim)
 		goto err;
 	}
 	dsim->res.regs = ioremap(res.start, resource_size(&res));
-	if (IS_ERR(dsim->res.regs)) {
+	if (!dsim->res.regs) {
 		dsim_err(dsim, "failed to remap io region\n");
-		ret = PTR_ERR(dsim->res.regs);
+		ret = -ENOMEM;
 		goto err;
 	}
 	dsim_regs_desc_init(dsim->res.regs, res.start, "dsi", REGS_DSIM_DSI, dsim->id);
@@ -1997,9 +1997,9 @@ static int dsim_remap_regs(struct dsim_device *dsim)
 	}
 
 	dsim->res.phy_regs = ioremap(res.start, resource_size(&res));
-	if (IS_ERR(dsim->res.phy_regs)) {
+	if (!dsim->res.phy_regs) {
 		dsim_err(dsim, "failed to remap io region\n");
-		ret = PTR_ERR(dsim->res.regs);
+		ret = -ENOMEM;
 		goto err_dsi;
 	}
 	dsim_regs_desc_init(dsim->res.phy_regs, res.start, "dphy", REGS_DSIM_PHY,
@@ -2011,7 +2011,7 @@ static int dsim_remap_regs(struct dsim_device *dsim)
 		goto err_dsi;
 	}
 	dsim->res.phy_regs_ex = ioremap(res.start, resource_size(&res));
-	if (IS_ERR(dsim->res.phy_regs_ex))
+	if (!dsim->res.phy_regs_ex)
 		dsim_warn(dsim, "failed to remap io region. it's optional\n");
 	dsim_regs_desc_init(dsim->res.phy_regs_ex, res.start, "dphy-extra",
 			REGS_DSIM_PHY_BIAS, dsim->id);
@@ -2025,7 +2025,7 @@ static int dsim_remap_regs(struct dsim_device *dsim)
 	dsim->res.ss_reg_base = ioremap(res.start, resource_size(&res));
 	if (!dsim->res.ss_reg_base) {
 		dsim_err(dsim, "failed to map sysreg-disp address.");
-		ret = PTR_ERR(dsim->res.ss_reg_base);
+		ret = -ENOMEM;
 		goto err_dphy_ext;
 	}
 	dsim_regs_desc_init(dsim->res.ss_reg_base, res.start, np->name, REGS_DSIM_SYS,
@@ -2333,7 +2333,7 @@ dsim_write_payload(struct dsim_device *dsim, const u8* buf, size_t len)
 		size_t pkt_size = min_t(size_t, 4, end - p);
 
 		if (pkt_size >= 4)
-			payload = p[0] | p[1] << 8 | p[2] << 16 | p[3] << 24;
+			payload = p[0] | p[1] << 8 | p[2] << 16 | (u32)p[3] << 24;
 		else if (pkt_size == 3)
 			payload = p[0] | p[1] << 8 | p[2] << 16;
 		else if (pkt_size == 2)
@@ -2496,7 +2496,7 @@ static int dsim_write_data_locked(struct dsim_device *dsim, const struct mipi_ds
 {
 	int ret = 0;
 	const u16 flags = msg->flags;
-	bool is_last;
+	bool is_last = false;
 	struct mipi_dsi_packet packet = { .size = 0 };
 
 #if IS_ENABLED(CONFIG_QUEUE_DDIC_CMD_CALL_BACK)
@@ -2585,8 +2585,6 @@ trace_dsi_cmd:
 	dsim_dump_cmd(dsim, msg, is_last);
 	DPU_ATRACE_END("dsim_dump_cmd");
 #endif
-	/* TODO(b/278175371): print actual delay time */
-	trace_dsi_tx(msg->type, msg->tx_buf, msg->tx_len, is_last, dsim->tx_delay_ms);
 	dsim_debug(dsim, "%s last command\n", is_last ? "" : "Not");
 #if IS_ENABLED(CONFIG_QUEUE_DDIC_CMD_CALL_BACK)
 	if (funcs && funcs->on_queue_ddic_cmd)
@@ -3076,7 +3074,7 @@ static ssize_t hs_clock_store(struct device *dev,
 	/* ddr hs_clock unit: MHz */
 	dsim_info(dsim, "%s: hs clock %u, apply now: %u\n", __func__, hs_clock, apply_now);
 
-	if (dsim->allowed_hs_clks && !dsim->force_set_hs_clk) {
+	if (dsim->allowed_hs_clks && dsim->allowed_hs_clks->hs_clks && !dsim->force_set_hs_clk) {
 		bool hs_clock_allowed = false;
 
 		for (int i = 0; i < dsim->allowed_hs_clks->num_clks; i++) {

@@ -746,16 +746,15 @@ static void decon_calc_hist_roi(int w, int h, int d, int r, int *x, int *y, int 
 
 static int decon_update_lhbm_hist_roi(struct decon_device *decon, struct drm_atomic_state *state)
 {
-	struct drm_crtc_state *old_crtc_state, *new_crtc_state;
+	struct drm_crtc_state *new_crtc_state;
 	struct gs_drm_connector_state *old_gs_connector_state, *new_gs_connector_state;
 
-	old_crtc_state = drm_atomic_get_old_crtc_state(state, &decon->crtc->base);
 	new_crtc_state = drm_atomic_get_new_crtc_state(state, &decon->crtc->base);
-	if (!old_crtc_state || !new_crtc_state)
+	if (!new_crtc_state)
 		return 0;
 
-	old_gs_connector_state = crtc_get_gs_connector_state(state, old_crtc_state);
-	new_gs_connector_state = crtc_get_gs_connector_state(state, new_crtc_state);
+	old_gs_connector_state = crtc_get_old_gs_connector_state(state, new_crtc_state);
+	new_gs_connector_state = crtc_get_new_gs_connector_state(state, new_crtc_state);
 	if (!old_gs_connector_state || !new_gs_connector_state)
 		return 0;
 
@@ -772,14 +771,32 @@ static int decon_update_lhbm_hist_roi(struct decon_device *decon, struct drm_ato
 	     new_gs_connector_state->lhbm_hist_data.enabled) ||
 	    gs_drm_connector_hist_data_needs_configure(old_gs_connector_state,
 						       new_gs_connector_state)) {
-		struct gs_drm_connector_lhbm_hist_data *hist_data;
-		int w, h, x, y, side_len;
+		struct gs_drm_connector_lhbm_hist_data *hist_data =
+			&new_gs_connector_state->lhbm_hist_data;
+		int w = new_crtc_state->mode.hdisplay;
+		int h = new_crtc_state->mode.vdisplay;
 
-		hist_data = &new_gs_connector_state->lhbm_hist_data;
-		w = new_crtc_state->mode.hdisplay;
-		h = new_crtc_state->mode.vdisplay;
-		decon_calc_hist_roi(w, h, hist_data->d, hist_data->r, &x, &y, &side_len);
-		return exynos_drm_drv_set_lhbm_hist_gs(decon, x, y, side_len, side_len);
+		if (hist_data->roi_type == GS_HIST_ROI_CIRCLE) {
+			int x, y, side_len;
+
+			decon_calc_hist_roi(w, h, hist_data->lhbm_circle_d,
+					    hist_data->lhbm_circle_r, &x, &y, &side_len);
+
+			struct histogram_roi roi = {
+				.start_x = x, .start_y = y, .hsize = side_len, .vsize = side_len
+			};
+
+			return exynos_drm_drv_set_lhbm_hist_gs(
+				decon, &roi, &lhbm_hist_weight[LHBM_CIRCLE_WEIGHT]);
+		} else if (hist_data->roi_type == GS_HIST_ROI_FULL_SCREEN) {
+			struct histogram_roi roi = {
+				.start_x = 0, .start_y = 0, .hsize = w, .vsize = h
+			};
+			return exynos_drm_drv_set_lhbm_hist_gs(
+				decon, &roi, &lhbm_hist_weight[LHBM_FSCREEN_WEIGHT]);
+		} else {
+			decon_warn(decon, "unsupported roi type: %d\n", hist_data->roi_type);
+		}
 	}
 
 	return 0;
@@ -2388,9 +2405,9 @@ static int decon_remap_regs(struct decon_device *decon)
 		goto err;
 	}
 	decon->regs.regs = ioremap(res.start, resource_size(&res));
-	if (IS_ERR(decon->regs.regs)) {
+	if (!decon->regs.regs) {
 		decon_err(decon, "failed decon ioremap\n");
-		ret = PTR_ERR(decon->regs.regs);
+		ret = -ENOMEM;
 		goto err;
 	}
 	decon_regs_desc_init(decon->regs.regs, res.start, "decon", REGS_DECON,

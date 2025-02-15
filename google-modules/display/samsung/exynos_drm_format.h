@@ -41,16 +41,14 @@ struct dpu_fmt {
 };
 
 /* format */
-#define IS_YUV420(f)		((f)->cs == DPU_COLORSPACE_YUV420)
-#define IS_YUV422(f)		((f)->cs == DPU_COLORSPACE_YUV422)
-#define IS_YUV(f)		(((f)->cs == DPU_COLORSPACE_YUV420) ||	\
-				((f)->cs == DPU_COLORSPACE_YUV422))
-#define IS_YUV10(f)		(IS_YUV(f) && ((f)->bpc == 10))
-#define IS_RGB(f)		((f)->cs == DPU_COLORSPACE_RGB)
-#define IS_RGB32(f)	\
-	(((f)->cs == DPU_COLORSPACE_RGB) && (((f)->bpp + (f)->padding) == 32))
-#define IS_10BPC(f)		((f)->bpc == 10)
-#define IS_OPAQUE(f)		((f)->len_alpha == 0)
+#define IS_10BPC(f)		((f) && (f)->bpc == 10)
+#define IS_YUV420(f)		((f) && (f)->cs == DPU_COLORSPACE_YUV420)
+#define IS_YUV422(f)		((f) && (f)->cs == DPU_COLORSPACE_YUV422)
+#define IS_YUV(f)		(IS_YUV420(f) || IS_YUV422(f))
+#define IS_YUV10(f)		(IS_YUV(f) && IS_10BPC(f))
+#define IS_RGB(f)		((f) && (f)->cs == DPU_COLORSPACE_RGB)
+#define IS_RGB32(f)		(IS_RGB(f) && (((f)->bpp + (f)->padding) == 32))
+#define IS_OPAQUE(f)		((f) && (f)->len_alpha == 0)
 
 #ifdef CONFIG_SOC_ZUMA
 #define SBWC_PAYLOAD_32B_STRIDE_ALIGN   32

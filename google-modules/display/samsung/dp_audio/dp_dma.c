@@ -518,7 +518,7 @@ static int dma_hw_params(struct snd_soc_component *component,
 	prtd->dma_start = runtime->dma_addr;
 	prtd->dma_pos = prtd->dma_start;
 	prtd->dma_end = prtd->dma_start + totbytes;
-	while ((totbytes / prtd->dma_period) < PERIOD_MIN)
+	while (prtd->dma_period != 0 && (totbytes / prtd->dma_period) < PERIOD_MIN)
 		prtd->dma_period >>= 1;
 	spin_unlock_irq(&prtd->lock);
 	dev_info(dev, "ADMA:%c:DmaAddr=@%pad Total=%d PrdSz=%d(%d) #Prds=%d dma_area=0x%pad\n",

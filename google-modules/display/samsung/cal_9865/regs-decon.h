@@ -572,7 +572,7 @@
 
 #define WIN_FUNC_CON_0(_id)			(WIN_OFFSET(_id) + 0x4)
 #define WIN_ALPHA1_F(_v)			(((_v) & 0xFF) << 24)
-#define WIN_ALPHA1_MASK				(0xFF << 24)
+#define WIN_ALPHA1_MASK				(0xFFU << 24)
 #define WIN_ALPHA0_F(_v)			(((_v) & 0xFF) << 16)
 #define WIN_ALPHA0_MASK				(0xFF << 16)
 #define WIN_ALPHA_GET(_v, _n)			(((_v) >>	\

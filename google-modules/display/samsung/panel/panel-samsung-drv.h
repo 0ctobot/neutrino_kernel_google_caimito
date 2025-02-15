@@ -1127,7 +1127,7 @@ static inline bool is_local_hbm_disabled(struct exynos_panel *ctx)
 
 static inline bool is_vrr_mode(const struct exynos_panel_mode *pmode)
 {
-	return (pmode->mode.type & DRM_MODE_TYPE_VRR);
+	return (pmode->mode.vscan > 0);
 }
 
 #define EXYNOS_DSI_CMD_REV(cmd, delay, rev) { sizeof(cmd), cmd, delay, (u32)rev }

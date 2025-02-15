@@ -1175,12 +1175,14 @@ struct exynos_drm_crtc *exynos_drm_crtc_create(struct drm_device *drm_dev,
 	if (ret)
 		goto err_crtc;
 
-	if (exynos_drm_crtc_create_range(crtc, "ppc", &exynos_crtc->props.ppc,
-				0, UINT_MAX))
+	ret = exynos_drm_crtc_create_range(crtc, "ppc", &exynos_crtc->props.ppc,
+			0, UINT_MAX);
+	if (ret)
 		goto err_crtc;
 
-	if (exynos_drm_crtc_create_range(crtc, "max_disp_freq",
-				&exynos_crtc->props.max_disp_freq, 0, UINT_MAX))
+	ret = exynos_drm_crtc_create_range(crtc, "max_disp_freq",
+			&exynos_crtc->props.max_disp_freq, 0, UINT_MAX);
+	if (ret)
 		goto err_crtc;
 
 	if (decon->dqe) {
@@ -1217,8 +1219,9 @@ struct exynos_drm_crtc *exynos_drm_crtc_create(struct drm_device *drm_dev,
 			goto err_crtc;
 
 		if (decon->cgc_dma) {
-			if (exynos_drm_crtc_create_signed_range(crtc, "cgc_lut_fd",
-						&exynos_crtc->props.cgc_lut_fd, INT_MIN, INT_MAX))
+			ret = exynos_drm_crtc_create_signed_range(crtc, "cgc_lut_fd",
+					&exynos_crtc->props.cgc_lut_fd, INT_MIN, INT_MAX);
+			if (ret)
 				goto err_crtc;
 		} else {
 			ret = exynos_drm_crtc_create_blob(crtc, "cgc_lut",

@@ -725,6 +725,10 @@ static void dpu_bts_convert_config_to_info(struct bts_dpp_info *dpp,
 	const struct dpu_fmt *fmt_info;
 
 	fmt_info = dpu_find_fmt_info(config->format);
+	if (!fmt_info) {
+		DPU_ERR_BTS("DPP%d: unable to find fmt_info\n", config->dpp_id);
+		return;
+	}
 	dpp->bpp = fmt_info->bpp + fmt_info->padding;
 	dpp->src_w = config->src_w;
 	dpp->src_h = config->src_h;

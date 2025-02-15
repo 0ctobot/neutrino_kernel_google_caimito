@@ -34,7 +34,7 @@
 
 #define RDMA_ENABLE				0x0000
 #define IDMA_ASSIGNED_MO(_v)			((_v) << 24)
-#define IDMA_ASSIGNED_MO_MASK			(0xff << 24)
+#define IDMA_ASSIGNED_MO_MASK			(0xFFU << 24)
 #define IDMA_SRESET				(1 << 8)
 #define IDMA_SFR_UPDATE_FORCE			(1 << 4)
 #define IDMA_OP_STATUS				(1 << 2)
@@ -78,7 +78,7 @@
 
 #define RDMA_IN_CTRL_0				0x0008
 #define IDMA_ALPHA(_v)				((_v) << 24)
-#define IDMA_ALPHA_MASK				(0xff << 24)
+#define IDMA_ALPHA_MASK				(0xFFU << 24)
 #define IDMA_IC_MAX(_v)				((_v) << 16)
 #define IDMA_IC_MAX_MASK			(0xff << 16)
 #define IDMA_SBWC_LOSSY				(1 << 14)
@@ -224,12 +224,12 @@
 
 #define RDMA_RECOVERY_CTRL			0x0080
 #define IDMA_RECOVERY_NUM(_v)			((_v) << 1)
-#define IDMA_RECOVERY_NUM_MASK			(0x7fffffff << 1)
+#define IDMA_RECOVERY_NUM_MASK			(0x7FFFFFFFU << 1)
 #define IDMA_RECOVERY_EN			(1 << 0)
 
 #define RDMA_DEADLOCK_CTRL			0x0100
 #define IDMA_DEADLOCK_NUM(_v)			((_v) << 1)
-#define IDMA_DEADLOCK_NUM_MASK			(0x7fffffff << 1)
+#define IDMA_DEADLOCK_NUM_MASK			(0x7FFFFFFFU << 1)
 #define IDMA_DEADLOCK_NUM_EN			(1 << 0)
 
 #define RDMA_BUS_CTRL				0x0110
@@ -274,7 +274,7 @@
 #define IDMA_QOS_LUT_MASK(_n)			(0xF << (4*(_n)))
 
 #define RDMA_DYNAMIC_GATING_EN			0x0140
-#define IDMA_SRAM_CG_EN				(1 << 31)
+#define IDMA_SRAM_CG_EN				(1U << 31)
 #define IDMA_DG_EN(_n, _v)			((_v) << (_n))
 #define IDMA_DG_EN_MASK(_n)			(1 << (_n))
 #define IDMA_DG_EN_ALL				(0x7FFFFFFF << 0)
@@ -454,7 +454,7 @@
 
 #define WDMA_OUT_CTRL_0				0x0008
 #define ODMA_ALPHA(_v)				((_v) << 24)
-#define ODMA_ALPHA_MASK				(0xff << 24)
+#define ODMA_ALPHA_MASK				(0xFFU << 24)
 #define ODMA_IC_MAX(_v)				((_v) << 16)
 #define ODMA_IC_MAX_MASK			(0xff << 16)
 #define ODMA_SBWC_LOSSY				(1 << 14)
@@ -566,7 +566,7 @@
 #define ODMA_QOS_LUT_MASK(_n)			(0xF << (4*(_n)))
 
 #define WDMA_DYNAMIC_GATING_EN			0x0140
-#define ODMA_SRAM_CG_EN				(1 << 31)
+#define ODMA_SRAM_CG_EN				(1U << 31)
 #define ODMA_DG_EN(_n, _v)			((_v) << (_n))
 #define ODMA_DG_EN_MASK(_n)			(1 << (_n))
 #define ODMA_DG_EN_ALL				(0x7FFFFFFF << 0)
@@ -748,7 +748,7 @@
 #define RCD_RECOVERY_CTRL			(0x0070)
 #define RCD_DEADLOCK_CTRL			(0x0100)
 #define RCD_DEADLOCK_NUM(_v)			((_v) << 1)
-#define RCD_DEADLOCK_NUM_MASK			(0x7FFFFFFF << 1)
+#define RCD_DEADLOCK_NUM_MASK			(0x7FFFFFFFU << 1)
 #define RCD_DEADLOCK_NUM_EN			(1 << 0)
 
 #define RCD_BUS_CTRL				(0x0110)
@@ -757,7 +757,7 @@
 #define RCD_QOS_LUT_LOW				(0x0130)
 #define RCD_QOS_LUT_HIGH			(0x0134)
 #define RCD_DYNAMIC_GATING_EN			(0x0140)
-#define RCD_SRAM_CG_EN				(1 << 31)
+#define RCD_SRAM_CG_EN				(1U << 31)
 #define RCD_DG_EN_ALL				(0x7FFFFFFF << 0)
 #define RCD_MST_SECURITY			(0x0200)
 #define RCD_SLV_SECURITY			(0x0204)
@@ -873,7 +873,7 @@
 #define DPP_COM_CSC_COEF3			0x0050
 #define DPP_COM_CSC_COEF4			0x0054
 #define DPP_CSC_COEF_H(_v)			((_v) << 16)
-#define DPP_CSC_COEF_H_MASK			(0xFFFF << 16)
+#define DPP_CSC_COEF_H_MASK			(0xFFFFU << 16)
 #define DPP_CSC_COEF_L(_v)			((_v) << 0)
 #define DPP_CSC_COEF_L_MASK			(0xFFFF << 0)
 #define DPP_CSC_COEF_XX(_n, _v)			((_v) << (0 + (16 * (_n))))

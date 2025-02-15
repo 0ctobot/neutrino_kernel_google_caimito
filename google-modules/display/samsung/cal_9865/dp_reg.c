@@ -196,10 +196,14 @@ static int dpphytca_reg_wait_mode_change(enum lane_usage lane)
 
 	if (!cnt) {
 		cal_log_err(
-			0, "val(0x%08x) DP PHY tca read  [0x%p]:0x%08x\n", val,
-			regs_dp[REGS_PHY_TCA][SST1].regs + TCA_REG_TCA_INTR_STS,
-			readl(regs_dp[REGS_PHY_TCA][SST1].regs +
-			      TCA_REG_TCA_INTR_STS));
+			0,
+			"TCA_TCPC 0x%x, TCA_INTR_STS 0x%x, TCA_CTRLSYNCMODE_DBG0 0x%x, "
+			"TCA_REG_TCA_PSTATE 0x%x, TCA_REG_TCA_GEN_STATUS 0x%x\n",
+			readl(regs_dp[REGS_PHY_TCA][SST1].regs + TCA_REG_TCA_TCPC),
+			readl(regs_dp[REGS_PHY_TCA][SST1].regs + TCA_REG_TCA_INTR_STS),
+			readl(regs_dp[REGS_PHY_TCA][SST1].regs + TCA_REG_TCA_CTRLSYNCMODE_DBG0),
+			readl(regs_dp[REGS_PHY_TCA][SST1].regs + TCA_REG_TCA_PSTATE),
+			readl(regs_dp[REGS_PHY_TCA][SST1].regs + TCA_REG_TCA_GEN_STATUS));
 
 		cal_log_err(0, "Fail to change mode from USB to DP%d\n", lane);
 		return -ETIME;
@@ -2481,6 +2485,7 @@ void dp_hw_deinit(struct dp_hw_config *hw_config)
 	dp_reg_set_oscclk_qch_func_en(0);
 
 	/* USBDP PHY De-initialization */
+	dpphy_reg_reset_tx_lanes();
 	dwc3_exynos_phy_enable(1, 0);
 	atomic_dec(&hw_config->usbdp_phy_en_cnt);
 }

@@ -435,16 +435,20 @@ int exynos_atomic_check(struct drm_device *dev, struct drm_atomic_state *state);
 int exynos_atomic_enter_tui(void);
 int exynos_atomic_exit_tui(void);
 
+enum lhbm_hist_weight_grp { LHBM_CIRCLE_WEIGHT = 0, LHBM_FSCREEN_WEIGHT, LHBM_WEIGHT_MAX };
+
+static struct histogram_weights lhbm_hist_weight[LHBM_WEIGHT_MAX] = { { 341, 341, 341 },
+								      { 218, 732, 74 } };
+
 int exynos_drm_drv_set_lhbm_hist(struct exynos_drm_connector *conn, int x, int y, int w, int h);
 /**
  * exynos_drm_drv_set_lhbm_hist_gs() - sets decon lhbm hist ROI
  * @decon: decon device whose ROI is changing
- * @x: top-left corner x coordinate, in pixels
- * @y: top-left corner y coordinate, in pixels
- * @w: width of ROI, in pixels
- * @h: height of ROI, in pixels
+ * @roi: histogram ROI
+ * @weight: histogram weight
  */
-int exynos_drm_drv_set_lhbm_hist_gs(struct decon_device *decon, int x, int y, int w, int h);
+int exynos_drm_drv_set_lhbm_hist_gs(struct decon_device *decon, struct histogram_roi *roi,
+				    struct histogram_weights *weight);
 int exynos_drm_drv_get_lhbm_gray_level(struct exynos_drm_connector *conn);
 
 extern struct platform_driver decon_driver;
