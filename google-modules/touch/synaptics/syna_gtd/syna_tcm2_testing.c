@@ -841,7 +841,122 @@ exit:
 static struct kobj_attribute kobj_attr_pt01 =
 	__ATTR(pt01, 0444, syna_testing_pt01_show, NULL);
 
-/*
+/**
+ *
+ * @brief  Sample code to perform PT5B (PID91) testing.
+ *
+ * @param
+ *    [ in] tcm: the driver handle
+ *
+ * @return
+ *    0 or positive value in case of success, a negative value otherwise.
+ */
+static int syna_testing_pt5b(struct syna_tcm *tcm, struct tcm_buffer *test_data)
+{
+	int retval;
+	bool result = false;
+	static unsigned char TEST_PID91_TRX_TRX_SHORTS = 0x5B;
+	unsigned char channel;
+	unsigned char p, l;
+	int i, j;
+
+	LOGI("Start testing\n");
+
+	retval = syna_tcm_run_production_test(tcm->tcm_dev,
+			TEST_PID91_TRX_TRX_SHORTS,
+			test_data);
+	if (retval < 0) {
+		LOGE("Fail to run test %d\n", TEST_PID91_TRX_TRX_SHORTS);
+		result = false;
+		goto exit;
+	}
+
+	if (ARRAY_SIZE(pt5b_limits) < test_data->data_length) {
+		LOGE("Limit size mismatched, data size: %d, limits: %lu\n",
+			test_data->data_length, ARRAY_SIZE(pt5b_limits));
+		return false;
+	}
+
+	result = true;
+	for (i = 0; i < test_data->data_length; i++) {
+		for (j = 0; j < 8; j++) {
+			p = GET_BIT(test_data->buf[i], j);
+			l = GET_BIT(pt5b_limits[i], j);
+			if (p != l) {
+				channel = i * 8 + j;
+				if (channel < tcm->tcm_dev->cols) {
+					LOGE("Fail on R-%03d (data:%X, limit:%X)\n", channel, p, l);
+				} else if (channel < tcm->tcm_dev->rows) {
+					LOGE("Fail on T-%03d (data:%X, limit:%X)\n", channel, p, l);
+				} else {
+					LOGE("Fail on G-%03d (data:%X, limit:%X)\n", channel, p, l);
+				}
+				result = false;
+			}
+		}
+	}
+
+exit:
+	LOGI("Result = %s\n", (result)?"pass":"fail");
+
+	return ((result) ? 0 : -1);
+}
+
+/**
+ * @brief  Attribute to trigger the PT5B (PID5B) testing.
+ *
+ * @param
+ *    [ in] kobj:  handle of kernel object
+ *    [ in] attr:  handle of kernel attribute
+ *    [out] buf:  string buffer shown on console
+ *
+ * @return
+ *    string output in case of success, a negative value otherwise.
+ */
+static ssize_t syna_testing_pt5b_show(struct kobject *kobj,
+		struct kobj_attribute *attr, char *buf)
+{
+	int retval, i;
+	unsigned int count = 0;
+	struct device *p_dev;
+	struct syna_tcm *tcm;
+	struct tcm_buffer test_data;
+
+	p_dev = container_of(kobj->parent->parent, struct device, kobj);
+	tcm = dev_get_drvdata(p_dev);
+
+	if (!tcm->is_connected) {
+		count = scnprintf(buf, PAGE_SIZE,
+				"Device is NOT connected\n");
+		goto exit;
+	}
+
+	syna_tcm_buf_init(&test_data);
+
+	retval = syna_testing_pt5b(tcm, &test_data);
+
+	count += scnprintf(buf, PAGE_SIZE,
+			"TEST PT$5B: %s\n", (retval < 0) ? "fail" : "pass");
+
+	if (test_data.buf == NULL)
+		goto free_tcm_buffer;
+
+	for (i = 0; i < test_data.data_length; i++) {
+		count += scnprintf(buf + count, PAGE_SIZE - count, "%d ",
+				test_data.buf[i]);
+	}
+	count += scnprintf(buf + count, PAGE_SIZE - count, "\n");
+
+free_tcm_buffer:
+	syna_tcm_buf_release(&test_data);
+exit:
+	return count;
+}
+
+static struct kobj_attribute kobj_attr_pt5b =
+	__ATTR(pt5b, 0444, syna_testing_pt5b_show, NULL);
+
+/**
  * syna_testing_pt05()
  *
  * Sample code to perform PT05 testing
@@ -2019,6 +2134,7 @@ static struct kobj_attribute kobj_attr_test_setup =
 static struct attribute *attrs[] = {
 	&kobj_attr_check_id.attr,
 	&kobj_attr_pt01.attr,
+	&kobj_attr_pt5b.attr,
 	&kobj_attr_pt05.attr,
 	&kobj_attr_pt0a.attr,
 	&kobj_attr_pt10.attr,

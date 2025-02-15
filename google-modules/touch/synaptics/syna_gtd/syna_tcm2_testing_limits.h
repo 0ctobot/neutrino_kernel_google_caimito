@@ -746,4 +746,10 @@ static short pt10_gap_y_limits[LIMIT_BOUNDARY * LIMIT_BOUNDARY] = {
 /* 39 */	  70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,   70,
 };
 
+/** test limit for PT5B testing */
+static unsigned char pt5b_limits[16] = {
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+
 #endif /* end of _SYNAPTICS_TCM2_TESTING_LIMITS_H_ */
