@@ -15,6 +15,7 @@
 #include "edgetpu-ikv-mailbox-ops.h"
 #include "edgetpu-iremap-pool.h"
 #include "edgetpu-mailbox.h"
+#include "edgetpu-vii-litebuf.h"
 #include "edgetpu-vii-packet.h"
 #include "edgetpu.h"
 
@@ -45,13 +46,14 @@ static int edgetpu_ikv_alloc_queue(struct edgetpu_ikv *etikv, enum gcip_mailbox_
 	struct edgetpu_coherent_mem *mem;
 	int ret;
 
+	/* Allocate the queues based on the larger litebuf sizes which can handle both formats. */
 	switch (type) {
 	case GCIP_MAILBOX_CMD_QUEUE:
-		size = QUEUE_SIZE * sizeof(struct edgetpu_vii_command);
+		size = QUEUE_SIZE * VII_CMD_SIZE_BYTES;
 		mem = &etikv->cmd_queue_mem;
 		break;
 	case GCIP_MAILBOX_RESP_QUEUE:
-		size = QUEUE_SIZE * sizeof(struct edgetpu_vii_response);
+		size = QUEUE_SIZE * VII_RESP_SIZE_BYTES;
 		mem = &etikv->resp_queue_mem;
 		break;
 	}
@@ -152,6 +154,7 @@ err_free_cmd_queue:
 	edgetpu_ikv_free_queue(etikv, GCIP_MAILBOX_CMD_QUEUE);
 err_mailbox_remove:
 	edgetpu_mailbox_remove(mgr, mbx_hardware);
+	edgetpu_ikv_release(mgr->etdev, etikv);
 	etikv->mbx_hardware = NULL;
 
 	return ret;
@@ -223,8 +226,6 @@ void edgetpu_ikv_release(struct edgetpu_dev *etdev, struct edgetpu_ikv *etikv)
 struct send_cmd_args {
 	struct edgetpu_ikv *etikv;
 	struct edgetpu_ikv_response *ikv_resp;
-	struct list_head *pending_queue;
-	spinlock_t *pending_queue_lock;
 	struct dma_fence *fence;
 	struct gcip_mailbox_resp_awaiter *err_resp_awaiter;
 	void *cmd;
@@ -234,28 +235,13 @@ static int do_send_cmd(struct send_cmd_args *args) {
 	struct edgetpu_ikv *etikv = args->etikv;
 	void *cmd = args->cmd;
 	struct edgetpu_ikv_response *ikv_resp = args->ikv_resp;
-	struct list_head *pending_queue = args->pending_queue;
-	spinlock_t *pending_queue_lock = args->pending_queue_lock;
-	unsigned long flags;
 	struct gcip_mailbox_resp_awaiter *awaiter;
-	int ret;
-
-	spin_lock_irqsave(pending_queue_lock, flags);
-	list_add_tail(&ikv_resp->list_entry, pending_queue);
-	spin_unlock_irqrestore(pending_queue_lock, flags);
+	int ret = 0;
 
 	awaiter = gcip_mailbox_put_cmd(etikv->mbx_protocol, cmd, ikv_resp->resp, ikv_resp);
-	if (IS_ERR(awaiter)) {
+	if (IS_ERR(awaiter))
 		ret = PTR_ERR(awaiter);
-		goto err;
-	}
 
-	return 0;
-
-err:
-	spin_lock_irqsave(pending_queue_lock, flags);
-	list_del(&ikv_resp->list_entry);
-	spin_unlock_irqrestore(pending_queue_lock, flags);
 	return ret;
 }
 
@@ -291,6 +277,8 @@ static int send_cmd_thread_fn(void *data)
 	if (kthread_should_stop()) {
 		/* The command will never be sent at this point so its response must be released. */
 		kfree(args->err_resp_awaiter);
+		gcip_fence_array_signal(args->ikv_resp->out_fence_array, -ECANCELED);
+		gcip_fence_array_waited(args->ikv_resp->in_fence_array, IIF_IP_TPU);
 		gcip_fence_array_put(args->ikv_resp->out_fence_array);
 		gcip_fence_array_put(args->ikv_resp->in_fence_array);
 		edgetpu_ikv_additional_info_free(args->ikv_resp->etikv->etdev,
@@ -345,7 +333,7 @@ err_send_error_resp:
 	 * freed when the response itself is released.
 	 */
 	build_awaiter_for_error_resp(args->etikv, args->err_resp_awaiter, args->ikv_resp);
-	edgetpu_ikv_process_response(args->ikv_resp, &resp_code, &resp_data, fence_status);
+	edgetpu_ikv_process_response(args->ikv_resp, &resp_code, &resp_data, fence_status, false);
 
 out_untrack:
 	edgetpu_device_group_untrack_fence_task(group_to_notify, current);
@@ -439,8 +427,9 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
 						additional_info_size);
 
 	ikv_resp->etikv = etikv;
+	ikv_resp->pending_queue = pending_queue;
 	ikv_resp->dest_queue = ready_queue;
-	ikv_resp->dest_queue_lock = queue_lock;
+	ikv_resp->queue_lock = queue_lock;
 	ikv_resp->processed = false;
 	ikv_resp->client_seq = edgetpu_vii_command_get_seq_number(etikv->etdev, cmd);
 	ikv_resp->group_to_notify = group_to_notify;
@@ -451,16 +440,41 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
 
 	args->etikv = etikv;
 	args->ikv_resp = ikv_resp;
-	args->pending_queue = pending_queue;
-	args->pending_queue_lock = queue_lock;
 	args->fence = in_fence;
 	memcpy(args->cmd, cmd, edgetpu_vii_command_packet_size(etikv->etdev));
+
+	/*
+	 * This function call is meaningful only for IIFs in the arrays.
+	 *
+	 * Submitting a waiter means that there is a request sent to the firmware which is waiting
+	 * on the fence to be unblocked. Internally, it increments the number of outstanding waiters
+	 * of the fence. Once the fence is unblocked and the request is processed, the number will
+	 * be decremented back. Its purpose is to track whether it is possible to retire the fence.
+	 *
+	 * Submitting a signaler means that a request has been sent to the firmware which will
+	 * signal the fence once it is processed. To avoid a deadlock, we doesn't allow submitting
+	 * waiter commands earlier than signaler commands. The total number of expected signalers
+	 * is decided when the fence is created and this function will decrement the number of
+	 * remaining signalers to be submitted. If that number is non-zero, IIF will reject
+	 * submitting waiter commands to the fence.
+	 *
+	 * After this function call, despite the command not actually being submitted to the
+	 * firmware with a certain error, the driver will error the out-fences out and the error
+	 * will be propagated to the waiters.
+	 */
+	ret = gcip_fence_array_submit_waiter_and_signaler(in_fence_array, out_fence_array,
+							  IIF_IP_TPU);
+	if (ret) {
+		etdev_err(etikv->etdev, "Failed to submit waiter or signaler to fences, ret=%d",
+			  ret);
+		goto err_put_out_fence_array;
+	}
 
 	/* Send the command immediately if there's no fence to wait on. */
 	if (!in_fence || dma_fence_get_status(in_fence) == 1) {
 		ret = do_send_cmd(args);
 		if (ret)
-			goto err_put_out_fence_array;
+			goto err_signal_waited_fences;
 		/* If the command was successfully sent, args is no longer needed. */
 		if (in_fence)
 			dma_fence_put(in_fence);
@@ -481,7 +495,7 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
 	args->err_resp_awaiter = kzalloc(sizeof(*args->err_resp_awaiter), GFP_KERNEL);
 	if (!args->err_resp_awaiter) {
 		ret = -ENOMEM;
-		goto err_put_out_fence_array;
+		goto err_signal_waited_fences;
 	}
 
 	fence_status = in_fence ? dma_fence_get_status(in_fence) : 0;
@@ -496,7 +510,7 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
 		resp_code = VII_RESPONSE_CODE_KERNEL_FENCE_ERROR;
 		resp_data = fence_status;
 		build_awaiter_for_error_resp(etikv, args->err_resp_awaiter, ikv_resp);
-		edgetpu_ikv_process_response(ikv_resp, &resp_code, &resp_data, fence_status);
+		edgetpu_ikv_process_response(ikv_resp, &resp_code, &resp_data, fence_status, false);
 		if (in_fence)
 			dma_fence_put(in_fence);
 		kfree(args->cmd);
@@ -525,6 +539,10 @@ err_stop_thread:
 	kthread_stop(wait_task);
 err_free_awaiter:
 	kfree(args->err_resp_awaiter);
+err_signal_waited_fences:
+	gcip_fence_array_iif_set_propagate_unblock(out_fence_array);
+	gcip_fence_array_signal(out_fence_array, ret);
+	gcip_fence_array_waited(in_fence_array, IIF_IP_TPU);
 err_put_out_fence_array:
 	gcip_fence_array_put(out_fence_array);
 	gcip_fence_array_put(in_fence_array);
@@ -546,4 +564,51 @@ err_put_in_fence:
 void edgetpu_ikv_flush_responses(struct edgetpu_ikv *etikv)
 {
 	gcip_mailbox_consume_responses(etikv->mbx_protocol);
+}
+
+void edgetpu_ikv_cancel(struct edgetpu_device_group *group, int reason)
+{
+	struct edgetpu_ikv_response *cur, *nxt;
+	unsigned long flags;
+	u16 resp_code = VII_RESPONSE_CODE_KERNEL_CANCELED;
+	u64 resp_data = reason;
+
+	/*
+	 * By setting @cur->processed to true, the responses will be prevented to be processed by
+	 * either the arrived or timedout handler even though one of those handlers is fired.
+	 * (See `edgetpu_ikv_process_response()`.)
+	 */
+	spin_lock_irqsave(&group->ikv_resp_lock, flags);
+
+	list_for_each_entry(cur, &group->pending_ikv_resps, list_entry) {
+		cur->processed = true;
+	}
+
+	spin_unlock_irqrestore(&group->ikv_resp_lock, flags);
+
+	/*
+	 * Cancels all pending commands and pushes CANCELED responses for them.
+	 *
+	 * Note that the arrived or timedout handlers can be still fired while canceling commands
+	 * by the race condition, but they will directly return without doing anything because of
+	 * the logic above.
+	 *
+	 * In other words, neither ARRIVED nor TIEMDOUT responses will be pushed to the dest_queue
+	 * of @group and one refcount of @cur->awaiter held by the driver won't be released until we
+	 * push CANCELED responses and the runtime consumes them. (i.e., there will be no UAF bug.)
+	 *
+	 * Therefore, we don't need to check the return value of the `gcip_mailbox_cancel_awaiter`
+	 * function, it is always safe to push CANCELED responses to the response queue of @group.
+	 *
+	 * Note that to prevent a potential race condition between ARRIVED and CANCELED, the caller
+	 * is expected to call the `edgetpu_ikv_flush_responses()` function first before this
+	 * function to ensure consuming all arrived responses from the MCU.
+	 *
+	 * Another potential race condition that processing TIMEDOUT commands as CANCELED should be
+	 * fine.
+	 */
+	list_for_each_entry_safe(cur, nxt, &group->pending_ikv_resps, list_entry) {
+		gcip_mailbox_cancel_awaiter(cur->awaiter);
+		edgetpu_ikv_process_response(cur, &resp_code, &resp_data, -ECANCELED, true);
+	}
 }

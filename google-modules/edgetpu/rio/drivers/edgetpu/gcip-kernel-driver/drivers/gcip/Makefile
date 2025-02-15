@@ -17,6 +17,7 @@ gcip-objs		:= gcip-alloc-helper.o \
 			   gcip-fence-array.o \
 			   gcip-fence.o \
 			   gcip-firmware.o \
+			   gcip-ikf.o \
 			   gcip-image-config.o \
 			   gcip-iommu-reserve.o \
 			   gcip-iommu.o \

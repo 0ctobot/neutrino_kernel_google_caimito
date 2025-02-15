@@ -11,7 +11,6 @@
 #include <linux/mutex.h>
 #include <linux/notifier.h>
 #include <linux/thermal.h>
-#include <linux/version.h>
 
 #include <gcip/gcip-config.h>
 #include <gcip/gcip-pm.h>

@@ -278,6 +278,46 @@ void edgetpu_vii_response_set_code(struct edgetpu_dev *etdev, void *resp, u16 co
 	}
 }
 
+u32 edgetpu_vii_response_get_client_id(struct edgetpu_dev *etdev, void *resp)
+{
+	struct edgetpu_vii_response *fb_resp __maybe_unused;
+	struct edgetpu_vii_litebuf_response *lb_resp __maybe_unused;
+
+	switch (etdev->vii_format) {
+	case EDGETPU_VII_FORMAT_FLATBUFFER:
+		fb_resp = resp;
+		return fb_resp->client_id;
+	case EDGETPU_VII_FORMAT_LITEBUF:
+		lb_resp = resp;
+		return lb_resp->client_id;
+	case EDGETPU_VII_FORMAT_UNKNOWN:
+		log_unknown_format_warning(etdev);
+		break;
+	}
+
+	return 0;
+}
+
+void edgetpu_vii_response_set_client_id(struct edgetpu_dev *etdev, void *resp, u32 client_id)
+{
+	struct edgetpu_vii_response *fb_resp __maybe_unused;
+	struct edgetpu_vii_litebuf_response *lb_resp __maybe_unused;
+
+	switch (etdev->vii_format) {
+	case EDGETPU_VII_FORMAT_FLATBUFFER:
+		fb_resp = resp;
+		fb_resp->client_id = client_id;
+		break;
+	case EDGETPU_VII_FORMAT_LITEBUF:
+		lb_resp = resp;
+		lb_resp->client_id = client_id;
+		break;
+	case EDGETPU_VII_FORMAT_UNKNOWN:
+		log_unknown_format_warning(etdev);
+		break;
+	}
+}
+
 u64 edgetpu_vii_response_get_retval(struct edgetpu_dev *etdev, void *resp)
 {
 	struct edgetpu_vii_response *fb_resp __maybe_unused;

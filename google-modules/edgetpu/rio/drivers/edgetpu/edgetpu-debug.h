@@ -12,6 +12,7 @@
 #include <linux/scatterlist.h>
 #include <linux/seq_file.h>
 #include <linux/types.h>
+#include <linux/workqueue.h>
 
 struct edgetpu_dev;
 
@@ -19,6 +20,12 @@ struct edgetpu_dev;
 /* TODO(b/333625284): reserve firmware debug buffer IOVA range from DMA window used by DMA API */
 #define FW_DEBUG_BUFFER_IOVA	0x18000000
 #define FW_DEBUG_BUFFER_SIZE	(13 * SZ_1M)
+
+/* FW-requested debug init requests are processed in a worker. */
+struct edgetpu_fw_debug_init_req_work {
+	struct work_struct work;
+	struct edgetpu_dev *etdev;
+};
 
 /* Firmware debug service command/response memory. */
 struct edgetpu_fw_debug_mem {
@@ -34,6 +41,8 @@ struct edgetpu_fw_debug_mem {
 	size_t data_len;
 	/* If true FW responded to last cmd saying response packet will be async via RKCI. */
 	bool async_resp_pending;
+	/* For FW-requested debug init requests handled in a worker. */
+	struct edgetpu_fw_debug_init_req_work debug_init_req_work;
 };
 
 #define DEBUG_DUMP_HOST_CONTRACT_VERSION 3
@@ -106,6 +115,9 @@ struct mobile_sscd_info {
  * @data_len is the number of bytes of data written.
  */
 void edgetpu_fw_debug_resp_ready(struct edgetpu_dev *etdev, u32 data_len);
+
+/* Handle a debug init request from firmware. */
+void edgetpu_fw_debug_init_req(struct edgetpu_dev *etdev);
 
 /* Generate a debug dump for reason @dump_reason. */
 void edgetpu_debug_dump(struct edgetpu_dev *etdev, u64 dump_reason);

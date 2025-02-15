@@ -18,6 +18,7 @@
 #include <linux/slab.h>
 #include <linux/string.h> /* memcpy */
 
+#include <gcip/gcip-firmware.h>
 #include <gcip/gcip-telemetry.h>
 #include <gcip/gcip-usage-stats.h>
 
@@ -170,7 +171,7 @@ static void edgetpu_reverse_kci_handle_response(struct gcip_kci *kci,
 		edgetpu_handle_client_fatal_error_notify(etdev, resp->retval);
 		break;
 	case GCIP_RKCI_FIRMWARE_CRASH:
-		edgetpu_handle_firmware_crash(etdev, (enum edgetpu_fw_crash_type)resp->retval);
+		edgetpu_handle_firmware_crash(etdev, (enum gcip_fw_crash_type)resp->retval);
 		break;
 	case GCIP_RKCI_JOB_LOCKUP:
 		edgetpu_handle_job_lockup(etdev, resp->retval);
@@ -178,6 +179,9 @@ static void edgetpu_reverse_kci_handle_response(struct gcip_kci *kci,
 #if EDGETPU_HAS_FW_DEBUG
 	case GCIP_RKCI_DEBUG_ASYNC_RESP:
 		edgetpu_fw_debug_resp_ready(etdev, resp->retval);
+		break;
+	case GCIP_RKCI_DEBUG_INIT_REQ:
+		edgetpu_fw_debug_init_req(etdev);
 		break;
 #endif
 	default:
@@ -255,13 +259,13 @@ int edgetpu_kci_init(struct edgetpu_mailbox_manager *mgr, struct edgetpu_kci *et
 		etkci->kci = devm_kzalloc(mgr->etdev->dev, sizeof(*etkci->kci), GFP_KERNEL);
 		if (!etkci->kci) {
 			ret = -ENOMEM;
-			goto err_mailbox_remove;
+			goto err_free_mailbox;
 		}
 	}
 
 	ret = edgetpu_kci_alloc_queue(mgr->etdev, mailbox, GCIP_MAILBOX_CMD_QUEUE, cmd_queue_mem);
 	if (ret)
-		goto err_mailbox_remove;
+		goto err_free_mailbox;
 
 	etdev_dbg(mgr->etdev, "%s: cmdq kva=%pK dma=%pad", __func__, cmd_queue_mem->vaddr,
 		  &cmd_queue_mem->dma_addr);
@@ -291,9 +295,8 @@ err_free_resp_queue:
 	edgetpu_kci_free_queue(mgr->etdev, resp_queue_mem);
 err_free_cmd_queue:
 	edgetpu_kci_free_queue(mgr->etdev, cmd_queue_mem);
-err_mailbox_remove:
-	edgetpu_mailbox_remove(mgr, mailbox);
-
+err_free_mailbox:
+	kfree(mailbox);
 	return ret;
 }
 
@@ -818,5 +821,16 @@ int edgetpu_kci_fw_debug_reset(struct edgetpu_dev *etdev)
 
 	ret = gcip_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
 	return ret;
+}
+
+void edgetpu_kci_fw_send_debug_init(struct edgetpu_dev *etdev, dma_addr_t daddr, size_t count)
+{
+	struct gcip_kci_command_element cmd = {
+		.code = GCIP_KCI_CODE_DEBUG_INIT,
+	};
+
+	cmd.dma.address = daddr;
+	cmd.dma.size = count;
+	gcip_kci_send_cmd(etdev->etkci->kci, &cmd);
 }
 #endif /* EDGETPU_HAS_FW_DEBUG */

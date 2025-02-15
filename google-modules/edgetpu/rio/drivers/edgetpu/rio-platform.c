@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Rio platform device driver for the Google Edge TPU ML accelerator.
  *
- * Copyright (C) 2021 Google, Inc.
+ * Copyright (C) 2021-2024 Google LLC
  */
 
 #include <linux/device.h>
@@ -33,7 +33,7 @@ MODULE_DEVICE_TABLE(of, edgetpu_of_match);
 
 static struct platform_driver edgetpu_platform_driver = {
 	.probe = edgetpu_mobile_platform_probe,
-	.remove = edgetpu_mobile_platform_remove,
+	.remove_new = edgetpu_mobile_platform_remove,
 	.driver = {
 			.name = "edgetpu_platform",
 			.of_match_table = edgetpu_of_match,

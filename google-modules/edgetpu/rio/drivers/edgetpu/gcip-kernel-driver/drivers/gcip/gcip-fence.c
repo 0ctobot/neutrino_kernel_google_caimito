@@ -183,6 +183,32 @@ struct gcip_fence *gcip_fence_get(struct gcip_fence *fence)
 	return fence;
 }
 
+struct gcip_fence *gcip_fence_get_iif(struct iif_fence *iif)
+{
+	struct gcip_fence *fence;
+
+	fence = gcip_fence_alloc(GCIP_INTER_IP_FENCE);
+	if (!fence)
+		return ERR_PTR(-ENOMEM);
+
+	fence->fence.iif = iif_fence_get(iif);
+
+	return fence;
+}
+
+struct gcip_fence *gcip_fence_get_ikf(struct dma_fence *ikf)
+{
+	struct gcip_fence *fence;
+
+	fence = gcip_fence_alloc(GCIP_IN_KERNEL_FENCE);
+	if (!fence)
+		return ERR_PTR(-ENOMEM);
+
+	fence->fence.ikf = dma_fence_get(ikf);
+
+	return fence;
+}
+
 void gcip_fence_put(struct gcip_fence *fence)
 {
 	if (fence)

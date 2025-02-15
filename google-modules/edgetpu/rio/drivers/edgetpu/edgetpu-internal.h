@@ -253,15 +253,6 @@ struct edgetpu_dev_iface {
 	struct dentry *d_entry; /* debugfs symlink if not default device name iface */
 };
 
-/* Firmware crash_type codes */
-enum edgetpu_fw_crash_type {
-	EDGETPU_FW_CRASH_ASSERT = 0,
-	EDGETPU_FW_CRASH_DATA_ABORT = 1,
-	EDGETPU_FW_CRASH_PREFETCH_ABORT = 2,
-	EDGETPU_FW_CRASH_UNDEF_EXCEPT = 3,
-	EDGETPU_FW_CRASH_UNRECOV_FAULT = 4,
-};
-
 static inline const char *edgetpu_dma_dir_rw_s(enum dma_data_direction dir)
 {
 	static const char *tbl[4] = { "rw", "r", "w", "?" };
@@ -317,8 +308,7 @@ int edgetpu_open(struct edgetpu_dev_iface *etiface, struct file *file);
 long edgetpu_ioctl(struct file *file, uint cmd, ulong arg);
 
 /* Handle firmware crash event */
-void edgetpu_handle_firmware_crash(struct edgetpu_dev *etdev,
-				   enum edgetpu_fw_crash_type crash_type);
+void edgetpu_handle_firmware_crash(struct edgetpu_dev *etdev, enum gcip_fw_crash_type crash_type);
 
 /* Handle notification of job lockup from firmware */
 void edgetpu_handle_job_lockup(struct edgetpu_dev *etdev, u16 vcid);

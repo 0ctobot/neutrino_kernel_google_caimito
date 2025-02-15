@@ -11,7 +11,6 @@
 #include <linux/dma-mapping.h>
 #include <linux/iommu.h>
 #include <linux/scatterlist.h>
-#include <linux/version.h>
 
 #include <gcip/gcip-iommu.h>
 

@@ -74,12 +74,12 @@ static int edgetpu_check_fault(struct edgetpu_dev *etdev, struct iommu_fault *fa
 	u64 iova;
 	uint pasid;
 
-	if (fault->type == IOMMU_FAULT_DMA_UNRECOV) {
-		iova = fault->event.addr;
-		pasid = fault->event.pasid;
-	} else if (fault->type == IOMMU_FAULT_PAGE_REQ) {
+	if (fault->type == IOMMU_FAULT_PAGE_REQ) {
 		iova = fault->prm.addr;
 		pasid = fault->prm.pasid;
+	} else if (fault->type == IOMMU_FAULT_DMA_UNRECOV) {
+		iova = fault->event.addr;
+		pasid = fault->event.pasid;
 	} else {
 		return -EAGAIN;
 	}
@@ -129,24 +129,11 @@ static int edgetpu_unregister_iommu_device_fault_handler(struct edgetpu_dev *etd
 	return iommu_unregister_device_fault_handler(etdev->dev);
 }
 
-static int edgetpu_iommu_fault_handler(struct iommu_domain *domain,
-				       struct device *dev, unsigned long iova,
-				       int flags, void *token)
-{
-	struct edgetpu_iommu_domain *etdomain = (struct edgetpu_iommu_domain *)token;
-
-	dev_dbg(dev, "IOMMU fault on address %08lX. PASID = %u flags = %08X",
-		iova, etdomain->pasid, flags);
-	// Tell the IOMMU driver we are OK with this fault
-	return 0;
-}
-
-static void edgetpu_init_etdomain(struct edgetpu_iommu_domain *etdomain,
+static void edgetpu_init_etdomain(struct edgetpu_iommu_domain *etdomain, struct edgetpu_dev *etdev,
 				  struct gcip_iommu_domain *gdomain)
 {
 	etdomain->gdomain = gdomain;
 	etdomain->pasid = IOMMU_PASID_INVALID;
-	iommu_set_fault_handler(gdomain->domain, edgetpu_iommu_fault_handler, etdomain);
 }
 
 /*
@@ -371,7 +358,7 @@ struct edgetpu_iommu_domain *edgetpu_mmu_alloc_domain(struct edgetpu_dev *etdev)
 		return NULL;
 	}
 
-	edgetpu_init_etdomain(etdomain, gdomain);
+	edgetpu_init_etdomain(etdomain, etdev, gdomain);
 	return etdomain;
 }
 

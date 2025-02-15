@@ -33,6 +33,7 @@
 #include "edgetpu-config.h"
 #include "edgetpu-device-group.h"
 #include "edgetpu-dmabuf.h"
+#include "edgetpu-firmware.h"
 #include "edgetpu-ikv.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-iremap-pool.h"
@@ -1174,6 +1175,15 @@ void edgetpu_group_fatal_error_notify(struct edgetpu_device_group *group,
 	if (edgetpu_device_group_is_finalized(group))
 		group->status = EDGETPU_DEVICE_GROUP_ERRORED;
 	group->fatal_errors |= error_mask;
+
+	/*
+	 * If the firmware is not able to return error responses, cancel all pending commands.
+	 * Intentionally call this function while holding @group->lock to prevent any possible race
+	 * conditions between canceling commands and the runtime submitting commands.
+	 */
+	if (edgetpu_firmware_is_not_responding(error_mask))
+		edgetpu_ikv_cancel(group, error_mask);
+
 	mutex_unlock(&group->lock);
 	edgetpu_group_notify(group, EDGETPU_EVENT_FATAL_ERROR);
 }
@@ -1210,6 +1220,14 @@ void edgetpu_fatal_error_notify(struct edgetpu_dev *etdev, uint error_mask)
 		groups[num_groups++] = edgetpu_device_group_get(group);
 	}
 	mutex_unlock(&etdev->groups_lock);
+
+	/*
+	 * We should consume all arrived responses first before each group cancels pending
+	 * commands.
+	 */
+	if (edgetpu_firmware_is_not_responding(error_mask))
+		edgetpu_ikv_flush_responses(etdev->etikv);
+
 	for (i = 0; i < num_groups; i++) {
 		edgetpu_group_fatal_error_notify(groups[i], error_mask);
 		edgetpu_device_group_put(groups[i]);

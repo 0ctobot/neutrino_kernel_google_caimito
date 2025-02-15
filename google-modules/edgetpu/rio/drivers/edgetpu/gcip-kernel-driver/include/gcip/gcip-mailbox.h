@@ -345,8 +345,6 @@ struct gcip_mailbox_ops {
 					struct gcip_mailbox_resp_awaiter *awaiter);
 	/*
 	 * Cleans up asynchronous response which is not arrived yet, but also not timed out.
-	 * The @awaiter should be marked as canceled to make it not to be processed by the
-	 * `handle_awaiter_arrived` or `handle_awaiter_timedout` callbacks in race conditions.
 	 * @awaiter should be released by calling the `gcip_mailbox_release_awaiter` function when
 	 * the kernel driver doesn't need it anymore. This is called without holding any locks.
 	 *
@@ -383,6 +381,19 @@ struct gcip_mailbox_ops {
 	 * Context: normal.
 	 */
 	void (*on_error)(struct gcip_mailbox *mailbox, int err);
+	/*
+	 * Called when processing responses arrived in the response queue to find if it matches an
+	 * outstanding command. @incoming_resp is the response packet as it was present in the
+	 * response queue. @waiter_resp is the response packet passed to gcip_mailbox_send_cmd()
+	 * or gcip_mailbox_put_cmd()/gcip_mailbox_put_cmd_flags() as "resp".
+	 *
+	 * If no op is provided, The `get_resp_elem_seq` op will be called on both packets and
+	 * be considered a match if the results are equal.
+	 *
+	 * Context: in_interrupt()
+	 */
+	bool (*does_response_match_waiter)(struct gcip_mailbox *mailbox, void *incoming_resp,
+						 void *waiter_resp);
 };
 
 struct gcip_mailbox {

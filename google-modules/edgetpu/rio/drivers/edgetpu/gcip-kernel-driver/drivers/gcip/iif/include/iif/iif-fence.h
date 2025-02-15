@@ -390,6 +390,9 @@ bool iif_fence_remove_poll_callback(struct iif_fence *fence, struct iif_fence_po
  * returns the number of remaining signalers to be submitted to @cb->remaining_signalers. Once the
  * callback is called, it will be automatically unregistered from @fence.
  *
+ * Note that, as the callback can be invoked right after the registration, if the callback releases
+ * @cb internally, the caller should be careful of accessing @cb after the function returns.
+ *
  * Returns 0 if succeeded. If all signalers are already submitted, returns -EPERM.
  */
 int iif_fence_add_all_signaler_submitted_callback(struct iif_fence *fence,

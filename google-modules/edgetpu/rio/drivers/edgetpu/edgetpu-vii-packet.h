@@ -40,6 +40,9 @@ void edgetpu_vii_response_set_seq_number(struct edgetpu_dev *etdev, void *resp, 
 u16 edgetpu_vii_response_get_code(struct edgetpu_dev *etdev, void *resp);
 void edgetpu_vii_response_set_code(struct edgetpu_dev *etdev, void *resp, u16 code);
 
+u32 edgetpu_vii_response_get_client_id(struct edgetpu_dev *etdev, void *resp);
+void edgetpu_vii_response_set_client_id(struct edgetpu_dev *etdev, void *resp, u32 client_id);
+
 u64 edgetpu_vii_response_get_retval(struct edgetpu_dev *etdev, void *resp);
 void edgetpu_vii_response_set_retval(struct edgetpu_dev *etdev, void *resp, u64 retval);
 

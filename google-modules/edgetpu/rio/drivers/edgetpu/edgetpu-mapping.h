@@ -16,7 +16,6 @@
 #include <linux/scatterlist.h>
 #include <linux/seq_file.h>
 #include <linux/types.h>
-#include <linux/version.h>
 
 #include <gcip/gcip-iommu.h>
 

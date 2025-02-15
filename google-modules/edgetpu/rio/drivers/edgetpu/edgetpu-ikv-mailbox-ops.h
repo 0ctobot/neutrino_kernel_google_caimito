@@ -22,8 +22,10 @@ extern const struct gcip_mailbox_ops ikv_mailbox_ops;
  * If @resp_code or @resp_retval are provided, the `code` and `retval` fields of @ikv_resp's
  * internal VII response will be overridden with the values they point to before the response
  * is placed in is destination queue.
+ *
+ * If @force is true, the function will process the response regardless of @ikv_resp->processed.
  */
 void edgetpu_ikv_process_response(struct edgetpu_ikv_response *ikv_resp, u16 *resp_code,
-				  u64 *resp_retval, int fence_error);
+				  u64 *resp_retval, int fence_error, bool force);
 
 #endif /* __EDGETPU_IKV_MAILBOX_OPS_H__ */

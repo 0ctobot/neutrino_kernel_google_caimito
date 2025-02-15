@@ -296,7 +296,7 @@ out_cleanup_fw_region:
 	return ret;
 }
 
-static int edgetpu_mobile_platform_remove(struct platform_device *pdev)
+static void edgetpu_mobile_platform_remove(struct platform_device *pdev)
 {
 	struct edgetpu_dev *etdev = platform_get_drvdata(pdev);
 	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(etdev);
@@ -309,6 +309,4 @@ static int edgetpu_mobile_platform_remove(struct platform_device *pdev)
 	edgetpu_platform_cleanup_fw_region(etmdev);
 
 	edgetpu_debug_pointer = NULL;
-
-	return 0;
 }

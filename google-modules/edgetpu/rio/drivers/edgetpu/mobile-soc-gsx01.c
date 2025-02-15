@@ -746,7 +746,10 @@ int edgetpu_soc_pm_lpm_up(struct edgetpu_dev *etdev)
 	return 0;
 }
 
-/* Log TPU block power state for debugging.  Control cluster and core may be inaccessible. */
+/*
+ * Log TPU block power state for debugging.  The block is not required to be powered up for
+ * this function on this SoC family.
+ */
 void edgetpu_soc_pm_dump_block_state(struct edgetpu_dev *etdev)
 {
 	if (IS_ENABLED(CONFIG_EDGETPU_TEST))

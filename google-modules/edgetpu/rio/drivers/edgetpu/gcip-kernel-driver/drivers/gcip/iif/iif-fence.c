@@ -23,7 +23,6 @@
 #include <linux/sort.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
-#include <linux/version.h>
 
 #include <iif/iif-fence-table.h>
 #include <iif/iif-fence.h>
@@ -243,8 +242,7 @@ static int iif_fence_submit_signaler_with_complete_locked(struct iif_fence *fenc
 	lockdep_assert_held(&fence->fence_lock);
 
 	/* Already all signalers are submitted. No more submission is allowed. */
-	if (fence->submitted_signalers >= fence->total_signalers ||
-	    iif_fence_has_retired_locked(fence))
+	if (fence->submitted_signalers >= fence->total_signalers)
 		return -EPERM;
 
 	if (!complete)
@@ -527,6 +525,9 @@ int iif_fence_init(struct iif_manager *mgr, struct iif_fence *fence,
 	unsigned int id_max = id_min + IIF_NUM_FENCES_PER_IP - 1;
 	int ret;
 
+	if (signaler_ip >= IIF_IP_NUM)
+		return -EINVAL;
+
 	fence->id = ida_alloc_range(&mgr->idp, id_min, id_max, GFP_KERNEL);
 	if (fence->id < 0)
 		return fence->id;
@@ -538,6 +539,7 @@ int iif_fence_init(struct iif_manager *mgr, struct iif_fence *fence,
 	fence->signaled_signalers = 0;
 	fence->outstanding_waiters = 0;
 	fence->signal_error = 0;
+	fence->all_signaler_submitted_error = 0;
 	fence->ops = ops;
 	fence->state = IIF_FENCE_STATE_INITIALIZED;
 	fence->propagate = signaler_ip == IIF_IP_AP;
@@ -640,12 +642,15 @@ void iif_fence_put_async(struct iif_fence *fence)
 
 int iif_fence_submit_signaler(struct iif_fence *fence)
 {
-	int ret;
+	int ret = -EPERM;
 
 	might_sleep();
 
 	write_lock(&fence->fence_lock);
-	ret = iif_fence_submit_signaler_with_complete_locked(fence, false);
+
+	if (!iif_fence_has_retired_locked(fence))
+		ret = iif_fence_submit_signaler_with_complete_locked(fence, false);
+
 	write_unlock(&fence->fence_lock);
 
 	return ret;
@@ -658,6 +663,9 @@ int iif_fence_submit_waiter(struct iif_fence *fence, enum iif_ip_type ip)
 	int ret;
 
 	might_sleep();
+
+	if (ip >= IIF_IP_NUM)
+		return -EINVAL;
 
 	if (unsubmitted)
 		return unsubmitted;
@@ -714,6 +722,9 @@ int iif_fence_submit_signaler_and_waiter(struct iif_fence **in_fences, int num_i
 	int i, ret;
 
 	might_sleep();
+
+	if (waiter_ip >= IIF_IP_NUM)
+		return -EINVAL;
 
 	ret = iif_fences_sort_by_id(in_fences, num_in_fences);
 	if (ret)
@@ -928,6 +939,9 @@ void iif_fence_waited(struct iif_fence *fence, enum iif_ip_type ip)
 void iif_fence_waited_async(struct iif_fence *fence, enum iif_ip_type ip)
 {
 	unsigned long flags;
+
+	if (ip >= IIF_IP_NUM)
+		return;
 
 	write_lock_irqsave(&fence->fence_lock, flags);
 

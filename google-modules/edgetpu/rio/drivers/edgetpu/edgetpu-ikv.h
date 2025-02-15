@@ -35,9 +35,15 @@ struct edgetpu_ikv_response {
 	/* Pointer to the VII response packet. */
 	void *resp;
 	/*
+	 * The queue this response will be added to when it has been submitted to the mailbox.
+	 *
+	 * Access to this queue must be protected by `queue_lock`.
+	 */
+	struct list_head *pending_queue;
+	/*
 	 * The queue this response will be added to when it has arrived.
 	 *
-	 * Access to this queue must be protected by `dest_queue_lock`.
+	 * Access to this queue must be protected by `queue_lock`.
 	 */
 	struct list_head *dest_queue;
 	/*
@@ -45,15 +51,15 @@ struct edgetpu_ikv_response {
 	 * marked as timedout).
 	 * This flag is used to detect and handle races between response arrival and timeout.
 	 *
-	 * Accessing this value must be done while holding `dest_queue_lock`.
+	 * Accessing this value must be done while holding `queue_lock`.
 	 */
 	bool processed;
 	/*
 	 * Lock to synchronize arrival, timeout, and consumption of this response.
 	 *
-	 * Protects `dest_queue` and `processed`.
+	 * Protects `pending_queue`, `dest_queue` and `processed`.
 	 */
-	spinlock_t *dest_queue_lock;
+	spinlock_t *queue_lock;
 	/*
 	 * Mailbox awaiter this response was delivered in.
 	 * Must be released with `gcip_mailbox_release_awaiter()` after this response has been
@@ -197,5 +203,23 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
  * or @etikv's resp_queue_lock, as they may be acquired during response processing.
  */
 void edgetpu_ikv_flush_responses(struct edgetpu_ikv *etikv);
+
+/*
+ * Cancels all pending IKV commands of @group.
+ *
+ * This function should be called when both conditions are true:
+ *   (a) the client won't send commands any more commands.
+ *   (b) the MCU won't return any more responses for @group.
+ * For example,
+ *  - @group released the block wakelock and the `RELEASE_VMBOX` KCI has been sent to the MCU.
+ *  - The MCU crashed and @group had been invalidated.
+ *
+ * Also, before calling this function, it is recommended to call the `edgetpu_ikv_flush_responses()`
+ * function to prevent a race condition canceling pending commands whose responses have already
+ * arrived from the MCU, but not consumed yet. Otherwise, from the MCU perspective, the commands
+ * were processed successfully, but from the kernel/runtime perspective, those commands can be
+ * considered as canceled.
+ */
+void edgetpu_ikv_cancel(struct edgetpu_device_group *group, int reason);
 
 #endif /* __EDGETPU_IKV_H__*/

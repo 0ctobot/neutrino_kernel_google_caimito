@@ -1249,9 +1249,9 @@ static ssize_t show_group(struct edgetpu_dev *etdev,
 	}
 
 	if (edgetpu_mmu_domain_detached(etdomain))
-		len = scnprintf(buf, buflen - ret, "context detached ");
+		len = scnprintf(buf, buflen - ret, "pasid detached ");
 	else
-		len = scnprintf(buf, buflen - ret, "context mbox %d ", etdomain->pasid);
+		len = scnprintf(buf, buflen - ret, "pasid %u ", etdomain->pasid);
 	buf += len;
 	ret += len;
 	len = scnprintf(buf, buflen - ret, "vcid %u %s%s\n",
@@ -1309,7 +1309,6 @@ static const struct attribute_group edgetpu_attr_group = {
 
 static const struct file_operations edgetpu_fops = {
 	.owner = THIS_MODULE,
-	.llseek = no_llseek,
 	.mmap = edgetpu_fs_mmap,
 	.open = edgetpu_fs_open,
 	.release = edgetpu_fs_release,
@@ -1414,11 +1413,7 @@ int __init edgetpu_fs_init(void)
 {
 	int ret;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
 	edgetpu_class = class_create(THIS_MODULE, "edgetpu");
-#else
-	edgetpu_class = class_create("edgetpu");
-#endif
 	if (IS_ERR(edgetpu_class)) {
 		pr_err(DRIVER_NAME " error creating edgetpu class: %ld\n",
 		       PTR_ERR(edgetpu_class));

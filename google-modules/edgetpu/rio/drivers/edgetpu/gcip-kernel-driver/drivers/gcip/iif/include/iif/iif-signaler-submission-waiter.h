@@ -43,6 +43,8 @@ struct iif_signaler_submission_waiter_cb {
 	struct iif_signaler_submission_waiter *waiter;
 	/* The node to be added to @waiter->cb_list. */
 	struct list_head node;
+	/* Refcount. */
+	struct kref kref;
 };
 
 /*

@@ -1,4 +1,4 @@
-load("//build/kernel/kleaf:kernel.bzl", "kernel_module")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_headers", "kernel_module")
 
 filegroup(
     name = "edgetpu.kconfig",
@@ -7,6 +7,18 @@ filegroup(
     ],
     visibility = [
         "//private/devices/google:__subpackages__",
+    ],
+)
+
+ddk_headers(
+    name = "headers",
+    hdrs = glob([
+        "include/**/*.h",
+    ]),
+    includes = ["include"],
+    visibility = [
+        "//private/devices/google:__subpackages__",
+        "//private/google-modules:__subpackages__",
     ],
 )
 

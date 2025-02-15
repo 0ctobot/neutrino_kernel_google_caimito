@@ -321,4 +321,11 @@ int edgetpu_kci_fw_debug_cmd(struct edgetpu_dev *etdev, dma_addr_t daddr, size_t
  */
 int edgetpu_kci_fw_debug_reset(struct edgetpu_dev *etdev);
 
+/**
+ * edgetpu_kci_fw_send_debug_init() - respond to firmware debug service init request
+ * @daddr: device address of the debug memory start
+ * @count: size of debug memory area
+ */
+void edgetpu_kci_fw_send_debug_init(struct edgetpu_dev *etdev, dma_addr_t daddr, size_t count);
+
 #endif /* __EDGETPU_KCI_H__ */

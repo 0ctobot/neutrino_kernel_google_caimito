@@ -735,6 +735,13 @@ struct edgetpu_vii_command_ioctl {
  * in-fences to be signaled.
  */
 #define VII_RESPONSE_CODE_KERNEL_FENCE_TIMEOUT	(VII_RESPONSE_CODE_KERNEL_BASE + 3)
+/*
+ * Command has been canceled due to the firmware crash or un-graceful group release.
+ *
+ * When @code is this value, @retval is a uint64 equal to the fatal error event bitmask
+ * (EDGETPU_ERROR_*) which caused the cancellation of the command.
+ */
+#define VII_RESPONSE_CODE_KERNEL_CANCELED	(VII_RESPONSE_CODE_KERNEL_BASE + 4)
 
 /* VII response structure as sent by firmware and consumed from the mailbox response queue. */
 struct edgetpu_vii_response {
@@ -748,7 +755,13 @@ struct edgetpu_vii_response {
 	__u16 code;
 	/* The cluster index which handled the command. -1 if the command was not handled. */
 	__s8 cluster_index;
-	__u8 reserved[5];
+	__u8 reserved;
+	/*
+	 * Unique ID for each client.
+	 * Used internally by the kernel driver and firmware. EDGETPU_VII_RESPONSE will always
+	 * return this value as 0.
+	 */
+	__u32 client_id;
 	/* Command code dependent return value. */
 	__u64 retval;
 } __attribute__((packed));

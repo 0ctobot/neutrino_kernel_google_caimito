@@ -114,10 +114,15 @@ void edgetpu_firmware_mappings_show(struct edgetpu_dev *etdev,
 				    struct seq_file *s);
 
 /*
- * These functions grab and release the internal firmware lock and must be used
- * before calling the helper functions suffixed with _locked below.
+ * These functions grab and release the internal firmware lock and must be used before calling the
+ * helper functions suffixed with _locked below.
+ *
+ * Lock ordering note: this lock can be taken with the pm_lock held.  For code that needs both
+ * locks, hold pm_lock first and then take the firmware state lock (aka internal firmware lock).
+ * Most non-PM code should not require both locks held simultaneously; a pm_get(), then lock
+ * firmware state and perform the firmware operations, followed by a firmware unlock and pm_put()
+ * should be more common.
  */
-
 int edgetpu_firmware_lock(struct edgetpu_dev *etdev);
 int edgetpu_firmware_trylock(struct edgetpu_dev *etdev);
 void edgetpu_firmware_unlock(struct edgetpu_dev *etdev);
@@ -215,5 +220,11 @@ void edgetpu_firmware_set_fake_gsa_dev(struct edgetpu_dev *etdev, struct device 
 /* Return the gcip_fault_inject from the private firmware data for the device. */
 struct gcip_fault_inject *edgetpu_firmware_get_fault_inject(struct edgetpu_dev *etdev);
 #endif
+
+/* Return true if @error_mask implies that the firmware is not responding. */
+static inline bool edgetpu_firmware_is_not_responding(uint error_mask)
+{
+	return error_mask == EDGETPU_ERROR_FW_CRASH || error_mask == EDGETPU_ERROR_WATCHDOG_TIMEOUT;
+}
 
 #endif /* __EDGETPU_FIRMWARE_H__ */

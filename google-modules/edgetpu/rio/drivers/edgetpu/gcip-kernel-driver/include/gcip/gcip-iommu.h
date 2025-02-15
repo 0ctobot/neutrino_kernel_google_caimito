@@ -27,7 +27,6 @@
 #include <linux/iova.h>
 #include <linux/scatterlist.h>
 #include <linux/seq_file.h>
-#include <linux/version.h>
 
 #include <gcip/gcip-config.h>
 #include <gcip/gcip-domain-pool.h>

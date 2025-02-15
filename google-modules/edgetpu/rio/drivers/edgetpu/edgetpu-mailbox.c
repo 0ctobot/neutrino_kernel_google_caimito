@@ -68,6 +68,9 @@ edgetpu_mailbox_create_locked(struct edgetpu_mailbox_manager *mgr, uint index)
 static int edgetpu_mailbox_remove_locked(struct edgetpu_mailbox_manager *mgr,
 					 struct edgetpu_mailbox *mailbox)
 {
+	/* KCI mailbox has different locking requirements, not handled here. */
+	if (mailbox->mailbox_id == KERNEL_MAILBOX_INDEX)
+		return -EINVAL;
 	/* simple security checks */
 	if (mailbox->mailbox_id >= mgr->num_mailbox ||
 	    mgr->mailboxes[mailbox->mailbox_id] != mailbox) {
@@ -75,11 +78,6 @@ static int edgetpu_mailbox_remove_locked(struct edgetpu_mailbox_manager *mgr,
 	}
 
 	mgr->mailboxes[mailbox->mailbox_id] = NULL;
-	/* KCI mailbox is a special case */
-	if (mailbox->mailbox_id == KERNEL_MAILBOX_INDEX)
-		edgetpu_kci_release(mgr->etdev, mailbox->internal.etkci);
-	if (mgr->use_ikv && mailbox->mailbox_id == IKV_MAILBOX_INDEX)
-		edgetpu_ikv_release(mgr->etdev, mailbox->internal.etikv);
 	kfree(mailbox);
 	return 0;
 }

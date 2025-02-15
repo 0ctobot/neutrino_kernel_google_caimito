@@ -20,7 +20,6 @@
 #include <linux/sync_file.h>
 #include <linux/time64.h>
 #include <linux/uaccess.h>
-#include <linux/version.h>
 
 #include <gcip/gcip-dma-fence.h>
 

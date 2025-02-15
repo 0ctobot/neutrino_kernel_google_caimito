@@ -55,7 +55,11 @@ void edgetpu_soc_pm_lpm_down(struct edgetpu_dev *etdev);
 /* Called after firmware is started on power up. */
 void edgetpu_soc_pm_post_fw_start(struct edgetpu_dev *etdev);
 
-/* Log TPU block power state for debugging.  Control cluster and core may be inaccessible. */
+/*
+ * Log TPU block power state for debugging.  The block may be required to be powered up,
+ * depending on the SoC family implementation.  Calls from common code must ensure device is
+ * powered up.
+ */
 void edgetpu_soc_pm_dump_block_state(struct edgetpu_dev *etdev);
 
 /*

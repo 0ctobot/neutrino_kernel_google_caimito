@@ -14,6 +14,7 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
+#include <linux/platform_device.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -115,6 +116,7 @@ struct edgetpu_firmware {
 	struct device *gsa_dev;
 
 	struct gcip_fault_inject *fault_inject;
+	int sanitizer_status;
 };
 
 /*
@@ -723,6 +725,10 @@ static int edgetpu_firmware_setup_image(struct edgetpu_firmware *et_fw, const st
 
 	if (et_fw->gsa_dev) {
 		ret = edgetpu_firmware_gsa_authenticate(etdev, fw, image_vaddr);
+		if (ret && gcip_image_config_is_ns(image_config)) {
+			etdev_warn(etdev, "GSA authenticate of non-secure image failed: %d\n", ret);
+			ret = 0;
+		}
 		if (ret)
 			goto out;
 	} else if (gcip_image_config_is_ns(image_config)) {
@@ -761,6 +767,8 @@ static int edgetpu_firmware_setup_image(struct edgetpu_firmware *et_fw, const st
 	}
 
 	ret = gcip_image_config_parse(cfg_parser, image_config);
+	et_fw->sanitizer_status =
+		GCIP_IMAGE_CONFIG_SANITIZER_STATUS(image_config->sanitizer_config);
 out:
 	memunmap(image_vaddr);
 	return ret;
@@ -1011,7 +1019,8 @@ void edgetpu_firmware_unlock(struct edgetpu_dev *etdev)
 
 /*
  * Lock firmware for loading.  Disallow group join for device during load.
- * Failed if device is already joined to a group and is in use.
+ * Fails if device is already joined to a group and is in use.
+ * See documentation for edgetpu_firmware_lock() for rules on locking vs. pm_lock.
  */
 static int edgetpu_firmware_load_lock(struct edgetpu_dev *etdev)
 {
@@ -1080,6 +1089,40 @@ static int edgetpu_update_vii_format(struct edgetpu_dev *etdev)
 	return 0;
 }
 
+/*
+ * If the sanitizer is enabled, a carveout region is required as BCTCM since the
+ * data size exceeds the real BCTCM. We have to clear this chunk of memory.
+ */
+static void edgetpu_firmware_clear_bctcm(struct edgetpu_dev *etdev)
+{
+	struct device *dev = etdev->dev;
+	struct resource r;
+	struct device_node *np;
+	void *vaddr;
+	int ret;
+
+	np = of_parse_phandle(dev->of_node, "bctcm-region", 0);
+	if (!np) {
+		etdev_err(etdev, "No bctcm carveout region for firmware");
+		return;
+	}
+
+	ret = of_address_to_resource(np, 0, &r);
+	of_node_put(np);
+	if (ret) {
+		etdev_err(etdev, "No memory address assigned to bctcm carveout region");
+		return;
+	}
+
+	vaddr = memremap(r.start, resource_size(&r), MEMREMAP_WC);
+	if (!vaddr) {
+		etdev_err(etdev, "bctcm carveout region remap failed");
+		return;
+	}
+	memset(vaddr, 0, resource_size(&r));
+	memunmap(vaddr);
+}
+
 static int edgetpu_firmware_run_locked(struct edgetpu_firmware *et_fw, const char *name)
 {
 	struct edgetpu_dev *etdev = et_fw->etdev;
@@ -1101,6 +1144,8 @@ static int edgetpu_firmware_run_locked(struct edgetpu_firmware *et_fw, const cha
 		goto out_failed;
 
 	etdev_dbg(etdev, "run fw %s", name);
+	if (et_fw->sanitizer_status)
+		edgetpu_firmware_clear_bctcm(etdev);
 	ret = edgetpu_firmware_prepare_run(et_fw);
 	if (ret)
 		goto out_clear_image;
@@ -1131,21 +1176,20 @@ int edgetpu_firmware_run(struct edgetpu_dev *etdev, const char *name)
 
 	if (!et_fw)
 		return -ENODEV;
+	ret = edgetpu_firmware_pm_get(et_fw);
+	if (ret)
+		return ret;
 	ret = edgetpu_firmware_load_lock(etdev);
 	if (ret) {
-		etdev_err(etdev, "%s: lock failed (%d)\n", __func__, ret);
-		return ret;
-	}
-	/* will be overwritten when we successfully parse the f/w header */
-	etdev->fw_version.kci_version = EDGETPU_INVALID_KCI_VERSION;
-	ret = edgetpu_firmware_pm_get(et_fw);
-	if (!ret) {
+		etdev_err(etdev, "firmware run: state lock failed: %d\n", ret);
+	} else {
+		/* will be overwritten when we successfully parse the f/w header */
+		etdev->fw_version.kci_version = EDGETPU_INVALID_KCI_VERSION;
 		ret = edgetpu_firmware_run_locked(et_fw, name);
-		edgetpu_pm_put(etdev);
+		edgetpu_firmware_load_unlock(etdev);
 	}
 
-	edgetpu_firmware_load_unlock(etdev);
-
+	edgetpu_pm_put(etdev);
 	return ret;
 }
 
@@ -1204,6 +1248,8 @@ int edgetpu_firmware_restart_locked(struct edgetpu_dev *etdev, bool force_reset)
 	edgetpu_firmware_set_loading(et_fw);
 	edgetpu_sw_wdt_stop(etdev);
 	edgetpu_firmware_reset_boot_stage(et_fw);
+	if (et_fw->sanitizer_status)
+		edgetpu_firmware_clear_bctcm(etdev);
 	/* Reset KCI mailbox before starting f/w, don't process anything old.*/
 	edgetpu_mailbox_reset(etdev->etkci->mailbox);
 
