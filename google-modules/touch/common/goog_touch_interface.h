@@ -801,9 +801,6 @@ struct gti_pm {
  * @input_dev_mono_ktime: input timestamp used by input dev and input subsystem.
  * @input_timestamp: input timestamp from touch vendor driver.
  * @mf_downtime: timestamp for motion filter control.
- * @display_vrefresh: display vrefresh in Hz.
- * @mf_mode: current motion filter mode.
- * @mf_state: current motion filter state.
  * @vrr_enabled: variable touch report rate is enabled or not.
  * @report_rate_table_size: report rate table size from device tree.
  * @touch_report_rate_table: touch report rate table parsed from device tree.
@@ -813,6 +810,15 @@ struct gti_pm {
  * @set_report_rate_work: delayed work for setting report rate.
  * @increase_report_rate_delay: delayed work will be start after a delay in seconds.
  * @decrease_report_rate_delay: delayed work will be start after a delay in seconds.
+ * @abs_x_min: minimum x of input resolution.
+ * @abs_x_max: maximum x of input resolution.
+ * @abs_y_min: minimum y of input resolution.
+ * @abs_y_max: maximum y of input resolution.
+ * @resolution_scale_factor: scale factor of input to display resolution.
+ * @display_vrefresh: display vrefresh in Hz.
+ * @display_state: current display state.
+ * @mf_mode: current motion filter mode.
+ * @mf_state: current motion filter state.
  * @screen_protector_mode_setting: the setting of screen protector mode.
  * @tbn_register_mask: the tbn_mask that used to request/release touch bus.
  * @pm: struct that used by gti pm.
@@ -840,7 +846,7 @@ struct gti_pm {
  * @lptw_track_min_x: minimum x of tracking area.
  * @lptw_track_max_x: maximum x of tracking area.
  * @lptw_track_min_y: minimum y of tracking area.
- * @lptw_track_max_x: maximum t of tracking area.
+ * @lptw_track_max_y: maximum y of tracking area.
  * @lptw_cancel_delayed_work: delayed work for canceling finger.
  * @lptw_cancel_time: record the time for lptw cancel timeout.
  * @qbt_lptw_down: true if the finger is still on the screen.
@@ -916,6 +922,7 @@ struct goog_touch_interface {
 	int abs_x_max;
 	int abs_y_min;
 	int abs_y_max;
+	int resolution_scale_factor;
 
 	int display_vrefresh;
 	enum gti_display_state_setting display_state;

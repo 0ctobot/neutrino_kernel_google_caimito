@@ -3954,10 +3954,12 @@ void goog_input_report_abs(
 		}
 		break;
 	case ABS_MT_TOUCH_MAJOR:
-		gti->offload.coords[gti->slot].major = value;
+		gti->offload.coords[gti->slot].major =
+                    value * gti->resolution_scale_factor;
 		break;
 	case ABS_MT_TOUCH_MINOR:
-		gti->offload.coords[gti->slot].minor = value;
+		gti->offload.coords[gti->slot].minor =
+                    value * gti->resolution_scale_factor;
 		break;
 	case ABS_MT_PRESSURE:
 		gti->offload.coords[gti->slot].pressure = value;
@@ -4275,6 +4277,7 @@ void goog_init_options(struct goog_touch_interface *gti,
 		struct gti_optional_configuration *options)
 {
 	u32 coords[4];
+	u16 display_resolution[2];
 	int touch_max_x = 0;
 	int display_max_x = 0;
 
@@ -4284,6 +4287,7 @@ void goog_init_options(struct goog_touch_interface *gti,
 	gti->display_state = GTI_DISPLAY_STATE_ON;
 
 	gti->panel_id = -1;
+	gti->resolution_scale_factor = 1;
 	if (gti->vendor_dev) {
 		struct device_node *np = gti->vendor_dev->of_node;
 
@@ -4293,6 +4297,17 @@ void goog_init_options(struct goog_touch_interface *gti,
 				"goog,manual-heatmap-from-irq");
 		gti->lptw_suppress_coords_enabled = of_property_read_bool(np,
 				"goog,lptw-suppress-coords-enabled");
+
+		if (of_property_read_u16_array(np, "goog,display-resolution",
+			display_resolution, 2) == 0) {
+			/* Scale the tracking area to touch resolution. */
+			touch_max_x = input_abs_get_max(gti->vendor_input_dev, ABS_MT_POSITION_X) + 1;
+			display_max_x = display_resolution[0];
+			if (touch_max_x != 0 && display_max_x != 0) {
+				gti->resolution_scale_factor = touch_max_x / display_max_x;
+			}
+		}
+		GOOG_LOGI(gti, "resolution_scale_factor %d", gti->resolution_scale_factor);
 		if (gti->lptw_suppress_coords_enabled) {
 			if (of_property_read_u32_array(np, "goog,lptw-tracking-area", coords, 4)) {
 				GOOG_LOGE(gti, "goog,lptw-tracking-area not found\n");
@@ -4301,17 +4316,10 @@ void goog_init_options(struct goog_touch_interface *gti,
 				coords[2] = 200;
 				coords[3] = 200;
 			}
-			gti->lptw_track_min_x = coords[0];
-			gti->lptw_track_max_x = coords[1];
-			gti->lptw_track_min_y = coords[2];
-			gti->lptw_track_max_y = coords[3];
-			/* Scale the tracking area to touch resolution. */
-			touch_max_x = input_abs_get_max(gti->vendor_input_dev, ABS_MT_POSITION_X) + 1;
-			display_max_x = gti->lptw_track_min_x + gti->lptw_track_max_x;
-			gti->lptw_track_min_x = gti->lptw_track_min_x * touch_max_x / display_max_x;
-			gti->lptw_track_max_x = gti->lptw_track_max_x * touch_max_x / display_max_x;
-			gti->lptw_track_min_y = gti->lptw_track_min_y * touch_max_x / display_max_x;
-			gti->lptw_track_max_y = gti->lptw_track_max_y * touch_max_x / display_max_x;
+			gti->lptw_track_min_x = coords[0] * gti->resolution_scale_factor;
+			gti->lptw_track_max_x = coords[1] * gti->resolution_scale_factor;
+			gti->lptw_track_min_y = coords[2] * gti->resolution_scale_factor;
+			gti->lptw_track_max_y = coords[3] * gti->resolution_scale_factor;
 			GOOG_LOGI(gti, "goog,lptw-tracking-area %d, %d, %d, %d\n",
 					gti->lptw_track_min_x, gti->lptw_track_max_x,
 					gti->lptw_track_min_y, gti->lptw_track_max_y);

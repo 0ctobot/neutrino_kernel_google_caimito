@@ -125,7 +125,8 @@ static int aoc_channel_kthread(void *data)
 			pr_info("%s: LPTW event, x=%u y=%u major=%u minor=%u angle=%d\n",
 				__func__, gesture->x, gesture->y, gesture->major,
 				gesture->minor, gesture->angle);
-			tbn->lptw_event_cb(gesture, tbn->lptw_event_cbdata);
+			if (tbn->lptw_event_cb)
+				tbn->lptw_event_cb(gesture, tbn->lptw_event_cbdata);
 		} else {
 			struct TbnEventResponse* resp;
 

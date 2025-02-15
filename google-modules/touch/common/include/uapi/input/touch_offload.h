@@ -295,7 +295,7 @@ struct TouchOffloadData1d {
 struct TouchOffloadDriverStatus {
 	struct TouchOffloadChannelHeader header;
 
-	struct {
+	struct DriverBitfieldContents {
 		__u32 screen_state : 1;
 		__u32 display_refresh_rate : 1;
 		__u32 touch_report_rate : 1;
@@ -334,7 +334,7 @@ struct TouchOffloadDriverStatus {
 struct TouchOffloadStylusStatus {
 	struct TouchOffloadChannelHeader header;
 
-	struct {
+	struct StylusBitfieldContents {
 		__u32 coords : 1;
 		__u32 coords_timestamp : 1;
 		__u32 pen_paired : 1;

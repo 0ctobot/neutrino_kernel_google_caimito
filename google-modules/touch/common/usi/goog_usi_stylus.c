@@ -541,11 +541,11 @@ int goog_usi_report_battery(g_usi_handle_t handle, const u8 *bat)
 
 	if (usi_ctx->stylus_battery != bat[0]) {
 		usi_ctx->stylus_battery = bat[0];
-		set_battery_available(usi_ctx);
 
 		/* notify new battery level received */
 		power_supply_changed(usi_ctx->bat_psy);
 	}
+	set_battery_available(usi_ctx);
 
 	mutex_unlock(&usi_ctx->lock);
 
@@ -2339,10 +2339,10 @@ static int g_usi_hid_set_feature_report(struct g_usi_context *usi_ctx, u8 *buf, 
 			return -EAGAIN;
 
 		cmd_data = 0;
-		for (i = 4; i >= 2; i++) {
+		for (i = 4; i >= 2; i--) {
 			cmd_data <<= 2;
 
-			if (buf[i] < G_USI_BUTTON_BARREL_SWITCH ||
+			if (buf[i] < G_USI_BUTTON_SWITCH_UNPMPLEMENTED ||
 			    buf[i] > G_USI_BUTTON_SWITCH_DISABLED) {
 				G_USI_ERR("Set Button[%d] - invalid function %d", i - 1, buf[i]);
 				return -EINVAL;
