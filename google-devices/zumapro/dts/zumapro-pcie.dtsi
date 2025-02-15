@@ -120,7 +120,8 @@
 		pmu-offset = <0x3ec8>;
 		max-link-speed = <LINK_SPEED_GEN3>;
 		status = "disabled";
-		de-emphasis-level = <0>;
+		customized-de-emphasis = "false";
+		de-emphasis-value = <0>;
 	};
 
 	sysmmu_hsi2: sysmmu@131C0000 {

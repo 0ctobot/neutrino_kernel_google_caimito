@@ -13,7 +13,7 @@ load(
     "kernel_unstripped_modules_archive",
     "merged_kernel_uapi_headers",
 )
-load("//common:modules.bzl", "get_gki_modules_list")
+load("//private/devices/google/common:constants.bzl", "PIXEL_GKI_MODULES_LIST")
 load("//private/devices/google/common/kleaf:create_file.bzl", "create_file")
 load(":constants.bzl", "ZUMAPRO_DPM_DTBOS", "ZUMAPRO_DTBS", "ZUMAPRO_MODULE_OUTS")
 
@@ -69,7 +69,9 @@ filegroup(
 kernel_build(
     name = "kernel",
     srcs = [":kernel_sources"],
-    outs = ZUMAPRO_DTBS + ZUMAPRO_DPM_DTBOS,
+    outs = [
+        ".config",
+    ] + ZUMAPRO_DTBS + ZUMAPRO_DPM_DTBOS,
     base_kernel = "//common:kernel_aarch64",
     build_config = ":build_config",
     collect_unstripped_modules = True,
@@ -108,6 +110,7 @@ kernel_module(
         "drivers/i2c/busses/i2c-exynos5.ko",
         "drivers/iio/power/odpm.ko",
         "drivers/input/fingerprint/goodixfp.ko",
+        "drivers/input/fps_touch_handler/fps_touch_handler.ko",
         "drivers/input/keyboard/s2mpg14-key.ko",
         "drivers/input/keycombo.ko",
         "drivers/input/keydebug.ko",
@@ -193,6 +196,7 @@ kernel_module(
         "drivers/soc/google/hardlockup-debug.ko",
         "drivers/soc/google/hardlockup-watchdog.ko",
         "drivers/soc/google/kernel-top.ko",
+        "drivers/soc/google/modemctl/google_modemctl.ko",
         "drivers/soc/google/pa_kill/pa_kill.ko",
         "drivers/soc/google/perf_trace_counters.ko",
         "drivers/soc/google/pixel_stat/mm/pixel_stat_mm.ko",
@@ -202,6 +206,7 @@ kernel_module(
         "drivers/soc/google/pt/slc_dummy.ko",
         "drivers/soc/google/pt/slc_pmon.ko",
         "drivers/soc/google/pt/slc_pt.ko",
+        "drivers/soc/google/smra/smra.ko",
         "drivers/soc/google/vh/kernel/cgroup/vh_cgroup.ko",
         "drivers/soc/google/vh/kernel/fs/vh_fs.ko",
         "drivers/soc/google/vh/kernel/metrics/pixel_metrics.ko",
@@ -216,7 +221,6 @@ kernel_module(
         "drivers/spmi/spmi_bit_bang.ko",
         "drivers/thermal/google/cdev_uclamp.ko",
         "drivers/thermal/google/s2mpg15_spmic_thermal.ko",
-        "drivers/thermal/google/sts4x_ambient_i2c.ko",
         "drivers/thermal/samsung/gpu_cooling.ko",
         "drivers/thermal/samsung/gs_thermal.ko",
         "drivers/tty/serial/exynos_tty.ko",
@@ -309,13 +313,7 @@ create_file(
     name = "system_dlkm_modules_list",
     out = "system_dlkm.modules",
     # The list is used to filter modules with `grep -w`.
-    content = ["^kernel/" + m for m in get_gki_modules_list("arm64")],
-)
-
-create_file(
-    name = "system_dlkm_modules_blocklist",
-    srcs = ["system_dlkm.blocklist.zumapro"],
-    out = "system_dlkm.blocklist",
+    content = ["^kernel/" + m for m in PIXEL_GKI_MODULES_LIST],
 )
 
 create_file(
@@ -353,7 +351,6 @@ kernel_images(
     kernel_modules_install = ":kernel_modules_install",
     modules_list = ":vendor_ramdisk_modules_list",
     ramdisk_compression = "lz4",
-    system_dlkm_modules_blocklist = ":system_dlkm_modules_blocklist",
     system_dlkm_modules_list = ":system_dlkm_modules_list",
     system_dlkm_props = ":system_dlkm_props",
     vendor_dlkm_archive = True,
@@ -374,8 +371,8 @@ copy_to_dist_dir(
         ":merged_kernel_uapi_headers",
         "//common:kernel_aarch64",
         "//common:kernel_aarch64_gki_boot_image",
-        "//common:kernel_aarch64_gki_modules",
         "//common:kernel_aarch64_headers",
+        "//private/devices/google/common:kernel_gki_modules",
     ],
     dist_dir = "out/zumapro/dist",
     flat = True,

@@ -31,6 +31,7 @@
 						/*  reg  val delay_ms */
 						< 0x675 0xa1 0>,
 						< 0x67d 0xbe 0>;
+					pmic-otp-reg = <0x030E>;
 				};
 
 				s5910: s5910@5 {
