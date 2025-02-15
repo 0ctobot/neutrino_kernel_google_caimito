@@ -3,6 +3,7 @@ menuconfig EXYNOS_MODEM_IF
 	tristate "Samsung Mobile CP Interface"
 	default n
 	depends on S5910
+	depends on GOOGLE_MODEMCTL
 	help
 	  Samsung Dual Modem Interface Driver
 

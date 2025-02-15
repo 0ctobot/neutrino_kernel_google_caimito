@@ -27,6 +27,7 @@
 #include <soc/google/ect_parser.h>
 #endif
 #include <soc/google/cal-if.h>
+#include <soc/google/modem_notifier.h>
 #include <linux/soc/samsung/exynos-smc.h>
 #include <trace/events/napi.h>
 #include "mcu_ipc.h"
@@ -35,7 +36,6 @@
 #include "link_device.h"
 #include "modem_dump.h"
 #include "modem_ctrl.h"
-#include "modem_notifier.h"
 #if IS_ENABLED(CONFIG_LINK_DEVICE_PCIE)
 #include "s51xx_pcie.h"
 #endif
@@ -2179,7 +2179,7 @@ static int link_load_gnss_image(struct link_device *ld,
 
 	memset(&img, 0, sizeof(struct gnss_image));
 
-	mif_info("Load GNSS images\n");
+	mif_info_limited("Load GNSS images\n");
 
 	if (!mld->gnss_v_base) {
 		mif_err("No gnss_fw vmap region\n");

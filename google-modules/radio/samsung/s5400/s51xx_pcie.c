@@ -362,6 +362,9 @@ static void s51xx_pcie_event_cb(pcie_notify_t *noti)
 			pcie_dump_all_status(mc->pcie_ch_num);
 			s5100_force_crash_exit_ext(CRASH_REASON_PCIE_CPL_TIMEOUT_ERROR);
 		}
+	} else if (event & EXYNOS_PCIE_EVENT_LINKDOWN_RECOVERY_FAIL) {
+		mif_err("Link Down recovery fail force crash !!!\n");
+		s5100_force_crash_exit_ext(CRASH_REASON_PCIE_LINKDOWN_RECOVERY_FAILURE);
 	}
 }
 
@@ -461,9 +464,9 @@ static int s51xx_pcie_probe(struct pci_dev *pdev, const struct pci_device_id *en
 	if (s51xx_pcie->doorbell_addr == NULL)
 		mif_err("Can't ioremap doorbell address!!!\n");
 
-	mif_info("Register PCIE notification LINKDOWN and CPL_TIMEOUT events...\n");
+	mif_info("Register PCIE notification LINKDOWN, CPL_TIMEOUT and LINKDOWN_RECOVERY_FAIL events...\n");
 	s51xx_pcie->pcie_event.events =
-		EXYNOS_PCIE_EVENT_LINKDOWN | EXYNOS_PCIE_EVENT_CPL_TIMEOUT;
+		EXYNOS_PCIE_EVENT_LINKDOWN | EXYNOS_PCIE_EVENT_CPL_TIMEOUT | EXYNOS_PCIE_EVENT_LINKDOWN_RECOVERY_FAIL;
 	s51xx_pcie->pcie_event.user = pdev;
 	s51xx_pcie->pcie_event.mode = EXYNOS_PCIE_TRIGGER_CALLBACK;
 	s51xx_pcie->pcie_event.callback = s51xx_pcie_event_cb;

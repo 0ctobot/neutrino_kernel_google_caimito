@@ -14,14 +14,13 @@
 #include <linux/of_gpio.h>
 #include <linux/shm_ipc.h>
 #include "mcu_ipc.h"
-#include <soc/google/modem_notifier.h>
 #include <soc/google/cal-if.h>
-#include <soc/google/exynos-modem-ctrl.h>
 #if IS_ENABLED(CONFIG_EXYNOS_PMU_IF)
 #include <soc/google/exynos-pmu-if.h>
 #else
 #include <soc/google/exynos-pmu.h>
 #endif
+#include <soc/google/modem_notifier.h>
 #include "modem_prj.h"
 #include "modem_utils.h"
 #include "modem_ctrl.h"
@@ -641,7 +640,7 @@ int modem_force_crash_exit_ext(void)
 	ld->crash_reason.type = CRASH_REASON_MIF_FORCED;
 
 	if (!g_mc) {
-		mif_err("g_mc is null\n");
+		mif_debug("g_mc is null\n");
 		return -1;
 	}
 

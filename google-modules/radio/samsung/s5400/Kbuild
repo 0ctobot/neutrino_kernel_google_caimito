@@ -26,7 +26,7 @@ cpif-y += modem_main.o modem_variation.o
 cpif-y += modem_io_device.o net_io_device.o bootdump_io_device.o ipc_io_device.o modem_toe_device.o
 cpif-y += modem_utils.o modem_dump.o
 cpif-y += link_device.o link_device_memory_flow_control.o
-cpif-y += link_device_memory_debug.o modem_notifier.o
+cpif-y += link_device_memory_debug.o
 cpif-y += link_device_memory_snapshot.o link_device_memory_legacy.o
 
 cpif-$(CONFIG_LINK_DEVICE_WITH_SBD_ARCH) += link_device_memory_sbd.o

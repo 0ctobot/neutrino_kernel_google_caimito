@@ -33,6 +33,8 @@
 #include <uapi/linux/in.h>
 #include <linux/inet.h>
 #include <net/ipv6.h>
+#include <soc/google/exynos-modem-ctrl.h>
+#include <soc/google/modem_notifier.h>
 
 #include <linux/s5910.h>
 
@@ -41,7 +43,6 @@
 #include "mcu_ipc.h"
 #endif
 
-#include <soc/google/exynos-modem-ctrl.h>
 #include "modem_prj.h"
 #include "modem_variation.h"
 #include "modem_utils.h"

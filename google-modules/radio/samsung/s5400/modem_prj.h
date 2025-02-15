@@ -165,6 +165,7 @@ enum crash_type {
 	CRASH_REASON_PCIE_CPL_TIMEOUT_ERROR,
 	CRASH_REASON_PCIE_DOORBELL_FAILURE_POWERON,
 	CRASH_REASON_PCIE_DOORBELL_FAILURE_POWEROFF = 21,
+	CRASH_REASON_PCIE_LINKDOWN_RECOVERY_FAILURE = 22,
 	CRASH_REASON_NONE = 0xFFFF,
 };
 
@@ -745,6 +746,8 @@ struct modem_ctl {
 	struct work_struct call_off_work;
 	struct notifier_block call_state_nb;
 #endif
+
+	struct notifier_block force_crash_nb;
 
 #if IS_ENABLED(CONFIG_LINK_DEVICE_PCIE_GPIO_WA)
 	atomic_t dump_toggle_issued;

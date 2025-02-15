@@ -19,6 +19,7 @@
 #include <linux/pci.h>
 #include <linux/regulator/consumer.h>
 #include <soc/google/acpm_mfd.h>
+#include <soc/google/modem_notifier.h>
 #include <linux/reboot.h>
 #include <linux/suspend.h>
 #include <linux/time.h>
@@ -31,7 +32,6 @@
 #include <dt-bindings/pci/pci.h>
 #include <misc/sbbm.h>
 
-#include "modem_notifier.h"
 #include "modem_prj.h"
 #include "modem_utils.h"
 #include "modem_ctrl.h"
@@ -1364,8 +1364,7 @@ static int power_reset_dump_cp(struct modem_ctl *mc, bool silent)
 	struct s51xx_pcie *s51xx_pcie = NULL;
 	struct link_device *ld = get_current_link(mc->iod);
 	struct mem_link_device *mld = to_mem_link_device(ld);
-
-	mif_info("%s: +++\n", mc->name);
+	u32 otp_version;
 
 	clear_boot_stage(mc);
 
@@ -1413,6 +1412,12 @@ static int power_reset_dump_cp(struct modem_ctl *mc, bool silent)
 
 #if IS_ENABLED(CONFIG_CP_PMIC)
 	/* Execute PMIC warm reset sequence after toggling CP_PMIC_WRST. */
+	otp_version = pmic_get_otp(mc->pmic_dev);
+	if (otp_version < 0)
+		mif_info("PMIC OTP Version read fail\n");
+	else
+		mif_info("PMIC OTP Version %#x\n", otp_version);
+
 	if (mc->pmic_dev)
 		pmic_warm_reset_sequence(mc->pmic_dev);
 #endif
@@ -1421,11 +1426,9 @@ static int power_reset_dump_cp(struct modem_ctl *mc, bool silent)
 	print_mc_state(mc);
 
 	if (cpif_wake_lock_active(mc->ws)) {
-		mif_info("Release wakelock after modem crash!\n");
+		mif_info("Release wakelock after modem crash\n");
 		cpif_wake_unlock(mc->ws);
 	}
-
-	mif_info("---\n");
 
 	return 0;
 }
@@ -1433,6 +1436,7 @@ static int power_reset_dump_cp(struct modem_ctl *mc, bool silent)
 static int power_reset_warm_cp(struct modem_ctl *mc)
 {
 	struct s51xx_pcie *s51xx_pcie = NULL;
+	u32 otp_version;
 #if IS_ENABLED(CONFIG_LINK_DEVICE_WITH_SBD_ARCH)
 	struct link_device *ld = get_current_link(mc->iod);
 	struct mem_link_device *mld = to_mem_link_device(ld);
@@ -1479,6 +1483,12 @@ static int power_reset_warm_cp(struct modem_ctl *mc)
 		gpio_power_offon_cp(mc);
 	else
 		gpio_power_wreset_cp(mc);
+
+	otp_version = pmic_get_otp(mc->pmic_dev);
+	if (otp_version < 0)
+		mif_info("PMIC OTP Version read fail\n");
+	else
+		mif_info("PMIC OTP Version %#x\n", otp_version);
 
 #if IS_ENABLED(CONFIG_CP_PMIC)
 	/* Execute PMIC warm reset sequence after toggling CP_PMIC_WRST. */
@@ -2062,7 +2072,7 @@ int s5100_force_crash_exit_ext(enum crash_type type)
 	return 0;
 }
 
-int modem_force_crash_exit_ext(const char *buf)
+static int s5100_force_crash_exit_ext_reason(const char *buf)
 {
 	struct link_device *ld = get_current_link(g_mc->bootd);
 
@@ -2071,7 +2081,14 @@ int modem_force_crash_exit_ext(const char *buf)
 
 	return s5100_force_crash_exit_ext(CRASH_REASON_MIF_FORCED);
 }
-EXPORT_SYMBOL(modem_force_crash_exit_ext);
+
+static int s5100_force_crash_notifier(struct notifier_block *nb,
+		unsigned long action, void *nb_data)
+{
+	const char *buf = nb_data;
+
+	return s5100_force_crash_exit_ext_reason(buf);
+}
 
 int s5100_send_panic_noti_ext(void)
 {
@@ -3055,6 +3072,13 @@ int s5100_init_modemctl_device(struct modem_ctl *mc, struct modem_data *pdata)
 	}
 #endif
 
+	mc->force_crash_nb.notifier_call = s5100_force_crash_notifier;
+	ret = register_modem_force_crash_handler(&mc->force_crash_nb);
+	if (ret < 0) {
+		mif_err("failed to register forced crash notifier: %d\n", ret);
+		goto err_force_crash_notifier;
+	}
+
 	if (sysfs_create_group(&pdev->dev.kobj, &dynamic_pcie_spd_group))
 		mif_err("failed to create sysfs node for dynamic_pcie_spd\n");
 
@@ -3082,6 +3106,8 @@ err_dev_create_file:
 	sysfs_remove_group(&pdev->dev.kobj, &modem_group);
 	sysfs_remove_group(&pdev->dev.kobj, &sim_group);
 	sysfs_remove_group(&pdev->dev.kobj, &dynamic_pcie_spd_group);
+	unregister_modem_voice_call_event_notifier(&mc->force_crash_nb);
+err_force_crash_notifier:
 #if IS_ENABLED(CONFIG_CPIF_AP_SUSPEND_DURING_VOICE_CALL)
 	unregister_modem_voice_call_event_notifier(&mc->call_state_nb);
 err_modem_vce_notifier:
@@ -3111,6 +3137,7 @@ void s5100_uninit_modemctl_device(struct modem_ctl *mc, struct modem_data *pdata
 	sysfs_remove_group(&dev->kobj, &modem_group);
 	sysfs_remove_group(&dev->kobj, &sim_group);
 	sysfs_remove_group(&dev->kobj, &dynamic_pcie_spd_group);
+	unregister_modem_voice_call_event_notifier(&mc->force_crash_nb);
 #if IS_ENABLED(CONFIG_CPIF_AP_SUSPEND_DURING_VOICE_CALL)
 	unregister_modem_voice_call_event_notifier(&mc->call_state_nb);
 #endif

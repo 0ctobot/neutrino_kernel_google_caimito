@@ -29,6 +29,7 @@ struct pmic_info {
 	struct spmi_device *sdev;
 	struct regmap *regmap;
 	struct pmic_reg_sequence warm_reset_seq;
+	u32 pmic_otp_reg;
 };
 
 static const struct regmap_range pmic_wr_range[] = {
@@ -41,7 +42,7 @@ static const struct regmap_access_table pmic_wr_table = {
 };
 
 static const struct regmap_range pmic_rd_range[] = {
-	regmap_reg_range(0x0675, 0x067d),
+	regmap_reg_range(0x030E, 0x067d),
 };
 
 static const struct regmap_access_table pmic_rd_table = {
@@ -132,29 +133,42 @@ void pmic_warm_reset_sequence(struct device *dev)
 	size_t i;
 	struct pmic_reg_sequence *seq;
 	struct reg_entry *entry;
-	int ret;
-
-	if (!info) {
-		dev_info(dev, "pmic_info not available.\n");
-		return;
-	}
 
 	seq = &info->warm_reset_seq;
 	for (i = 0; i < seq->num_entries; i++) {
+		int retry;
 		entry = &seq->reg_entries[i];
-
-		ret = regmap_write(info->regmap, entry->reg, entry->val);
-		if (ret) {
-			dev_info(dev, "Failed to write register 0x%x\n", entry->reg);
+		for (retry = 0; retry < 2; retry++) {
+			if (regmap_write(info->regmap, entry->reg, entry->val) == 0)
+				break;
+			msleep(2);
+		}
+		if (retry == 2) {
+			dev_info(dev, "Failed to write register %#x\n", entry->reg);
 			return;
 		}
 		if (entry->delay_ms)
 			msleep(entry->delay_ms);
 	}
-
 	dev_info(dev, "Warm reset sequence completed.\n");
 }
 EXPORT_SYMBOL_GPL(pmic_warm_reset_sequence);
+
+int pmic_get_otp(struct device *dev)
+{
+	struct pmic_info *info = dev_get_drvdata(dev);
+	int retry;
+	int otp_version = -1;
+
+	for (retry = 0; retry < 2; retry++) {
+		if (regmap_read(info->regmap, info->pmic_otp_reg, &otp_version) == 0)
+			break;
+		msleep(2);
+	}
+
+	return otp_version;
+}
+EXPORT_SYMBOL_GPL(pmic_get_otp);
 
 static int pmic_dt_init(struct device *dev, struct pmic_info *info)
 {
@@ -167,6 +181,13 @@ static int pmic_dt_init(struct device *dev, struct pmic_info *info)
 		return -ENOENT;
 	}
 
+	/* read the pmic otp register */
+	if (of_property_read_u32(dev->of_node, "pmic-otp-reg", &info->pmic_otp_reg))
+		dev_info(dev, "PMIC otp reg not available!\n");
+
+	dev_info(dev, "PMIC otp reg: %#x\n", info->pmic_otp_reg);
+
+	/* read the pmic warm reset sequence */
 	prop = of_find_property(dev->of_node, "warm_reset_seq", NULL);
 	if (!prop) {
 		dev_err(dev, "Missing or invalid warm_reset_seq property in DT.\n");

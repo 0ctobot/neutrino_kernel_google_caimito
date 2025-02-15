@@ -39,18 +39,3 @@ kernel_module(
         "//private/google-modules/soc/gs:gs_soc_module",
     ],
 )
-
-filegroup(
-    name = "cpif_headers",
-    srcs = glob([
-        "*.h",
-    ] + [
-        # List of headers needed by external modules
-        "modem_notifier.h",
-    ]),
-    visibility = [
-        # keep sorted
-        "//private/devices/google:__subpackages__",
-        "//private/google-modules:__subpackages__",
-    ],
-)

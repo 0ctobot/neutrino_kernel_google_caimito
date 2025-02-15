@@ -8,6 +8,7 @@
 #ifndef __CP_PMIC_H__
 #define __CP_PMIC_H__
 
+int pmic_get_otp(struct device *dev);
 void pmic_warm_reset_sequence(struct device *dev);
 struct device *pmic_get_device(struct device_node *node);
 struct spmi_device *pmic_get_spmi_device(struct device_node *node);
