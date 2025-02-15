@@ -13,6 +13,8 @@ config AOC_DRIVER
 	tristate "WhiteChapel AoC support"
 	default n
 	depends on WC_MBOX
+	# GOOGLE_MODEMCTL is an optional dependency.
+	depends on GOOGLE_MODEMCTL || !GOOGLE_MODEMCTL
 	help
 		Say yes here to add support for the AoC subsystem in WhiteChapel
 

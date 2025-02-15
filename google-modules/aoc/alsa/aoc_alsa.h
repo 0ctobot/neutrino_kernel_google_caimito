@@ -319,6 +319,7 @@ struct aoc_chip {
 	int mel_enable;
 #endif
 	int multichannel_processor;
+	int two_one_enable;
 
 	bool hotword_supported;
 	bool chre_supported;
@@ -530,6 +531,8 @@ int aoc_displayport_service_alloc(struct aoc_chip *chip);
 int aoc_displayport_service_free(struct aoc_chip *chip);
 
 int aoc_audio_set_chirp_parameter(struct aoc_chip *chip, int key, int value);
+
+int aoc_audio_set_two_one(struct aoc_chip *chip, int enable);
 
 int aoc_audio_set_chre_src_pdm_gain(struct aoc_chip *chip, int gain);
 int aoc_audio_set_chre_src_aec_gain(struct aoc_chip *chip, int gain);

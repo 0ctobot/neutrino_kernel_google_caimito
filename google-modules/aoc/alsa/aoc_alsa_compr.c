@@ -232,6 +232,14 @@ static int aoc_compr_prepare(struct aoc_alsa_stream *alsa_stream)
 	struct snd_compr_stream *cstream = alsa_stream->cstream;
 	struct aoc_service_dev *dev = alsa_stream->dev;
 
+	if (cstream->direction == SND_COMPRESS_PLAYBACK) {
+		/*
+		 * Reset write pointer to ensure writing to the base of the ring.
+		 * AoC requires this to allow DMA transfers to be aligned correctly.
+		 */
+		aoc_ring_reset_write_pointer(dev->service, AOC_DOWN);
+	}
+
 	/* No prepare() for compress offload, so do buffer flushing here */
 	err = aoc_compr_offload_flush_buffer(alsa_stream);
 	if (err != 0) {

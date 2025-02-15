@@ -75,8 +75,7 @@ int xhci_get_usb_audio_count(void)
 /*
  * Determine if an USB device is a compatible devices:
  *     True: Devices are audio class and they contain ISOC endpoint
- *    False: Devices are not audio class or they're audio class but no ISOC endpoint or
- *           they have at least one interface is video class
+ *    False: Devices are not audio class or they're audio class but no ISOC endpoint
  */
 static bool is_compatible_with_usb_audio_offload(struct usb_device *udev)
 {
@@ -93,11 +92,6 @@ static bool is_compatible_with_usb_audio_offload(struct usb_device *udev)
 		for (j = 0; j < intfc->num_altsetting; j++) {
 			alt = &intfc->altsetting[j];
 
-			if (alt->desc.bInterfaceClass == USB_CLASS_VIDEO) {
-				is_audio = false;
-				goto out;
-			}
-
 			if (alt->desc.bInterfaceClass == USB_CLASS_AUDIO) {
 				for (k = 0; k < alt->desc.bNumEndpoints; k++) {
 					epd = &alt->endpoint[k].desc;
@@ -110,7 +104,6 @@ static bool is_compatible_with_usb_audio_offload(struct usb_device *udev)
 		}
 	}
 
-out:
 	return is_audio;
 }
 
