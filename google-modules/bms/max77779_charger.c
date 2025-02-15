@@ -106,6 +106,7 @@ static u8 max77779_int_mask[MAX77779_CHG_INT_COUNT] = {
 
 static int max77779_is_limited(struct max77779_chgr_data *data);
 static int max77779_wcin_current_now(struct max77779_chgr_data *data, int *iic);
+static int max77779_current_check_mode(struct max77779_chgr_data *data);
 
 static inline int max77779_reg_read(struct max77779_chgr_data *data, uint8_t reg,
 				    uint8_t *val)
@@ -985,11 +986,6 @@ static int max77779_mode_callback(struct gvotable_election *el,
 	/* read directly instead of using the vote */
 	cb_data.wlc_rx = (max77779_wcin_is_online(data) &&
 			 !data->wcin_input_suspend) || data->wlc_spoof;
-	/* Block wlc_rx for POGO_VIN if it is from POGO_VOUT */
-	cb_data.wlc_rx = cb_data.wlc_rx &&
-			 from_use_case != GSU_MODE_POGO_VOUT &&
-			 from_use_case != GSU_MODE_USB_CHG_POGO_VOUT &&
-			 from_use_case != GSU_MODE_USB_OTG_POGO_VOUT;
 	cb_data.wlcin_off = !!data->wcin_input_suspend;
 
 	pr_debug("%s: wcin_is_online=%d data->wcin_input_suspend=%d data->wlc_spoof=%d\n", __func__,
@@ -997,6 +993,8 @@ static int max77779_mode_callback(struct gvotable_election *el,
 
 	/* now scan all the reasons, accumulate in cb_data */
 	gvotable_election_for_each(el, max77779_foreach_callback, &cb_data);
+
+	cb_data.wlc_rx = cb_data.wlc_rx && !cb_data.pogo_vout;
 
 	nope = !cb_data.use_raw && !cb_data.stby_on && !cb_data.dc_on &&
 	       !cb_data.chgr_on && !cb_data.buck_on &&
@@ -1882,9 +1880,17 @@ static enum power_supply_property max77779_wcin_props[] = {
 
 static int max77779_wcin_is_valid(struct max77779_chgr_data *data)
 {
-	uint8_t val;
+	uint8_t val = 0;
 	uint8_t wcin_dtls;
-	int ret;
+	int ret = 0;
+
+	if (data->uc_data.pogo_vout_en >= 0) {
+		val = max77779_current_check_mode(data);
+		ret = gpio_get_value_cansleep(data->uc_data.pogo_vout_en);
+	}
+
+	if (val == MAX77779_CHGR_MODE_BOOST_UNO_ON || ret > 0)
+		return 0;
 
 	ret = max77779_reg_read(data, MAX77779_CHG_DETAILS_00, &val);
 	if (ret < 0)
@@ -1895,15 +1901,6 @@ static int max77779_wcin_is_valid(struct max77779_chgr_data *data)
 
 static inline int max77779_wcin_is_online(struct max77779_chgr_data *data)
 {
-	uint8_t val;
-	int ret;
-
-	ret = max77779_reg_read(data, MAX77779_CHG_CNFG_12, &val);
-	if (ret < 0)
-		return ret;
-	if (!_max77779_chg_cnfg_12_wcinsel_get(val))
-		return 0;
-
 	return max77779_wcin_is_valid(data);
 }
 

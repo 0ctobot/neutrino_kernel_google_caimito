@@ -248,3 +248,9 @@ config CHARGER_RT9471
 	  Say Y to enable support for Richtek RT9470, RT9470D,
 	  RT9471 and RT9471D battery chargers.
 	  RT9470D and RT9471D support BC1.2, but not RT9470 and RT9471
+
+config HL7132
+	tristate "HL7132 Direct charger"
+	depends on I2C && OF
+	help
+	  Say Y to enable support for the HL7132 direct charger.

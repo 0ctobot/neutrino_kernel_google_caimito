@@ -5020,7 +5020,7 @@ static enum p9382_rtx_state p9xxx_get_rtx_status(struct p9221_charger_data *char
 		return RTX_NOTSUPPORTED;
 
 	/* external boost is on but not for rtx */
-	if (charger->pdata->ben_gpio > 0 && !charger->pdata->rtx_wait_ben)
+	if (charger->pdata->ben_gpio > 0)
 		ext_bst_on = gpio_get_value_cansleep(charger->pdata->ben_gpio);
 
 	if (p9221_is_online(charger))
@@ -5361,12 +5361,8 @@ static int p9382_rtx_enable(struct p9221_charger_data *charger, bool enable)
 		ret = gvotable_cast_long_vote(charger->chg_mode_votable,
 					      P9221_WLC_VOTER,
 					      GBMS_CHGR_MODE_WLC_TX, enable);
-		if (charger->pdata->ben_gpio > 0) {
-			if (enable && charger->pdata->rtx_wait_ben)
-				dev_dbg(&charger->client->dev, "enable RTx waiting ben_gpio");
-			else
-				gpio_set_value_cansleep(charger->pdata->ben_gpio, enable);
-		}
+		if (charger->pdata->ben_gpio > 0)
+			gpio_set_value_cansleep(charger->pdata->ben_gpio, enable);
 		return ret;
 	}
 
@@ -5564,16 +5560,8 @@ static int p9xxx_rtx_mode_en(struct p9221_charger_data *charger, bool enable)
 	if (!enable)
 		return charger->chip_tx_mode_en(charger, false);
 
-	if (p9xxx_rtx_gpio_is_state(charger, RTX_READY)) {
-		if (charger->pdata->rtx_wait_ben && charger->pdata->ben_gpio > 0) {
-			if (!gpio_get_value_cansleep(charger->pdata->ben_gpio)) {
-				dev_err(&charger->client->dev, "ben_gpio not ready");
-				return -EINVAL;
-			}
-			gpio_set_value_cansleep(charger->pdata->ben_gpio, true);
-		}
+	if (p9xxx_rtx_gpio_is_state(charger, RTX_READY))
 		return charger->chip_tx_mode_en(charger, true);
-	}
 
 	return -ENOTSUPP;
 }
@@ -6357,7 +6345,7 @@ static void p9xxx_reset_rtx(struct p9221_charger_data *charger)
 	msleep(REENABLE_RTX_DELAY);
 
 	/* external boost is on but not for rtx */
-	if (charger->pdata->ben_gpio > 0 && !charger->pdata->rtx_wait_ben)
+	if (charger->pdata->ben_gpio > 0)
 		ext_bst_on = gpio_get_value_cansleep(charger->pdata->ben_gpio);
 	if (ext_bst_on && !rtx_gpio_retry) {
 		dev_warn(&charger->client->dev, "not allowed to re-enable due to ext on");
@@ -7267,10 +7255,8 @@ static int p9221_parse_dt(struct device *dev,
 		     (pdata->chip_id == P9382A_CHIP_ID));
 
 	pdata->has_rtx_gpio = of_property_read_bool(node, "idt,has_rtx_gpio");
-	pdata->rtx_wait_ben = of_property_read_bool(node, "idt,rtx_wait_ben");
 
-	dev_info(dev, "has_rtx:%d, has_rtx_gpio:%d, rtx_wait_ben:%d\n",
-		 pdata->has_rtx, pdata->has_rtx_gpio, pdata->rtx_wait_ben);
+	dev_info(dev, "has_rtx:%d, has_rtx_gpio:%d\n", pdata->has_rtx, pdata->has_rtx_gpio);
 
 	/* boost enable, power WLC IC from device */
 	pdata->ben_gpio = p9221_parse_gpios(dev, "idt,gpio-ben", "idt,gpio_ben", &flags);
@@ -7641,6 +7627,12 @@ static int p9221_parse_dt(struct device *dev,
 				  &pdata->phone_type);
 	if (ret < 0)
 		pdata->phone_type = 0;
+
+	ret = of_property_read_u32(node, "google,gpp_dcicl_default_ua", &data);
+	if (ret < 0)
+		pdata->dc_icl_gpp = 0;
+	else
+		pdata->dc_icl_gpp = data;
 
 	ret = of_property_read_u32(node, "google,epp_dcicl_default_ma", &data);
 	if (ret < 0)

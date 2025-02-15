@@ -40,7 +40,8 @@ GBMS_MODULES =	GOOGLE_BMS \
 		VIMON_MAX77779 \
 		VIMON_MAX77779_I2C \
 		FWUPDATE_MAX77779 \
-		CHARGER_RT9471
+		CHARGER_RT9471 \
+		HL7132
 
 obj-$(CONFIG_GOOGLE_BMS)	+= google-bms.o
 google-bms-objs += google_bms.o
@@ -52,6 +53,7 @@ google-bms-objs += gbms_storage.o
 # obj-$(CONFIG_GOOGLE_BEE)	+= google_eeprom.o
 google-bms-objs += google_eeprom.o
 google-bms-objs += google_eeprom_01.o
+google-bms-objs += google_eeprom_02.o
 
 # Battery
 obj-$(CONFIG_GOOGLE_BATTERY) += google-battery.o
@@ -184,6 +186,12 @@ max77779-fwupdate-objs += max77779_fwupdate.o
 # RT9471 Charger
 obj-$(CONFIG_CHARGER_RT9471) += rt9471_charger.o
 
+# Standalone for hl7132
+obj-$(CONFIG_HL7132)		+= hl7132.o
+hl7132-objs += hl7132_charger.o
+hl7132-objs += hl7132_gbms_pps.o
+hl7132-objs += google_dc_pps.o
+
 # prevent warnings
 WENUMS=-Wno-enum-conversion -Wno-switch
 
@@ -207,6 +215,7 @@ CFLAGS_google_ccd.o += $(WENUMS)
 CFLAGS_p9221_charger.o += $(WENUMS)
 CFLAGS_max77779_sp.o += -Wno-unused-function $(WENUMS)
 CFLAGS_ln8411_driver.o += $(WENUMS)
+CFLAGS_hl7132_charger.o += $(WENUMS)
 
 KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
 M ?= $(shell pwd)

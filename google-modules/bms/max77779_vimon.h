@@ -20,8 +20,13 @@
 #define MAX77779_VIMON_BYTES_PER_ENTRY 2
 #define MAX77779_VIMON_ENTRIES_PER_VI_PAIR 2
 
-#define MAX77779_VIMON_SMPL_CNT 3
+#define MAX77779_VIMON_SMPL_CNT 8
 #define MAX77779_VIMON_DATA_RETRIEVE_DELAY 0
+#define MAX77779_VIMON_DATA_RETRY_DELAY_MS 100
+
+#define MAX77779_VIMON_NV_PER_LSB 78122
+#define MAX77779_VIMON_NA_PER_LSB 781250
+#define MILLI_UNITS_TO_NANO_UNITS 1000000
 
 enum max77779_vimon_state {
 	MAX77779_VIMON_ERROR = -1,
@@ -29,6 +34,21 @@ enum max77779_vimon_state {
 	MAX77779_VIMON_IDLE,
 	MAX77779_VIMON_RUNNING,
 	MAX77779_VIMON_DATA_AVAILABLE,
+};
+
+enum max77779_vimon_client_names {
+	MAX77779_BCL_CLIENT,
+	MAX77779_BMS_CLIENT,
+	MAX77779_VIMON_DEBUGFS_CLIENT,
+	MAX77779_VIMON_CLIENT_MAX,
+};
+
+struct max77779_vimon_client {
+	struct device *client_dev;
+	void (*cb)(struct device *dev, uint16_t *buf, int rd_bytes);
+	atomic_t pending_request;
+	atomic_t active_request;
+	int sample_count;
 };
 
 struct max77779_vimon_data {
@@ -51,8 +71,16 @@ struct max77779_vimon_data {
 	/* debug interface, register to read or write */
 	u32 debug_reg_address;
 	u8 debug_buffer_page;
+	uint16_t *debug_buf;
+	size_t debug_buf_len;
 
 	struct delayed_work read_data_work;
+
+	int (*direct_reg_read)(struct max77779_vimon_data *data, u8 reg, unsigned int *val);
+	int (*direct_reg_write)(struct max77779_vimon_data *data, u8 reg, unsigned int val);
+
+	struct delayed_work pending_conv_work;
+	struct max77779_vimon_client clients[MAX77779_VIMON_CLIENT_MAX];
 };
 
 int max77779_vimon_init(struct max77779_vimon_data *data);

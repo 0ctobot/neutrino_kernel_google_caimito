@@ -60,6 +60,7 @@ kernel_module(
         # "max77729.ko",
         # "max77759.ko",
         # "pca9468-google.ko",
+        "hl7132.ko",
     ],
     kernel_build = "//private/devices/google/common:kernel",
     visibility = [

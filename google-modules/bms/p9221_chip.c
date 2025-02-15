@@ -1788,18 +1788,25 @@ static void p9222_check_neg_power(struct p9221_charger_data *chgr)
 	chgr->dc_icl_epp_neg = chgr->pdata->epp_icl > 0 ?
 			       chgr->pdata->epp_icl : P9221_DC_ICL_EPP_UA;
 
+	if (chgr->is_mfg_google && chgr->pdata->dc_icl_gpp) {
+		chgr->dc_icl_epp_neg = chgr->pdata->dc_icl_gpp;
+		dev_info(&chgr->client->dev, "mfg code=%02x, use dc_icl=%duA\n",
+			 WLC_MFG_GOOGLE, chgr->pdata->dc_icl_gpp);
+		return;
+	}
+
 	/* For EPP but Vout < 9V */
 	ret = chgr->chip_get_vout_max(chgr, &vout_mv);
 	if (ret == 0 && vout_mv > 0 && vout_mv < 9000) {
 		chgr->dc_icl_epp_neg = P9221_DC_ICL_BPP_UA;
-		dev_info(&chgr->client->dev, "EPP less than 10W,use dc_icl=%dmA\n",
+		dev_info(&chgr->client->dev, "EPP less than 10W,use dc_icl=%duA\n",
 			 chgr->dc_icl_epp_neg);
 	}
 
 	/* Based on mfg code to set EPP DC_ICL */
 	if (chgr->mfg == P9221_PTMC_EPP_TX_2767 && chgr->pdata->tx_2767_icl > 0) {
 		chgr->dc_icl_epp_neg = chgr->pdata->tx_2767_icl;
-		dev_info(&chgr->client->dev, "EPP TX(%d), use dc_icl=%dmA\n",
+		dev_info(&chgr->client->dev, "EPP TX(%d), use dc_icl=%duA\n",
 			 chgr->mfg, chgr->dc_icl_epp_neg);
 	}
 }

@@ -23,6 +23,70 @@ static const struct i2c_device_id max77779_vimon_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, max77779_vimon_id);
 
+static int max77779_vimon_direct_i2c_read(struct max77779_vimon_data *data, u8 reg,
+					  unsigned int *val)
+{
+	struct i2c_client *i2c;
+	struct i2c_msg xfer[2];
+	int ret;
+
+	dev_dbg(data->dev, "vimon_direct_i2c_read(%02x)\n", reg);
+
+	i2c = i2c_verify_client(data->dev);
+	if (!i2c) {
+		dev_err(data->dev, "failed to get i2c_client in direct read\n");
+		return -EIO;
+	}
+
+	xfer[0].addr = i2c->addr;
+	xfer[0].flags = 0;
+	xfer[0].len = 1;
+	xfer[0].buf = &reg;
+
+	xfer[1].addr = i2c->addr;
+	xfer[1].flags = I2C_M_RD;
+	xfer[1].len = 2;
+	xfer[1].buf = (u8 *)val;
+
+	ret = i2c_transfer(i2c->adapter, xfer, 2);
+	if (ret == 2)
+		return 0;
+
+	return -EIO;
+}
+
+static int max77779_vimon_direct_i2c_write(struct max77779_vimon_data *data, u8 reg,
+					   unsigned int val)
+{
+	struct i2c_client *i2c;
+	struct i2c_msg xfer;
+	u8 xfer_val[3];
+	int ret;
+
+	dev_dbg(data->dev, "vimon_direct_i2c_write(%02x): %04x\n", reg, (u16)val);
+
+	i2c = i2c_verify_client(data->dev);
+	if (!i2c) {
+		dev_err(data->dev, "failed to get i2c_client in direct write\n");
+		return -EIO;
+	}
+
+	xfer_val[0] = reg;
+	xfer_val[1] = val & 0xFF;
+	xfer_val[2] = (val >> 8) & 0xFF;
+
+	xfer.addr = i2c->addr;
+	xfer.flags = 0;
+	xfer.len = 3;
+	xfer.buf = xfer_val;
+
+	ret = i2c_transfer(i2c->adapter, &xfer, 1);
+	if (ret == 1)
+		return 0;
+
+	return -EIO;
+}
+
 static int max77779_vimon_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct device *dev = &client->dev;
@@ -47,6 +111,9 @@ static int max77779_vimon_i2c_probe(struct i2c_client *client, const struct i2c_
 	data->regmap = regmap;
 	data->irq = client->irq;
 	i2c_set_clientdata(client, data);
+
+	data->direct_reg_read = &max77779_vimon_direct_i2c_read;
+	data->direct_reg_write = &max77779_vimon_direct_i2c_write;
 
 	return max77779_vimon_init(data);
 }

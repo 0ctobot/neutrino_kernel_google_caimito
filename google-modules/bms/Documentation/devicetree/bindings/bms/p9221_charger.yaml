@@ -40,10 +40,6 @@ properties:
     description: Whether the device supports controlling RTX via GPIO.
     type: boolean
 
-  idt,rtx_wait_ben:
-    description: Whether the device should set ben GPIO after the external boost is ready for RTX.
-    type: boolean
-
   idt,apbst_en:
     description: Configure boost in WLC chip
     type: boolean

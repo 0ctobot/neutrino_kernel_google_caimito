@@ -3405,13 +3405,22 @@ static int max77779_fg_init_chip(struct max77779_fg_chip *chip)
 			chip->batt_id_defer_cnt -= 1;
 			return -EPROBE_DEFER;
 		}
-
-		chip->batt_id = DEFAULT_BATTERY_ID;
-		dev_info(chip->dev, "default device battery ID = %d\n",
-			 chip->batt_id);
 	} else {
 		dev_info(chip->dev, "device battery RID: %d kohm\n",
 			 chip->batt_id);
+	}
+
+	/*
+	 * If the battery model cannot be loaded (e.g., due to an inability
+	 * to read battery information), charging may be affected.
+	 *
+	 * Use the default battery ID if:
+	 * 1. The battery ID cannot be read.
+	 * 2. The battery ID is not in supported specifications.
+	 */
+	if (!chip->batt_id_defer_cnt || !max77779_fg_find_batt_node(chip)) {
+		chip->batt_id = DEFAULT_BATTERY_ID;
+		dev_info(chip->dev, "default device battery ID = %d\n", chip->batt_id);
 	}
 
 	/* TODO: b/283489811 - fix this */

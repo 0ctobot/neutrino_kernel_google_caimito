@@ -37,7 +37,7 @@ void dump_model(struct device *dev, u16 model_start, u16 *data, int count)
 int maxfg_get_fade_rate(struct device *dev, int bhi_fcn_count, int *fade_rate, enum gbms_property p)
 {
 	struct maxfg_eeprom_history hist = { 0 };
-	int ret, ratio, i, fcn_sum = 0, fcr_sum = 0;
+	int ret, ratio, i, fcn_sum = 0, fcr_sum = 0, hist_max_size;
 	u16 hist_idx;
 
 	ret = gbms_storage_read(GBMS_TAG_HCNT, &hist_idx, sizeof(hist_idx));
@@ -46,17 +46,23 @@ int maxfg_get_fade_rate(struct device *dev, int bhi_fcn_count, int *fade_rate, e
 		return -EIO;
 	}
 
-	dev_dbg(dev, "%s: hist_idx=%d\n", __func__, hist_idx);
+	hist_max_size = gbms_storage_read_data(GBMS_TAG_HIST, NULL, 0, 0);
+	if (hist_max_size <= 0) {
+		dev_err(dev, "failed to get history max size (%d)\n", hist_max_size);
+		return -EIO;
+	}
+
+	dev_dbg(dev, "%s: hist_idx=%d(max:%d)\n", __func__, hist_idx, hist_max_size);
 
 	/* no fade for new battery (less than 30 cycles) */
 	if (hist_idx < bhi_fcn_count)
 		return 0;
 
-	while (hist_idx >= BATT_MAX_HIST_CNT && bhi_fcn_count > 1) {
+	while (hist_idx >= hist_max_size && bhi_fcn_count > 1) {
 		hist_idx--;
 		bhi_fcn_count--;
 		if (bhi_fcn_count == 1) {
-			hist_idx = BATT_MAX_HIST_CNT - 1;
+			hist_idx = hist_max_size - 1;
 			break;
 		}
 	}

@@ -246,6 +246,10 @@ struct max1720x_chip {
 
 	/* AAFV: Aged Adjusted Float Voltage */
 	int aafv;
+	/* total number of model loading attempts counter since boot */
+	int ml_cnt;
+	/* total number of model loading failures since boot */
+	int ml_fails;
 };
 
 #define MAX1720_EMPTY_VOLTAGE(profile, temp, cycle) \
@@ -787,6 +791,8 @@ static ssize_t max1720x_model_show_state(struct device *dev,
 			 chip->model_next_update);
 	len += max_m5_model_state_cstr(&buf[len], PAGE_SIZE - len,
 				       chip->model_data);
+	len += scnprintf(&buf[len], PAGE_SIZE - len, "ATT: %d FAIL: %d\n", chip->ml_cnt,
+			 chip->ml_fails);
 	mutex_unlock(&chip->model_lock);
 
 	return len;
@@ -1522,7 +1528,7 @@ static int max1720x_fix_reg_eeprom_cycles(struct max1720x_chip *chip, int est_cc
 	if (ret < 0) {
 		chip->update_fixed_cycle = est_cc;
 		return FIX_CC_UPDATE_CYCLES_FAIL;
-	}
+}
 
 	return ret >= 0 ? 0 : ret;
 }
@@ -1551,7 +1557,7 @@ static int max1720x_recover_history(struct max1720x_chip *chip, int *first_empty
 	/* Update Cycles register, EEPROM cycle, chip variables */
 	ret = max1720x_fix_reg_eeprom_cycles(chip, est_cc);
 
-	return ret;
+		return ret;
 }
 
 /* call holding chip->model_lock */
@@ -2178,9 +2184,15 @@ static int max1720x_get_age(struct max1720x_chip *chip)
 static void max1720x_update_timer_base(struct max1720x_chip *chip)
 {
 	struct maxfg_eeprom_history hist = { 0 };
-	int ret, i, time_pre, time_now;
+	int ret, i, time_pre, time_now, hist_max_size;
 
-	for (i = 0; i < BATT_MAX_HIST_CNT; i++) {
+	hist_max_size = gbms_storage_read_data(GBMS_TAG_HIST, NULL, 0, 0);
+	if (hist_max_size <= 0) {
+		dev_err(chip->dev, "failed to get history max size (%d)\n", hist_max_size);
+		return;
+	}
+
+	for (i = 0; i < hist_max_size; i++) {
 		ret = gbms_storage_read_data(GBMS_TAG_HIST, &hist, sizeof(hist), i);
 		if (ret < 0)
 			return;
@@ -4510,10 +4522,12 @@ static int max1720x_model_load(struct max1720x_chip *chip)
 		/* use the state from the DT when GMSR is invalid */
 	}
 
+	chip->ml_cnt++;
 	/* failure on the gauge: retry as long as model_reload > IDLE */
 	ret = max_m5_load_gauge_model(chip->model_data);
 	if (ret < 0) {
 		dev_err(chip->dev, "Load Model Failed ret=%d\n", ret);
+		chip->ml_fails++;
 		return -EAGAIN;
 	}
 
@@ -5076,13 +5090,22 @@ static int max1720x_init_chip(struct max1720x_chip *chip)
 			chip->batt_id_defer_cnt -= 1;
 			return -EPROBE_DEFER;
 		}
-
-		chip->batt_id = DEFAULT_BATTERY_ID;
-		dev_info(chip->dev, "default device battery ID = %d\n",
-			 chip->batt_id);
 	} else {
 		dev_info(chip->dev, "device battery RID: %d kohm\n",
 			 chip->batt_id);
+	}
+
+	/*
+	 * If the battery model cannot be loaded (e.g., due to an inability
+	 * to read battery information), charging may be affected.
+	 *
+	 * Use the default battery ID if:
+	 * 1. The battery ID cannot be read.
+	 * 2. The battery ID is not in supported specifications.
+	 */
+	if (!chip->batt_id_defer_cnt || !max1720x_find_batt_node(chip)) {
+		chip->batt_id = DEFAULT_BATTERY_ID;
+		dev_info(chip->dev, "default device battery ID = %d\n", chip->batt_id);
 	}
 
 	if (chip->batt_id == DEFAULT_BATTERY_ID || chip->batt_id == DUMMY_BATTERY_ID) {
@@ -5169,7 +5192,7 @@ static int max1720x_init_chip(struct max1720x_chip *chip)
 	if (!chip->por && chip->gauge_type == MAX_M5_GAUGE_TYPE) {
 		mutex_lock(&chip->model_lock);
 		ret = max1720x_restore_battery_cycle(chip);
-		mutex_unlock(&chip->model_lock);
+			mutex_unlock(&chip->model_lock);
 		if (ret < 0)
 			dev_err(chip->dev, "%s cannot restore cycle count (%d)\n", __func__, ret);
 

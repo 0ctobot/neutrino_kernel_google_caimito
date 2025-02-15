@@ -9,7 +9,6 @@
 #include <linux/stdarg.h>
 
 struct logbuffer;
-
 __printf(2, 3)
 void logbuffer_log(struct logbuffer *instance, const char *fmt, ...);
 
