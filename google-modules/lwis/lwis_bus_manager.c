@@ -160,7 +160,6 @@ static void delete_bus_manager_id_in_list(int bus_handle, int32_t bus_type)
 
 		list_del(&bus_manager_identifier_node->bus_manager_list_node);
 		kfree(bus_manager_identifier_node);
-		bus_manager_identifier_node = NULL;
 	}
 	mutex_unlock(&bus_manager_list_lock);
 }

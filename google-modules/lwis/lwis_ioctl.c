@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Google LWIS IOCTL Handler
  *
  * Copyright (c) 2018 Google, LLC
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME "-ioctl: " fmt
@@ -172,9 +169,8 @@ static int register_write(struct lwis_device *lwis_dev, struct lwis_io_entry *wr
 	}
 
 	ret = lwis_dev->vops.register_io(lwis_dev, write_entry, lwis_dev->native_value_bitwidth);
-	if (ret) {
+	if (ret)
 		dev_err_ratelimited(lwis_dev->dev, "Failed to write registers\n");
-	}
 
 reg_write_exit:
 	if (batch_mode) {
@@ -189,9 +185,8 @@ static int register_modify(struct lwis_device *lwis_dev, struct lwis_io_entry *m
 	int ret = 0;
 
 	ret = lwis_dev->vops.register_io(lwis_dev, modify_entry, lwis_dev->native_value_bitwidth);
-	if (ret) {
+	if (ret)
 		dev_err_ratelimited(lwis_dev->dev, "Failed to read registers for modify\n");
-	}
 
 	return ret;
 }
@@ -206,7 +201,8 @@ static int synchronous_process_io_entries(struct lwis_device *lwis_dev, int num_
 
 	lwis_bus_manager_lock_bus(lwis_dev);
 	/* Use write memory barrier at the beginning of I/O entries if the access protocol
-	 * allows it */
+	 * allows it
+	 */
 	if (lwis_dev->vops.register_io_barrier != NULL) {
 		lwis_dev->vops.register_io_barrier(lwis_dev,
 						   /*use_read_barrier=*/false,
@@ -244,6 +240,9 @@ static int synchronous_process_io_entries(struct lwis_device *lwis_dev, int num_
 		case LWIS_IO_ENTRY_WRITE_TO_BUFFER:
 			ret = lwis_io_buffer_write(lwis_dev, &io_entries[i]);
 			break;
+		case LWIS_IO_ENTRY_IGNORE:
+			ret = 0;
+			break;
 		default:
 			dev_err(lwis_dev->dev, "Unknown io_entry operation\n");
 			ret = -EINVAL;
@@ -264,7 +263,8 @@ static int synchronous_process_io_entries(struct lwis_device *lwis_dev, int num_
 	}
 exit:
 	/* Use read memory barrier at the end of I/O entries if the access protocol
-	 * allows it */
+	 * allows it
+	 */
 	if (lwis_dev->vops.register_io_barrier != NULL) {
 		lwis_dev->vops.register_io_barrier(lwis_dev,
 						   /*use_read_barrier=*/true,
@@ -446,6 +446,7 @@ error_free_buf:
 		} else if (k_entries[i].type == LWIS_IO_ENTRY_WRITE_TO_BUFFER) {
 			void *sys_map = k_entries[i].write_to_buffer.buffer->io_sys_map;
 			void *dma_buffer = k_entries[i].write_to_buffer.buffer->dma_buf;
+
 			dma_buf_end_cpu_access(dma_buffer, DMA_BIDIRECTIONAL);
 			dma_buf_vunmap(dma_buffer, sys_map);
 			dma_buf_put(dma_buffer);
@@ -501,9 +502,9 @@ static int cmd_echo(struct lwis_device *lwis_dev, struct lwis_cmd_pkt *header,
 	}
 	buffer[echo_msg.msg.size] = '\0';
 
-	if (echo_msg.msg.kernel_log) {
+	if (echo_msg.msg.kernel_log)
 		dev_info(lwis_dev->dev, "LWIS_ECHO: %s\n", buffer);
-	}
+
 	kfree(buffer);
 
 	header->ret_code = 0;
@@ -514,6 +515,7 @@ static int cmd_time_query(struct lwis_device *lwis_dev, struct lwis_cmd_pkt *hea
 			  struct lwis_cmd_time_query __user *u_msg)
 {
 	struct lwis_cmd_time_query time_query;
+
 	time_query.timestamp_ns = ktime_to_ns(lwis_get_time());
 	time_query.header.cmd_id = header->cmd_id;
 	time_query.header.next = header->next;
@@ -530,9 +532,9 @@ static int cmd_get_device_info(struct lwis_device *lwis_dev, struct lwis_cmd_pkt
 	struct lwis_cmd_device_info *k_info;
 
 	k_info = kmalloc(sizeof(*k_info), GFP_KERNEL);
-	if (!k_info) {
+	if (!k_info)
 		return -ENOMEM;
-	}
+
 	k_info->header.cmd_id = header->cmd_id;
 	k_info->header.next = header->next;
 	k_info->info.id = lwis_dev->id;
@@ -560,6 +562,7 @@ static int cmd_get_device_info(struct lwis_device *lwis_dev, struct lwis_cmd_pkt
 
 	if (lwis_dev->type == DEVICE_TYPE_IOREG) {
 		struct lwis_ioreg_device *ioreg_dev;
+
 		ioreg_dev = container_of(lwis_dev, struct lwis_ioreg_device, base_dev);
 		if (ioreg_dev->reg_list.count > 0) {
 			k_info->info.num_regs = ioreg_dev->reg_list.count;
@@ -586,6 +589,7 @@ static int cmd_get_device_info(struct lwis_device *lwis_dev, struct lwis_cmd_pkt
 	if (lwis_dev->type == DEVICE_TYPE_I2C) {
 		/* For I2C devices, transactions are being run in the I2C bus manager thread */
 		struct lwis_i2c_device *i2c_dev;
+
 		i2c_dev = container_of(lwis_dev, struct lwis_i2c_device, base_dev);
 		k_info->info.transaction_worker_thread_pid =
 			i2c_dev->i2c_bus_manager->bus_worker_thread->pid;
@@ -595,6 +599,7 @@ static int cmd_get_device_info(struct lwis_device *lwis_dev, struct lwis_cmd_pkt
 		 * Devices that are grouped will run transactions in the IOREG bus manager thread.
 		 */
 		struct lwis_ioreg_device *ioreg_dev;
+
 		ioreg_dev = container_of(lwis_dev, struct lwis_ioreg_device, base_dev);
 		if (ioreg_dev->ioreg_bus_manager) {
 			k_info->info.transaction_worker_thread_pid =
@@ -606,6 +611,7 @@ static int cmd_get_device_info(struct lwis_device *lwis_dev, struct lwis_cmd_pkt
 	} else if (lwis_dev->type == DEVICE_TYPE_TOP) {
 		/* For top device, the event subscription thread is the main worker thread */
 		struct lwis_top_device *top_dev;
+
 		top_dev = container_of(lwis_dev, struct lwis_top_device, base_dev);
 		k_info->info.transaction_worker_thread_pid = top_dev->subscribe_worker_thread->pid;
 	} else if (lwis_dev->transaction_worker_thread) {
@@ -680,15 +686,13 @@ static int cmd_device_disable(struct lwis_client *lwis_client, struct lwis_cmd_p
 
 	/* Flush all periodic io to complete */
 	ret = lwis_periodic_io_client_flush(lwis_client);
-	if (ret) {
+	if (ret)
 		dev_err(lwis_dev->dev, "Failed to wait for in-process periodic io to complete\n");
-	}
 
 	/* Flush all pending transactions */
 	ret = lwis_transaction_client_flush(lwis_client);
-	if (ret) {
+	if (ret)
 		dev_err(lwis_dev->dev, "Failed to flush pending transactions\n");
-	}
 
 	/* Run cleanup transactions. */
 	lwis_transaction_client_cleanup(lwis_client);
@@ -773,9 +777,8 @@ static int cmd_device_reset(struct lwis_client *lwis_client, struct lwis_cmd_pkt
 	k_msg.skip_error = false;
 
 	ret = copy_io_entries_from_cmd(lwis_dev, &k_msg, &k_entries);
-	if (ret) {
+	if (ret)
 		goto soft_reset_exit;
-	}
 
 	/* Clear event states, event queues and transactions for this client */
 	mutex_lock(&lwis_dev->client_lock);
@@ -787,32 +790,28 @@ static int cmd_device_reset(struct lwis_client *lwis_client, struct lwis_cmd_pkt
 
 	/* Flush all periodic io to complete */
 	ret = lwis_periodic_io_client_flush(lwis_client);
-	if (ret) {
+	if (ret)
 		dev_err(lwis_dev->dev, "Failed to wait for in-process periodic io to complete\n");
-	}
 
 	/* Flush all pending transactions */
 	ret = lwis_transaction_client_flush(lwis_client);
-	if (ret) {
+	if (ret)
 		dev_err(lwis_dev->dev, "Failed to flush all pending transactions\n");
-	}
 
 	/* Perform reset routine defined by the io_entries */
-	if (device_enabled) {
+	if (device_enabled)
 		ret = synchronous_process_io_entries(lwis_dev, k_msg.io.num_io_entries, k_entries,
 						     k_msg.io.io_entries, k_msg.skip_error);
-	} else {
+	else
 		dev_warn(lwis_dev->dev,
 			 "Device is not enabled, IoEntries will not be executed in DEVICE_RESET\n");
-	}
 
 	mutex_lock(&lwis_dev->client_lock);
 	lwis_device_event_states_clear_locked(lwis_dev);
 	mutex_unlock(&lwis_dev->client_lock);
 soft_reset_exit:
-	if (k_entries) {
+	if (k_entries)
 		lwis_allocator_free(lwis_dev, k_entries);
-	}
 	header->ret_code = ret;
 	return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
 }
@@ -847,15 +846,13 @@ static int cmd_device_suspend(struct lwis_client *lwis_client, struct lwis_cmd_p
 
 	/* Flush all periodic io to complete */
 	ret = lwis_periodic_io_client_flush(lwis_client);
-	if (ret) {
+	if (ret)
 		dev_err(lwis_dev->dev, "Failed to wait for in-process periodic io to complete\n");
-	}
 
 	/* Flush all pending transactions */
 	ret = lwis_transaction_client_flush(lwis_client);
-	if (ret) {
+	if (ret)
 		dev_err(lwis_dev->dev, "Failed to flush pending transactions\n");
-	}
 
 	/* Run cleanup transactions. */
 	lwis_transaction_client_cleanup(lwis_client);
@@ -897,7 +894,8 @@ static int cmd_device_resume(struct lwis_client *lwis_client, struct lwis_cmd_pk
 
 	mutex_lock(&lwis_dev->client_lock);
 	/* Clear event queues to make sure there is no stale event from
-	 * previous session */
+	 * previous session
+	 */
 	lwis_client_event_queue_clear(lwis_client);
 	lwis_client_error_event_queue_clear(lwis_client);
 
@@ -944,11 +942,10 @@ static int cmd_get_device_enable_state(struct lwis_client *lwis_client, struct l
 
 	mutex_lock(&lwis_dev->client_lock);
 	if (lwis_dev->enabled) {
-		if (lwis_dev->is_suspended) {
+		if (lwis_dev->is_suspended)
 			enable_state.state = DEVICE_ENABLE_STATE_SUSPEND;
-		} else {
+		else
 			enable_state.state = DEVICE_ENABLE_STATE_ENABLE;
-		}
 	} else {
 		enable_state.state = DEVICE_ENABLE_STATE_DISABLE;
 	}
@@ -1062,9 +1059,9 @@ static int cmd_dma_buffer_cpu_access(struct lwis_client *lwis_client, struct lwi
 	ret = lwis_buffer_cpu_access(lwis_client, &op.op);
 	mutex_unlock(&lwis_client->lock);
 
-	if (ret) {
+	if (ret)
 		dev_err(lwis_dev->dev, "Failed to prepare for cpu access for fd %d\n", op.op.fd);
-	}
+
 	header->ret_code = ret;
 	return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
 }
@@ -1078,9 +1075,8 @@ static int cmd_dma_buffer_alloc(struct lwis_client *lwis_client, struct lwis_cmd
 	struct lwis_device *lwis_dev = lwis_client->lwis_dev;
 
 	buffer = kmalloc(sizeof(*buffer), GFP_KERNEL);
-	if (!buffer) {
+	if (!buffer)
 		return -ENOMEM;
-	}
 
 	if (copy_from_user((void *)&alloc_info, (void __user *)u_msg, sizeof(alloc_info))) {
 		dev_err(lwis_dev->dev, "Failed to copy %zu bytes from user\n", sizeof(alloc_info));
@@ -1172,18 +1168,16 @@ static int cmd_reg_io(struct lwis_device *lwis_dev, struct lwis_cmd_pkt *header,
 	k_msg.skip_error = false;
 
 	ret = copy_io_entries_from_cmd(lwis_dev, &k_msg, &k_entries);
-	if (ret) {
+	if (ret)
 		goto reg_io_exit;
-	}
 
 	/* Walk through and execute the entries */
 	ret = synchronous_process_io_entries(lwis_dev, k_msg.io.num_io_entries, k_entries,
 					     k_msg.io.io_entries, k_msg.skip_error);
 
 reg_io_exit:
-	if (k_entries) {
+	if (k_entries)
 		lwis_allocator_free(lwis_dev, k_entries);
-	}
 	header->ret_code = ret;
 	return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
 }
@@ -1208,18 +1202,16 @@ static int cmd_reg_io_v2(struct lwis_device *lwis_dev, struct lwis_cmd_pkt *head
 	}
 
 	ret = copy_io_entries_from_cmd(lwis_dev, &k_msg, &k_entries);
-	if (ret) {
+	if (ret)
 		goto reg_io_exit;
-	}
 
 	/* Walk through and execute the entries */
 	ret = synchronous_process_io_entries(lwis_dev, k_msg.io.num_io_entries, k_entries,
 					     k_msg.io.io_entries, k_msg.skip_error);
 
 reg_io_exit:
-	if (k_entries) {
+	if (k_entries)
 		lwis_allocator_free(lwis_dev, k_entries);
-	}
 	header->ret_code = ret;
 	return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
 }
@@ -1329,13 +1321,11 @@ static int cmd_event_dequeue(struct lwis_client *lwis_client, struct lwis_cmd_pk
 		header->ret_code = ret;
 		return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
 	} else {
-		/* Nothing at error event queue, continue to check normal
-		 * event queue */
+		/* Nothing at error event queue, continue to check normal event queue */
 		ret = lwis_client_event_peek_front(lwis_client, &event);
 		if (ret) {
-			if (ret != -ENOENT) {
+			if (ret != -ENOENT)
 				dev_err(lwis_dev->dev, "Error dequeueing event: %d\n", ret);
-			}
 			mutex_unlock(&lwis_dev->client_lock);
 			header->ret_code = ret;
 			return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
@@ -1372,11 +1362,11 @@ static int cmd_event_dequeue(struct lwis_client *lwis_client, struct lwis_cmd_pk
 	 * should try again with a bigger payload_buffer.
 	 */
 	if (!err) {
-		if (is_error_event) {
+		if (is_error_event)
 			ret = lwis_client_error_event_pop_front(lwis_client, NULL);
-		} else {
+		else
 			ret = lwis_client_event_pop_front(lwis_client, NULL);
-		}
+
 		if (ret) {
 			dev_err(lwis_dev->dev, "Error dequeueing event: %d\n", ret);
 			mutex_unlock(&lwis_dev->client_lock);
@@ -1398,9 +1388,8 @@ static int cmd_fake_event_inject(struct lwis_client *lwis_client, struct lwis_cm
 	struct lwis_interrupt_list *list = lwis_dev->irqs;
 	int rt_irq;
 
-	if (lwis_dev->type != DEVICE_TYPE_TEST || list->count != TEST_DEVICE_IRQ_CNT) {
+	if (lwis_dev->type != DEVICE_TYPE_TEST || list->count != TEST_DEVICE_IRQ_CNT)
 		return -EINVAL;
-	}
 
 	/* Fake Event Injection */
 	rt_irq = lwis_fake_event_inject(&list->irq[0]);
@@ -1498,27 +1487,24 @@ static int cmd_transaction_submit(struct lwis_client *client, struct lwis_cmd_pk
 	 * This will ensure that a worker thread is not created
 	 * for the top device by default.
 	 */
-	if (lwis_dev->type == DEVICE_TYPE_TOP) {
+	if (lwis_dev->type == DEVICE_TYPE_TOP)
 		create_top_device_worker_thread(client);
-	}
 
 	spin_lock_irqsave(&client->transaction_lock, flags);
 	ret = lwis_transaction_submit_locked(client, k_transaction);
 	ops->populate_cmd_info_from_transaction(cmd, k_transaction, ret);
 	spin_unlock_irqrestore(&client->transaction_lock, flags);
 
-	if (ret) {
+	if (ret)
 		lwis_transaction_free(lwis_dev, &k_transaction);
-	}
 
 	resp_header = cmd;
 	resp_header->cmd_id = header->cmd_id;
 	resp_header->next = header->next;
 	resp_header->ret_code = ret;
 	ret = copy_pkt_to_user(lwis_dev, u_msg, cmd, ops->cmd_size);
-	if (ret) {
+	if (ret)
 		goto err_free_cmd;
-	}
 
 	kfree(cmd);
 	return 0;
@@ -1534,6 +1520,7 @@ err_exit:
 static void populate_transaction_info_from_cmd(void *_cmd, struct lwis_transaction *k_transaction)
 {
 	struct lwis_cmd_transaction_info *cmd = _cmd;
+
 	k_transaction->info = cmd->info;
 }
 
@@ -1541,6 +1528,7 @@ static void populate_cmd_info_from_transaction(void *_cmd, struct lwis_transacti
 					       int error)
 {
 	struct lwis_cmd_transaction_info *cmd = _cmd;
+
 	cmd->info = k_transaction->info;
 	if (error != 0)
 		cmd->info.id = LWIS_ID_INVALID;
@@ -1586,9 +1574,8 @@ static int construct_periodic_io_from_cmd(struct lwis_client *client,
 	struct lwis_device *lwis_dev = client->lwis_dev;
 
 	k_periodic_io = kmalloc(sizeof(struct lwis_periodic_io), GFP_KERNEL);
-	if (!k_periodic_io) {
+	if (!k_periodic_io)
 		return -ENOMEM;
-	}
 
 	if (copy_from_user((void *)&k_info, (void __user *)u_msg, sizeof(k_info))) {
 		dev_err(lwis_dev->dev, "Failed to copy periodic io info from user\n");
@@ -1626,9 +1613,8 @@ static int cmd_periodic_io_submit(struct lwis_client *client, struct lwis_cmd_pk
 	struct lwis_device *lwis_dev = client->lwis_dev;
 
 	ret = construct_periodic_io_from_cmd(client, u_msg, &k_periodic_io);
-	if (ret) {
+	if (ret)
 		goto err_exit;
-	}
 
 	/*
 	 * Create top device thread only when user space submits
@@ -1636,9 +1622,8 @@ static int cmd_periodic_io_submit(struct lwis_client *client, struct lwis_cmd_pk
 	 * This will ensure that a worker thread is not created
 	 * for the top device by default.
 	 */
-	if (lwis_dev->type == DEVICE_TYPE_TOP) {
+	if (lwis_dev->type == DEVICE_TYPE_TOP)
 		create_top_device_worker_thread(client);
-	}
 
 	ret = lwis_periodic_io_submit(client, k_periodic_io);
 	k_periodic_io_info.info = k_periodic_io->info;
@@ -1761,6 +1746,7 @@ static int cmd_dpm_qos_update(struct lwis_device *lwis_dev, struct lwis_cmd_pkt 
 
 	for (i = 0; i < k_msg.reqs.num_settings; i++) {
 		struct lwis_qos_setting_v3 k_qos_setting_v3;
+
 		memcpy(&k_qos_setting_v3, &k_qos_settings[i], sizeof(struct lwis_qos_setting));
 		k_qos_setting_v3.bts_block_name[0] = '\0';
 		k_qos_setting_v3.qos_family_name[0] = '\0';
@@ -1818,6 +1804,7 @@ static int cmd_dpm_qos_update_v2(struct lwis_device *lwis_dev, struct lwis_cmd_p
 
 	for (i = 0; i < k_msg.reqs.num_settings; i++) {
 		struct lwis_qos_setting_v3 k_qos_setting_v3;
+
 		memcpy(&k_qos_setting_v3, &k_qos_settings[i], sizeof(struct lwis_qos_setting_v2));
 		k_qos_setting_v3.qos_family_name[0] = '\0';
 		ret = lwis_dpm_update_qos(lwis_dev, &k_qos_setting_v3);
@@ -2204,16 +2191,15 @@ static int ioctl_handle_cmd_pkt(struct lwis_client *lwis_client,
 		}
 
 		ret = handle_cmd_pkt(lwis_client, &header, user_msg);
-		if (ret) {
+		if (ret)
 			return ret;
-		}
+
 		user_msg = header.next;
 		++cmd_count;
 	}
 
-	if (cmd_count >= MAX_CMD_COUNT) {
+	if (cmd_count >= MAX_CMD_COUNT)
 		return -EOVERFLOW;
-	}
 
 	return ret;
 }
@@ -2232,9 +2218,8 @@ int lwis_ioctl_handler(struct lwis_client *lwis_client, unsigned int type, unsig
 		ret = -EINVAL;
 	};
 
-	if (ret && ret != -ENOENT && ret != -ETIMEDOUT && ret != -EAGAIN) {
+	if (ret && ret != -ENOENT && ret != -ETIMEDOUT && ret != -EAGAIN)
 		ioctl_pr_err(lwis_dev, type, ret);
-	}
 
 	return ret;
 }

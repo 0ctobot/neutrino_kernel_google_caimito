@@ -3,10 +3,6 @@
  * Google LWIS Anchorage Platform-Specific Functions
  *
  * Copyright (c) 2020 Google, LLC
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include "lwis_platform_anchorage.h"
@@ -425,5 +421,5 @@ int lwis_plaform_set_default_irq_affinity(unsigned int irq)
 {
 	const int cpu = 0x2;
 
-	return irq_set_affinity_hint(irq, cpumask_of(cpu));
+	return irq_set_affinity_and_hint(irq, cpumask_of(cpu));
 }

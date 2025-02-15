@@ -3,10 +3,6 @@
  * Google LWIS Device Tree Parser
  *
  * Copyright (c) 2018 Google, LLC
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME "-dt: " fmt
@@ -607,6 +603,7 @@ static int parse_interrupt_leaf_nodes(struct lwis_interrupt_list *list, int inde
 		i++;
 	}
 
+	kfree(int_reg_bits);
 	return 0;
 leaf_error:
 	lwis_interrupt_free_leaves(&list->irq[index]);

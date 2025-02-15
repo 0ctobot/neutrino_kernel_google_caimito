@@ -1,12 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Google LWIS Test Device Driver
  *
  * Copyright (c) 2022 Google, LLC
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME "-test-dev: " fmt
@@ -137,6 +133,9 @@ static int lwis_test_register_io(struct lwis_device *lwis_dev, struct lwis_io_en
 		reg_value &= ~mod->val_mask;
 		reg_value |= mod->val_mask & mod->val;
 		test_dev->scratch_mem[mod->offset] = reg_value;
+		break;
+	}
+	case LWIS_IO_ENTRY_IGNORE: {
 		break;
 	}
 	default:

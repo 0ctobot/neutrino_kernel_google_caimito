@@ -1,11 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Google LWIS Fence
  *
  * Copyright (c) 2022 Google, LLC
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef LWIS_FENCE_H_
@@ -46,7 +43,8 @@ extern bool lwis_fence_debug;
 struct lwis_fence {
 	/* Most of the LWIS fence functionality is covered by the dma_fence structure.
 	 * This effectively "inherits" from dma_fence and means that LWIS fences can be
-	 * used as DMA fences too. */
+	 * used as DMA fences too.
+	 */
 	struct dma_fence dma_fence;
 
 	/* Lock to protect the whole structure. */

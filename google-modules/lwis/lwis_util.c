@@ -1,12 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Google LWIS Misc Utility Functions and Wrappers
  *
  * Copyright (c) 2018 Google, LLC
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME "-util: " fmt
@@ -153,7 +149,7 @@ int lwis_set_kthread_priority(struct lwis_device *lwis_dev, struct task_struct *
 		task->static_prio = priority;
 		task->normal_prio = priority;
 	}
-	ret = sched_setscheduler(task, policy, &param);
+	ret = sched_setscheduler_nocheck(task, policy, &param);
 	if (ret) {
 		dev_err(lwis_dev->dev, "Failed to set kthread priority (%d)", ret);
 		return ret;

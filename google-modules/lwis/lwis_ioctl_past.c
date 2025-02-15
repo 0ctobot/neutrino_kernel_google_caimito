@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Google LWIS IOCTL Handler
+ *
+ * Copyright (c) 2024 Google, LLC
+ */
+
 #include "lwis_ioctl_past.h"
 #include "lwis_commands.h"
 #include <linux/build_bug.h>

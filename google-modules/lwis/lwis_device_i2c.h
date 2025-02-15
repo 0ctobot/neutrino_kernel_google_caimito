@@ -3,10 +3,6 @@
  * Google LWIS I2C Device Driver
  *
  * Copyright (c) 2018 Google, LLC
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #ifndef LWIS_DEVICE_I2C_H_
@@ -30,7 +26,7 @@ struct lwis_i2c_device {
 	struct i2c_adapter *adapter;
 	struct i2c_client *client;
 	struct pinctrl *state_pinctrl;
-	bool pinctrl_default_state_only;
+	bool set_master_pinctrl_state;
 	/* Group id for I2C lock */
 	u32 i2c_lock_group_id;
 	/* Mutex shared by the same group id's I2C devices */

@@ -3,10 +3,6 @@
  * Google LWIS Top Level Device Driver
  *
  * Copyright (c) 2018 Google, LLC
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME "-top-dev: " fmt
@@ -466,6 +462,9 @@ static int lwis_top_register_io(struct lwis_device *lwis_dev, struct lwis_io_ent
 		top_dev->scratch_mem[mod->offset] = reg_value;
 		break;
 	}
+	case LWIS_IO_ENTRY_IGNORE: {
+		break;
+	}
 	default:
 		dev_err(top_dev->base_dev.dev, "Invalid IO entry type: %d\n", entry->type);
 		return -EINVAL;
@@ -549,6 +548,7 @@ static int lwis_top_device_probe(struct platform_device *plat_dev)
 	if (ret) {
 		dev_err(top_dev->base_dev.dev,
 			"Failed to set LWIS top subscription kthread priority (%d)", ret);
+		kthread_stop(top_dev->subscribe_worker_thread);
 		lwis_base_unprobe(&top_dev->base_dev);
 		return ret;
 	}

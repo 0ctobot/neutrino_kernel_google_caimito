@@ -3,10 +3,6 @@
  * Google LWIS Transaction Processor
  *
  * Copyright (c) 2019 Google, LLC
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include "lwis_transaction.h"
@@ -398,6 +394,8 @@ static int process_transaction(struct lwis_client *client, struct lwis_transacti
 				}
 				break;
 			}
+		} else if (entry->type == LWIS_IO_ENTRY_IGNORE) {
+			ret = 0;
 		} else {
 			dev_err(lwis_dev->dev, "Unrecognized io_entry command\n");
 			resp->error_code = -EINVAL;

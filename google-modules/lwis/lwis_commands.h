@@ -4,10 +4,6 @@
  * Google LWIS IOCTL Commands and Data Structures
  *
  * Copyright (c) 2018 Google, LLC
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 /* END-INTERNAL */
 
@@ -216,7 +212,8 @@ enum lwis_io_entry_types {
 	LWIS_IO_ENTRY_READ_V2,
 	LWIS_IO_ENTRY_READ_BATCH_V2,
 	LWIS_IO_ENTRY_WRITE_V2,
-	LWIS_IO_ENTRY_WRITE_BATCH_V2
+	LWIS_IO_ENTRY_WRITE_BATCH_V2,
+	LWIS_IO_ENTRY_IGNORE
 };
 
 // For io_entry read and write types.
