@@ -169,3 +169,11 @@ void gxp_mcu_set_boot_mode(struct gxp_mcu_firmware *mcu_fw, enum gxp_mcu_boot_mo
 {
 	writel(mode, GXP_MCU_BOOT_MODE_OFFSET + mcu_fw->image_buf.vaddr);
 }
+
+void gxp_mcu_set_debug_dump_config(struct gxp_mcu_firmware *mcu_fw, struct gxp_mapped_resource *mem)
+{
+	struct gxp_mcu_dump_config *dump_config =
+		GXP_MCU_DUMP_CONFIG_OFFSET + mcu_fw->image_buf.vaddr;
+	dump_config->dump_dev_addr = mem->daddr;
+	dump_config->dump_size = mem->size;
+}

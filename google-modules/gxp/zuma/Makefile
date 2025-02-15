@@ -82,6 +82,7 @@ gxp-objs += $(GCIP_DIR)/gcip.o
 endif
 
 KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
+# TODO(b/368532067): Remove once tpu-ext.h is properly landed
 -include $(KERNEL_SRC)/../private/google-modules/soc/gs/Makefile.include
 M ?= $(shell pwd)
 
@@ -118,6 +119,10 @@ KBUILD_OPTIONS += GXP_CHIP=$(GXP_CHIP) GXP_PLATFORM=$(GXP_PLATFORM)
 # Set google-modules source and out paths if not defined.
 GMODULE_SRC_PATH ?= $(KERNEL_SRC)/../private/google-modules
 GMODULE_OUT_PATH ?= $(OUT_DIR)/../private/google-modules
+
+ifneq ($(wildcard $(GMODULE_SRC_PATH)/edgetpu/$(EDGETPU_CHIP)/drivers/edgetpu/include),)
+ccflags-y     += -I$(GMODULE_SRC_PATH)/edgetpu/$(EDGETPU_CHIP)/drivers/edgetpu/include
+endif
 
 # Access TPU driver's exported symbols.
 ifneq ($(wildcard $(GMODULE_OUT_PATH)/edgetpu/$(EDGETPU_CHIP)/drivers/edgetpu/Module.symvers),)

@@ -33,21 +33,6 @@
 	} while (0)
 #endif
 
-void gxp_lpm_enable_state(struct gxp_dev *gxp, enum gxp_lpm_psm psm, uint state)
-{
-	/* PS0 should always be enabled */
-	if (state == LPM_ACTIVE_STATE || state > LPM_PG_STATE)
-		return;
-
-	/* Disable all low power states */
-	lpm_write_32_psm(gxp, psm, PSM_REG_ENABLE_STATE1_OFFSET, 0x0);
-	lpm_write_32_psm(gxp, psm, PSM_REG_ENABLE_STATE2_OFFSET, 0x0);
-	lpm_write_32_psm(gxp, psm, PSM_REG_ENABLE_STATE3_OFFSET, 0x0);
-
-	/* Enable the requested low power state */
-	lpm_write_32_psm(gxp, psm, state, 0x1);
-}
-
 bool gxp_lpm_is_initialized(struct gxp_dev *gxp, enum gxp_lpm_psm psm)
 {
 	u32 status = lpm_read_32_psm(gxp, psm, PSM_REG_STATUS_OFFSET);
@@ -78,6 +63,48 @@ uint gxp_lpm_get_state(struct gxp_dev *gxp, enum gxp_lpm_psm psm)
 	u32 status = lpm_read_32_psm(gxp, psm, PSM_REG_STATUS_OFFSET);
 
 	return status & PSM_CURR_STATE_MASK;
+}
+
+#if GXP_AUTO_PSM && !IS_GXP_TEST
+void gxp_lpm_enable_state(struct gxp_dev *gxp, enum gxp_lpm_psm psm, uint state)
+{
+}
+int gxp_lpm_set_state(struct gxp_dev *gxp, enum gxp_lpm_psm psm, uint target_state,
+		      bool verbose)
+{
+	uint curr_state = gxp_lpm_get_state(gxp, psm);
+
+	if (curr_state != target_state)
+		dev_warn(gxp->dev, "Auto PSM %u is in invalid state. target: PS%u, actual: PS%u,\n",
+			 psm, target_state, gxp_lpm_get_state(gxp, psm));
+	return 0;
+}
+void gxp_lpm_init(struct gxp_dev *gxp)
+{
+}
+void gxp_lpm_destroy(struct gxp_dev *gxp)
+{
+}
+int gxp_lpm_up(struct gxp_dev *gxp, uint core)
+{
+	/* Clear wakeup doorbell */
+	gxp_doorbell_clear(gxp, CORE_WAKEUP_DOORBELL(core));
+	return 0;
+}
+#else
+void gxp_lpm_enable_state(struct gxp_dev *gxp, enum gxp_lpm_psm psm, uint state)
+{
+	/* PS0 should always be enabled */
+	if (state == LPM_ACTIVE_STATE || state > LPM_PG_STATE)
+		return;
+
+	/* Disable all low power states */
+	lpm_write_32_psm(gxp, psm, PSM_REG_ENABLE_STATE1_OFFSET, 0x0);
+	lpm_write_32_psm(gxp, psm, PSM_REG_ENABLE_STATE2_OFFSET, 0x0);
+	lpm_write_32_psm(gxp, psm, PSM_REG_ENABLE_STATE3_OFFSET, 0x0);
+
+	/* Enable the requested low power state */
+	lpm_write_32_psm(gxp, psm, state, 0x1);
 }
 
 static int set_state_internal(struct gxp_dev *gxp, enum gxp_lpm_psm psm, uint target_state)
@@ -183,6 +210,7 @@ void gxp_lpm_init(struct gxp_dev *gxp)
 {
 	if (gxp->lpm_init)
 		gxp->lpm_init(gxp);
+
 	/* Enable Top PSM */
 	if (psm_enable(gxp, LPM_PSM_TOP))
 		dev_err(gxp->dev, "Timed out when enabling Top PSM!\n");
@@ -216,6 +244,7 @@ int gxp_lpm_up(struct gxp_dev *gxp, uint core)
 
 	return 0;
 }
+#endif /* GXP_AUTO_PSM && !IS_GXP_TEST */
 
 void gxp_lpm_down(struct gxp_dev *gxp, uint core)
 {

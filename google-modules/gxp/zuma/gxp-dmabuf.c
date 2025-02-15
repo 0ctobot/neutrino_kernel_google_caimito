@@ -8,7 +8,6 @@
 #include <linux/dma-buf.h>
 #include <linux/module.h>
 #include <linux/slab.h>
-#include <linux/version.h>
 
 #include <gcip/gcip-config.h>
 #include <gcip/gcip-iommu-reserve.h>

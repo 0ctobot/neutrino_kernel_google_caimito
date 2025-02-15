@@ -2,8 +2,9 @@
 /*
  * GXP DMA interface.
  *
- * Copyright (C) 2021 Google LLC
+ * Copyright (C) 2021-2024 Google LLC
  */
+
 #ifndef __GXP_DMA_H__
 #define __GXP_DMA_H__
 

@@ -58,7 +58,7 @@ static void set_system_cfg_region(struct gxp_dev *gxp, void *sys_cfg)
 	int i;
 
 	if (gxp->debug_dump_mgr)
-		des_ro->debug_dump_dev_addr = gxp->debug_dump_mgr->buf.dsp_addr;
+		des_ro->debug_dump_dev_addr = gxp->debug_dump_mgr->core_buf.dsp_addr;
 	else
 		des_ro->debug_dump_dev_addr = 0;
 

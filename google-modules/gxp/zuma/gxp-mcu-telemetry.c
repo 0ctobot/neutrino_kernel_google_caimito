@@ -8,7 +8,6 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 
-#include <gcip/gcip-config.h>
 #include <gcip/gcip-telemetry.h>
 
 #include "gxp-internal.h"
@@ -195,11 +194,7 @@ static int telemetry_mmap_buffer(void *args)
 	refcount_set(&vma_data->ref_count, 1);
 
 	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
-#if GCIP_HAS_VMA_FLAGS_API
 	vm_flags_set(vma, VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP);
-#else
-	vma->vm_flags |= VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP;
-#endif
 	vma->vm_pgoff = 0;
 
 	if (mem->size > vma->vm_end - vma->vm_start) {

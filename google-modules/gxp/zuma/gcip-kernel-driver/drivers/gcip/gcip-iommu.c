@@ -21,16 +21,11 @@
 #include <linux/sched/mm.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include <linux/version.h>
 
 #include <gcip/gcip-config.h>
 #include <gcip/gcip-domain-pool.h>
 #include <gcip/gcip-iommu.h>
 #include <gcip/gcip-mem-pool.h>
-
-#if GCIP_HAS_IOVAD_BEST_FIT_ALGO
-#include <linux/dma-iommu.h>
-#endif
 
 /* Macros for manipulating @gcip_map_flags parameter. */
 #define GCIP_MAP_MASK(ATTR) \
@@ -247,9 +242,6 @@ static void iovad_finalize_domain(struct gcip_iommu_domain *domain)
 
 static void iovad_enable_best_fit_algo(struct gcip_iommu_domain *domain)
 {
-#if GCIP_HAS_IOVAD_BEST_FIT_ALGO
-	domain->iova_space.iovad.best_fit = true;
-#endif /* GCIP_HAS_IOVAD_BEST_FIT_ALGO */
 }
 
 static dma_addr_t iovad_alloc_iova_space(struct gcip_iommu_domain *domain, size_t size,
@@ -493,15 +485,8 @@ static void gcip_iommu_mapping_unmap_dma_buf(struct gcip_iommu_mapping *mapping)
 				  mapping->gcip_map_flags, false);
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
-	dma_resv_lock(dmabuf_mapping->dma_buf->resv, NULL);
 	dma_buf_unmap_attachment(dmabuf_mapping->dma_buf_attachment, dmabuf_mapping->sgt_default,
 				 mapping->dir);
-	dma_resv_unlock(dmabuf_mapping->dma_buf->resv);
-#else
-	dma_buf_unmap_attachment(dmabuf_mapping->dma_buf_attachment, dmabuf_mapping->sgt_default,
-				 mapping->dir);
-#endif
 
 	dma_buf_detach(dmabuf_mapping->dma_buf, dmabuf_mapping->dma_buf_attachment);
 	dma_buf_put(dmabuf_mapping->dma_buf);
@@ -607,22 +592,16 @@ static int gcip_pin_user_pages(struct device *dev, struct page **pages, unsigned
 	dev_dbg(dev, "Failed to pin user pages in fast mode (ret=%d, addr=%lu, num_pages=%d)", ret,
 		start_addr, num_pages);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
 	/* Allocate our own vmas array non-contiguous. */
 	vmas = kvmalloc((num_pages * sizeof(*vmas)), GFP_KERNEL | __GFP_NOWARN);
 	if (!vmas)
 		return -ENOMEM;
-#endif
 
 	if (pin_user_pages_lock)
 		mutex_lock(pin_user_pages_lock);
 	mmap_read_lock(current->mm);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
 	ret = pin_user_pages(start_addr, num_pages, gup_flags, pages, vmas);
-#else
-	ret = pin_user_pages(start_addr, num_pages, gup_flags, pages);
-#endif
 
 	mmap_read_unlock(current->mm);
 	if (pin_user_pages_lock)
@@ -687,16 +666,7 @@ int gcip_iommu_domain_pool_init(struct gcip_iommu_domain_pool *pool, struct devi
 
 	pool->min_pasid = 0;
 	pool->max_pasid = 0;
-#if GCIP_HAS_IOMMU_PASID
 	ida_init(&pool->pasid_pool);
-#elif GCIP_HAS_AUX_DOMAINS
-	if (iommu_dev_enable_feature(dev, IOMMU_DEV_FEAT_AUX))
-		dev_warn(dev, "AUX domains not supported\n");
-	else
-		pool->aux_enabled = true;
-#else
-	dev_warn(dev, "Attaching additional domains not supported\n");
-#endif
 
 	dev_dbg(dev, "Init GCIP IOMMU domain pool, base_daddr=%#llx, size=%#zx", pool->base_daddr,
 		pool->size);
@@ -707,14 +677,12 @@ int gcip_iommu_domain_pool_init(struct gcip_iommu_domain_pool *pool, struct devi
 void gcip_iommu_domain_pool_destroy(struct gcip_iommu_domain_pool *pool)
 {
 	gcip_domain_pool_destroy(&pool->domain_pool);
-#if GCIP_HAS_IOMMU_PASID
 	ida_destroy(&pool->pasid_pool);
-#endif
 }
 
 void gcip_iommu_domain_pool_enable_best_fit_algo(struct gcip_iommu_domain_pool *pool)
 {
-	if (pool->domain_type == GCIP_IOMMU_DOMAIN_TYPE_IOVAD && !GCIP_HAS_IOVAD_BEST_FIT_ALGO) {
+	if (pool->domain_type == GCIP_IOMMU_DOMAIN_TYPE_IOVAD) {
 		dev_warn(pool->dev, "This env doesn't support best-fit algorithm with IOVAD");
 		pool->best_fit = false;
 	} else {
@@ -788,7 +756,6 @@ static int _gcip_iommu_domain_pool_attach_domain(struct gcip_iommu_domain_pool *
 {
 	int ret = -EOPNOTSUPP, pasid = IOMMU_PASID_INVALID;
 
-#if GCIP_HAS_IOMMU_PASID
 	pasid = ida_alloc_range(&pool->pasid_pool, pool->min_pasid, pool->max_pasid, GFP_KERNEL);
 	if (pasid < 0)
 		return pasid;
@@ -799,22 +766,6 @@ static int _gcip_iommu_domain_pool_attach_domain(struct gcip_iommu_domain_pool *
 		return ret;
 	}
 
-#elif GCIP_HAS_AUX_DOMAINS
-	if (!pool->aux_enabled)
-		return -ENODEV;
-
-	ret = iommu_aux_attach_device(domain->domain, pool->dev);
-	if (ret)
-		return ret;
-
-	pasid = iommu_aux_get_pasid(domain->domain, pool->dev);
-	if (pasid < pool->min_pasid || pasid > pool->max_pasid) {
-		dev_warn(pool->dev, "Invalid PASID %d returned from iommu", pasid);
-		iommu_aux_detach_device(domain->domain, pool->dev);
-		return -EINVAL;
-	}
-
-#endif
 	domain->pasid = pasid;
 	return ret;
 }
@@ -834,13 +785,8 @@ void gcip_iommu_domain_pool_detach_domain(struct gcip_iommu_domain_pool *pool,
 {
 	if (domain->pasid == IOMMU_PASID_INVALID)
 		return;
-#if GCIP_HAS_IOMMU_PASID
 	iommu_detach_device_pasid(domain->domain, pool->dev, domain->pasid);
 	ida_free(&pool->pasid_pool, domain->pasid);
-#elif GCIP_HAS_AUX_DOMAINS
-	if (pool->aux_enabled)
-		iommu_aux_detach_device(domain->domain, pool->dev);
-#endif
 	domain->pasid = IOMMU_PASID_INVALID;
 }
 
@@ -1290,18 +1236,10 @@ struct gcip_iommu_mapping *gcip_iommu_domain_map_dma_buf_to_iova(struct gcip_iom
 		return ERR_CAST(attachment);
 	}
 
-#if GCIP_IS_GKI
 	attachment->dma_map_attrs |= GCIP_MAP_FLAGS_GET_DMA_ATTR(gcip_map_flags);
-#endif
 
 	/* Map the attachment into the default domain. */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
-	dma_resv_lock(dmabuf->resv, NULL);
 	sgt = dma_buf_map_attachment(attachment, dir);
-	dma_resv_unlock(dmabuf->resv);
-#else
-	sgt = dma_buf_map_attachment(attachment, dir);
-#endif
 	if (IS_ERR(sgt)) {
 		ret = PTR_ERR(sgt);
 		dev_err(dev, "Failed to get sgt from attachment (ret=%d, name=%s, size=%lu)\n", ret,
@@ -1319,13 +1257,7 @@ struct gcip_iommu_mapping *gcip_iommu_domain_map_dma_buf_to_iova(struct gcip_iom
 	return mapping;
 
 err_map_dma_buf_sgt:
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
-	dma_resv_lock(dmabuf->resv, NULL);
 	dma_buf_unmap_attachment(attachment, sgt, dir);
-	dma_resv_unlock(dmabuf->resv);
-#else
-	dma_buf_unmap_attachment(attachment, sgt, dir);
-#endif
 err_map_attachment:
 	dma_buf_detach(dmabuf, attachment);
 	return ERR_PTR(ret);

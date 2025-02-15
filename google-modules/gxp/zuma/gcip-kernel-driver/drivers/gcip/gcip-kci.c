@@ -133,10 +133,7 @@ static void gcip_kci_acquire_wait_list_lock(struct gcip_mailbox *mailbox, bool i
 {
 	struct gcip_kci *kci = gcip_mailbox_get_data(mailbox);
 
-	if (irqsave)
-		spin_lock_irqsave(&kci->wait_list_lock, *flags);
-	else
-		spin_lock(&kci->wait_list_lock);
+	spin_lock_irqsave(&kci->wait_list_lock, *flags);
 }
 
 static void gcip_kci_release_wait_list_lock(struct gcip_mailbox *mailbox, bool irqrestore,
@@ -144,10 +141,7 @@ static void gcip_kci_release_wait_list_lock(struct gcip_mailbox *mailbox, bool i
 {
 	struct gcip_kci *kci = gcip_mailbox_get_data(mailbox);
 
-	if (irqrestore)
-		spin_unlock_irqrestore(&kci->wait_list_lock, flags);
-	else
-		spin_unlock(&kci->wait_list_lock);
+	spin_unlock_irqrestore(&kci->wait_list_lock, flags);
 }
 
 static int gcip_kci_wait_for_cmd_queue_not_full(struct gcip_mailbox *mailbox)

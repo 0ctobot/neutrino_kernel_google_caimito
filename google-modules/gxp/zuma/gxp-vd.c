@@ -468,7 +468,7 @@ static int map_debug_dump_buffer(struct gxp_dev *gxp,
 		return 0;
 
 	return gxp_dma_map_allocated_coherent_buffer(
-		gxp, &gxp->debug_dump_mgr->buf, vd->domain, 0);
+		gxp, &gxp->debug_dump_mgr->core_buf, vd->domain, 0);
 }
 
 static void unmap_debug_dump_buffer(struct gxp_dev *gxp,
@@ -478,7 +478,7 @@ static void unmap_debug_dump_buffer(struct gxp_dev *gxp,
 		return;
 
 	gxp_dma_unmap_allocated_coherent_buffer(gxp, vd->domain,
-						&gxp->debug_dump_mgr->buf);
+						&gxp->debug_dump_mgr->core_buf);
 }
 
 static int assign_cores(struct gxp_virtual_device *vd)

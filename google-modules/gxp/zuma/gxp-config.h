@@ -24,6 +24,8 @@
 #define GXP_TIME_DELAY_FACTOR 100
 #elif IS_ENABLED(CONFIG_GXP_IP_ZEBU)
 #define GXP_TIME_DELAY_FACTOR 500
+#elif IS_ENABLED(CONFIG_GXP_TEST) && IS_ENABLED(CONFIG_DEBUG_KMEMLEAK)
+#define GXP_TIME_DELAY_FACTOR 5
 #else
 #define GXP_TIME_DELAY_FACTOR 1
 #endif
@@ -60,8 +62,8 @@
 #define GXP_ENABLE_DEBUG_DUMP 1
 #endif
 
-#ifndef GXP_LPM_IN_AON
-#define GXP_LPM_IN_AON 0
+#ifndef GXP_AUTO_PSM
+#define GXP_AUTO_PSM 0
 #endif
 
 #define GXP_DEBUG_DUMP_IOVA_BASE (0xF5000000)
@@ -72,8 +74,7 @@
  * 1. Unit testing, or
  * 2. Production on Android (to exclude vanilla Linux for bringup) but not GEM5.
  */
-#define HAS_TPU_EXT ((IS_ENABLED(CONFIG_GXP_TEST) || GCIP_IS_GKI) &&		\
-		    !IS_ENABLED(CONFIG_GXP_GEM5) &&				\
+#define HAS_TPU_EXT (!IS_ENABLED(CONFIG_GXP_GEM5) &&				\
 		    !IS_ENABLED(CONFIG_GXP_IP_ZEBU) &&				\
 		    !IS_ENABLED(CONFIG_GXP_ZEBU))
 

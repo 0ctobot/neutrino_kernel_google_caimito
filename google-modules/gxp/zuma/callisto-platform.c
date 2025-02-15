@@ -2,12 +2,13 @@
 /*
  * Platform device driver for Callisto.
  *
- * Copyright (C) 2022 Google LLC
+ * Copyright (C) 2022-2024 Google LLC
  */
 
 #include <linux/device.h>
 #include <linux/io.h>
 #include <linux/mod_devicetable.h>
+#include <linux/module.h>
 #include <linux/platform_device.h>
 
 #include <gcip/gcip-iommu.h>
@@ -144,11 +145,6 @@ static int gxp_platform_probe(struct platform_device *pdev)
 	return gxp_common_platform_probe(pdev, gxp);
 }
 
-static int gxp_platform_remove(struct platform_device *pdev)
-{
-	return gxp_common_platform_remove(pdev);
-}
-
 static const struct of_device_id gxp_of_match[] = {
 	{ .compatible = "google,gxp", },
 	{ .compatible = "google,gxp-zuma", },
@@ -158,7 +154,7 @@ MODULE_DEVICE_TABLE(of, gxp_of_match);
 
 static struct platform_driver gxp_platform_driver = {
 	.probe = gxp_platform_probe,
-	.remove = gxp_platform_remove,
+	.remove_new = gxp_common_platform_remove,
 	.driver = {
 			.name = GXP_DRIVER_NAME,
 			.of_match_table = of_match_ptr(gxp_of_match),

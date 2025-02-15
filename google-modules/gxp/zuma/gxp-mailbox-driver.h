@@ -15,22 +15,6 @@
 #include "gxp-config.h"
 #include "gxp-mailbox.h"
 
-/* Utilities of circular queue operations */
-
-#define CIRCULAR_QUEUE_INDEX_MASK(wrap_bit) (wrap_bit - 1)
-#define CIRCULAR_QUEUE_WRAPPED(idx, wrap_bit) ((idx)&wrap_bit)
-#define CIRCULAR_QUEUE_REAL_INDEX(idx, wrap_bit)                               \
-	((idx)&CIRCULAR_QUEUE_INDEX_MASK(wrap_bit))
-
-/*
- * Returns the number of elements in a circular queue given its @head, @tail,
- * and @queue_size.
- */
-u32 gxp_circ_queue_cnt(u32 head, u32 tail, u32 queue_size, u32 wrap_bit);
-
-/* Increases @index of a circular queue by @inc. */
-u32 gxp_circ_queue_inc(u32 index, u32 inc, u32 queue_size, u32 wrap_bit);
-
 void gxp_mailbox_driver_init(struct gxp_mailbox *mailbox);
 void gxp_mailbox_driver_exit(struct gxp_mailbox *mailbox);
 

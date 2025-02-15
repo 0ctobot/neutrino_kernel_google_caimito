@@ -2,7 +2,7 @@
 /*
  * GXP hardware-based mailbox driver implementation.
  *
- * Copyright (C) 2021 Google LLC
+ * Copyright (C) 2021-2024 Google LLC
  */
 
 #include <asm/barrier.h>
@@ -12,6 +12,7 @@
 #include <linux/of_irq.h>
 #include <linux/spinlock.h>
 
+#include <gcip/gcip-mailbox.h>
 #include <trace/events/gxp.h>
 
 #include "gxp-mailbox-driver.h"
@@ -75,26 +76,6 @@ static void unregister_irq(struct gxp_mailbox *mailbox)
 }
 
 /* gxp-mailbox-driver.h interface */
-
-u32 gxp_circ_queue_cnt(u32 head, u32 tail, u32 queue_size, u32 wrap_bit)
-{
-	if (CIRCULAR_QUEUE_WRAPPED(tail, wrap_bit) !=
-	    CIRCULAR_QUEUE_WRAPPED(head, wrap_bit))
-		return queue_size - CIRCULAR_QUEUE_REAL_INDEX(head, wrap_bit) +
-		       CIRCULAR_QUEUE_REAL_INDEX(tail, wrap_bit);
-	else
-		return tail - head;
-}
-
-u32 gxp_circ_queue_inc(u32 index, u32 inc, u32 queue_size, u32 wrap_bit)
-{
-	u32 new_index = CIRCULAR_QUEUE_REAL_INDEX(index, wrap_bit) + inc;
-
-	if (new_index >= queue_size)
-		return (index + inc - queue_size) ^ wrap_bit;
-	else
-		return index + inc;
-}
 
 void gxp_mailbox_driver_init(struct gxp_mailbox *mailbox)
 {
@@ -292,15 +273,15 @@ int gxp_mailbox_inc_cmd_queue_tail_nolock(struct gxp_mailbox *mailbox, u32 inc,
 		return -EINVAL;
 
 	head = gxp_mailbox_read_cmd_queue_head(mailbox);
-	remain_size = mailbox->cmd_queue_size -
-		      gxp_circ_queue_cnt(head, mailbox->cmd_queue_tail,
-					 mailbox->cmd_queue_size, wrap_bit);
+	remain_size = mailbox->cmd_queue_size - gcip_circ_queue_cnt(head, mailbox->cmd_queue_tail,
+								    mailbox->cmd_queue_size,
+								    wrap_bit);
 	/* no enough space left */
 	if (inc > remain_size)
 		return -EBUSY;
 
-	new_tail = gxp_circ_queue_inc(mailbox->cmd_queue_tail, inc,
-				      mailbox->cmd_queue_size, wrap_bit);
+	new_tail = gcip_circ_queue_inc(mailbox->cmd_queue_tail, inc, mailbox->cmd_queue_size,
+				       wrap_bit);
 	gxp_mailbox_set_cmd_queue_tail(mailbox, new_tail);
 	return 0;
 }
@@ -323,12 +304,12 @@ int gxp_mailbox_inc_resp_queue_head_nolock(struct gxp_mailbox *mailbox, u32 inc,
 		return -EINVAL;
 
 	tail = gxp_mailbox_read_resp_queue_tail(mailbox);
-	size = gxp_circ_queue_cnt(mailbox->resp_queue_head, tail,
-				  mailbox->resp_queue_size, wrap_bit);
+	size = gcip_circ_queue_cnt(mailbox->resp_queue_head, tail, mailbox->resp_queue_size,
+				   wrap_bit);
 	if (inc > size)
 		return -EINVAL;
-	new_head = gxp_circ_queue_inc(mailbox->resp_queue_head, inc,
-				      mailbox->resp_queue_size, wrap_bit);
+	new_head = gcip_circ_queue_inc(mailbox->resp_queue_head, inc, mailbox->resp_queue_size,
+				       wrap_bit);
 	gxp_mailbox_set_resp_queue_head(mailbox, new_head);
 
 	return 0;

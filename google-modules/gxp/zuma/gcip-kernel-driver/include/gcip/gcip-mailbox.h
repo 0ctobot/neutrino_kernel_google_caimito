@@ -257,15 +257,20 @@ struct gcip_mailbox_ops {
 	void (*set_resp_elem_seq)(struct gcip_mailbox *mailbox, void *resp, u64 seq);
 
 	/*
-	 * Acquires the lock of wait_list. If @irqsave is true, "_irqsave" functions can be used to
-	 * store the irq state to @flags, but also it can be ignored.
 	 * This callback will be called in following situations.
 	 * - Push a waiting response to the @mailbox->wait_list.
 	 * - Delete a waiting response from the @mailbox->wait_list.
 	 * - Handle an arrived response and delete it from the @mailbox->wait_list.
 	 * - Flush the asynchronous responses in the @mailbox->wait_list when release the @mailbox.
-	 * The lock can be a mutex lock or a spin lock. However, if @irqsave is considered and
-	 * "_irqsave" is used, it must be spin lock only.
+	 *
+	 * The lock can be a mutex lock or a spin lock. However, if it is a spin lock and the lock
+	 * can be held in any functions in the IRQ context (e.g., the IP driver calls
+	 * `gcip_mailbox_consume_one_response()` or `gcip_mailbox_consume_responses()` functions
+	 * in the IRQ context), the callback must use `_irqsave()` function and store the IRQ state
+	 * to @flags.
+	 *
+	 * Note that @irqsave is deprecated and true will be always passed.
+	 *
 	 * The lock will be released by calling `release_wait_list_lock` callback.
 	 *
 	 * Context: normal and in_interrupt().
@@ -274,8 +279,13 @@ struct gcip_mailbox_ops {
 				       unsigned long *flags);
 	/*
 	 * Releases the lock of wait_list which is acquired by calling `acquire_wait_list_lock`.
-	 * If @irqsave is true, restores @flags from `acquire_wait_list_lock` to the irq state.
-	 * Or it can be ignored, if @irqsave was not considered in the `acquire_wait_list_lock`.
+	 *
+	 * If the lock is a spin lock and the lock can be held in any functions in the IRQ context
+	 * (e.g., the IP driver calls `gcip_mailbox_consume_one_response()` or
+	 * `gcip_mailbox_consume_responses()` functions in the IRQ context), the callback must use
+	 * `_irqresotre()` function and restore the IRQ state from @flags.
+	 *
+	 * Note that @irqsave is deprecated and true will be always passed.
 	 *
 	 * Context: wait_list_lock.
 	 */
@@ -345,8 +355,6 @@ struct gcip_mailbox_ops {
 					struct gcip_mailbox_resp_awaiter *awaiter);
 	/*
 	 * Cleans up asynchronous response which is not arrived yet, but also not timed out.
-	 * The @awaiter should be marked as canceled to make it not to be processed by the
-	 * `handle_awaiter_arrived` or `handle_awaiter_timedout` callbacks in race conditions.
 	 * @awaiter should be released by calling the `gcip_mailbox_release_awaiter` function when
 	 * the kernel driver doesn't need it anymore. This is called without holding any locks.
 	 *
@@ -383,6 +391,19 @@ struct gcip_mailbox_ops {
 	 * Context: normal.
 	 */
 	void (*on_error)(struct gcip_mailbox *mailbox, int err);
+	/*
+	 * Called when processing responses arrived in the response queue to find if it matches an
+	 * outstanding command. @incoming_resp is the response packet as it was present in the
+	 * response queue. @waiter_resp is the response packet passed to gcip_mailbox_send_cmd()
+	 * or gcip_mailbox_put_cmd()/gcip_mailbox_put_cmd_flags() as "resp".
+	 *
+	 * If no op is provided, The `get_resp_elem_seq` op will be called on both packets and
+	 * be considered a match if the results are equal.
+	 *
+	 * Context: in_interrupt()
+	 */
+	bool (*does_response_match_waiter)(struct gcip_mailbox *mailbox, void *incoming_resp,
+						 void *waiter_resp);
 };
 
 struct gcip_mailbox {

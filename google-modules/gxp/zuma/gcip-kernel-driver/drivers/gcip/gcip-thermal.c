@@ -11,7 +11,6 @@
 #include <linux/mutex.h>
 #include <linux/notifier.h>
 #include <linux/thermal.h>
-#include <linux/version.h>
 
 #include <gcip/gcip-config.h>
 #include <gcip/gcip-pm.h>
@@ -176,9 +175,7 @@ static const struct thermal_cooling_device_ops gcip_thermal_ops = {
 };
 
 /* This API was removed, but Android still uses it to update thermal request. */
-#if GCIP_IS_GKI
 void thermal_cdev_update(struct thermal_cooling_device *cdev);
-#endif
 
 static void gcip_thermal_update(struct gcip_thermal *thermal)
 {
@@ -186,11 +183,7 @@ static void gcip_thermal_update(struct gcip_thermal *thermal)
 
 	cdev->updated = false;
 
-#if GCIP_IS_GKI
 	thermal_cdev_update(cdev);
-#elif IS_ENABLED(CONFIG_THERMAL)
-	dev_err_once(thermal->dev, "Thermal update not implemented");
-#endif
 }
 
 static ssize_t user_vote_show(struct device *dev, struct device_attribute *attr, char *buf)

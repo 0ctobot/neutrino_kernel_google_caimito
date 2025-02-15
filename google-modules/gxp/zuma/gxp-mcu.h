@@ -20,6 +20,16 @@ enum gxp_mcu_boot_mode {
 	GXP_MCU_BOOT_MODE_RECOVERY,
 };
 
+/* Configuration for the dump memory to be shared to the MCU. */
+struct gxp_mcu_dump_config {
+	/* Device address of the dump region. */
+	uint32_t dump_dev_addr;
+	/* Size of the dump region. */
+	uint32_t dump_size;
+	/* Reserved for future expansion. */
+	uint32_t reserved[2];
+};
+
 struct gxp_dev;
 struct gxp_mapped_resource;
 
@@ -81,5 +91,11 @@ struct gxp_mcu *gxp_mcu_of(struct gxp_dev *gxp);
  * Set boot mode for MCU.
  */
 void gxp_mcu_set_boot_mode(struct gxp_mcu_firmware *mcu_fw, enum gxp_mcu_boot_mode mode);
+
+/*
+ * Set the MCU debug dump config region.
+ */
+void gxp_mcu_set_debug_dump_config(struct gxp_mcu_firmware *mcu_fw,
+				   struct gxp_mapped_resource *mem);
 
 #endif /* __GXP_MCU_H__ */

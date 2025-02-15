@@ -23,7 +23,6 @@
 #include <linux/sort.h>
 #include <linux/spinlock.h>
 #include <linux/types.h>
-#include <linux/version.h>
 
 #include <iif/iif-fence-table.h>
 #include <iif/iif-fence.h>
@@ -109,7 +108,7 @@ static inline int iif_fences_check_fence_uniqueness(struct iif_fence **in_fences
  *
  * The caller must use the `iif_fences_write_unlock` function to release the locks.
  */
-static void iif_fences_write_lock(struct iif_fence **fences, int num_fences)
+static void iif_fences_write_lock(struct iif_fence **fences, int num_fences, unsigned long *flags)
 {
 	int i;
 
@@ -117,14 +116,14 @@ static void iif_fences_write_lock(struct iif_fence **fences, int num_fences)
 		return;
 
 	for (i = 0; i < num_fences; i++)
-		write_lock(&fences[i]->fence_lock);
+		write_lock_irqsave(&fences[i]->fence_lock, flags[i]);
 }
 
 /*
  * Releases the rwlocks held by the `iif_fences_write_lock` function without restoring the IRQ
  * state.
  */
-static void iif_fences_write_unlock(struct iif_fence **fences, int num_fences)
+static void iif_fences_write_unlock(struct iif_fence **fences, int num_fences, unsigned long *flags)
 {
 	int i;
 
@@ -132,7 +131,7 @@ static void iif_fences_write_unlock(struct iif_fence **fences, int num_fences)
 		return;
 
 	for (i = num_fences - 1; i >= 0; i--)
-		write_unlock(&fences[i]->fence_lock);
+		write_unlock_irqrestore(&fences[i]->fence_lock, flags[i]);
 }
 
 /*
@@ -224,8 +223,8 @@ static void iif_fence_retire_if_possible_locked(struct iif_fence *fence)
 {
 	lockdep_assert_held(&fence->fence_lock);
 
-	if (!fence->outstanding_waiters && !iif_fence_outstanding_signalers_locked(fence) &&
-	    !atomic_read(&fence->num_sync_file))
+	if (!(fence->flags & IIF_FLAGS_RETIRE_ON_RELEASE) && !fence->outstanding_waiters &&
+	    !iif_fence_outstanding_signalers_locked(fence) && !atomic_read(&fence->num_sync_file))
 		iif_fence_retire_locked(fence);
 }
 
@@ -243,8 +242,7 @@ static int iif_fence_submit_signaler_with_complete_locked(struct iif_fence *fenc
 	lockdep_assert_held(&fence->fence_lock);
 
 	/* Already all signalers are submitted. No more submission is allowed. */
-	if (fence->submitted_signalers >= fence->total_signalers ||
-	    iif_fence_has_retired_locked(fence))
+	if (fence->submitted_signalers >= fence->total_signalers)
 		return -EPERM;
 
 	if (!complete)
@@ -351,15 +349,16 @@ static void iif_fence_release_all_block_wakelock(struct iif_fence *fence)
 {
 	int i;
 	uint16_t locks[IIF_IP_RESERVED] = { 0 };
+	unsigned long flags;
 
-	write_lock(&fence->fence_lock);
+	write_lock_irqsave(&fence->fence_lock, flags);
 
 	for (i = 0; i < IIF_IP_RESERVED; i++) {
 		locks[i] = fence->outstanding_block_wakelock[i];
 		fence->outstanding_block_wakelock[i] = 0;
 	}
 
-	write_unlock(&fence->fence_lock);
+	write_unlock_irqrestore(&fence->fence_lock, flags);
 
 	for (i = 0; i < IIF_IP_RESERVED; i++) {
 		while (locks[i]) {
@@ -372,6 +371,8 @@ static void iif_fence_release_all_block_wakelock(struct iif_fence *fence)
 /* Cleans up @fence which was initialized by the `iif_fence_init` function. */
 static void iif_fence_do_destroy(struct iif_fence *fence)
 {
+	unsigned long flags;
+
 	/*
 	 * If the IP driver puts @fence asynchronously, the works might be not finished. We should
 	 * wait for them.
@@ -380,7 +381,7 @@ static void iif_fence_do_destroy(struct iif_fence *fence)
 	flush_work(&fence->waited_work);
 
 	/* Checks whether there is remaining all_signaler_submitted and poll callbacks. */
-	write_lock(&fence->fence_lock);
+	write_lock_irqsave(&fence->fence_lock, flags);
 
 	if (!list_empty(&fence->all_signaler_submitted_cb_list) &&
 	    fence->submitted_signalers < fence->total_signalers) {
@@ -408,7 +409,7 @@ static void iif_fence_do_destroy(struct iif_fence *fence)
 	 */
 	iif_fence_retire_locked(fence);
 
-	write_unlock(&fence->fence_lock);
+	write_unlock_irqrestore(&fence->fence_lock, flags);
 
 	/*
 	 * It is always safe to call this function.
@@ -478,6 +479,7 @@ static void iif_fence_waited_work_func(struct work_struct *work)
 {
 	struct iif_fence *fence = container_of(work, struct iif_fence, waited_work);
 	uint16_t locks[IIF_IP_RESERVED] = { 0 };
+	unsigned long flags;
 	int i;
 
 	/*
@@ -492,7 +494,7 @@ static void iif_fence_waited_work_func(struct work_struct *work)
 	if (!iif_fence_is_signaled(fence))
 		return;
 
-	write_lock(&fence->fence_lock);
+	write_lock_irqsave(&fence->fence_lock, flags);
 
 	for (i = 0; i < IIF_IP_RESERVED; i++) {
 		if (fence->outstanding_block_wakelock[i] > fence->outstanding_waiters_per_ip[i]) {
@@ -502,7 +504,7 @@ static void iif_fence_waited_work_func(struct work_struct *work)
 		}
 	}
 
-	write_unlock(&fence->fence_lock);
+	write_unlock_irqrestore(&fence->fence_lock, flags);
 
 	for (i = 0; i < IIF_IP_RESERVED; i++) {
 		while (locks[i]) {
@@ -527,6 +529,9 @@ int iif_fence_init(struct iif_manager *mgr, struct iif_fence *fence,
 	unsigned int id_max = id_min + IIF_NUM_FENCES_PER_IP - 1;
 	int ret;
 
+	if (signaler_ip >= IIF_IP_NUM)
+		return -EINVAL;
+
 	fence->id = ida_alloc_range(&mgr->idp, id_min, id_max, GFP_KERNEL);
 	if (fence->id < 0)
 		return fence->id;
@@ -538,9 +543,11 @@ int iif_fence_init(struct iif_manager *mgr, struct iif_fence *fence,
 	fence->signaled_signalers = 0;
 	fence->outstanding_waiters = 0;
 	fence->signal_error = 0;
+	fence->all_signaler_submitted_error = 0;
 	fence->ops = ops;
 	fence->state = IIF_FENCE_STATE_INITIALIZED;
 	fence->propagate = signaler_ip == IIF_IP_AP;
+	fence->flags = 0;
 	kref_init(&fence->kref);
 #if IS_ENABLED(CONFIG_DEBUG_SPINLOCK)
 	lockdep_register_key(&fence->fence_lock_key);
@@ -640,24 +647,32 @@ void iif_fence_put_async(struct iif_fence *fence)
 
 int iif_fence_submit_signaler(struct iif_fence *fence)
 {
-	int ret;
+	int ret = -EPERM;
+	unsigned long flags;
 
 	might_sleep();
 
-	write_lock(&fence->fence_lock);
-	ret = iif_fence_submit_signaler_with_complete_locked(fence, false);
-	write_unlock(&fence->fence_lock);
+	write_lock_irqsave(&fence->fence_lock, flags);
+
+	if (!iif_fence_has_retired_locked(fence))
+		ret = iif_fence_submit_signaler_with_complete_locked(fence, false);
+
+	write_unlock_irqrestore(&fence->fence_lock, flags);
 
 	return ret;
 }
 
 int iif_fence_submit_waiter(struct iif_fence *fence, enum iif_ip_type ip)
 {
+	unsigned long flags;
 	int unsubmitted = iif_fence_unsubmitted_signalers(fence);
 	int status = iif_fence_get_signal_status(fence);
 	int ret;
 
 	might_sleep();
+
+	if (ip >= IIF_IP_NUM)
+		return -EINVAL;
 
 	if (unsubmitted)
 		return unsubmitted;
@@ -688,10 +703,10 @@ int iif_fence_submit_waiter(struct iif_fence *fence, enum iif_ip_type ip)
 		return ret;
 	}
 
-	write_lock(&fence->fence_lock);
+	write_lock_irqsave(&fence->fence_lock, flags);
 
 	if (iif_fence_has_retired_locked(fence)) {
-		write_unlock(&fence->fence_lock);
+		write_unlock_irqrestore(&fence->fence_lock, flags);
 		iif_manager_release_block_wakelock(fence->mgr, ip);
 		return -EPERM;
 	}
@@ -702,7 +717,7 @@ int iif_fence_submit_waiter(struct iif_fence *fence, enum iif_ip_type ip)
 
 	iif_fence_table_set_waiting_ip(&fence->mgr->fence_table, fence->id, ip);
 
-	write_unlock(&fence->fence_lock);
+	write_unlock_irqrestore(&fence->fence_lock, flags);
 
 	return 0;
 }
@@ -711,24 +726,33 @@ int iif_fence_submit_signaler_and_waiter(struct iif_fence **in_fences, int num_i
 					 struct iif_fence **out_fences, int num_out_fences,
 					 enum iif_ip_type waiter_ip)
 {
+	unsigned long *flags;
 	int i, ret;
 
 	might_sleep();
 
+	if (waiter_ip >= IIF_IP_NUM)
+		return -EINVAL;
+
+	flags = kcalloc(num_in_fences > num_out_fences ? num_in_fences : num_out_fences,
+			sizeof(*flags), GFP_KERNEL);
+	if (!flags)
+		return -ENOMEM;
+
 	ret = iif_fences_sort_by_id(in_fences, num_in_fences);
 	if (ret)
-		return ret;
+		goto out;
 
 	ret = iif_fences_sort_by_id(out_fences, num_out_fences);
 	if (ret)
-		return ret;
+		goto out;
 
 	ret = iif_fences_check_fence_uniqueness(in_fences, num_in_fences, out_fences,
 						num_out_fences);
 	if (ret)
-		return ret;
+		goto out;
 
-	iif_fences_write_lock(in_fences, num_in_fences);
+	iif_fences_write_lock(in_fences, num_in_fences, flags);
 
 	/*
 	 * Checks whether we can submit a waiter to @in_fences.
@@ -736,13 +760,15 @@ int iif_fence_submit_signaler_and_waiter(struct iif_fence **in_fences, int num_i
 	 */
 	for (i = 0; in_fences && i < num_in_fences; i++) {
 		if (iif_fence_unsubmitted_signalers_locked(in_fences[i])) {
-			iif_fences_write_unlock(in_fences, num_in_fences);
-			return -EAGAIN;
+			iif_fences_write_unlock(in_fences, num_in_fences, flags);
+			ret = -EAGAIN;
+			goto out;
 		}
 
 		if (iif_fence_has_retired_locked(in_fences[i])) {
-			iif_fences_write_unlock(in_fences, num_in_fences);
-			return -EPERM;
+			iif_fences_write_unlock(in_fences, num_in_fences, flags);
+			ret = -EPERM;
+			goto out;
 		}
 	}
 
@@ -751,8 +777,8 @@ int iif_fence_submit_signaler_and_waiter(struct iif_fence **in_fences, int num_i
 	 * means that all signalers have been submitted to @in_fences and the fact won't be changed.
 	 * Will submit a waiter to @in_fences if @out_fences are able to submit a signaler.
 	 */
-	iif_fences_write_unlock(in_fences, num_in_fences);
-	iif_fences_write_lock(out_fences, num_out_fences);
+	iif_fences_write_unlock(in_fences, num_in_fences, flags);
+	iif_fences_write_lock(out_fences, num_out_fences, flags);
 
 	/*
 	 * Checks whether we can submit a signaler to @out_fences.
@@ -761,8 +787,9 @@ int iif_fence_submit_signaler_and_waiter(struct iif_fence **in_fences, int num_i
 	for (i = 0; out_fences && i < num_out_fences; i++) {
 		if (!iif_fence_unsubmitted_signalers_locked(out_fences[i]) ||
 		    iif_fence_has_retired_locked(out_fences[i])) {
-			iif_fences_write_unlock(out_fences, num_out_fences);
-			return -EPERM;
+			iif_fences_write_unlock(out_fences, num_out_fences, flags);
+			ret = -EPERM;
+			goto out;
 		}
 	}
 
@@ -770,13 +797,15 @@ int iif_fence_submit_signaler_and_waiter(struct iif_fence **in_fences, int num_i
 	for (i = 0; out_fences && i < num_out_fences; i++)
 		iif_fence_submit_signaler_with_complete_locked(out_fences[i], false);
 
-	iif_fences_write_unlock(out_fences, num_out_fences);
+	iif_fences_write_unlock(out_fences, num_out_fences, flags);
 
 	/* Submits a waiter to @in_fences. */
 	for (i = 0; in_fences && i < num_in_fences; i++)
 		iif_fence_submit_waiter(in_fences[i], waiter_ip);
+out:
+	kfree(flags);
 
-	return 0;
+	return ret;
 }
 
 int iif_fence_signal(struct iif_fence *fence)
@@ -928,6 +957,9 @@ void iif_fence_waited(struct iif_fence *fence, enum iif_ip_type ip)
 void iif_fence_waited_async(struct iif_fence *fence, enum iif_ip_type ip)
 {
 	unsigned long flags;
+
+	if (ip >= IIF_IP_NUM)
+		return;
 
 	write_lock_irqsave(&fence->fence_lock, flags);
 

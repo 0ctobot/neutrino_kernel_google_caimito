@@ -8,6 +8,7 @@
 #include <linux/dma-fence.h>
 #include <linux/kref.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 
 #include <gcip/gcip-dma-fence.h>
 #include <gcip/gcip-fence-array.h>
@@ -75,7 +76,7 @@ err_free_fence_array:
 }
 
 static void gcip_fence_array_do_free(struct gcip_fence_array *fence_array,
-					void (*gcip_fence_put_func)(struct gcip_fence *))
+				     void (*gcip_fence_put_func)(struct gcip_fence *))
 {
 	int i;
 
@@ -299,4 +300,58 @@ void gcip_fence_array_iif_set_propagate_unblock(struct gcip_fence_array *fence_a
 
 	for (i = 0; i < fence_array->size; i++)
 		gcip_fence_iif_set_propagate_unblock(fence_array->fences[i]);
+}
+
+int gcip_fence_array_add(struct gcip_fence_array *fence_array, struct gcip_fence *fence)
+{
+	struct gcip_fence **fences;
+	bool same_type = fence_array->same_type;
+
+	if (same_type && fence_array->size && fence_array->fences[0]->type != fence->type)
+		same_type = false;
+
+	fences = krealloc_array(fence_array->fences, fence_array->size + 1, sizeof(*fences),
+				GFP_KERNEL);
+	if (!fences)
+		return -ENOMEM;
+
+	if (!fence_array->size)
+		fence_array->type = fence->type;
+
+	fences[fence_array->size] = gcip_fence_get(fence);
+	fence_array->fences = fences;
+	fence_array->same_type = same_type;
+	fence_array->size++;
+
+	return 0;
+}
+
+int gcip_fence_array_add_iif(struct gcip_fence_array *fence_array, struct iif_fence *iif)
+{
+	struct gcip_fence *fence;
+	int ret;
+
+	fence = gcip_fence_get_iif(iif);
+	if (IS_ERR(fence))
+		return PTR_ERR(fence);
+
+	ret = gcip_fence_array_add(fence_array, fence);
+	gcip_fence_put(fence);
+
+	return ret;
+}
+
+int gcip_fence_array_add_ikf(struct gcip_fence_array *fence_array, struct dma_fence *ikf)
+{
+	struct gcip_fence *fence;
+	int ret;
+
+	fence = gcip_fence_get_ikf(ikf);
+	if (IS_ERR(fence))
+		return PTR_ERR(fence);
+
+	ret = gcip_fence_array_add(fence_array, fence);
+	gcip_fence_put(fence);
+
+	return ret;
 }

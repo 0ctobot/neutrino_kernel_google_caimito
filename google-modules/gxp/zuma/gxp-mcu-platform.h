@@ -8,6 +8,10 @@
 #ifndef __GXP_MCU_PLATFORM_H__
 #define __GXP_MCU_PLATFORM_H__
 
+#include <linux/list.h>
+#include <linux/spinlock.h>
+#include <linux/workqueue.h>
+
 #include "gxp-internal.h"
 #include "gxp-mcu.h"
 
@@ -28,6 +32,10 @@ struct gxp_mcu_dev {
 	struct gxp_dev gxp;
 	struct gxp_mcu mcu;
 	enum gxp_work_mode mode;
+
+	struct work_struct iif_unblocked_work;
+	struct list_head iif_unblocked_list;
+	spinlock_t iif_unblocked_lock;
 };
 
 /*

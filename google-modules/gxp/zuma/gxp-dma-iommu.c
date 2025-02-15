@@ -2,10 +2,11 @@
 /*
  * GXP DMA implemented via IOMMU.
  *
- * Copyright (C) 2021 Google LLC
+ * Copyright (C) 2021-2024 Google LLC
  */
 
 #include <linux/bits.h>
+#include <linux/device.h>
 #include <linux/dma-mapping.h>
 #include <linux/iommu.h>
 #include <linux/platform_device.h>
@@ -31,34 +32,33 @@ struct gxp_dma_iommu_manager {
 
 /* Fault handler */
 
-static int sysmmu_fault_handler(struct iommu_fault *fault, void *token)
+static int iommu_fault_handler(struct iommu_fault *fault, void *token)
 {
-	struct gxp_dev *gxp = (struct gxp_dev *)token;
+	struct device *dev = token;
 
 	switch (fault->type) {
 	case IOMMU_FAULT_DMA_UNRECOV:
-		dev_err(gxp->dev, "Unrecoverable IOMMU fault!\n");
-		dev_err(gxp->dev, "reason = %08X\n", fault->event.reason);
-		dev_err(gxp->dev, "flags = %08X\n", fault->event.flags);
-		dev_err(gxp->dev, "pasid = %08X\n", fault->event.pasid);
-		dev_err(gxp->dev, "perm = %08X\n", fault->event.perm);
-		dev_err(gxp->dev, "addr = %llX\n", fault->event.addr);
-		dev_err(gxp->dev, "fetch_addr = %llX\n", fault->event.fetch_addr);
+		dev_err(dev, "Unrecoverable IOMMU fault!\n");
+		dev_err(dev, "reason = %08X\n", fault->event.reason);
+		dev_err(dev, "flags = %08X\n", fault->event.flags);
+		dev_err(dev, "pasid = %08X\n", fault->event.pasid);
+		dev_err(dev, "perm = %08X\n", fault->event.perm);
+		dev_err(dev, "addr = %llX\n", fault->event.addr);
+		dev_err(dev, "fetch_addr = %llX\n", fault->event.fetch_addr);
 		break;
 	case IOMMU_FAULT_PAGE_REQ:
-		dev_err(gxp->dev, "IOMMU page request fault!\n");
-		dev_err(gxp->dev, "flags = %08X\n", fault->prm.flags);
-		dev_err(gxp->dev, "pasid = %08X\n", fault->prm.pasid);
-		dev_err(gxp->dev, "grpid = %08X\n", fault->prm.grpid);
-		dev_err(gxp->dev, "perm = %08X\n", fault->prm.perm);
-		dev_err(gxp->dev, "addr = %llX\n", fault->prm.addr);
+		dev_err(dev, "IOMMU page request fault!\n");
+		dev_err(dev, "flags = %08X\n", fault->prm.flags);
+		dev_err(dev, "pasid = %08X\n", fault->prm.pasid);
+		dev_err(dev, "grpid = %08X\n", fault->prm.grpid);
+		dev_err(dev, "perm = %08X\n", fault->prm.perm);
+		dev_err(dev, "addr = %llX\n", fault->prm.addr);
 		break;
 	default:
-		dev_err(gxp->dev, "Unexpected IOMMU fault type (%d)\n",
-			fault->type);
+		dev_err(dev, "Unexpected IOMMU fault type (%d)\n", fault->type);
 	}
 
-	// Tell the IOMMU driver to carry on
+	/* Tells the IOMMU driver to carry on. */
 	return -EAGAIN;
 }
 
@@ -124,8 +124,7 @@ int gxp_dma_init(struct gxp_dev *gxp)
 		return PTR_ERR(mgr->default_domain);
 	}
 
-	if (iommu_register_device_fault_handler(gxp->dev, sysmmu_fault_handler,
-						gxp)) {
+	if (iommu_register_device_fault_handler(gxp->dev, iommu_fault_handler, gxp->dev)) {
 		dev_err(gxp->dev, "Failed to register iommu fault handler\n");
 		return -EIO;
 	}
@@ -139,7 +138,7 @@ void gxp_dma_exit(struct gxp_dev *gxp)
 {
 	if (iommu_unregister_device_fault_handler(gxp->dev))
 		dev_err(gxp->dev,
-			"Failed to unregister SysMMU fault handler\n");
+			"Failed to unregister IOMMU fault handler\n");
 }
 
 #define EXT_TPU_MBX_SIZE 0x2000

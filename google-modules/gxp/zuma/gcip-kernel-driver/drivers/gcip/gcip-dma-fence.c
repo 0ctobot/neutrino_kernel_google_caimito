@@ -212,6 +212,8 @@ struct dma_fence *gcip_dma_fence_merge_fences(int num_fences, struct dma_fence *
 	struct dma_fence *tmp;
 	struct dma_fence *array;
 	int i;
+	int error;
+	ktime_t timestamp;
 
 	array = dma_fence_unwrap_merge(fences[0]);
 	if (!array)
@@ -223,6 +225,26 @@ struct dma_fence *gcip_dma_fence_merge_fences(int num_fences, struct dma_fence *
 		dma_fence_put(tmp);
 		if (!array)
 			return ERR_PTR(-ENOMEM);
+	}
+
+	/*
+	 * When merging fences, any already signaled fences are thrown away, regardless of whether
+	 * they were signaled with success or an error. Once the fences are merged however, the
+	 * merged fence will inherit the first error from an internal fence.
+	 *
+	 * Re-iterate over the fences being merged and if any are already signaled with an error,
+	 * pass that error on to the merged fence. This ensures waiters will not attempt to do work
+	 * that should have been cancelled due to an in-fence error.
+	 */
+	for (i = 0; i < num_fences; i++) {
+		error = dma_fence_get_status(fences[i]);
+		if (error < 0) {
+			timestamp = dma_fence_timestamp(fences[i]);
+			dma_fence_put(array);
+			array = dma_fence_allocate_private_stub(timestamp);
+			array->error = error;
+			break;
+		}
 	}
 
 	return array;

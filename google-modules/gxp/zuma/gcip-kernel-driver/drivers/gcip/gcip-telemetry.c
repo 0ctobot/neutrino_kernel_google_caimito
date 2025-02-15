@@ -199,7 +199,7 @@ static void gcip_telemetry_worker(struct work_struct *work)
 {
 	struct gcip_telemetry *tel = container_of(work, struct gcip_telemetry, work);
 	u32 prev_head;
-	ulong flags;
+	ulong state_lock_flags, ctx_lock_flags;
 
 	/*
 	 * Loops while telemetry enabled, there is data to be consumed, and the previous iteration
@@ -207,23 +207,23 @@ static void gcip_telemetry_worker(struct work_struct *work)
 	 * get another worker schedule.
 	 */
 	do {
-		spin_lock_irqsave(&tel->state_lock, flags);
+		spin_lock_irqsave(&tel->state_lock, state_lock_flags);
 		if (tel->state != GCIP_TELEMETRY_ENABLED) {
-			spin_unlock_irqrestore(&tel->state_lock, flags);
+			spin_unlock_irqrestore(&tel->state_lock, state_lock_flags);
 			return;
 		}
 
 		prev_head = tel->header->head;
 		if (tel->header->head != tel->header->tail) {
-			read_lock(&tel->ctx_lock);
+			read_lock_irqsave(&tel->ctx_lock, ctx_lock_flags);
 			if (tel->ctx)
 				eventfd_signal(tel->ctx, 1);
 			else
 				tel->fallback_fn(tel);
-			read_unlock(&tel->ctx_lock);
+			read_unlock_irqrestore(&tel->ctx_lock, ctx_lock_flags);
 		}
 
-		spin_unlock_irqrestore(&tel->state_lock, flags);
+		spin_unlock_irqrestore(&tel->state_lock, state_lock_flags);
 		msleep(GCIP_TELEMETRY_LOG_RECHECK_DELAY);
 	} while (tel->header->head != tel->header->tail && tel->header->head != prev_head);
 }

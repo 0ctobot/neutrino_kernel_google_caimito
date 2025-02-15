@@ -30,14 +30,26 @@
 #endif
 
 #define GXP_NUM_COMMON_SEGMENTS 2
-#define GXP_NUM_CORE_SEGMENTS 8
+/*
+ * Maximum number of segments to be dumped from core side.
+ * TODO(b/362165250): [SW]Increase GXP_NUM_SEGMENTS to add dump segments from core side.
+ * GXP_MAX_NUM_CORE_SEGMENTS gives the maximum possible segments that can be dumped.
+ */
+#define GXP_MAX_NUM_CORE_SEGMENTS 8
+/* Maximum number of segments that can be dumped for the individual cores via MCU firmware. */
+#define GXP_MAX_NUM_SEGMENTS_VIA_MCU_FIRMWARE 8
+/* Maximum number of dump metadata segments to be dumped for the MCU firmware. */
+#define GXP_MAX_NUM_MCU_DUMP_METADATA_SEGMENTS 1
+/* The count of core segments dumped by initial versions of firmware. */
+#define GXP_CORE_SEGMENT_COMPAT_COUNT 7
 /* FW RO, FW RW, VD Private, Core Config, VD Config sections */
 #define GXP_NUM_CORE_DATA_SEGMENTS 5
 #define GXP_NUM_BUFFER_MAPPINGS 32
 #define GXP_SEG_HEADER_NAME_LENGTH 32
-#define GXP_NUM_SEGMENTS_PER_CORE                                                       \
-	(GXP_NUM_COMMON_SEGMENTS + GXP_NUM_CORE_SEGMENTS + GXP_NUM_CORE_DATA_SEGMENTS + \
-	 GXP_NUM_BUFFER_MAPPINGS)
+#define GXP_NUM_SEGMENTS_PER_CORE                                                           \
+	(GXP_NUM_COMMON_SEGMENTS + GXP_MAX_NUM_CORE_SEGMENTS + GXP_NUM_CORE_DATA_SEGMENTS + \
+	 GXP_NUM_BUFFER_MAPPINGS + GXP_MAX_NUM_SEGMENTS_VIA_MCU_FIRMWARE +                  \
+	 GXP_MAX_NUM_MCU_DUMP_METADATA_SEGMENTS)
 
 /*
  * The minimum wait time in millisecond to be enforced between two successive calls to the SSCD
@@ -67,20 +79,6 @@
 #define GXP_DEBUG_DUMP_INT 0x1
 #define GXP_DEBUG_DUMP_INT_MASK BIT(GXP_DEBUG_DUMP_INT)
 #define GXP_DEBUG_DUMP_RETRY_NUM 5
-
-/* Only one segment i.e. MCU log buffer needs to be dumped during the MCU crash. */
-#define GXP_NUM_MCU_TELEMETRY_SEGMENTS 1
-
-/*
- * For debug dump, the kernel driver header file version must be the same as
- * the firmware header file version. In other words,
- * GXP_DEBUG_DUMP_HEADER_VERSION must be the same value as the value of
- * kGxpDebugDumpHeaderVersion in firmware.
- * Note: This needs to be updated when there are updates to gxp_core_dump and
- * gxp_core_dump_header (or anything within the struct that may cause a mismatch
- * with the firmware version of the debug dump header file).
- */
-#define GXP_DEBUG_DUMP_HEADER_VERSION 1
 
 struct gxp_timer_registers {
 	u32 comparator;
@@ -159,29 +157,112 @@ struct gxp_mailbox_queue_desc {
 };
 
 struct gxp_user_buffer {
-	u64 device_addr; /* Device address of user buffer */
-	u32 size; /* Size of user buffer */
+	/* Device address of user buffer */
+	u64 device_addr;
+	/* Size of user buffer */
+	u32 size;
+	/* Reserved for future expansion. */
+	u32 reserved;
 };
 
 struct gxp_core_header {
-	u32 core_id; /* Aurora core ID */
-	u32 dump_available; /* Dump data is available for core*/
-	u32 dump_req_reason; /* Code indicating reason for debug dump request */
-	u32 header_version; /* Header file version */
-	u32 fw_version; /* Firmware version */
-	u32 core_dump_size; /* Size of core dump */
+	/* Firmware image unique identifier (0-based). */
+	u32 firmware_id;
+	/* Dump data is available for core. */
+	u32 dump_available;
+	/* Code indicating reason for debug dump request. */
+	u8 dump_req_reason;
+	/* Reserved for future expansion. */
+	u8 reserved1[3];
+	/* Number of segments dumped by the firmware. */
+	u16 num_dumped_segments_by_fw;
+	/* Number of segments dumped by the GXP kernel driver. */
+	u16 num_dumped_segments_by_kd;
+	/* Changelist number of the firmware. */
+	u32 changelist;
+	/* Size of core dump. */
+	u32 core_dump_size;
+	/* List of user buffers to be dumped by the GXP kernel driver. */
 	struct gxp_user_buffer user_bufs[GXP_NUM_BUFFER_MAPPINGS];
 };
 
+enum gxp_segment_type {
+	/* Unknown segment. */
+	UNKNOWN = 0,
+	/*
+	 * Segment contains the dump of the common Aurora TOP registers. This segment is dumped by
+	 * the GXP kernel driver.
+	 */
+	COMMON_REGISTERS = 1,
+	/*
+	 * Segment contains the dump of the LPM registers. This segment is dumped by the GXP kernel
+	 * driver.
+	 */
+	LPM_REGISTERS = 2,
+	/*
+	 * Segment contains the dump of the TCM data. This segment is dumped by the core firmware.
+	 */
+	TCM = 3,
+	/*
+	 * Segment contains the dump of the core registers. This segment is dumped by the core
+	 * firmware.
+	 */
+	CORE_REGISTERS = 4,
+	/*
+	 * Segment contains the dump of the mailbox registers. This segment is dumped by the core
+	 * firmware.
+	 */
+	MAILBOX_REGISTERS = 5,
+	/*
+	 * Segment contains the dump of the instruction cache. This segment is dumped by the core
+	 * firmware.
+	 */
+	INSTRUCTION_CACHE = 6,
+	/*
+	 * Segment contains the dump of the data cache. This segment is dumped by the core firmware.
+	 */
+	DATA_CACHE = 7,
+	/*
+	 * Segment contains the dump of the TRAX buffer. This segment is dumped by the core
+	 * firmware.
+	 */
+	STACK_TRACE = 8,
+	/*
+	 * Segment contains the dump of the xtensa processor registers. This segment is dumped by
+	 * the core firmware.
+	 */
+	PROCSESSOR_REGISTERS = 10,
+	/*
+	 * Segment contains the dump of the interrupt controller registers. This segment is dumped
+	 * by the core firmware.
+	 */
+	INTERRUPT_REGISTERS = 11,
+	/*
+	 * Segment contains the dump of the ETM buffer. This segment is dumped by the MCU
+	 * firmware.
+	 */
+	ETF = 12,
+	/*
+	 * Segment contains the dump of the TRAX buffer. This segment is dumped by the MCU
+	 * firmware.
+	 */
+	TRAX = 13,
+} __packed;
+
 struct gxp_seg_header {
-	char name[GXP_SEG_HEADER_NAME_LENGTH]; /* Name of data type */
-	u32 size; /* Size of segment data */
-	u32 valid; /* Validity of segment data */
+	/* Name of data type */
+	enum gxp_segment_type type;
+	/* Reserved for future expansion. */
+	uint8_t reserved[31];
+	/* Size of segment data */
+	u32 size;
+	/* Validity of segment data */
+	u32 valid;
 };
 
 struct gxp_core_dump_header {
 	struct gxp_core_header core_header;
-	struct gxp_seg_header seg_header[GXP_NUM_CORE_SEGMENTS];
+	struct gxp_seg_header seg_header[GXP_MAX_NUM_CORE_SEGMENTS];
 };
 
 struct gxp_common_dump_data {
@@ -203,6 +284,59 @@ struct gxp_core_dump {
 	uint32_t dump_data[];
 };
 
+/*
+ * Descriptor for dump related information of individual cores that is dumped by the MCU firmware.
+ */
+struct gxp_mcu_dump_descriptor {
+	/* Core ID of the DSP core or MCU. */
+	uint8_t core_id;
+	/*
+	 * This flag is used by the kernel driver to determine if the dump data for a particular
+	 * core is available for further processing. Its value is set by the MCU firmware and
+	 * reset to zero by the kernel driver.
+	 */
+	uint8_t dump_available;
+	/* Indicates the number of segments dumped for the core. */
+	uint8_t num_segment_dumped;
+	/* Reserved for future expansion. */
+	uint8_t reserved;
+	/* Client ID of the aborted client. */
+	uint32_t client_id;
+	/* Offset to the dump region reserved for the core. */
+	uint32_t offset;
+	/* Size of the dump region reserved for the core. */
+	uint32_t size;
+	/* Reserved for future expansion. */
+	uint32_t reserved1[2];
+	/* Segment headers for the core. */
+	struct gxp_seg_header segment_headers[GXP_MAX_NUM_SEGMENTS_VIA_MCU_FIRMWARE];
+};
+
+/* Metadata for the dump region shared between MCU and GXP kernel driver. */
+struct gxp_mcu_dump_metadata {
+	/* Dump implementation version in the kernel driver. */
+	uint8_t kernel_version;
+	/* Dump implementation version in the MCU firmware. */
+	uint8_t firmware_version;
+	/* Reserved for future expansion. */
+	uint16_t reserved;
+	/* Reserved for future expansion. */
+	uint32_t reserved1[2];
+	/* Dump descriptors for the individual cores. */
+	struct gxp_mcu_dump_descriptor dump_descriptors[GXP_NUM_DEBUG_DUMP_CORES];
+};
+
+/*
+ * Dump region shared by GXP kernel driver to the MCU firmware for dumping the MCU and DSP cores
+ * debug data.
+ */
+struct gxp_mcu_dump_region {
+	/* Metadata for the dump region. */
+	struct gxp_mcu_dump_metadata dump_metadata;
+	/* Starting offset for the dump data. */
+	uint32_t dump_data[];
+};
+
 struct gxp_debug_dump_work {
 	struct work_struct work;
 	struct gxp_dev *gxp;
@@ -211,16 +345,22 @@ struct gxp_debug_dump_work {
 
 struct gxp_debug_dump_manager {
 	struct gxp_dev *gxp;
-	struct gxp_coherent_buf buf; /* Buffer holding debug dump data */
+	/* Buffer holding debug dump data from core firmware. */
+	struct gxp_coherent_buf core_buf;
+	/* Buffer holding debug dump data from MCU firmware. */
+	struct gxp_mapped_resource mcu_buf;
 	struct gxp_debug_dump_work debug_dump_works[GXP_NUM_CORES];
-	struct gxp_core_dump *core_dump; /* start of the core dump */
+	/* Start of the core dump */
+	struct gxp_core_dump *core_dump;
+	/* Start of the MCU dump region. */
+	struct gxp_mcu_dump_region *mcu_dump;
 	struct gxp_common_dump *common_dump;
 	void *sscd_dev;
 	void *sscd_pdata;
 	dma_addr_t debug_dump_dma_handle; /* dma handle for debug dump */
 	/*
 	 * Debug dump lock to ensure only one debug dump is being processed at a
-	 * time
+	 * time.
 	 */
 	struct mutex debug_dump_lock;
 #if HAS_COREDUMP

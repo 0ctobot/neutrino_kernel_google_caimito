@@ -71,6 +71,22 @@ struct gcip_fence *gcip_fence_fdget(int fd);
 struct gcip_fence *gcip_fence_get(struct gcip_fence *fence);
 
 /*
+ * Creates a gcip-fence object holding @iif.
+ *
+ * This function increments the refcount of @iif. It will be decremented back when the returned
+ * gcip-fence releases.
+ */
+struct gcip_fence *gcip_fence_get_iif(struct iif_fence *iif);
+
+/*
+ * Creates a gcip-fence object holding @ikf.
+ *
+ * This function increments the refcount of @ikf. It will be decremented back when the returned
+ * gcip-fence releases.
+ */
+struct gcip_fence *gcip_fence_get_ikf(struct dma_fence *ikf);
+
+/*
  * Puts the fence and decrements its reference count.
  *
  * If @fence is inter-IP fence and the caller is going to put @fence in the un-sleepable context

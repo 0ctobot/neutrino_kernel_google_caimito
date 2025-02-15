@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
-load("//build/kernel/kleaf:kernel.bzl", "kernel_module")
+load("//build/kernel/kleaf:kernel.bzl", "checkpatch", "kernel_module")
+
+checkpatch(
+    name = "checkpatch",
+    checkpatch_pl = "//common:scripts/checkpatch.pl",
+)
 
 kernel_module(
     name = "gxp",
@@ -10,6 +15,7 @@ kernel_module(
     ]) + [
         "Makefile",
         "gcip-kernel-driver/drivers/gcip/Makefile",
+        "//private/google-modules/edgetpu/rio/drivers/edgetpu:headers",
         "//private/google-modules/power/mitigation:headers",
         "//private/google-modules/soc/gs:gs_soc_headers",
     ],

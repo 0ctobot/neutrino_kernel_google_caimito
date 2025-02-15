@@ -128,7 +128,6 @@ static void gxp_uci_mailbox_manager_release_unconsumed_async_resps(
 		wait_list_entry) {
 		cur->processed = true;
 	}
-	vd->mailbox_resp_queues[UCI_RESOURCE_ID].wait_queue_closed = true;
 
 	spin_unlock_irqrestore(&vd->mailbox_resp_queues[UCI_RESOURCE_ID].lock,
 			       flags);
@@ -245,8 +244,8 @@ static int gxp_uci_before_enqueue_wait_list(struct gcip_mailbox *mailbox, void *
 					    struct gcip_mailbox_resp_awaiter *awaiter)
 {
 	struct gxp_uci_async_response *async_resp;
-	struct mailbox_resp_queue *mailbox_resp_queue;
 	unsigned long flags;
+	int ret;
 
 	if (!awaiter)
 		return 0;
@@ -254,21 +253,35 @@ static int gxp_uci_before_enqueue_wait_list(struct gcip_mailbox *mailbox, void *
 	async_resp = awaiter->data;
 	async_resp->awaiter = awaiter;
 
-	mailbox_resp_queue =
-		container_of(async_resp->wait_queue, struct mailbox_resp_queue, wait_queue);
-
-	spin_lock_irqsave(async_resp->queue_lock, flags);
-
 	/*
-	 * The client is pushing an UCI command and leaving at the same time which will unlikely
-	 * happen.
+	 * After this function call, we should signal out-fences in any success or failure cases.
+	 * That means if any error happens in the kernel driver side before submitting the command,
+	 * the driver should error out-fences out. However, it is hard to do that if they are IIFs
+	 * because the firmware must be the only one who can signal the fences (i.e., touch IIF
+	 * fence table) according to the IIF design. We can't simply set propagate flag to fences
+	 * and call `signal()` function to signal fences and we need a special way of requesting the
+	 * firmware for signaling out-fences which would be complicated to implement.
+	 *
+	 * For example, if we assume that there is a special command which can be sent to the
+	 * firmware to ask for signaling out-fences when any error happnes in the kernel driver
+	 * side, we can imagine a case that even preparing that command fails and we need another
+	 * special way of requesting the firmware for signaling out-fences. There would be so many
+	 * corner cases that we should consider.
+	 *
+	 * Therefore, to avoid that kind of situation as much as possible, intentionally call this
+	 * function right before submitting the command to the firmware. Note that when this
+	 * `enqueue_wait_list()` callback returns 0, it is guaranteed that the command will be
+	 * submitted to the firmware and the kernel driver doesn't need to care signaling out-fences
+	 * with an error caused in the driver side.
 	 */
-	if (unlikely(mailbox_resp_queue->wait_queue_closed)) {
-		dev_err(mailbox->dev, "The client is leaving while pushing a command");
-		spin_unlock_irqrestore(async_resp->queue_lock, flags);
-		return -EIO;
+	ret = gcip_fence_array_submit_waiter_and_signaler(async_resp->in_fences,
+							  async_resp->out_fences, IIF_IP_DSP);
+	if (ret) {
+		dev_err(mailbox->dev, "Failed to submit waiter or signaler to fences, ret=%d", ret);
+		return ret;
 	}
 
+	spin_lock_irqsave(async_resp->queue_lock, flags);
 	list_add_tail(&async_resp->wait_list_entry, async_resp->wait_queue);
 	spin_unlock_irqrestore(async_resp->queue_lock, flags);
 
@@ -746,25 +759,6 @@ int gxp_uci_create_and_send_cmd(struct gxp_client *client, u64 cmd_seq, u32 flag
 	uint32_t in_iif_fences_size, out_iif_fences_size;
 	int ret;
 
-	/*
-	 * It will hold the block wakelock internally (i.e., call gcip_pm_get()) and we decided to
-	 * always decouple the pm-lock and @client->semaphore while implementing the MCU crash
-	 * handler. Therefore, we should submit waiters without holding @client->semaphore.
-	 *
-	 * The function will hold @iif_mgr->ops_sema to prevent modifying registered operators while
-	 * calling the `acquire_block_wakelock` operator and holding the block wakelock. At the same
-	 * time, there is another operator, `fence_unblocked`, which will be called when a fence has
-	 * been unblocked while holding the same semaphore and the operator will send an UCI command
-	 * which will hold @wait_list_lock. (i.e., @iif_mgr->ops_sema -> @wait_list_lock) Therefore,
-	 * this function shouldn't be called while holding @wait_list_lock. Otherwise it will hold
-	 * two locks in the reverse order and will cause a potential deadlock.
-	 */
-	ret = gcip_fence_array_submit_waiter_and_signaler(in_fences, out_fences, IIF_IP_DSP);
-	if (ret) {
-		dev_err(gxp->dev, "Failed to submit waiter or signaler to fences, ret=%d", ret);
-		return ret;
-	}
-
 	down_read(&client->semaphore);
 
 	if (!gxp_client_has_available_vd(client, "GXP_MAILBOX_UCI_COMMAND[_COMPAT]")) {
@@ -828,10 +822,6 @@ err_put_in_iif_fences:
 	kfree(in_iif_fences);
 out:
 	up_read(&client->semaphore);
-	if (ret) {
-		gcip_fence_array_signal(out_fences, ret);
-		gcip_fence_array_waited(in_fences, IIF_IP_DSP);
-	}
 
 	return ret;
 }
@@ -1049,10 +1039,10 @@ int gxp_uci_cmd_work_create_and_schedule(struct dma_fence *fence, struct gxp_cli
 
 	/*
 	 * If @ret is -ENOENT, it means that @fence is already signaled so the callback was
-	 * not registered to the fence. We don't have to treat it as an error and can run
-	 * the work directly.
+	 * not registered to the fence. If it is signaled without error, we don't have to treat it
+	 * as an error and can run the work directly.
 	 */
-	if (ret == -ENOENT)
+	if (ret == -ENOENT && dma_fence_get_status(fence) == 1)
 		goto send_cmd;
 
 	return ret;

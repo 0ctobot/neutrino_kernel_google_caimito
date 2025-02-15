@@ -13,7 +13,7 @@
 
 /* Interface Version */
 #define GXP_INTERFACE_VERSION_MAJOR 1
-#define GXP_INTERFACE_VERSION_MINOR 28
+#define GXP_INTERFACE_VERSION_MINOR 31
 #define GXP_INTERFACE_VERSION_BUILD 0
 
 /* mmap offsets for MCU logging and tracing buffers */
@@ -697,12 +697,9 @@ struct gxp_acquire_wakelock_ioctl {
 	 */
 	__u32 memory_power_state;
 	/*
-	 * How long to wait, in microseconds, before returning if insufficient
-	 * physical cores are available when attempting to acquire a
-	 * VIRTUAL_DEVICE wakelock. A value of 0 indicates that the IOCTL
-	 * should not wait at all if cores are not available.
+	 * Reserved for future use.
 	 */
-	__u32 vd_timeout_us;
+	__u32 reserved;
 	/*
 	 * Flags indicating power attribute requests from the runtime.
 	 * Set RESERVED bits to 0 to ensure backwards compatibility.
@@ -731,12 +728,6 @@ struct gxp_acquire_wakelock_ioctl {
  * without a corresponding call to `GXP_RELEASE_WAKE_LOCK` in between, the
  * second call may update requested power states, but have no other effects.
  * No additional call to `GXP_RELEASE_WAKE_LOCK` will be required.
- *
- * If a client attempts to acquire a VIRTUAL_DEVICE wakelock and there are
- * insufficient physical cores available, the driver will wait up to
- * `vd_timeout_us` microseconds, then return -EBUSY if sufficient cores were
- * never made available. In this case, if both BLOCK and VIRTUAL_DEVICE
- * wakelocks were being requested, neither will have been acquired.
  */
 #define GXP_ACQUIRE_WAKE_LOCK                                                  \
 	_IOW(GXP_IOCTL_BASE, 25, struct gxp_acquire_wakelock_ioctl)

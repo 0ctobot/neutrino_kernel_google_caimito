@@ -942,13 +942,21 @@ void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,
 	mcu_fw->crash_cnt += 1;
 
 	/*
-	 * In the case of stopping MCU FW while it is handling `CLIENT_FATAL_ERROR` RKCI, it will
-	 * acquire locks in this order:
-	 *   gcip_pm_put -> holds @pm->lock -> gxp_mcu_firmware_stop -> holds @mcu_fw->lock
-	 *   -> waits for the completion of RKCI handler -> gxp_vd_invalidate_with_client_id
-	 *   -> holds @gxp->client_list_lock -> hold @client->semaphore -> holds @gxp->vd_semaphore
-	 *
-	 * Also, in the case of starting MCU FW, the locking order will be:
+	 * Prevent @gxp->client_list is being changed while handling the crash.
+	 * The user cannot create or release a client until this function releases the lock.
+	 */
+	mutex_lock(&gxp->client_list_lock);
+
+	/*
+	 * Hold @client->semaphore first to prevent deadlock.
+	 * By holding this lock, clients cannot proceed most IOCTLs.
+	 */
+	list_for_each_entry (client, &gxp->client_list, list_entry) {
+		down_write(&client->semaphore);
+	}
+
+	/*
+	 * In the case of starting MCU FW, the locking order will be:
 	 *   gcip_pm_get -> holds @pm->lock -> gxp_mcu_firmware_run -> holds @mcu_fw->lock
 	 *
 	 * To prevent a deadlock issue, we have to follow the same locking order from here.
@@ -974,22 +982,12 @@ void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,
 		goto out_unlock_pm;
 	}
 
-	/* Hold @mcu_fw->lock because manipulating the MCU FW state must be a critical section. */
-	mutex_lock(&mcu_fw->lock);
-
 	/*
-	 * Prevent @gxp->client_list is being changed while handling the crash.
-	 * The user cannot open or close a fd until this function releases the lock.
+	 * Hold @mcu_fw->lock because manipulating the MCU FW state must be a critical section,
+	 * skip if contested.
 	 */
-	mutex_lock(&gxp->client_list_lock);
-
-	/*
-	 * Hold @client->semaphore first to prevent deadlock.
-	 * By holding this lock, clients cannot proceed most IOCTLs.
-	 */
-	list_for_each_entry (client, &gxp->client_list, list_entry) {
-		down_write(&client->semaphore);
-	}
+	if (!mutex_trylock(&mcu_fw->lock))
+		goto out_unlock_pm;
 
 	/*
 	 * Holding @client->semaphore will block the most client actions, but let's make sure
@@ -1031,11 +1029,11 @@ void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,
 		dev_warn(gxp->dev, "Failed to run MCU firmware (ret=%d)", ret);
 
 out:
+	mutex_unlock(&mcu_fw->lock);
+out_unlock_pm:
+	gcip_pm_unlock(pm);
 	list_for_each_entry (client, &gxp->client_list, list_entry) {
 		up_write(&client->semaphore);
 	}
 	mutex_unlock(&gxp->client_list_lock);
-	mutex_unlock(&mcu_fw->lock);
-out_unlock_pm:
-	gcip_pm_unlock(pm);
 }

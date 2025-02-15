@@ -62,6 +62,48 @@ void iif_all_signaler_submission_waiter_put(struct iif_signaler_submission_waite
 	kref_put(&waiter->kref, iif_all_signaler_submission_waiter_free);
 }
 
+static struct iif_signaler_submission_waiter_cb *
+iif_signaler_submission_waiter_cb_alloc(struct iif_signaler_submission_waiter *waiter,
+				       struct iif_fence *fence)
+{
+	struct iif_signaler_submission_waiter_cb *cb;
+
+	cb = kzalloc(sizeof(*cb), GFP_ATOMIC);
+	if (!cb)
+		return ERR_PTR(-ENOMEM);
+
+	cb->waiter = iif_all_signaler_submission_waiter_get(waiter);
+	/*
+	 * Don't call `iif_fence_get` to prevent @fence from being not released forever if the
+	 * runtime never submits signalers somehow.
+	 */
+	cb->fence = fence;
+	kref_init(&cb->kref);
+
+	return cb;
+}
+
+static void iif_signaler_submission_waiter_cb_free(struct kref *kref)
+{
+	struct iif_signaler_submission_waiter_cb *cb =
+		container_of(kref, struct iif_signaler_submission_waiter_cb, kref);
+
+	iif_all_signaler_submission_waiter_put(cb->waiter);
+	kfree(cb);
+}
+
+static struct iif_signaler_submission_waiter_cb *
+iif_signaler_submission_waiter_cb_get(struct iif_signaler_submission_waiter_cb *cb)
+{
+	kref_get(&cb->kref);
+	return cb;
+}
+
+static void iif_signaler_submission_waiter_cb_put(struct iif_signaler_submission_waiter_cb *cb)
+{
+	kref_put(&cb->kref, iif_signaler_submission_waiter_cb_free);
+}
+
 static void all_signaler_submitted(struct iif_fence *fence,
 				   struct iif_fence_all_signaler_submitted_cb *fence_cb)
 {
@@ -106,8 +148,7 @@ static void all_signaler_submitted(struct iif_fence *fence,
 
 	spin_unlock_irqrestore(&waiter->lock, flags);
 
-	iif_all_signaler_submission_waiter_put(waiter);
-	kfree(cb);
+	iif_signaler_submission_waiter_cb_put(cb);
 }
 
 static int iif_all_signaler_submission_waiter_wait(struct iif_signaler_submission_waiter *waiter,
@@ -115,30 +156,26 @@ static int iif_all_signaler_submission_waiter_wait(struct iif_signaler_submissio
 						   int *remaining_signalers)
 {
 	struct iif_signaler_submission_waiter_cb *cb;
+	unsigned long flags;
 	int ret;
 
-	cb = kzalloc(sizeof(*cb), GFP_KERNEL);
-	if (!cb)
-		return -ENOMEM;
+	cb = iif_signaler_submission_waiter_cb_alloc(waiter, fence);
+	if (IS_ERR(cb))
+		return PTR_ERR(cb);
 
-	cb->waiter = iif_all_signaler_submission_waiter_get(waiter);
-	/*
-	 * Don't call `iif_fence_get` to prevent @fence from being not released forever if the
-	 * runtime never submits signalers somehow.
-	 */
-	cb->fence = fence;
-
-	spin_lock(&waiter->lock);
+	spin_lock_irqsave(&waiter->lock, flags);
 	list_add_tail(&cb->node, &waiter->cb_list);
-	spin_unlock(&waiter->lock);
+	spin_unlock_irqrestore(&waiter->lock, flags);
 
+	/* @fence holds the reference of @cb until the callback is invoked. */
+	iif_signaler_submission_waiter_cb_get(cb);
 	ret = iif_fence_add_all_signaler_submitted_callback(fence, &cb->fence_cb,
 							    all_signaler_submitted);
 
-	spin_lock(&waiter->lock);
+	spin_lock_irqsave(&waiter->lock, flags);
 
 	if (ret && ret != -EPERM)
-		goto out_list_del;
+		goto cb_put;
 
 	/*
 	 * @fence has been successfully registered the callback or already finished the
@@ -150,22 +187,22 @@ static int iif_all_signaler_submission_waiter_wait(struct iif_signaler_submissio
 	if (ret) {
 		*remaining_signalers = 0;
 		ret = 0;
-		goto out_list_del;
+		goto cb_put;
 	}
 
 	/* (ret = 0) The callback is registered and there are remaining signalers. */
 	*remaining_signalers = cb->fence_cb.remaining_signalers;
 
-	spin_unlock(&waiter->lock);
+	goto out;
 
-	return 0;
-
-out_list_del:
+cb_put:
+	/* @cb is not registered, @fence doesn't hold the reference of @cb. */
+	iif_signaler_submission_waiter_cb_put(cb);
 	list_del(&cb->node);
-	spin_unlock(&waiter->lock);
-
-	iif_all_signaler_submission_waiter_put(waiter);
-	kfree(cb);
+out:
+	spin_unlock_irqrestore(&waiter->lock, flags);
+	/* Release the refcount of @cb held by `iif_signaler_submission_waiter_cb_alloc()`. */
+	iif_signaler_submission_waiter_cb_put(cb);
 
 	return ret;
 }
@@ -173,10 +210,11 @@ out_list_del:
 static void iif_all_signaler_submission_waiter_cancel(struct iif_signaler_submission_waiter *waiter)
 {
 	struct iif_signaler_submission_waiter_cb *cur, *tmp;
+	unsigned long flags;
 
-	spin_lock(&waiter->lock);
+	spin_lock_irqsave(&waiter->lock, flags);
 	waiter->cancel = true;
-	spin_unlock(&waiter->lock);
+	spin_unlock_irqrestore(&waiter->lock, flags);
 
 	/* From now on, @waiter->cb_list won't be changed. */
 

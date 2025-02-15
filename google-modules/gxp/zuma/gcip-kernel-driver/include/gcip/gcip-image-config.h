@@ -13,7 +13,7 @@
 #include <linux/types.h>
 
 #define GCIP_FW_NUM_VERSIONS 4
-#define GCIP_IMG_CFG_MAX_IOMMU_MAPPINGS 19
+#define GCIP_IMG_CFG_MAX_IOMMU_MAPPINGS 18
 #define GCIP_IMG_CFG_MAX_NS_IOMMU_MAPPINGS 5
 #define GCIP_IMG_CFG_MAX_PROTECTED_MEMORY_MAPPINGS 3
 
@@ -55,8 +55,8 @@ struct gcip_image_config {
 	__u32 firmware_versions[GCIP_FW_NUM_VERSIONS];
 	__u32 config_version;
 	__u32 privilege_level;
-	__u32 remapped_region_start;
-	__u32 remapped_region_size;
+	__u32 secure_data_start;
+	__u32 secure_data_size;
 	__u32 num_iommu_mappings;
 	struct {
 		/* Device virtual address requested, with map flags in lower 12 bits */
@@ -69,14 +69,25 @@ struct gcip_image_config {
 		__u32 image_config_value;
 	} iommu_mappings[GCIP_IMG_CFG_MAX_IOMMU_MAPPINGS];
 	__u32 reserved;
+	__u32 shared_data_iova;
+	__u32 telemetry_buffer_config;
 	__u32 sanitizer_config;
 	__u32 protected_memory_regions[GCIP_IMG_CFG_MAX_PROTECTED_MEMORY_MAPPINGS];
 	__u32 secure_telemetry_region_start;
-	__u32 remapped_data_start;
-	__u32 remapped_data_size;
+	__u32 shared_data_start;
+	__u32 shared_data_size;
 	__u32 num_ns_iommu_mappings;
 	__u32 ns_iommu_mappings[GCIP_IMG_CFG_MAX_NS_IOMMU_MAPPINGS];
 } __packed;
+
+/*
+ * A structure to hold telemetry buffer configuration.
+ */
+struct gcip_telemetry_buffer_config {
+	size_t count;
+	size_t log_buffer_size;
+	size_t trace_buffer_size;
+};
 
 #define GCIP_IMAGE_CONFIG_FLAGS_SECURE BIT(0)
 
@@ -218,6 +229,19 @@ static inline bool gcip_image_config_is_ns(struct gcip_image_config *config)
 static inline bool gcip_image_config_is_secure(struct gcip_image_config *config)
 {
 	return config->privilege_level != GCIP_FW_PRIV_LEVEL_NS;
+}
+
+static inline bool
+gcip_image_config_get_telemetry_buffer_config(struct gcip_image_config *config,
+					      struct gcip_telemetry_buffer_config *telemetry_config)
+{
+	if (!config->telemetry_buffer_config)
+		return false;
+	telemetry_config->count = config->telemetry_buffer_config & 0xFF;
+	telemetry_config->log_buffer_size = ((config->telemetry_buffer_config >> 8) & 0xFF) * SZ_4K;
+	telemetry_config->trace_buffer_size =
+		((config->telemetry_buffer_config >> 16) & 0xFF) * SZ_4K;
+	return true;
 }
 
 #endif /* __GCIP_IMAGE_CONFIG_H__ */

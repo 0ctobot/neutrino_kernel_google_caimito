@@ -9,8 +9,6 @@
 #include <linux/slab.h>
 #include <linux/wait.h>
 
-#include <gcip/gcip-config.h>
-
 #include "gxp-config.h"
 #include "gxp-core-telemetry.h"
 #include "gxp-dma.h"
@@ -343,11 +341,7 @@ static int remap_telemetry_buffers(struct gxp_dev *gxp,
 
 	/* mmap the buffers */
 	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
-#if GCIP_HAS_VMA_FLAGS_API
 	vm_flags_set(vma, VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP);
-#else
-	vma->vm_flags |= VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP;
-#endif
 	vma->vm_pgoff = 0;
 
 	for (i = 0; i < GXP_NUM_CORES; i++) {
@@ -409,11 +403,7 @@ int gxp_secure_core_telemetry_mmap_buffers(struct gxp_dev *gxp,
 
 	/* mmap the buffers */
 	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
-#if GCIP_HAS_VMA_FLAGS_API
 	vm_flags_set(vma, VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP);
-#else
-	vma->vm_flags |= VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP;
-#endif
 	vma->vm_pgoff = 0;
 	/*
 	 * Remapping the physically contiguous carveout area reserved

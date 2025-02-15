@@ -7,11 +7,14 @@
 
 #include <linux/device.h>
 #include <linux/interrupt.h>
+#include <linux/list.h>
 #include <linux/moduleparam.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/spinlock.h>
+#include <linux/workqueue.h>
 
 #include <iif/iif-fence.h>
 #include <iif/iif-manager.h>
@@ -39,6 +42,11 @@ module_param_named(work_mode, gxp_work_mode_name, charp, 0660);
 
 static char *chip_rev = "a0";
 module_param(chip_rev, charp, 0660);
+
+struct gxp_iif_unblocked {
+	struct list_head node;
+	int fence_id;
+};
 
 static int allocate_vmbox(struct gxp_dev *gxp, struct gxp_virtual_device *vd)
 {
@@ -284,19 +292,71 @@ enum gxp_chip_revision gxp_get_chip_revision(struct gxp_dev *gxp)
 static void gxp_iif_unblocked(struct iif_fence *fence, void *data)
 {
 	struct gxp_dev *gxp = data;
-	struct gxp_mcu *mcu = gxp_mcu_of(gxp);
+	struct gxp_mcu_dev *mcu_dev = to_mcu_dev(gxp);
+	struct gxp_iif_unblocked *unblocked;
 
 	if (fence->signal_error)
 		dev_warn(gxp->dev, "IIF has been unblocked with an error, id=%d, error=%d",
 			 fence->id, fence->signal_error);
 
-	if (fence->propagate)
-		gxp_uci_send_iif_unblock_noti(&mcu->uci, fence->id);
+	if (fence->propagate) {
+		unblocked = kzalloc(sizeof(*unblocked), GFP_KERNEL);
+		if (!unblocked)
+			return;
+
+		unblocked->fence_id = fence->id;
+
+		spin_lock(&mcu_dev->iif_unblocked_lock);
+		list_add_tail(&unblocked->node, &mcu_dev->iif_unblocked_list);
+		schedule_work(&mcu_dev->iif_unblocked_work);
+		spin_unlock(&mcu_dev->iif_unblocked_lock);
+	}
 }
 
 static const struct iif_manager_ops iif_mgr_ops = {
 	.fence_unblocked = gxp_iif_unblocked,
 };
+
+static void gxp_iif_unblocked_work_func(struct work_struct *work)
+{
+	struct gxp_mcu_dev *mcu_dev = container_of(work, struct gxp_mcu_dev, iif_unblocked_work);
+	struct gxp_iif_unblocked *cur, *nxt;
+	LIST_HEAD(iif_unblocked_list);
+
+	spin_lock(&mcu_dev->iif_unblocked_lock);
+	list_replace_init(&mcu_dev->iif_unblocked_list, &iif_unblocked_list);
+	spin_unlock(&mcu_dev->iif_unblocked_lock);
+
+	list_for_each_entry_safe(cur, nxt, &iif_unblocked_list, node) {
+		gxp_uci_send_iif_unblock_noti(&mcu_dev->mcu.uci, cur->fence_id);
+		kfree(cur);
+	}
+}
+
+static void gxp_init_iif_unblocked_work(struct gxp_dev *gxp)
+{
+	struct gxp_mcu_dev *mcu_dev = to_mcu_dev(gxp);
+
+	INIT_LIST_HEAD(&mcu_dev->iif_unblocked_list);
+	spin_lock_init(&mcu_dev->iif_unblocked_lock);
+	INIT_WORK(&mcu_dev->iif_unblocked_work, &gxp_iif_unblocked_work_func);
+}
+
+static void gxp_cancel_iif_unblocked_work(struct gxp_dev *gxp)
+{
+	struct gxp_mcu_dev *mcu_dev = to_mcu_dev(gxp);
+	struct gxp_iif_unblocked *cur, *nxt;
+
+	cancel_work_sync(&mcu_dev->iif_unblocked_work);
+
+	/*
+	 * As the work is canceled and it will never be scheduled, we don't need to hold
+	 * @mcu_dev->iif_unblocked_lock.
+	 */
+	list_for_each_entry_safe(cur, nxt, &mcu_dev->iif_unblocked_list, node) {
+		kfree(cur);
+	}
+}
 
 static void gxp_get_embedded_iif_mgr(struct gxp_dev *gxp)
 {
@@ -419,6 +479,7 @@ int gxp_mcu_platform_after_probe(struct gxp_dev *gxp)
 	if (ret)
 		return ret;
 
+	gxp_init_iif_unblocked_work(gxp);
 	/*
 	 * We should call this after UCI is initialized since fence_unblocked operator will try to
 	 * send commands to the UCI mailbox.
@@ -434,6 +495,7 @@ void gxp_mcu_platform_before_remove(struct gxp_dev *gxp)
 		return;
 
 	gxp_unregister_iif_mgr_ops(gxp);
+	gxp_cancel_iif_unblocked_work(gxp);
 	gxp_mcu_exit(gxp_mcu_of(gxp));
 	gxp_usage_stats_exit(gxp);
 	gxp_put_iif_mgr(gxp);

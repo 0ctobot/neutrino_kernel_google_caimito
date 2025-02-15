@@ -149,4 +149,33 @@ struct dma_fence *gcip_fence_array_merge_ikf(struct gcip_fence_array *fence_arra
  */
 void gcip_fence_array_iif_set_propagate_unblock(struct gcip_fence_array *fence_array);
 
+
+/*
+ * Appends @fence to @fence_array.
+ *
+ * The function will increment the refcount of @fence.
+ *
+ * Note that if @fence_array->same_type is true, but the type of @fence is different from the fences
+ * in the array, @fence_array->same_type will be changed to false.
+ *
+ * Returns 0 on success. Otherwise, returns a negative errno.
+ */
+int gcip_fence_array_add(struct gcip_fence_array *fence_array, struct gcip_fence *fence);
+
+/*
+ * Appends @iif to @fence_array.
+ *
+ * This function works the same with `gcip_fence_array_add()`, but receives inter-IP fence object
+ * directly.
+ */
+int gcip_fence_array_add_iif(struct gcip_fence_array *fence_array, struct iif_fence *iif);
+
+/*
+ * Appends @ikf to @fence_array.
+ *
+ * This function works the same with `gcip_fence_array_add()`, but receives DMA fence object
+ * directly.
+ */
+int gcip_fence_array_add_ikf(struct gcip_fence_array *fence_array, struct dma_fence *ikf);
+
 #endif /* __GCIP_FENCE_ARRAY_H__ */

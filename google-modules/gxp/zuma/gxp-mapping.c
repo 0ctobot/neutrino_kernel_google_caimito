@@ -14,6 +14,7 @@
 #include <linux/sched/mm.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <linux/vmalloc.h>
 
 #include <gcip/gcip-iommu-reserve.h>
 

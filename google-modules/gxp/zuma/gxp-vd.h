@@ -41,11 +41,6 @@ struct mailbox_resp_queue {
 	spinlock_t lock;
 	/* Waitqueue to wait on if the queue is empty */
 	wait_queue_head_t waitq;
-	/*
-	 * If true, the user cannot send requests anymore.
-	 * This must be protected by @lock.
-	 */
-	bool wait_queue_closed;
 };
 
 enum gxp_virtual_device_state {

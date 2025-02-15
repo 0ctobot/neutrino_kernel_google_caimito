@@ -6,9 +6,11 @@
  */
 
 #include <linux/delay.h>
+#include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/rwsem.h>
 #include <linux/slab.h>
+#include <linux/spinlock.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
@@ -97,6 +99,7 @@ static void gxp_kci_handle_rkci(struct gxp_kci *gkci,
 				struct gcip_kci_response_element *resp)
 {
 	struct gxp_dev *gxp = gkci->gxp;
+	struct gxp_rkci_client_fatal_error_notify *client_fatal_error_notify;
 
 	switch (resp->code) {
 	case GXP_RKCI_CODE_PM_QOS_BTS:
@@ -126,15 +129,21 @@ static void gxp_kci_handle_rkci(struct gxp_kci *gkci,
 	case GCIP_RKCI_CLIENT_FATAL_ERROR_NOTIFY: {
 		int client_id = (int)(resp->retval);
 
-		/*
-		 * Inside gxp_vd_invalidate_with_client_id(), after invalidating the client,
-		 * synchronous call to gxp_kci_release_vmbox() would be made post which debug
-		 * dump if enabled would be checked and processed. Due to debug dump processing
-		 * being a time consuming task, rkci ack is sent first to unblock the mcu to send
-		 * further rkci's.
-		 */
 		gxp_kci_resp_rkci_ack(gkci, resp);
-		gxp_vd_invalidate_with_client_id(gxp, client_id, true);
+
+		client_fatal_error_notify = kzalloc(sizeof(*client_fatal_error_notify), GFP_KERNEL);
+		if (!client_fatal_error_notify)
+			break;
+
+		client_fatal_error_notify->client_id = client_id;
+
+		spin_lock(&gkci->client_fatal_error_notify_lock);
+
+		list_add_tail(&client_fatal_error_notify->node,
+			      &gkci->client_fatal_error_notify_list);
+		schedule_work(&gkci->client_fatal_error_notify_work);
+
+		spin_unlock(&gkci->client_fatal_error_notify_lock);
 
 		break;
 	}
@@ -350,6 +359,37 @@ static int gxp_kci_send_cmd_with_data(struct gxp_kci *gkci, u16 code, const void
 	return ret;
 }
 
+static void gxp_kci_client_fatal_error_notify_work_func(struct work_struct *work)
+{
+	struct gxp_kci *gkci = container_of(work, struct gxp_kci, client_fatal_error_notify_work);
+	struct gxp_rkci_client_fatal_error_notify *cur, *nxt;
+	LIST_HEAD(client_fatal_error_notify_list);
+
+	spin_lock(&gkci->client_fatal_error_notify_lock);
+	list_replace_init(&gkci->client_fatal_error_notify_list, &client_fatal_error_notify_list);
+	spin_unlock(&gkci->client_fatal_error_notify_lock);
+
+	list_for_each_entry_safe(cur, nxt, &client_fatal_error_notify_list, node) {
+		gxp_vd_invalidate_with_client_id(gkci->gxp, cur->client_id, true);
+		kfree(cur);
+	}
+}
+
+static void gxp_kci_cancel_client_fatal_error_notify_work(struct gxp_kci *gkci)
+{
+	struct gxp_rkci_client_fatal_error_notify *cur, *nxt;
+
+	cancel_work_sync(&gkci->client_fatal_error_notify_work);
+
+	/*
+	 * As the work is canceled and it will never be scheduled, we don't need to hold
+	 * @gkci->client_fatal_error_notify_lock.
+	 */
+	list_for_each_entry_safe(cur, nxt, &gkci->client_fatal_error_notify_list, node) {
+		kfree(cur);
+	}
+}
+
 int gxp_kci_init(struct gxp_mcu *mcu)
 {
 	struct gxp_dev *gxp = mcu->gxp;
@@ -372,6 +412,11 @@ int gxp_kci_init(struct gxp_mcu *mcu)
 
 	gkci->enable_rkci_ack = true;
 	init_rwsem(&gkci->enable_rkci_ack_lock);
+
+	INIT_LIST_HEAD(&gkci->client_fatal_error_notify_list);
+	spin_lock_init(&gkci->client_fatal_error_notify_lock);
+	INIT_WORK(&gkci->client_fatal_error_notify_work,
+		  &gxp_kci_client_fatal_error_notify_work_func);
 
 	return 0;
 }
@@ -420,6 +465,7 @@ void gxp_kci_exit(struct gxp_kci *gkci)
 {
 	if (IS_GXP_TEST && (!gkci || !gkci->mbx))
 		return;
+	gxp_kci_cancel_client_fatal_error_notify_work(gkci);
 	gxp_mailbox_release(gkci->gxp->mailbox_mgr, NULL, 0, gkci->mbx);
 	gkci->mbx = NULL;
 }

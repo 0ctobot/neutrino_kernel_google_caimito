@@ -17,6 +17,7 @@
 #include <linux/fs.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
+#include <linux/of_platform.h>
 #include <linux/platform_device.h>
 #include <linux/sched.h>
 #include <linux/sizes.h>
@@ -967,17 +968,6 @@ static int gxp_ioctl_acquire_wake_lock(struct gxp_client *client,
 	    !validate_wake_lock_power(gxp, &ibuf))
 		return -EINVAL;
 
-	/*
-	 * We intentionally don't call `gcip_pm_*` functions while holding @client->semaphore.
-	 *
-	 * As the `gcip_pm_put` function cancels KCI works synchronously and the KCI works may hold
-	 * @client->semaphore in some logic such as MCU FW crash handler, it can cause deadlock
-	 * issues potentially if we call `gcip_pm_put` after holding @client->semaphore.
-	 *
-	 * Therefore, we decided to decouple calling the `gcip_pm_put` function from holding
-	 * @client->semaphore and applied the same thing to the `gcip_pm_get` function to keep them
-	 * symmetric.
-	 */
 	if (ibuf.components_to_wake & WAKELOCK_BLOCK) {
 		ret = gcip_pm_get(gxp->power_mgr->pm);
 		if (ret) {
@@ -1686,7 +1676,6 @@ static int gxp_mmap(struct file *file, struct vm_area_struct *vma)
 
 static const struct file_operations gxp_fops = {
 	.owner = THIS_MODULE,
-	.llseek = no_llseek,
 	.mmap = gxp_mmap,
 	.open = gxp_open,
 	.release = gxp_release,
@@ -1883,11 +1872,7 @@ static __init int gxp_fs_init(void)
 {
 	int ret;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
 	gxp_class = class_create(THIS_MODULE, GXP_NAME);
-#else
-	gxp_class = class_create(GXP_NAME);
-#endif
 	if (IS_ERR(gxp_class)) {
 		pr_err(GXP_NAME " error creating gxp class: %ld\n",
 		       PTR_ERR(gxp_class));
@@ -1989,14 +1974,6 @@ static int gxp_common_platform_probe(struct platform_device *pdev, struct gxp_de
 	if (gxp_is_direct_mode(gxp))
 		gxp_dci_init(gxp->mailbox_mgr);
 
-#if IS_ENABLED(CONFIG_SUBSYSTEM_COREDUMP)
-	ret = gxp_debug_dump_init(gxp, &gxp_sscd_dev, &gxp_sscd_pdata);
-#else
-	ret = gxp_debug_dump_init(gxp, NULL, NULL);
-#endif  /* !CONFIG_SUBSYSTEM_COREDUMP */
-	if (ret)
-		dev_warn(dev, "Failed to initialize debug dump\n");
-
 	mutex_init(&gxp->pin_user_pages_lock);
 	mutex_init(&gxp->secure_vd_lock);
 	mutex_init(&gxp->device_prop.lock);
@@ -2004,11 +1981,10 @@ static int gxp_common_platform_probe(struct platform_device *pdev, struct gxp_de
 	gxp->domain_pool = kmalloc(sizeof(*gxp->domain_pool), GFP_KERNEL);
 	if (!gxp->domain_pool) {
 		ret = -ENOMEM;
-		goto err_debug_dump_exit;
+		goto err_mailbox_destroy_manager;
 	}
 	if (gxp_is_direct_mode(gxp))
-		ret = gxp_domain_pool_init(gxp, gxp->domain_pool,
-					   GXP_NUM_CORES);
+		ret = gxp_domain_pool_init(gxp, gxp->domain_pool, GXP_NUM_CORES);
 	else
 		ret = gxp_domain_pool_init(gxp, gxp->domain_pool,
 					   GXP_NUM_SHARED_SLICES);
@@ -2067,6 +2043,14 @@ static int gxp_common_platform_probe(struct platform_device *pdev, struct gxp_de
 			goto err_dma_fence_destroy;
 	}
 
+#if IS_ENABLED(CONFIG_SUBSYSTEM_COREDUMP)
+	ret = gxp_debug_dump_init(gxp, &gxp_sscd_dev, &gxp_sscd_pdata);
+#else
+	ret = gxp_debug_dump_init(gxp, NULL, NULL);
+#endif /* !CONFIG_SUBSYSTEM_COREDUMP */
+	if (ret)
+		dev_warn(dev, "Failed to initialize debug dump\n");
+
 	ret = gxp_device_add(gxp);
 	if (ret)
 		goto err_before_remove;
@@ -2077,6 +2061,7 @@ static int gxp_common_platform_probe(struct platform_device *pdev, struct gxp_de
 	return 0;
 
 err_before_remove:
+	gxp_debug_dump_exit(gxp);
 	if (gxp->before_remove)
 		gxp->before_remove(gxp);
 err_dma_fence_destroy:
@@ -2095,8 +2080,7 @@ err_domain_pool_destroy:
 	gxp_domain_pool_destroy(gxp->domain_pool);
 err_free_domain_pool:
 	kfree(gxp->domain_pool);
-err_debug_dump_exit:
-	gxp_debug_dump_exit(gxp);
+err_mailbox_destroy_manager:
 	gxp_mailbox_destroy_manager(gxp, gxp->mailbox_mgr);
 err_dma_exit:
 	gxp_dma_exit(gxp);
@@ -2111,7 +2095,7 @@ err_remove_debugdir:
 	return ret;
 }
 
-static int gxp_common_platform_remove(struct platform_device *pdev)
+static void gxp_common_platform_remove(struct platform_device *pdev)
 {
 	struct gxp_dev *gxp = platform_get_drvdata(pdev);
 
@@ -2121,6 +2105,7 @@ static int gxp_common_platform_remove(struct platform_device *pdev)
 	 */
 	gcip_pm_flush_put_work(gxp->power_mgr->pm);
 	gxp_device_remove(gxp);
+	gxp_debug_dump_exit(gxp);
 	if (gxp->before_remove)
 		gxp->before_remove(gxp);
 	gxp_thermal_exit(gxp);
@@ -2131,7 +2116,6 @@ static int gxp_common_platform_remove(struct platform_device *pdev)
 	gxp_fw_destroy(gxp);
 	gxp_domain_pool_destroy(gxp->domain_pool);
 	kfree(gxp->domain_pool);
-	gxp_debug_dump_exit(gxp);
 	gxp_mailbox_destroy_manager(gxp, gxp->mailbox_mgr);
 	gxp_dma_exit(gxp);
 	gxp_put_tpu_dev(gxp);
@@ -2141,8 +2125,6 @@ static int gxp_common_platform_remove(struct platform_device *pdev)
 	gxp_remove_debugdir(gxp);
 
 	gxp_debug_pointer = NULL;
-
-	return 0;
 }
 
 static int __init gxp_common_platform_init(void)

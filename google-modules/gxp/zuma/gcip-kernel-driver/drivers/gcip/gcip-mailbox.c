@@ -18,9 +18,11 @@
 
 #define TEST_TRIGGER_TIMEOUT_RACE(awaiter) gcip_mailbox_controller_trigger_timeout_race(awaiter)
 #define TEST_FLUSH_TIMEOUT_RACE(awaiter) gcip_mailbox_controller_flush_timeout_race(awaiter)
+#define TEST_WAIT_FIRMWARE_WORK() gcip_mailbox_controller_wait_firmware_work()
 #else
 #define TEST_TRIGGER_TIMEOUT_RACE(...)
 #define TEST_FLUSH_TIMEOUT_RACE(...)
+#define TEST_WAIT_FIRMWARE_WORK(...)
 #endif
 
 #define GET_CMD_QUEUE_TAIL() mailbox->ops->get_cmd_queue_tail(mailbox)
@@ -224,6 +226,16 @@ out:
 	return ret;
 }
 
+static bool does_response_match_waiter(struct gcip_mailbox *mailbox, void *incoming_resp,
+				       void *waiting_resp)
+{
+	if (mailbox->ops->does_response_match_waiter)
+		return mailbox->ops->does_response_match_waiter(mailbox, incoming_resp,
+								waiting_resp);
+
+	return GET_RESP_ELEM_SEQ(incoming_resp) == GET_RESP_ELEM_SEQ(waiting_resp);
+}
+
 /*
  * Handler of a response.
  * Pops the wait_list until the sequence number of @resp is found, and copies @resp to the found
@@ -234,7 +246,6 @@ static void gcip_mailbox_handle_response(struct gcip_mailbox *mailbox, void *res
 	struct gcip_mailbox_wait_list_elem *cur, *nxt;
 	struct gcip_mailbox_resp_awaiter *awaiter = NULL;
 	unsigned long flags;
-	u64 cur_seq, seq = GET_RESP_ELEM_SEQ(resp);
 
 	/* If before_handle_resp is defined and it returns false, don't handle the response */
 	if (mailbox->ops->before_handle_resp && !mailbox->ops->before_handle_resp(mailbox, resp))
@@ -243,8 +254,7 @@ static void gcip_mailbox_handle_response(struct gcip_mailbox *mailbox, void *res
 	ACQUIRE_WAIT_LIST_LOCK(true, &flags);
 
 	list_for_each_entry_safe (cur, nxt, &mailbox->wait_list, list) {
-		cur_seq = GET_RESP_ELEM_SEQ(cur->async_resp->resp);
-		if (cur_seq != seq)
+		if (!does_response_match_waiter(mailbox, resp, cur->async_resp->resp))
 			continue;
 		cur->async_resp->status = GCIP_MAILBOX_STATUS_OK;
 		memcpy(cur->async_resp->resp, resp, mailbox->resp_elem_size);
@@ -441,6 +451,9 @@ static void gcip_mailbox_flush_awaiter(struct gcip_mailbox *mailbox)
 	if (!mailbox->ops)
 		return;
 
+	/* Tests cases that responses arrived or timedout while flushing awaiters. */
+	TEST_WAIT_FIRMWARE_WORK();
+
 	/*
 	 * At this point only async responses should be pending. Flush them all
 	 * from the `wait_list` at once so any remaining timeout workers
@@ -470,13 +483,19 @@ static void gcip_mailbox_flush_awaiter(struct gcip_mailbox *mailbox)
 	RELEASE_WAIT_LIST_LOCK(true, flags);
 
 	/*
+	 * From now on, since awaiters in @resps_to_flush list have been removed from @wait_list,
+	 * it is guaranteed that there will be no race condition of calling arrived or timedout
+	 * handlers with flushed handler at the same time.
+	 */
+
+	/*
 	 * Cancel the timeout timer of and free any responses that were still in
 	 * the `wait_list` above.
 	 */
 	list_for_each_entry_safe (cur, nxt, &resps_to_flush, list) {
 		list_del(&cur->list);
 		awaiter = cur->awaiter;
-		/* Cancel the timeout work and remove the reference of the timedout handler. */
+		/* Cancels the timeout work as it doesn't have any meaning for flushed awaiters. */
 		gcip_mailbox_cancel_awaiter_timeout(awaiter);
 		if (mailbox->ops->handle_awaiter_flushed)
 			mailbox->ops->handle_awaiter_flushed(mailbox, awaiter);
