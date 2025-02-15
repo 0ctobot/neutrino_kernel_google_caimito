@@ -4,5 +4,4 @@ blocklist goodix_brl_touch
 blocklist pwm_exynos
 blocklist rt4539_bl
 blocklist sec_touch
-blocklist sts4x_ambient_i2c
 blocklist syna_touch

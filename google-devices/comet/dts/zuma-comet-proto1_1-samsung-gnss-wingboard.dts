@@ -21,6 +21,7 @@
 #include "zumapro/zumapro-cp-s5400-proto.dtsi"
 #include "zuma/zuma-board-pcie-cp-s5400-a0.dtsi"
 #include "zuma/zuma-cp-s5400-phone-gnss.dtsi"
+#include "zumapro/zumapro-cp-s5400-thermal-zone.dtsi"
 #include "zuma-comet-touch.dtsi"
 #include "zuma-comet-outer-touch.dtsi"
 #include "zuma-comet-audio.dtsi"

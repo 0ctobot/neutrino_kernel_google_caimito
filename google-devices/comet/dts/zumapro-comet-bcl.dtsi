@@ -50,10 +50,13 @@
 	uvlo2_det = <0x1>;   /* 30us */
 	uvlo1_lvl = <0xA>;   /* 3.1V */
 	uvlo2_lvl = <0x8>;   /* 3.0V */
+	vimon_pwr_loop_thresh = <4000>; /* 4A pwr reduction thresh */
+	vimon_pwr_loop_cnt = <3>; /* 3 ibatt sample count */
 	uvlo1_vdrp1_en;
 	uvlo2_vdrp2_en;
 	oilo1_vdrp2_en;
 	oilo2_vdrp2_en;
+	vimon_pwr_loop_en;
 	vdroop_int_mask = <0xDF>;   /* BATOILO1 only */
 	intb_int_mask = <0x0>;   /* All passed */
 	evt_cnt_enable = <0x1>;
