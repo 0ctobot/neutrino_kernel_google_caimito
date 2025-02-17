@@ -342,6 +342,7 @@ struct bhi_weight bhi_w[] = {
 	[BHI_ALGO_ACHI_RAVG_B] = {100, 0, 0},
 	[BHI_ALGO_MIX_N_MATCH] = {90, 0, 10},
 	[BHI_ALGO_ACHI_FCR] = {100, 0, 0},
+	[BHI_ALGO_ACHI_CARETAKER] = {100, 0, 0},
 };
 
 struct bm_date {
@@ -427,6 +428,9 @@ struct health_data
 	u8 cal_mode;
 	u8 cal_state;
 	int cal_target;
+
+	/* algo BHI_ALGO_ACHI_CARETAKER status */
+	enum bhi_status caretaker_status;
 };
 
 #define POWER_METRICS_MAX_DATA	50
@@ -673,6 +677,9 @@ struct batt_drv {
 	enum batt_aacp_opt_out aacp_opt_out;
 	struct mutex aacp_state_lock;
 	int aacp_cut_off_cycles;
+	int aacp_health_over_cliff;
+	int aacp_health_over_cutoff;
+	int aacp_health_last_entry;
 
 	/* AACC: Age adjusted cycle count */
 	int aacc;
@@ -4318,7 +4325,7 @@ static int bhi_get_capacity_bound(int cycle_count, const u16 *cap_bound)
 static bool bhi_algo_has_bounds(int algo)
 {
 	return algo == BHI_ALGO_ACHI_B || algo == BHI_ALGO_ACHI_RECAL ||
-	       algo == BHI_ALGO_ACHI_RAVG_B;
+	       algo == BHI_ALGO_ACHI_RAVG_B || algo == BHI_ALGO_ACHI_CARETAKER;
 }
 
 static int bhi_algo_apply_bounds(int algo, int capacity_health, int cycle_count,
@@ -4586,6 +4593,7 @@ static int bhi_calc_health_index(int algo, struct health_data *health_data,
 	case BHI_ALGO_ACHI_RAVG_B:
 	case BHI_ALGO_MIX_N_MATCH:
 	case BHI_ALGO_ACHI_FCR:
+	case BHI_ALGO_ACHI_CARETAKER:
 		w_ci = bhi_w[algo].w_ci;
 		w_ii = bhi_w[algo].w_ii;
 		w_sd = bhi_w[algo].w_sd;
@@ -4625,7 +4633,8 @@ static int bhi_calc_health_index(int algo, struct health_data *health_data,
 
 static bool bhi_algo_has_grace(int algo)
 {
-	return algo == BHI_ALGO_ACHI_B || algo == BHI_ALGO_ACHI_RAVG_B;
+	return algo == BHI_ALGO_ACHI_B || algo == BHI_ALGO_ACHI_RAVG_B ||
+	       algo == BHI_ALGO_ACHI_CARETAKER;
 }
 
 static enum bhi_status bhi_calc_health_status(int algo, int health_index,
@@ -4659,6 +4668,28 @@ static enum bhi_status bhi_calc_health_status(int algo, int health_index,
 		health_status = BH_MARGINAL;
 	else
 		health_status = BH_NOMINAL;
+
+	/* take the worse status between health_status and caretaker_status */
+	if (algo == BHI_ALGO_ACHI_CARETAKER)
+		health_status = max(health_status, data->caretaker_status);
+
+	return health_status;
+}
+
+static enum bhi_status bhi_get_caretaker_status(struct batt_drv *batt_drv)
+{
+	const int cycle_count = aacp_get_cc(batt_drv);
+	const int last_aafv_entry = gbms_aafv_get_last_entry(&batt_drv->chg_profile);
+	enum bhi_status health_status = BH_NOMINAL;
+
+	if (last_aafv_entry && cycle_count >= last_aafv_entry)
+		health_status = batt_drv->aacp_health_last_entry;
+
+	if (batt_drv->aacp_cut_off_cycles >= 0 && cycle_count >= batt_drv->aacp_cut_off_cycles)
+		health_status = max(health_status, batt_drv->aacp_health_over_cutoff);
+
+	if (batt_drv->aafv_cliff_cycle >= 0 && cycle_count >= batt_drv->aafv_cliff_cycle)
+		health_status = max(health_status, batt_drv->aacp_health_over_cliff);
 
 	return health_status;
 }
@@ -4700,7 +4731,6 @@ static int batt_bhi_stats_update(struct batt_drv *batt_drv)
 	bool changed = false;
 	int age, index;
 
-
 	/* age (and cycle count* might be used in the calc */
 	age = GPSY_GET_PROP(fg_psy, GBMS_PROP_BATTERY_AGE);
 	if (age < 0)
@@ -4740,6 +4770,7 @@ static int batt_bhi_stats_update(struct batt_drv *batt_drv)
 	changed |= health_data->bhi_index != index;
 	health_data->bhi_index = index;
 
+	health_data->caretaker_status = bhi_get_caretaker_status(batt_drv);
 	status = bhi_calc_health_status(bhi_algo, BHI_ROUND_INDEX(index), health_data);
 	changed |= health_data->bhi_status != status;
 	health_data->bhi_status = status;
@@ -8796,6 +8827,7 @@ static ssize_t aacp_opt_out_show(struct device *dev,
 }
 
 static DEVICE_ATTR_RW(aacp_opt_out);
+
 /* AACC ------------------------------------------------------------------- */
 
 static ssize_t aacc_show(struct device *dev,
@@ -12194,6 +12226,22 @@ static void google_battery_init_work(struct work_struct *work)
 				   &batt_drv->aacp_cut_off_cycles);
 	if (ret < 0)
 		batt_drv->aacp_cut_off_cycles = AACP_CUT_OFF_CYCLES_DEFAULT;
+
+	/* AACP health status */
+	ret = of_property_read_u32(node, "google,aacp-health-over-cliff",
+				   &batt_drv->aacp_health_over_cliff);
+	if (ret < 0)
+		batt_drv->aacp_health_over_cliff = BH_NEEDS_REPLACEMENT;
+
+	ret = of_property_read_u32(node, "google,aacp-health-over-cutoff",
+				   &batt_drv->aacp_health_over_cutoff);
+	if (ret < 0)
+		batt_drv->aacp_health_over_cutoff = BH_MARGINAL;
+
+	ret = of_property_read_u32(node, "google,aacp-health-last-entry",
+				   &batt_drv->aacp_health_last_entry);
+	if (ret < 0)
+		batt_drv->aacp_health_last_entry = BH_MARGINAL;
 
 	/* single battery disconnect */
 	(void)batt_bpst_init_debugfs(batt_drv);
