@@ -741,6 +741,7 @@ static int ssoc_get_capacity(const struct batt_ssoc_state *ssoc);
 static int batt_ttf_estimate(ktime_t *res, struct batt_drv *batt_drv);
 
 static int gbatt_restore_capacity(struct batt_drv *batt_drv);
+static bool aafv_update_voltage(struct batt_drv *batt_drv, int *fv_uv, int *offset);
 
 static int batt_get_filter_temp(struct batt_temp_filter *temp_filter)
 {
@@ -3760,7 +3761,7 @@ static bool msc_logic_health(struct batt_drv *batt_drv)
 	const bool aon_enabled = rest->always_on_soc != -1;
 	const int capacity_ma = batt_drv->battery_capacity;
 	const ktime_t now = get_boot_sec();
-	int fv_uv = -1, cc_max = -1;
+	int fv_uv = -1, cc_max = -1, offset = -1;
 	bool changed = false;
 	ktime_t ttf = 0, safety_margin = 0;
 	int ret;
@@ -3881,13 +3882,15 @@ done_no_op:
 	changed = rest->rest_state != rest_state ||
 		  rest->rest_cc_max != cc_max || rest->rest_fv_uv != fv_uv;
 
-	/* msc_logic_* will vote on cc_max and fv_uv. */
-	rest->rest_cc_max = cc_max;
-	rest->rest_fv_uv = fv_uv;
-
 	if (!changed)
 		return false;
 
+	/* msc_logic_* will vote on cc_max and fv_uv. */
+	rest->rest_cc_max = cc_max;
+	if (fv_uv > 0)
+		aafv_update_voltage(batt_drv, &fv_uv, &offset);
+
+	rest->rest_fv_uv = fv_uv;
 	gbms_logbuffer_prlog(batt_drv->ttf_stats.ttf_log, LOGLEVEL_INFO, 0, LOGLEVEL_DEBUG,
 			     "MSC_HEALTH: now=%lld deadline=%lld aon_soc=%d ttf=%lld state=%d->%d fv_uv=%d, cc_max=%d safety_margin=%d active_time:%lld",
 			     now, rest->rest_deadline, rest->always_on_soc, ttf, rest->rest_state,
