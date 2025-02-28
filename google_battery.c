@@ -8185,8 +8185,17 @@ static ssize_t aafv_state_store(struct device *dev,
 
 	dev_info(batt_drv->device, "AAFV: aafv_state: %d -> %d\n", batt_drv->aafv_state, val);
 	batt_drv->aafv_state = val;
+
+	if (batt_drv->aafv_state == BATT_AAFV_DISABLED) {
+		/* restore aafv offset value on FG side */
+		ret = GPSY_SET_PROP(batt_drv->fg_psy, GBMS_PROP_AAFV, 0);
+		if (ret)
+			dev_err(batt_drv->device, "AAFV: failed to restore aafv offset in FG (%d)\n", ret);
+	}
+
 done:
 	mutex_unlock(&batt_drv->aacp_state_lock);
+
 
 	return count;
 }
