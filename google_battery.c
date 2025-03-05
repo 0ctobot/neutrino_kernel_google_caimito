@@ -9237,7 +9237,7 @@ static DEVICE_ATTR_RO(charging_state);
 
 static void batt_update_charging_policy(struct batt_drv *batt_drv)
 {
-	int value;
+	int value, ret;
 
 	value = gvotable_get_current_int_vote(batt_drv->charging_policy_votable);
 	if (value == batt_drv->charging_policy)
@@ -9259,6 +9259,16 @@ static void batt_update_charging_policy(struct batt_drv *batt_drv)
 	gvotable_cast_long_vote(batt_drv->csi_status_votable, "CSI_STATUS_DEFEND_LIMIT",
 				CSI_STATUS_Defender_Limit,
 				value == CHARGING_POLICY_VOTE_LONGLIFE);
+
+	if (value != CHARGING_POLICY_VOTE_LONGLIFE)
+		return;
+
+	/* for LONGLIFE: make full charge happens XXX cycles from the current cycle */
+	batt_drv->last_full_charge = batt_drv->hist_data_saved_cnt;
+	ret = gbms_storage_write(GBMS_TAG_FCRU, &batt_drv->last_full_charge,
+				 GBMS_FCRU_LEN);
+	if (ret < 0)
+		pr_err("failed to store FCNU (%d)\n", ret);
 }
 
 static int charging_policy_translate(int value)
