@@ -75,6 +75,7 @@ struct vendor_group_property vg[VG_MAX];
 extern struct vendor_group_list vendor_group_list[VG_MAX];
 
 bool wait_for_init = true;
+bool in_suspend_resume;
 
 unsigned int vh_sched_max_load_balance_interval;
 unsigned int vh_sched_min_granularity_ns;
@@ -2164,7 +2165,7 @@ uclamp_tg_restrict_pixel_mod(struct task_struct *p, enum uclamp_id clamp_id)
 		value = max(value, (unsigned int)capacity_orig_of(pixel_cluster_start_cpu[0]) + 1);
 
 	/* Boost tasks during suspend/resume */
-	if (clamp_id == UCLAMP_MIN && cpuhp_tasks_frozen)
+	if (clamp_id == UCLAMP_MIN && in_suspend_resume)
 		value = max(value, SCHED_CAPACITY_SCALE/4);
 
 	// For uclamp min, if task has a valid per-task setting that is lower than or equal to its
