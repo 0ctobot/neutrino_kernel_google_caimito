@@ -55,10 +55,15 @@
 	google,ttf-tier-table = <0 51 76>;
 	google,ttf-report-max-ratio = <0>;
 
+	/* 90% after 600 cycles, 80% after 1000 cycles */
+	google,aacr-algo = <3>;
+	google,aacr-cliff-capacity-rate = <80>;
+	google,aacr-cycle-max = <1000>;
+
 	google,batt-id-1-atl {
 		google,batt-id = <1>;
-		google,aacr-ref-cycles = <100 200 300 400 500 600 700 800 900 1000>;
-		google,aacr-ref-fade10 = <  1   8  15  22  27  38  45  53  62   69>;
+		google,aacr-ref-cycles = <599 600 1000>;
+		google,aacr-ref-fade10 = <  0 100  100>;
 		google,aafv-ref-cycles = <200 400 600 800 1000 1001>;
 		google,aafv-ref-offset = <  0  20  40  60   80  100>;
 	};
