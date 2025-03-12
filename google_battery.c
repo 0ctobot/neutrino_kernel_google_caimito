@@ -12530,7 +12530,7 @@ static int google_battery_probe(struct platform_device *pdev)
 				   &batt_drv->hda_tz_limit);
 
 	/* AAFV server side */
-	batt_drv->aafv_state = BATT_AAFV_ENABLED;
+	batt_drv->aafv_state = BATT_AAFV_DISABLED;
 	batt_drv->aafv_apply_max = AAFV_APPLY_MAX_DEFAULT;
 	batt_drv->aafv_max_offset = AAFV_MAX_OFFSET_DEFAULT;
 	batt_drv->aafv_cliff_cycle = AAFV_CLIFF_CYCLE_DEFAULT;
