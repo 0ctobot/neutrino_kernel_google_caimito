@@ -1,7 +1,7 @@
 /*
  * Basically selected code segments from usb-cdc.c and usb-rndis.c
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -5858,7 +5858,7 @@ dhd_add_monitor_if(dhd_info_t *dhd)
 #ifdef WL_CFG80211_MONITOR
 	dev_priv = DHD_MON_DEV_PRIV(dev);
 	dev_priv->dhd = dhd;
-	bzero(&dev_priv->stats, sizeof(dev_priv->stats));
+	memset(&dev_priv->stats, 0, sizeof(dev_priv->stats));
 #endif /* WL_CFG80211_MONITOR */
 }
 
@@ -5882,7 +5882,8 @@ dhd_del_monitor_if(dhd_info_t *dhd)
 #ifdef WL_CFG80211_MONITOR
 	dev_priv = DHD_MON_DEV_PRIV(dhd->monitor_dev);
 	dev_priv->dhd = (dhd_info_t *)NULL;
-	bzero(&dev_priv->stats, sizeof(dev_priv->stats));
+	memset(&dev_priv->stats, 0, sizeof(dev_priv->stats));
+	memset(dhd->monitor_type, 0, DHD_MAX_IFS);
 #endif /* WL_CFG80211_MONITOR */
 
 	if (FW_SUPPORTED((&dhd->pub), monitor)) {
@@ -8462,6 +8463,7 @@ dhd_lookup_map(osl_t *osh, char *fname, uint32 pc, char *pc_fn,
 	char func2[DHD_FUNC_STR_LEN] = "\0";
 	uint8 count = 0;
 	int num, len = 0, offset;
+	int alloc_size;
 
 	DHD_TRACE(("%s: fname %s pc 0x%x lr 0x%x \n",
 		__FUNCTION__, fname, pc, lr));
@@ -8471,7 +8473,8 @@ dhd_lookup_map(osl_t *osh, char *fname, uint32 pc, char *pc_fn,
 	}
 
 	/* Allocate 1 byte more than read_size to terminate it with NULL */
-	raw_fmts = MALLOCZ(osh, read_size + 1);
+	alloc_size = read_size + 1;
+	raw_fmts = MALLOCZ(osh, alloc_size);
 	if (raw_fmts == NULL) {
 		DHD_ERROR(("%s: Failed to allocate raw_fmts memory \n",
 			__FUNCTION__));
@@ -8662,6 +8665,9 @@ fail:
 	}
 	if (!(count & LR_FOUND_BIT)) {
 		sprintf(lr_fn, "0x%08x", lr);
+	}
+	if (raw_fmts) {
+		MFREE(osh, raw_fmts, alloc_size);
 	}
 	return err;
 }
@@ -16925,12 +16931,12 @@ done:
 	return ret;
 }
 
-int
+uint64
 dhd_dev_get_feature_set(struct net_device *dev)
 {
 	dhd_info_t *ptr = *(dhd_info_t **)netdev_priv(dev);
 	dhd_pub_t *dhd = (&ptr->pub);
-	int feature_set = 0;
+	uint64 feature_set = 0;
 
 	/* tdls capability or othters can be missed because of initialization */
 	if (dhd_get_fw_capabilities(dhd) < 0) {
@@ -17016,14 +17022,20 @@ dhd_dev_get_feature_set(struct net_device *dev)
 #ifdef WL_LATENCY_MODE
 	feature_set |= WIFI_FEATURE_SET_LATENCY_MODE;
 #endif /* WL_LATENCY_MODE */
+
+#ifdef WL_AGGRESSIVE_ROAM
+	feature_set |= WIFI_FEATURE_ROAMING_MODE_CONTROL;
+#endif /* WL_AGGRESSIVE_ROAM */
+
+	DHD_PRINT(("Supported feature_set %llx\n", feature_set));
 	return feature_set;
 }
 
-int
+uint64
 dhd_dev_get_feature_set_matrix(struct net_device *dev, int num)
 {
-	int feature_set_full;
-	int ret = 0;
+	uint64 feature_set_full;
+	uint64 ret = 0;
 
 	feature_set_full = dhd_dev_get_feature_set(dev);
 
@@ -17068,6 +17080,15 @@ dhd_dev_get_feature_set_matrix(struct net_device *dev, int num)
 		break;
 	}
 
+	if (ret > WIFI_FEATURE_INVALID) {
+		DHD_ERROR(("%s: Out of range feature_set_matrix: %llx\n", __FUNCTION__, ret));
+		ret = WIFI_FEATURE_INVALID;
+		/*
+		 * Max supported feature set matrix is up to u32,
+		 * beyond it requires further changes.
+		 *
+		 */
+	}
 	return ret;
 }
 

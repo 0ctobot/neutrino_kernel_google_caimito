@@ -4,7 +4,7 @@
  *
  * Definitions subject to change without notice.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1923,6 +1923,7 @@ typedef uint32 ratespec_t;
 #define SC_CHANIM_ID_NULL	0u
 #define SC_CHANIM_ID_SCAN	1u	/* Module Id of scan, used to report scqs */
 #define SC_CHANIM_ID_STA	2u	/* Module Id of STA, used tp report scqs */
+#define SC_CHANIM_ID_SBI	3u	/* Module Id of SBI, used to report scqs */
 
 /* ap tpc modes */
 #define	AP_TPC_OFF		0
@@ -2478,7 +2479,7 @@ typedef uint32 ratespec_t;
 #define PM_FAST 2
 #define PM_FORCE_OFF 3		/* use this bit to force PM off even bt is active */
 
-#define WL_WME_CNT_VERSION	1	/* current version of wl_wme_cnt_t */
+#define WL_WME_CNT_VERSION	WL_WME_CNT_VER_1	/* current version of wl_wme_cnt_t */
 
 /* fbt_cap: FBT assoc / reassoc modes. */
 #define WLC_FBT_CAP_DRV_4WAY_AND_REASSOC  1 /* Driver 4-way handshake & reassoc (WLFBT). */
@@ -2683,6 +2684,7 @@ enum {
 	WL_REINIT_RC_TXDMA_ERR		  = 59, /* Tx DMA errors */
 	WL_REINIT_RC_RX_HW_ERR		  = 60, /* Rx HW error */
 	WL_REINIT_RC_URB_LEN_ERROR	  = 61, /* URB LEN error */
+	WL_REINIT_RC_PHY_BAD_ERROR	  = 62, /* PHY badness detected */
 	WL_REINIT_RC_SUPPORTED_LAST	/* Use for app ONLY, DONOT use this in wlc code.
 					 * For wlc, use WL_REINIT_RC_VERSIONED_LAST
 					 */
@@ -2834,6 +2836,7 @@ enum wl_cnt_xtlv_id {
 #define WL_CLM_NO_80_80MHZ         0x8000u /**< Flag for NO_80_80MHZ */
 #define WL_CLM_EHT                 0x10000u /**< Flag for EHT */
 #define WL_CLM_MRU                 0x20000u /**< Flag for MRU */
+#define WL_CLM_VLP_TPC_FCC         0x40000u /**< Flag for VLP_TPC_FCC */
 #define WL_CLM_NO_320MHZ           0x200000u /**< Flag for NO_320MHZ */
 #define WL_CLM_NO_160_160MHZ       0x400000u /**< Flag for NO_160_160MHZ */
 #define WL_CLM_CBP_FCC             0x800000u /**< Flag for CBP_FCC */

@@ -7,7 +7,7 @@
  * WFA related work should be placed in 802.11wfa.h.
  * Broadcom specific work should be placed in 802.11brcm.h.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you

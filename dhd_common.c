@@ -1,7 +1,7 @@
 /*
  * Broadcom Dongle Host Driver (DHD), common DHD core.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -11969,6 +11969,18 @@ dhd_convert_memdump_type_to_str(uint32 type, char *buf, size_t buf_len, int subs
 			break;
 		case DUMP_TYPE_COEXCPU_BP_DOWN:
 			type_str = "COEX_CPU_BP_DOWN";
+			break;
+		case DUMP_TYPE_STA_ASSOC_TIMEOUT:
+			type_str = "STA_ASSOC_TIMEOUT";
+			break;
+		case DUMP_TYPE_STA_4WAY_HS_TIMEOUT:
+			type_str = "STA_4WAY_HS_TIMEOUT";
+			break;
+		case DUMP_TYPE_STA_ROAM_TIMEOUT:
+			type_str = "STA_ROAM_TIMEOUT";
+			break;
+		case DUMP_TYPE_SAR_CONF_NOTFOUND:
+			type_str = "SAR_CONF_NOTFOUND";
 			break;
 		default:
 			type_str = "Unknown_type";

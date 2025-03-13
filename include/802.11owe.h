@@ -2,7 +2,7 @@
  * Fundamental types and constants relating to OWE (RFC 8110 and WFA spec) -
  * "Opportunistic Wireless Encryption"
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you

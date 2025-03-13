@@ -1,7 +1,7 @@
 /*
  * DHD Bus Module for PCIE
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -6007,6 +6007,14 @@ dhdpcie_mem_dump(dhd_bus_t *bus)
 		case DUMP_TYPE_P2P_DISC_BUSY:
 			/* intentional fall through */
 		case DUMP_TYPE_ESCAN_SYNCID_MISMATCH:
+			/* intentional fall through */
+		case DUMP_TYPE_STA_ASSOC_TIMEOUT:
+			/* intentional fall through */
+		case DUMP_TYPE_STA_4WAY_HS_TIMEOUT:
+			/* intentional fall through */
+		case DUMP_TYPE_STA_ROAM_TIMEOUT:
+			/* intentional fall through */
+		case DUMP_TYPE_SAR_CONF_NOTFOUND:
 			/* intentional fall through */
 			if (dhdp->memdump_type == DUMP_TYPE_RESUMED_ON_TIMEOUT ||
 				dhdp->memdump_type == DUMP_TYPE_D3_ACK_TIMEOUT) {

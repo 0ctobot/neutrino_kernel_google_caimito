@@ -6,7 +6,7 @@
  *
  * Definitions subject to change without notice.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -195,11 +195,15 @@ typedef struct ssid_info
 	uint8		ssid[32];	/**< SSID string */
 } ssid_info_t;
 
+/* Act frame flags */
+#define WL_ACT_FRAME_FLAG_NAN_USD	  0x1u
+
 typedef struct wl_af_params_v1 {
 	uint32			channel;
 	int32			dwell_time;
 	struct ether_addr	BSSID;
-	uint8 PAD[2];
+	uint8			flags;
+	uint8			PAD;
 	wl_action_frame_v1_t action_frame;
 } wl_af_params_v1_t;
 
@@ -212,7 +216,8 @@ typedef struct wl_af_params_v2 {
 	uint32			channel;
 	int32			dwell_time;
 	struct ether_addr	BSSID;
-	uint8                   PAD[2];
+	uint8			flags;
+	uint8			PAD;
 	wl_action_frame_v2_t	action_frame;
 } wl_af_params_v2_t;
 
@@ -2463,6 +2468,8 @@ typedef struct wl_wsec_key {
 #define WSEC_PASSPHRASE		1u
 /* Flag indicating an SAE passphrase */
 #define WSEC_SAE_PASSPHRASE	2u
+/* Flag indicating Ranging SAE passphrase */
+#define WSEC_SAE_PASSPHRASE_FTM	4u
 
 /**receptacle for WLC_SET_WSEC_PMK parameter */
 
@@ -3902,6 +3909,7 @@ typedef struct wl_mimo_ps_metrics_snapshot_trace {
 #define WL_MIMOPS_METRICS_SNAPSHOT_BMACINIT		6
 #define WL_MIMOPS_METRICS_SNAPSHOT_HT_COMPLETE		7
 #define WL_MIMOPS_METRICS_SNAPSHOT_OCL                  8
+#define WL_MIMOPS_METRICS_SNAPSHOT_ARBI_INTERNAL	9
 
 #define WL_MIMO_PS_STATUS_VERSION_2	2
 typedef struct wl_mimo_ps_status {
@@ -8064,7 +8072,8 @@ typedef enum tx_pwr_tlv_id {
 	TX_PWR_RPT_DEV_CAT_ID      = 66u,
 	TX_PWR_RPT_PAMODE_ID	   = 67u,
 	TX_PWR_RPT_LPC_OFFSET_ID   = 68u,
-	TX_PWR_RPT_6G_DIRGAIN_ID   = 69u
+	TX_PWR_RPT_6G_DIRGAIN_ID   = 69u,
+	TX_PWR_RPT_VLPTPC_ID	   = 70u
 } tx_pwr_tlv_id_t;
 
 #include <packed_section_start.h>
@@ -9368,7 +9377,8 @@ typedef enum {
 	WL_BSSTRANS_POLICY_PRODUCT_WBTEXT = 5,	/**< Policy for real product use cases */
 	WL_BSSTRANS_POLICY_MBO = 6,		/**< Policy for MBO certification */
 	WL_BSSTRANS_POLICY_T2LM = 7,		/**< Policy for TID-to-link mapping use-case */
-	WL_BSSTRANS_POLICY_MAX = 8
+	WL_BSSTRANS_POLICY_MLO_REASSOC = 8,	/**< Policy for MLO Reassociation use-case */
+	WL_BSSTRANS_POLICY_MAX = 9
 } wnm_bsstrans_policy_type_t;
 
 /** Definitions for WNM/NPS TIM Broadcast */
@@ -10702,8 +10712,9 @@ typedef enum wl_nan_tlv {
 	WL_NAN_XTLV_CFG_MCAST_AVAIL_BMP	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x12),
 	WL_NAN_XTLV_NIK_DATA		= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x13), /* Deprecated */
 	WL_NAN_XTLV_NIK_LIFETIME_DATA	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x14), /* Deprecated */
-	WL_NAN_XTLV_ADD_ATTR_DATA	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x15),
-	WL_NAN_XTLV_NANIE_ATTR_DATA	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x16),
+	WL_NAN_XTLV_ADD_ATTR_DATA	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x15), /* Deprecated */
+	WL_NAN_XTLV_NANIE_ATTR_DATA	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x16), /* Deprecated */
+	WL_NAN_XTLV_NAN_ATTR_DATA	= NAN_CMD(WL_NAN_CMD_CFG_COMP_ID, 0x17),
 
 	WL_NAN_XTLV_SD_SVC_INFO		= NAN_CMD(WL_NAN_CMD_SD_COMP_ID, 0x01),
 	WL_NAN_XTLV_SD_FOLLOWUP		= NAN_CMD(WL_NAN_CMD_SD_COMP_ID, 0x02),
@@ -10832,6 +10843,8 @@ typedef enum wl_nan_tlv {
 	WL_NAN_XTLV_DATA_STATS_HDR	= NAN_CMD(WL_NAN_CMD_DATA_STATS_COMP_ID, 0x01),
 	WL_NAN_XTLV_DATA_STATS_TX	= NAN_CMD(WL_NAN_CMD_DATA_STATS_COMP_ID, 0x02),
 	WL_NAN_XTLV_DATA_STATS_RX	= NAN_CMD(WL_NAN_CMD_DATA_STATS_COMP_ID, 0x03),
+	WL_NAN_XTLV_MCAST_RX_RATE_STATS	= NAN_CMD(WL_NAN_CMD_DATA_STATS_COMP_ID, 0x04),
+	WL_NAN_XTLV_MCAST_RATE_CNTS	= NAN_CMD(WL_NAN_CMD_DATA_STATS_COMP_ID, 0x05),
 
 	/* NAN key plumb xtlv sub commands - xtlv_list */
 	WL_NAN_XTLV_KP_TK		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x01),
@@ -10842,7 +10855,8 @@ typedef enum wl_nan_tlv {
 	WL_NAN_XTLV_KP_GTK_TX		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x06),
 	WL_NAN_XTLV_KP_GTK_RX		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x07),
 	WL_NAN_XTLV_KP_KEK		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x08),
-	WL_NAN_XTLV_KP_KCK		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x09)
+	WL_NAN_XTLV_KP_KCK		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x09),
+	WL_NAN_XTLV_KP_PN		= NAN_CMD(WL_NAN_CMD_KP_COMP_ID, 0x0A)
 } wl_nan_tlv_t;
 
 /* Sub Module ID's for NAN */
@@ -11737,9 +11751,10 @@ enum wl_nan_cfg_ctrl2_flags2 {
 	/* AutoDAM Control flag to disable NAN SCC in infra channel
 	 * when infra is associated in non-soc channel.
 	 */
-	WL_NAN_CTRL2_FLAG2_AUTODAM_DISABLE_INFRA_SCC		=	(1u << 5u) /* bit 5 */
+	WL_NAN_CTRL2_FLAG2_AUTODAM_DISABLE_INFRA_SCC		=	(1u << 5u), /* bit 5 */
+	WL_NAN_CTRL2_FLAG2_ENABLE_MCAST_RATE_HIST		=	(1u << 6u) /* bit 6 */
 };
-#define WL_NAN_CTRL2_FLAGS2_MASK	0x0000003f
+#define WL_NAN_CTRL2_FLAGS2_MASK	0x0000007f
 
 /*
  * WL_NAN_CMD_CFG_BAND, WL_NAN_CMD_CFG_RSSI_THRESHOLD(Get only)
@@ -11830,9 +11845,21 @@ typedef struct wl_peer_key_info {
 	uint16	key_len; /* Length of TK */
 	uint8	key_id; /*  key_id used */
 	uint8	key_krc_len;
-	uint8	PAD[2];
+	uint8	flags;
+	uint8	PAD[1];
 	uint8	key_buf[]; /* This buffer will have the key */
 } wl_peer_key_info_t;
+
+typedef struct wl_nan_pn_rollover_evt {
+	uint8 key_id;
+	uint8 pad[3];
+	struct ether_addr ndi_addr;
+	uint8 pn[NAN_PEER_KEY_KRC_LEN];
+} wl_nan_pn_rollover_evt_t;
+
+
+/* wl_peer_key_info_t flag bits */
+#define NAN_PEER_KEY_USE_HOST_KRC	1u << 0u
 
 typedef struct wl_nan_cfg_peer_key {
 	uint8	operation;		/* add , delete */
@@ -13260,7 +13287,8 @@ enum wl_nan_fw_cap_flag1 {
 
 enum wl_nan_fw_cap_flag2 {
 	WL_NAN_FW_CAP_FLAG2_NONE		= 0x00000000, /* dummy */
-	WL_NAN_FW_CAP_FLAG2_SLOT_DATA_STATS	= 0x00000001
+	WL_NAN_FW_CAP_FLAG2_SLOT_DATA_STATS	= 0x00000001,
+	WL_NAN_FW_CAP_FLAG2_MCAST_RX_RATE_STATS	= 0x00000002
 };
 
 /* WL_NAN_XTLV_GEN_FW_CAP */
@@ -13569,6 +13597,22 @@ typedef struct wl_nan_data_stats_rx {
 	uint16 unicast_rx_snr;
 	uint16 mcast_rx_snr;
 } wl_nan_data_stats_rx_t;
+
+/* WL_NAN_XTLV_MCAST_RATE_CNTS */
+typedef struct wlc_nan_mcast_rate_cnts {
+	ratespec_t		rs;
+	uint16			data_rate;
+	uint16			pkt_count;
+} wlc_nan_mcast_rate_cnts_t;
+
+/* WL_NAN_XTLV_MCAST_RX_RATE_STATS */
+typedef struct wlc_nan_mcast_rx_rate_hist  {
+	struct ether_addr	mcast_da;
+	uint16			num_rx_mpdus;   /* rx ncons */
+	uint16			num_rate_cnts;  /* # of below rate counts tlvs */
+	uint8			pad[2];
+	wlc_nan_mcast_rate_cnts_t rstats[];
+} wlc_nan_mcast_rx_rate_hist_t;
 
 /* fast discovery beacon config
  * WL_NAN_XTLV_CFG_FDISC_TBMP
@@ -16987,6 +17031,7 @@ typedef enum wl_interface_type {
 	WL_INTERFACE_TYPE_P2P_DISC = 6,
 	WL_INTERFACE_TYPE_IBSS = 7,
 	WL_INTERFACE_TYPE_MESH = 8,
+	WL_INTERFACE_TYPE_NAN_NMI = 9,
 	WL_INTERFACE_TYPE_MAX
 } wl_interface_type_t;
 
@@ -18873,8 +18918,9 @@ typedef uint16 chan_seq_type_t;
 enum chan_seq_type {
 	CHAN_SEQ_TYPE_AWDL	= 1,
 	CHAN_SEQ_TYPE_SLICE	= 2,
-	CHAN_SEQ_TYPE_NAN	= 3, /* NAN avail XTLV */
-	CHAN_SEQ_TYPE_NANHO	= 4  /* NANHO channel schedule XTLV */
+	CHAN_SEQ_TYPE_NAN	= 3,     /* NAN avail XTLV */
+	CHAN_SEQ_TYPE_NANHO	= 4,     /* NANHO channel schedule XTLV */
+	CHAN_SEQ_TYPE_SLICE_PS	= 5  /* Slice PS sequence */
 };
 
 typedef uint8 sched_flag_t;
@@ -18891,6 +18937,19 @@ enum sched_flag {
 	SDB_TDM_SCHED_DUAL_TIME = (SDB_TDM_SCHED | SDB_DUAL_TIME),
 	SDB_SPLIT_BAND_SCHED_DUAL_TIME = (SDB_SPLIT_BAND_SCHED | SDB_DUAL_TIME)
 };
+
+/* Assumes max 1024 TU periodic interval with 64 16 TU slots, and one bit per slot */
+#define MAX_PS_SEQ_ARR_NUM      8u
+
+typedef struct slice_ps_seq {
+	uint8 slice_index;  /* 0 (Main) or 1 (Aux) only */
+	uint8 len;
+	uint8 pad[2];
+	/* Little Endian with ps_bitmask[0].bit0 for slot0 (16TU)
+	* ps_bitmask[0].bit1 for slot1 and so on
+	*/
+	uint8 ps_bitmask[];
+} slice_ps_seq_t;
 
 typedef struct chan_seq_tlv_data {
 	uint32 flags;
@@ -18911,7 +18970,7 @@ typedef struct sb_channel_sequence {
 } sb_channel_sequence_t;
 
 typedef struct slice_chan_seq {
-	uint8 slice_index;  /* 0(Main) or 1 (Aux) */
+	uint8 slice_index;  /* 0 (Main) or 1 (Aux) or 2 (SC) */
 	uint8 num_chanspecs;
 	uint8 dur;
 	uint8 PAD;
@@ -18968,6 +19027,7 @@ typedef struct wl_sbss_perslice_cs_bmp_s {
 } wl_sbss_perslice_cs_bmp_t;
 
 #define SBSS_BTCOEX_PERSLICE_ENABLED	0u	/* flag bit for btcoex per slice capability */
+#define SBSS_SBI_SC_ENABLED             1u	/* flag bit for SBISC capability */
 typedef struct wl_sbss_fw_cap {
 	uint32 cap;
 } wl_sbss_fw_cap_t;
@@ -19324,6 +19384,7 @@ enum {
 	WL_HC_RX_XTLV_ID_VAL_STALL_UC_DECRYPT_FAIL = 6,  /* trigger uc decrypt failures */
 	WL_HC_RX_XTLV_ID_VAL_STALL_BCMC_DECRYPT_FAIL = 7, /* trigger bcmc decrypt failures */
 	WL_HC_RX_XTLV_ID_VAL_STALL_NOUDATA_TO_RXRTS = 8, /* No data to RX CTS TX CTS */
+	WL_HC_RX_XTLV_ID_VAL_STALL_RXRTS_NOUCAST_RATE_LMT_CFG = 9, /* ucast checks rate limit cfg */
 };
 
 /* Health Check: Datapath SCAN IDs */
@@ -19363,12 +19424,13 @@ typedef enum wl_hc_dd_type {
 	WL_HC_DD_RX_STALL_V2	= 8,	/* RX stall check v2 */
 
 
-	WL_HC_DD_SBSS		=10,	/* Slotted bss health check */
-	WL_HC_DD_NAN		=11,	/* NAN health check */
-	WL_HC_DD_CHSW		=12,	/* Channel Switch health check */
-	WL_HC_DD_LHL		=13,	/* LHL timer health check */
-	WL_HC_DD_RX_STALL_V3	=14,	/* RX stall check v3 */
-	WL_HC_DD_TX_STALL_V2	=15,	/* TX stall check V2 */
+	WL_HC_DD_SBSS		= 10,	/* Slotted bss health check */
+	WL_HC_DD_NAN		= 11,	/* NAN health check */
+	WL_HC_DD_CHSW		= 12,	/* Channel Switch health check */
+	WL_HC_DD_LHL		= 13,	/* LHL timer health check */
+	WL_HC_DD_RX_STALL_V3	= 14,	/* RX stall check v3 */
+	WL_HC_DD_TX_STALL_V2	= 15,	/* TX stall check V2 */
+	WL_HC_DD_RX_STALL_V4	= 16,	/* RX stall check v4 */
 	WL_HC_DD_MAX
 } wl_hc_dd_type_t;
 
@@ -19469,6 +19531,65 @@ typedef struct {
 	struct ether_addr peer_ea;
 	uint8 PAD[2]; /* Reserved */
 } wl_rx_hc_info_v3_t;
+
+/* Health Check report structure for Rx dropped packet failure check */
+typedef struct {
+	uint16 type; /* WL_HC_RX_DD_STALL_V4 */
+	uint16 length;
+	uint8 if_idx; /* interface index on which issue is reported */
+	uint8 ac; /* access category on which this problem is seen */
+	uint8 link_idx;
+	uint8 PAD;
+	uint32 rx_hc_pkts;
+	uint32 rx_hc_dropped_all;
+	uint32 rx_hc_alert_th;
+	uint32 reason;	/* refer to bcm_rx_hc_stall_reason_t above */
+	struct ether_addr peer_ea;
+	uint8 PAD[2]; /* Reserved */
+	uint8 data[]; /* Reason specific struct of var size */
+} wl_rx_hc_info_v4_t;
+
+/* BCM_RX_HC_NOUDATA_RXRTS_TXCTS  RX HC specific struct */
+/* BCM_RX_HC_NOUDATA_RXRTS_TXCTS  RX HC specific bits in the stall bitmap */
+enum {
+	WLC_RX_HC_RTS_CTS_NOUCAST_RESERVED =		0,
+	/* Indicates if the issue is in progress */
+	WLC_RX_HC_RTS_CTS_NOUCAST_INPROG_BIT =		(0x1u << 0),
+	/* TIM set for last 3 sleep wake up instances for beacon reception */
+	WLC_RX_HC_RTS_CTS_NOUCAST_TIM_SET_BIT =		(0x1u << 1),
+	/* Non MU RTS/CTS no  unicast */
+	WLC_RX_HC_RTS_CTS_NOUCAST_STALL_BIT =		(0x1u << 2),
+	/* MU RTS/CTS no  unicast */
+	WLC_RX_HC_MURTS_CTS_NOUCAST_STALL_BIT =		(0x1u << 3),
+	/* Bit 4..31 are reserved and should be 0 */
+};
+
+#define WLC_RX_HC_EVENT_RTS_CTS_NOUCAST_VER_1	(1u)
+
+typedef struct {
+	uint16 ver; /* Version */
+	uint16 len; /* Length of this structure */
+	uint32 stall_bitmap;
+	uint32 elapsed_time; /* wall clock in ms */
+	uint32 dwell_time; /* infra_sta on channel dwell time in ms */
+	uint32 hold_down_time_offset; /* time offset from end of the hold down period */
+	uint32 tx_cts_no_ucast; /* CTS sent but no unicast */
+	uint32 tx_cts_ucast; /* CTS sent, PPDUs RXed */
+	uint32 rx_ppdus; /* Total PPDUs rxed includes MU PPDUs */
+	uint32 murts_rx; /* MU counters. Number of MU RTS RX */
+	uint32 rx_muppdus; /* Total number of MU PPDUs */
+} wlc_rx_hc_rts_cts_noucast_v1_t;
+
+/* Struct for RTS/CTS no ucast rate limit cfg iovar */
+#define WLC_RX_HC_RTS_CTS_NOUCAST_RATE_LIMIT_CFG_VER_1	(1u)
+
+typedef struct {
+	uint16 ver;
+	uint16 len; /* Length of this struct */
+	uint8 report_in_progress_only;
+	uint8 PAD[3]; /* PAD field. Must be 0 when issuing iovar */
+	uint32 hold_down_time_ms;
+} wlc_rx_hc_rts_cts_noucast_rate_limit_cfg_v1_t;
 
 /* HE top level command IDs */
 enum {
@@ -20245,7 +20366,9 @@ typedef struct wl_mlo_config_pref_v1 {
 #define WL_MLO_FEATURE_EN_VER_1		1u
 #define WL_MLO_FEATURE_MASK_VER_1	(WL_MLO_FEA_EMLSR_MASK | WL_MLO_FEA_STR_ON_SCAN_MASK | \
 					WL_MLO_FEA_LGCY_SCORE_ML_ASSOC_MASK | \
-					WL_MLO_FEA_STR_ON_SB_MASK | WL_MLO_FEA_MLO_ASSOC_MODE_MASK)
+					WL_MLO_FEA_STR_ON_SB_MASK | \
+					WL_MLO_FEA_MLO_ASSOC_MODE_MASK | \
+					WL_MLO_FEA_LINK_ADDR_RAND_MASK)
 
 /* Following mask are used in wl_mlo_feature_en_v1_t to find the value of enab field
  * corresponding to a feature. Please update WL_MLO_FEATURE_MASK_VER_1 whenever
@@ -20267,6 +20390,12 @@ typedef struct wl_mlo_config_pref_v1 {
 
 #define WL_MLO_FEA_MLO_ASSOC_MODE_MASK		0xC0	/* MLO assoc mode mask */
 #define WL_MLO_FEA_MLO_ASSOC_MODE_SHIFT		6u	/* MLO assoc mode shift */
+
+#define WL_MLO_FEA_LINK_ADDR_RAND_MASK		0x200	/* MLO link addr randomization mask */
+#define WL_MLO_FEA_LINK_ADDR_RAND_SHIFT		9u	/* MLO  link addr randomization shift */
+
+#define WL_MLO_FEA_LINK_ADDR_RAND_DISABLE	0u	/* MLO link addr randomization mask */
+#define WL_MLO_FEA_LINK_ADDR_RAND_ENABLE	1u	/* MLO  link addr randomization shift */
 
 #define WL_MLO_FEA_EMLSR_DISABLE		0u	/* Disable eMLSR mode */
 #define WL_MLO_FEA_EMLSR_ENABLE			1u	/* Enable eMLSR mode */
@@ -22995,13 +23124,13 @@ typedef struct wl_nan_oob_pasn_payload {
 	uint8 payload[];		/* Body of an Auth frame added by host */
 } wl_nan_oob_pasn_payload_t;
 
+/* NOTE: below 3 definitions are kept for precommit success.
+ * Will be deleted as part of immideate clean up (after fw commit)
+ */
 /* WL_NAN_XTLV_ADD_ATTR_DATA */
 typedef struct nan_fup_additional_attrs {
 	uint32   attr_bitmap;
 } nan_fup_additional_attrs_t;
-
-/* attr_bitmap values */
-#define NAN_FUP_ADD_ATTR_SKDA (1u << 0u)
 
 /* WL_NAN_XTLV_NANIE_ATTR_DATA */
 typedef struct wl_nan_nanie_attr_data_format {
@@ -23023,6 +23152,25 @@ typedef enum {
 	NANIE_CTRL_GTK_CSID =	1u << 2u
 } wl_nanie_attr_data_control_type_t;
 
+enum wl_nan_fup_control_flags {
+	WL_NAN_CONTROL_NONE		= 0x00000000,
+	WL_NAN_CONTROL_FW_BUILD_GTK	= 0x00000001,
+	WL_NAN_CONTROL_FW_BUILD_IGTK	= 0x00000002,
+	WL_NAN_CONTROL_FW_BUILD_BIGTK	= 0x00000004
+};
+
+enum wl_nan_fup_xtlvs_attr_id {
+	WL_NAN_XTLV_FUP_ADD_ATTR	= 1,
+	WL_NAN_XTLV_FUP_ADD_SKDA	= 2,
+	WL_NAN_XTLV_FUP_ADD_NANIE	= 3,
+	WL_NAN_XTLV_FUP_ADD_GTK_CSID	= 4
+};
+
+/* WL_NAN_XTLV_NAN_ATTR_DATA */
+typedef struct nan_fup_attr_data_t {
+	uint32 control;		/* Control operation as defined below */
+	uint8 tlvs[];		/* list of WL_NAN_XTLV_FUP_ADD_XXX tlvs */
+} nan_fup_attr_data_t;
 
 /*
  * BT log definitions
@@ -27981,7 +28129,8 @@ typedef struct wl_mpf_scan_config_v1 {
 #define MPF_SCAN_PASSIVE_TIME_MAX           440u
 
 #define WL_D11FRAMETX_IOV_VERSION_0		0u
-#define	WL_D11FRAMETX_FLAGS_FIXD_RATESPEC_MASK	(1u << 0)
+#define	WL_D11FRAMETX_FLAGS_FIXD_RATESPEC_MASK		(1u << 0)
+#define	WL_D11FRAMETX_FLAGS_FORCED_RADAR_TX_MASK	(1u << 1)
 #define WLC_D11FRAMETX_MAX_PKT_LEN	1500u
 typedef struct wl_d11txframe_v0 {
 	uint16  version;
@@ -28039,4 +28188,25 @@ typedef struct wl_mrsno_rsnoe_v1 {
 	uint16 length;
 	uint8 data[];
 } wl_mrsno_rsnoe_v1_t;
+
+#define WL_VLPTPC_THRESH_V1      1u
+typedef struct wl_vlptpc_thresh_v1 {
+	uint16	version;
+	uint16	length;
+	int8	enab_thresh;	/* RSSI threshold (dBm) to enable backoff */
+	int8	disab_thresh;	/* RSSI threshold (dBm) to disable backoff */
+	uint8	pad[2];
+} wl_vlptpc_thresh_v1_t;
+
+/* UHR sub command IDs */
+enum {
+	WL_UHR_CMD_ENAB		= 0u,	/* enable/disable UHR feature as a whole */
+	WL_UHR_CMD_FEATURES	= 1u,	/* configure UHR sub-features */
+
+	/* Add new sub command IDs here... */
+
+	/* debug/test related sub-commands, mogrify? */
+	WL_UHR_CMD_DBG		= 0x1000u,	/* configure UHR debug facilities */
+};
+
 #endif /* _wlioctl_h_ */

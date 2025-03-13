@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 driver
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -2118,6 +2118,12 @@ typedef enum {
 	HAL_STARTED		= 3
 } hal_state;
 
+/* cfg state hang recovery structure */
+typedef struct cfg_hang_recovery {
+	struct net_device *recovery_ndev;
+	u32 recovery_state;
+} cfg_hang_recovery_t;
+
 /* private data of cfg80211 interface */
 struct bcm_cfg80211 {
 	struct wireless_dev *wdev;	/* representing cfg cfg80211 device */
@@ -2236,7 +2242,7 @@ struct bcm_cfg80211 {
 	bool disable_roam_event;
 	struct delayed_work pm_enable_work;
 	struct delayed_work recovery_work;
-	u32 recovery_state;
+	cfg_hang_recovery_t cfg_recovery;
 
 #ifdef OEM_ANDROID
 	struct workqueue_struct *event_workq;   /* workqueue for event */
@@ -2474,13 +2480,15 @@ typedef struct wl_multink_config {
 */
 #define WL_DS_SKIP_THRESHOLD_USECS  (75000 * 1000)
 
-enum wl_state_type {
+enum wl_recovery_state_type {
 	WL_STATE_IDLE,
 	WL_STATE_SCANNING,
 	WL_STATE_CONNECTING,
 	WL_STATE_LISTEN,
 	WL_STATE_AUTHORIZING, /* Assocated to authorized */
-	WL_STATE_ROAMING
+	WL_STATE_ROAMING,
+	WL_STATE_SCANNING_SKIP_DUMP,
+	WL_STATE_CONNECTING_SKIP_DUMP
 };
 
 #define WL_STATIC_IFIDX	(DHD_MAX_IFS + DHD_MAX_STATIC_IFS - 1)
