@@ -443,6 +443,12 @@ bool gbms_aafv_offset_is_valid(const struct gbms_chg_profile *profile,
 }
 EXPORT_SYMBOL_GPL(gbms_aafv_offset_is_valid);
 
+int gbms_aafv_get_last_entry(const struct gbms_chg_profile *profile)
+{
+	return profile->aafv_nb_limits > 1 ? profile->aafv_cycles[profile->aafv_nb_limits - 2] : 0;
+}
+EXPORT_SYMBOL_GPL(gbms_aafv_get_last_entry);
+
 int gbms_init_chg_profile_internal(struct gbms_chg_profile *profile,
 			  struct device_node *node,
 			  const char *owner_name)

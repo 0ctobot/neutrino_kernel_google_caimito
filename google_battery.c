@@ -65,6 +65,9 @@
 #define AAFV_CLIFF_CYCLE_DEFAULT	1000
 #define AAFV_CLIFF_OFFSET_DEFAULT	100
 
+/* AACP */
+#define AACP_OPT_OUT_CUT_OFF_CYCLES_DEFAULT	-1 /* no cutoff */
+
 /* qual time is 0 minutes of charge or 0% increase in SOC */
 #define DEFAULT_CHG_STATS_MIN_QUAL_TIME		0
 #define DEFAULT_CHG_STATS_MIN_DELTA_SOC		0
@@ -339,6 +342,7 @@ struct bhi_weight bhi_w[] = {
 	[BHI_ALGO_ACHI_RAVG_B] = {100, 0, 0},
 	[BHI_ALGO_MIX_N_MATCH] = {90, 0, 10},
 	[BHI_ALGO_ACHI_FCR] = {100, 0, 0},
+	[BHI_ALGO_ACHI_CARETAKER] = {100, 0, 0},
 };
 
 struct bm_date {
@@ -424,6 +428,9 @@ struct health_data
 	u8 cal_mode;
 	u8 cal_state;
 	int cal_target;
+
+	/* algo BHI_ALGO_ACHI_CARETAKER status */
+	enum bhi_status caretaker_status;
 };
 
 #define POWER_METRICS_MAX_DATA	50
@@ -669,6 +676,10 @@ struct batt_drv {
 	int aacp_version;
 	enum batt_aacp_opt_out aacp_opt_out;
 	struct mutex aacp_state_lock;
+	int aacp_opt_out_cut_off_cycles;
+	int aacp_health_over_cliff;
+	int aacp_health_over_cutoff;
+	int aacp_health_last_entry;
 
 	/* AACC: Age adjusted cycle count */
 	int aacc;
@@ -3949,6 +3960,35 @@ static u32 aacr_get_reference_capacity(const struct batt_drv *batt_drv, int cycl
 	return design_capacity - (design_capacity * fade10 / 1000);
 }
 
+/* AACP ------------------------------------------------------------------- */
+
+static int aacp_get_cc(const struct batt_drv *batt_drv)
+{
+	return batt_drv->fake_aacp_cc ? batt_drv->fake_aacp_cc : batt_drv->aacc;
+}
+
+/* must be called holding aacp_state_lock */
+static void aacp_reset_opt_out_locked(struct batt_drv *batt_drv)
+{
+	const int cycle_count = aacp_get_cc(batt_drv);
+
+	if (batt_drv->aacp_opt_out_cut_off_cycles == -1)
+		return;
+
+	if (batt_drv->aacp_opt_out && (batt_drv->aacp_opt_out_cut_off_cycles == 0
+				      || cycle_count >= batt_drv->aacp_opt_out_cut_off_cycles))
+		batt_drv->aacp_opt_out = 0;
+}
+
+static void aacp_reset_opt_out(struct batt_drv *batt_drv)
+{
+	mutex_lock(&batt_drv->aacp_state_lock);
+	aacp_reset_opt_out_locked(batt_drv);
+	mutex_unlock(&batt_drv->aacp_state_lock);
+}
+
+/* AACR ------------------------------------------------------------------- */
+
 /* 80% of design_capacity min, design_capacity in grace, aacr or negative */
 static int aacr_get_capacity_for_algo(const struct batt_drv *batt_drv, int cycle_count,
 				      int aacr_algo)
@@ -4011,14 +4051,10 @@ static u32 aacr_get_capacity_locked(struct batt_drv *batt_drv)
 	int capacity = batt_drv->battery_capacity;
 	int cycle_count;
 
-	if (batt_drv->fake_aacp_cc)
-		cycle_count = batt_drv->fake_aacp_cc;
-	else
-		cycle_count = batt_drv->aacc;
-
 	if (batt_drv->aacp_opt_out || batt_drv->aacr_state == BATT_AACR_DISABLED)
 		goto exit_done;
 
+	cycle_count = aacp_get_cc(batt_drv);
 	if (cycle_count <= batt_drv->aacr_cycle_grace) {
 		batt_drv->aacr_state = BATT_AACR_UNDER_CYCLES;
 	} else {
@@ -4297,7 +4333,7 @@ static int bhi_get_capacity_bound(int cycle_count, const u16 *cap_bound)
 static bool bhi_algo_has_bounds(int algo)
 {
 	return algo == BHI_ALGO_ACHI_B || algo == BHI_ALGO_ACHI_RECAL ||
-	       algo == BHI_ALGO_ACHI_RAVG_B;
+	       algo == BHI_ALGO_ACHI_RAVG_B || algo == BHI_ALGO_ACHI_CARETAKER;
 }
 
 static int bhi_algo_apply_bounds(int algo, int capacity_health, int cycle_count,
@@ -4335,8 +4371,7 @@ static int bhi_calc_cap_index(int algo, struct batt_drv *batt_drv)
 	capacity_health = bhi_health_get_capacity(algo, bhi_data);
 
 	if (bhi_algo_has_bounds(algo)) {
-		const int cycle_count = batt_drv->fake_aacp_cc ?
-					batt_drv->fake_aacp_cc : batt_drv->aacc;
+		const int cycle_count = aacp_get_cc(batt_drv);
 
 		capacity_health = bhi_algo_apply_bounds(algo, capacity_health, cycle_count,
 							bhi_data);
@@ -4566,6 +4601,7 @@ static int bhi_calc_health_index(int algo, struct health_data *health_data,
 	case BHI_ALGO_ACHI_RAVG_B:
 	case BHI_ALGO_MIX_N_MATCH:
 	case BHI_ALGO_ACHI_FCR:
+	case BHI_ALGO_ACHI_CARETAKER:
 		w_ci = bhi_w[algo].w_ci;
 		w_ii = bhi_w[algo].w_ii;
 		w_sd = bhi_w[algo].w_sd;
@@ -4605,7 +4641,8 @@ static int bhi_calc_health_index(int algo, struct health_data *health_data,
 
 static bool bhi_algo_has_grace(int algo)
 {
-	return algo == BHI_ALGO_ACHI_B || algo == BHI_ALGO_ACHI_RAVG_B;
+	return algo == BHI_ALGO_ACHI_B || algo == BHI_ALGO_ACHI_RAVG_B ||
+	       algo == BHI_ALGO_ACHI_CARETAKER;
 }
 
 static enum bhi_status bhi_calc_health_status(int algo, int health_index,
@@ -4639,6 +4676,28 @@ static enum bhi_status bhi_calc_health_status(int algo, int health_index,
 		health_status = BH_MARGINAL;
 	else
 		health_status = BH_NOMINAL;
+
+	/* take the worse status between health_status and caretaker_status */
+	if (algo == BHI_ALGO_ACHI_CARETAKER)
+		health_status = max(health_status, data->caretaker_status);
+
+	return health_status;
+}
+
+static enum bhi_status bhi_get_caretaker_status(struct batt_drv *batt_drv)
+{
+	const int cycle_count = aacp_get_cc(batt_drv);
+	const int last_aafv_entry = gbms_aafv_get_last_entry(&batt_drv->chg_profile);
+	enum bhi_status health_status = BH_NOMINAL;
+
+	if (last_aafv_entry && cycle_count >= last_aafv_entry)
+		health_status = batt_drv->aacp_health_last_entry;
+
+	if (batt_drv->aacp_opt_out_cut_off_cycles >= 0 && cycle_count >= batt_drv->aacp_opt_out_cut_off_cycles)
+		health_status = max(health_status, batt_drv->aacp_health_over_cutoff);
+
+	if (batt_drv->aafv_cliff_cycle >= 0 && cycle_count >= batt_drv->aafv_cliff_cycle)
+		health_status = max(health_status, batt_drv->aacp_health_over_cliff);
 
 	return health_status;
 }
@@ -4680,7 +4739,6 @@ static int batt_bhi_stats_update(struct batt_drv *batt_drv)
 	bool changed = false;
 	int age, index;
 
-
 	/* age (and cycle count* might be used in the calc */
 	age = GPSY_GET_PROP(fg_psy, GBMS_PROP_BATTERY_AGE);
 	if (age < 0)
@@ -4720,6 +4778,7 @@ static int batt_bhi_stats_update(struct batt_drv *batt_drv)
 	changed |= health_data->bhi_index != index;
 	health_data->bhi_index = index;
 
+	health_data->caretaker_status = bhi_get_caretaker_status(batt_drv);
 	status = bhi_calc_health_status(bhi_algo, BHI_ROUND_INDEX(index), health_data);
 	changed |= health_data->bhi_status != status;
 	health_data->bhi_status = status;
@@ -4932,16 +4991,13 @@ static int batt_init_aafv_profile(struct batt_drv *batt_drv)
 
 static u32 aafv_update_state(struct batt_drv *batt_drv)
 {
-	int cycle_count = batt_drv->aacc;
+	const int cycle_count = aacp_get_cc(batt_drv);
 	int aafv_offset = 0;
 
 	mutex_lock(&batt_drv->aacp_state_lock);
 
 	if (batt_drv->aacp_opt_out || batt_drv->aafv_state == BATT_AAFV_DISABLED)
 		goto exit_done;
-
-	if (batt_drv->fake_aacp_cc)
-		cycle_count = batt_drv->fake_aacp_cc;
 
 	if (batt_drv->aafv_apply_max)
 		aafv_offset = batt_drv->aafv_max_offset;
@@ -5512,10 +5568,7 @@ static void aact_reset(struct gbms_chg_profile *profile)
 /* call holding mutex_lock(&batt_drv->aacp_state_lock); */
 static int aact_get_index(const struct batt_drv *batt_drv)
 {
-	int cycle_count = batt_drv->aacc;
-
-	if (batt_drv->fake_aacp_cc)
-		cycle_count = batt_drv->fake_aacp_cc;
+	const int cycle_count = aacp_get_cc(batt_drv);
 
 	return gbms_aact_get_index(&batt_drv->chg_profile, cycle_count);
 }
@@ -5654,6 +5707,8 @@ static int batt_chg_logic(struct batt_drv *batt_drv)
 		/* google_resistance is calculated while charging */
 		if (bhi_data->res_state.estimate_filter)
 			batt_res_state_set(&bhi_data->res_state, true);
+
+		aacp_reset_opt_out(batt_drv);
 
 		mutex_lock(&batt_drv->aacp_state_lock);
 		err = aact_update_chg_table(batt_drv);
@@ -5945,6 +6000,8 @@ static int batt_init_chg_profile(struct batt_drv *batt_drv, struct device_node *
 	ret = of_property_read_bool(node, "google,aacr-disable");
 	if (!ret && profile->aacr_nb_limits)
 		batt_drv->aacr_state = BATT_AACR_ENABLED;
+	else
+		batt_drv->aacr_state = BATT_AACR_DISABLED;
 
 	ret = of_property_read_u32(node, "google,aacr-algo", &batt_drv->aacr_algo);
 	if (ret < 0)
@@ -5959,6 +6016,14 @@ static int batt_init_chg_profile(struct batt_drv *batt_drv, struct device_node *
 				   &batt_drv->aacr_cliff_capacity_rate);
 	if (ret < 0)
 		batt_drv->aacr_cliff_capacity_rate = 50; /* default rate */
+
+	ret = of_property_read_u32(node, "google,aacr-cycle-max", &batt_drv->aacr_cycle_max);
+	if (ret < 0)
+		batt_drv->aacr_cycle_max = AACR_MAX_CYCLE_DEFAULT; /* default rate */
+
+	ret = of_property_read_u32(node, "google,aacr-cycle-grace", &batt_drv->aacr_cycle_grace);
+	if (ret < 0)
+		batt_drv->aacr_cycle_grace = AACR_START_CYCLE_DEFAULT; /* default rate */
 
 	/* NOTE: with NG charger tolerance is applied from "charger" */
 	gbms_init_chg_table(profile, node, aacr_get_capacity(batt_drv));
@@ -8130,8 +8195,17 @@ static ssize_t aafv_state_store(struct device *dev,
 
 	dev_info(batt_drv->device, "AAFV: aafv_state: %d -> %d\n", batt_drv->aafv_state, val);
 	batt_drv->aafv_state = val;
+
+	if (batt_drv->aafv_state == BATT_AAFV_DISABLED) {
+		/* restore aafv offset value on FG side */
+		ret = GPSY_SET_PROP(batt_drv->fg_psy, GBMS_PROP_AAFV, 0);
+		if (ret)
+			dev_err(batt_drv->device, "AAFV: failed to restore aafv offset in FG (%d)\n", ret);
+	}
+
 done:
 	mutex_unlock(&batt_drv->aacp_state_lock);
+
 
 	return count;
 }
@@ -8762,6 +8836,7 @@ static ssize_t aacp_opt_out_store(struct device *dev,
 
 	mutex_lock(&batt_drv->aacp_state_lock);
 	batt_drv->aacp_opt_out = value;
+	aacp_reset_opt_out_locked(batt_drv);
 	mutex_unlock(&batt_drv->aacp_state_lock);
 
 	return count;
@@ -8777,6 +8852,7 @@ static ssize_t aacp_opt_out_show(struct device *dev,
 }
 
 static DEVICE_ATTR_RW(aacp_opt_out);
+
 /* AACC ------------------------------------------------------------------- */
 
 static ssize_t aacc_show(struct device *dev,
@@ -9171,7 +9247,7 @@ static DEVICE_ATTR_RO(charging_state);
 
 static void batt_update_charging_policy(struct batt_drv *batt_drv)
 {
-	int value;
+	int value, ret;
 
 	value = gvotable_get_current_int_vote(batt_drv->charging_policy_votable);
 	if (value == batt_drv->charging_policy)
@@ -9193,6 +9269,16 @@ static void batt_update_charging_policy(struct batt_drv *batt_drv)
 	gvotable_cast_long_vote(batt_drv->csi_status_votable, "CSI_STATUS_DEFEND_LIMIT",
 				CSI_STATUS_Defender_Limit,
 				value == CHARGING_POLICY_VOTE_LONGLIFE);
+
+	if (value != CHARGING_POLICY_VOTE_LONGLIFE)
+		return;
+
+	/* for LONGLIFE: make full charge happens XXX cycles from the current cycle */
+	batt_drv->last_full_charge = batt_drv->hist_data_saved_cnt;
+	ret = gbms_storage_write(GBMS_TAG_FCRU, &batt_drv->last_full_charge,
+				 GBMS_FCRU_LEN);
+	if (ret < 0)
+		pr_err("failed to store FCNU (%d)\n", ret);
 }
 
 static int charging_policy_translate(int value)
@@ -12170,6 +12256,28 @@ static void google_battery_init_work(struct work_struct *work)
 	if (ret < 0)
 		batt_drv->health_data.bhi_data.first_usage_date = -1;
 
+	/* AACP opt-out */
+	ret = of_property_read_u32(node, "google,aacp-opt-out-cut-off-cycles",
+				   &batt_drv->aacp_opt_out_cut_off_cycles);
+	if (ret < 0)
+		batt_drv->aacp_opt_out_cut_off_cycles = AACP_OPT_OUT_CUT_OFF_CYCLES_DEFAULT;
+
+	/* AACP health status */
+	ret = of_property_read_u32(node, "google,aacp-health-over-cliff",
+				   &batt_drv->aacp_health_over_cliff);
+	if (ret < 0)
+		batt_drv->aacp_health_over_cliff = BH_NEEDS_REPLACEMENT;
+
+	ret = of_property_read_u32(node, "google,aacp-health-over-cutoff",
+				   &batt_drv->aacp_health_over_cutoff);
+	if (ret < 0)
+		batt_drv->aacp_health_over_cutoff = BH_MARGINAL;
+
+	ret = of_property_read_u32(node, "google,aacp-health-last-entry",
+				   &batt_drv->aacp_health_last_entry);
+	if (ret < 0)
+		batt_drv->aacp_health_last_entry = BH_MARGINAL;
+
 	/* single battery disconnect */
 	(void)batt_bpst_init_debugfs(batt_drv);
 
@@ -12418,13 +12526,8 @@ static int google_battery_probe(struct platform_device *pdev)
 	ret = of_property_read_u32(pdev->dev.of_node, "google,hda-tz-limit",
 				   &batt_drv->hda_tz_limit);
 
-	/* AACR server side */
-	batt_drv->aacr_cycle_grace = AACR_START_CYCLE_DEFAULT;
-	batt_drv->aacr_cycle_max = AACR_MAX_CYCLE_DEFAULT;
-	batt_drv->aacr_state = BATT_AACR_DISABLED;
-
 	/* AAFV server side */
-	batt_drv->aafv_state = BATT_AAFV_DISABLED;
+	batt_drv->aafv_state = BATT_AAFV_ENABLED;
 	batt_drv->aafv_apply_max = AAFV_APPLY_MAX_DEFAULT;
 	batt_drv->aafv_max_offset = AAFV_MAX_OFFSET_DEFAULT;
 	batt_drv->aafv_cliff_cycle = AAFV_CLIFF_CYCLE_DEFAULT;

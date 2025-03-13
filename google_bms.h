@@ -652,6 +652,7 @@ int gbms_read_aafv_limits(struct gbms_chg_profile *profile,
 int gbms_aafv_get_offset(const struct gbms_chg_profile *profile, const int cycles);
 bool gbms_aafv_offset_is_valid(const struct gbms_chg_profile *profile,
 			       const u32 offset, const u32 len);
+int gbms_aafv_get_last_entry(const struct gbms_chg_profile *profile);
 
 bool chg_state_is_disconnected(const union gbms_charger_state *chg_state);
 
@@ -717,6 +718,7 @@ enum bhi_algo {
 	BHI_ALGO_INDI		=  8, /* age criteria for Battery Service Test API b/253642456 */
 	BHI_ALGO_DTOOL		=  9, /* diagnostics for Cavalry b/304878620 */
 	BHI_ALGO_ACHI_FCR	= 10, /* average of FCR from history b/310501655*/
+	BHI_ALGO_ACHI_CARETAKER	= 11, /* same as ACHI_B + caretaker */
 	BHI_ALGO_MAX,
 };
 
