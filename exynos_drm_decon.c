@@ -92,6 +92,8 @@ static bool decon_check_fs_pending_locked(struct decon_device *decon);
 #define FRAME_TIMEOUT msecs_to_jiffies(100)
 #endif
 
+#define MAX_DECON_WAIT_EARLIEST_PROCESS_TIME_USEC 100000
+
 /* wait at least one frame time on top of common timeout */
 static inline unsigned long fps_timeout(int fps)
 {
@@ -1054,7 +1056,11 @@ static void decon_wait_earliest_process_time(
 	now = ktime_get();
 
 	if (ktime_after(earliest_process_time, now)) {
-		int32_t max_delay_us = (10 * vsync_period_ns) / 1000;
+		/*
+		 * Maximum delay is 100ms for 10 Hz.
+		 * Do not rely on |vsync_period_ns| as it varies with VRR configurations.
+		 */
+		const int32_t max_delay_us = MAX_DECON_WAIT_EARLIEST_PROCESS_TIME_USEC;
 		int32_t delay_until_process;
 		const ktime_t WARNING_THRESHOLD_US = 1000;
 
