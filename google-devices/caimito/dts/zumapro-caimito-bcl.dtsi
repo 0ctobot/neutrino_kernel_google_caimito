@@ -26,6 +26,10 @@
 	};
 };
 
+&max77759tcpc {
+	bcl-usb-voting;
+};
+
 &google_mitigation {
 	google,ifpmic = <M77779>;
 	google,charger = <&max77779_chg>;
@@ -35,12 +39,15 @@
 	batoilo_upper = <8000>;
 	batoilo2_lower = <3800>;
 	batoilo2_upper = <10000>;
+	batoilo_otg_trig_lvl = <4800>;
+	batoilo2_otg_trig_lvl = <6800>;
 	batoilo_usb_trig_lvl = <4800>;
 	batoilo2_usb_trig_lvl = <6800>;
 	batoilo_wlc_trig_lvl = <5200>;
 	batoilo2_wlc_trig_lvl = <7000>;
 	batoilo_trig_lvl = <5200>;
 	batoilo2_trig_lvl = <7000>;
+	batoilo_otg_bat_open_to = <0x8>;    /* 36ms */
 	batoilo_bat_open_to = <0x8>;    /* 36ms */
 	batoilo2_bat_open_to = <0x3>;   /* 12ms */
 	batoilo_rel = <0x3>;   /* 10ms */
