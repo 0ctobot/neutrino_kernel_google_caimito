@@ -58,7 +58,6 @@ CONFIG_ODPM=m
 # private/google-modules/soc/gs/drivers/input/Kconfig
 CONFIG_INPUT_KEYDEBUG=m
 CONFIG_INPUT_STMVL53L1=m
-CONFIG_FPS_TOUCH_HANDLER=m
 CONFIG_GOODIX_FINGERPRINT=m
 CONFIG_KEYBOARD_S2MPG14=m
 
@@ -260,6 +259,9 @@ CONFIG_DRM_PANEL_SAMSUNG_S6E3HC3=m
 CONFIG_DRM_PANEL_SAMSUNG_S6E3HC3_C10=m
 CONFIG_DRM_PANEL_SAMSUNG_S6E3HC4=m
 CONFIG_DRM_PANEL_BOE_NT37290=m
+
+# private/google-modules/fingerprint/goodix/fps_touch_handler/Kconfig
+CONFIG_FPS_TOUCH_HANDLER=m
 
 # private/google-modules/power/mitigation/Kconfig
 CONFIG_GOOGLE_BCL=m
