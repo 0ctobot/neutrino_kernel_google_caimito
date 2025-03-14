@@ -76,6 +76,8 @@ source "$(KCONFIG_EXT_MODULES_PREFIX)private/google-modules/display/samsung/Kcon
 
 source "$(KCONFIG_EXT_MODULES_PREFIX)private/google-modules/display/samsung/panel/Kconfig"
 
+source "$(KCONFIG_EXT_MODULES_PREFIX)private/google-modules/fingerprint/goodix/fps_touch_handler/Kconfig"
+
 source "$(KCONFIG_EXT_MODULES_PREFIX)private/google-modules/power/mitigation/Kconfig"
 
 source "$(KCONFIG_EXT_MODULES_PREFIX)private/google-modules/power/reset/Kconfig"
