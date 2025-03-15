@@ -38,6 +38,7 @@ struct device_node;
 #define GBMS_AACR_DATA_MAX 10
 #define GBMS_AAFV_DATA_MAX 16
 #define GBMS_AACT_NB_LIMITS_MAX 10
+#define GBMS_AACT_PROFILE_MAX 100
 
 struct gbms_chg_profile {
 	const char *owner_name;
@@ -80,10 +81,16 @@ struct gbms_chg_profile {
 	u32 aafv_offset;
 
 	/* AACT feature */
+	int aact_temp_nb_limits;
+	s32 aact_temp_limits[GBMS_CHG_TEMP_NB_LIMITS_MAX];
+	int aact_volt_nb_limits;
+	s32 aact_volt_limits[GBMS_CHG_VOLT_NB_LIMITS_MAX];
 	int aact_nb_limits;
 	s32 aact_limits[GBMS_AACT_NB_LIMITS_MAX];
 	int aact_idx;
 	bool aact_init_profile;
+	bool aact_update_profile;
+	u32 *aact_cccm_limits;
 
 	bool debug_chg_profile;
 	bool enable_switch_chg_profile;
@@ -352,6 +359,8 @@ enum gbms_stats_tier_idx_t {
 	GBMS_STATS_BD_TI_DOCK = 113,
 	GBMS_STATS_BD_TI_TEMP_PRETRIGGER = 114,
 	GBMS_STATS_BD_TI_TEMP_RESUME = 115,
+	GBMS_STATS_BD_TI_POLICY_LONGLIFE = 116,
+	GBMS_STATS_BD_TI_POLICY_FORCE_TO_FULL = 117,
 
 	GBMS_STATS_BD_TI_TRICKLE_CLEARED = 122,
 	GBMS_STATS_BD_TI_DOCK_CLEARED = 123,
@@ -427,6 +436,8 @@ struct gbms_charging_event {
 	struct gbms_ce_tier_stats cc_lvl_stats;
 	struct gbms_ce_tier_stats trickle_stats;
 	struct gbms_ce_tier_stats temp_filter_stats;
+	struct gbms_ce_tier_stats policy_longlife_stats;
+	struct gbms_ce_tier_stats policy_force_full_stats;
 };
 
 #define GBMS_CCCM_LIMITS_SET(profile, ti, vi) \
@@ -473,6 +484,7 @@ int gbms_init_aact_profile_internal(struct gbms_chg_profile *profile,
 			  struct device_node *node, const char *owner_name);
 #define gbms_init_aact_profile(p, n) \
 	gbms_init_aact_profile_internal(p, n, KBUILD_MODNAME)
+int gbms_update_chg_profile_from_aact(struct gbms_chg_profile *profile);
 int gbms_aact_get_index(const struct gbms_chg_profile *profile, const int cycles);
 
 void gbms_init_chg_table(struct gbms_chg_profile *profile,
@@ -867,5 +879,40 @@ static inline int tcpm_update_sink_capabilities(struct tcpm_port *port,
 #define GBMS_TP_UPPER_BOUND   'U'
 #define GBMS_TP_LOWER_TRIGGER 'F'
 #define GBMS_TP_UPPER_TRIGGER 'C'
+
+
+enum monitor_log_tags {
+	MONITOR_TAG_AB = 0x4142, /* registers snapshot by abnormal event */
+	MONITOR_TAG_FU = 0x4655, /* result of firmware update */
+	MONITOR_TAG_HV = 0x4856, /* result of EEPROM history validation */
+	MONITOR_TAG_LH = 0x4C48, /* registers snapshot by learning event */
+	MONITOR_TAG_RM = 0x524D, /* registers snapshot by regular monitor */
+};
+
+/* BMS firmware update */
+enum gbms_fwupdate_msg_type {
+	FWU_MSG_TYPE_ERROR = -1,
+	FWU_MSG_TYPE_UNKNOWN = 0,
+	FWU_MSG_TYPE_UPDATE_START = 1,
+	FWU_MSG_TYPE_UPDATE_END = 2,
+	FWU_MSG_TYPE_DOWNLOAD_START = 3,
+	FWU_MSG_TYPE_DOWNLOAD_END = 4,
+};
+
+enum gbms_fwupdate_msg_category {
+	FWU_MSG_CATEGORY_UNKNOWN = 0,
+	FWU_MSG_CATEGORY_RX = 1,
+	FWU_MSG_CATEGORY_TX = 2,
+	FWU_MSG_CATEGORY_MCU = 3,
+	FWU_MSG_CATEGORY_MAX77779 = 4,
+};
+
+enum gbms_fwupdate_max77779_err_code {
+	FWU_MAX77779_ERR_POST_STATUS_CHECK = -3,
+	FWU_MAX77779_ERR_DATA_TRANSFER = -2,
+	FWU_MAX77779_ERR_PREPARE = -1,
+	FWU_MAX77779_ERR_UNKNOWN = 0,
+	FWU_MAX77779_ERR_NONE = 1,
+};
 
 #endif  /* __GOOGLE_BMS_H_ */

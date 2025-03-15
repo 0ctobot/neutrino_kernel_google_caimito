@@ -6020,6 +6020,7 @@ static const struct of_device_id match_table[] = {
 	{.compatible = "google,charger"},
 	{},
 };
+MODULE_DEVICE_TABLE(of, match_table);
 
 static struct platform_driver google_charger_driver = {
 	.driver = {

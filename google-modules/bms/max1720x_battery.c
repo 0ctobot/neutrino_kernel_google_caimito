@@ -1528,7 +1528,7 @@ static int max1720x_fix_reg_eeprom_cycles(struct max1720x_chip *chip, int est_cc
 	if (ret < 0) {
 		chip->update_fixed_cycle = est_cc;
 		return FIX_CC_UPDATE_CYCLES_FAIL;
-}
+	}
 
 	return ret >= 0 ? 0 : ret;
 }
@@ -1557,7 +1557,7 @@ static int max1720x_recover_history(struct max1720x_chip *chip, int *first_empty
 	/* Update Cycles register, EEPROM cycle, chip variables */
 	ret = max1720x_fix_reg_eeprom_cycles(chip, est_cc);
 
-		return ret;
+	return ret;
 }
 
 /* call holding chip->model_lock */
@@ -2280,8 +2280,6 @@ static int max1720x_monitor_log_learning(struct max1720x_chip *chip, bool force)
 				      "0x%04X %s", MONITOR_TAG_LH, buf);
 
 	kfree(buf);
-
-	kobject_uevent(&chip->dev->kobj, KOBJ_CHANGE);
 
 	return 0;
 }
@@ -5103,7 +5101,8 @@ static int max1720x_init_chip(struct max1720x_chip *chip)
 	 * 1. The battery ID cannot be read.
 	 * 2. The battery ID is not in supported specifications.
 	 */
-	if (!chip->batt_id_defer_cnt || !max1720x_find_batt_node(chip)) {
+	if (!chip->batt_id_defer_cnt ||
+	   (chip->gauge_type == MAX_M5_GAUGE_TYPE && !max1720x_find_batt_node(chip))) {
 		chip->batt_id = DEFAULT_BATTERY_ID;
 		dev_info(chip->dev, "default device battery ID = %d\n", chip->batt_id);
 	}

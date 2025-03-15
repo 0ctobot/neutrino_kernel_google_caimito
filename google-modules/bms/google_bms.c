@@ -149,7 +149,7 @@ void gbms_init_chg_table(struct gbms_chg_profile *profile,
 			 struct device_node *node, u32 capacity_ma)
 {
 	u32 ccm;
-	int vi, ti, ret;
+	int vi, ti, ret = 0;
 	const int cc_ua_step = profile->cc_ua_resolution;
 	int temp_nb_count = profile->temp_nb_limits - 1;
 	u32 cccm_array_size = (profile->temp_nb_limits - 1)
@@ -157,6 +157,18 @@ void gbms_init_chg_table(struct gbms_chg_profile *profile,
 
 	profile->capacity_ma = capacity_ma;
 
+	/* aact profile is updated from server side */
+	if (profile->aact_init_profile && profile->aact_update_profile) {
+		temp_nb_count = (profile->temp_nb_limits - 1) * profile->aact_nb_limits;
+		cccm_array_size = (profile->temp_nb_limits - 1)
+				   * profile->volt_nb_limits
+				   * profile->aact_nb_limits;
+		memcpy(profile->cccm_limits, profile->aact_cccm_limits,
+		       sizeof(s32) * cccm_array_size);
+		goto chg_table;
+	}
+
+	/* load default profile */
 	if (!profile->aact_init_profile) {
 		ret = of_property_read_u32_array(node, "google,chg-cc-limits",
 						 profile->cccm_limits,
@@ -174,6 +186,7 @@ void gbms_init_chg_table(struct gbms_chg_profile *profile,
 	if (ret < 0)
 		pr_warn("unable to get default cccm_limits.\n");
 
+chg_table:
 	/* chg-battery-capacity is in mAh, chg-cc-limits relative to 100 */
 	for (ti = 0; ti < temp_nb_count; ti++) {
 		for (vi = 0; vi < profile->volt_nb_limits; vi++) {
@@ -533,6 +546,8 @@ int gbms_init_chg_profile_internal(struct gbms_chg_profile *profile,
 
 	/* reset AACT */
 	profile->aact_init_profile = false;
+	profile->aact_update_profile = false;
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(gbms_init_chg_profile_internal);
@@ -549,43 +564,43 @@ static int gbms_read_aact_cccm_limits(struct gbms_chg_profile *profile,
 {
 	int ret;
 
-	profile->temp_nb_limits =
+	profile->aact_temp_nb_limits =
 	    of_property_count_elems_of_size(node, "google,aact-temp-limits",
 					    sizeof(u32));
-	if (profile->temp_nb_limits <= 0) {
-		ret = profile->temp_nb_limits;
+	if (profile->aact_temp_nb_limits <= 0) {
+		ret = profile->aact_temp_nb_limits;
 		gbms_err(profile, "cannot read aact-temp-limits, ret=%d\n", ret);
 		return -EINVAL;
 	}
-	if (profile->temp_nb_limits > GBMS_CHG_TEMP_NB_LIMITS_MAX) {
+	if (profile->aact_temp_nb_limits > GBMS_CHG_TEMP_NB_LIMITS_MAX) {
 		gbms_err(profile, "aact-temp-nb-limits exceeds driver max: %d\n",
 			 GBMS_CHG_TEMP_NB_LIMITS_MAX);
 		return -EINVAL;
 	}
 	ret = of_property_read_u32_array(node, "google,aact-temp-limits",
-					 (u32 *)profile->temp_limits,
-					 profile->temp_nb_limits);
+					 (u32 *)profile->aact_temp_limits,
+					 profile->aact_temp_nb_limits);
 	if (ret < 0) {
 		gbms_err(profile, "cannot read aact-temp-limits table, ret=%d\n", ret);
 		return ret;
 	}
 
-	profile->volt_nb_limits =
+	profile->aact_volt_nb_limits =
 	    of_property_count_elems_of_size(node, "google,aact-cv-limits",
 					    sizeof(u32));
-	if (profile->volt_nb_limits <= 0) {
-		ret = profile->volt_nb_limits;
+	if (profile->aact_volt_nb_limits <= 0) {
+		ret = profile->aact_volt_nb_limits;
 		gbms_err(profile, "cannot read aact-cv-limits, ret=%d\n", ret);
 		return -EINVAL;
 	}
-	if (profile->volt_nb_limits > GBMS_CHG_VOLT_NB_LIMITS_MAX) {
+	if (profile->aact_volt_nb_limits > GBMS_CHG_VOLT_NB_LIMITS_MAX) {
 		gbms_err(profile, "aact-cv-nb-limits exceeds driver max: %d\n",
 			 GBMS_CHG_VOLT_NB_LIMITS_MAX);
 		return -EINVAL;
 	}
 	ret = of_property_read_u32_array(node, "google,aact-cv-limits",
-					 (u32 *)profile->volt_limits,
-					 profile->volt_nb_limits);
+					 (u32 *)profile->aact_volt_limits,
+					 profile->aact_volt_nb_limits);
 	if (ret < 0) {
 		gbms_err(profile, "cannot read aact-cv-limits table, ret=%d\n", ret);
 		return ret;
@@ -624,22 +639,26 @@ int gbms_init_aact_profile_internal(struct gbms_chg_profile *profile,
 
 	profile->owner_name = owner_name;
 
+	/* Don't reinit aact_profile that has been updated in aact_profile_store */
+	if (profile->aact_update_profile)
+		return 0;
+
 	ret = gbms_read_aact_cccm_limits(profile, node);
 	if (ret < 0)
 		return ret;
 
-	cccm_array_size = (profile->temp_nb_limits - 1)
-			  * profile->volt_nb_limits
+	cccm_array_size = (profile->aact_temp_nb_limits - 1)
+			  * profile->aact_volt_nb_limits
 			  * profile->aact_nb_limits;
 	mem_size = sizeof(s32) * cccm_array_size;
 
-	profile->cccm_limits = kzalloc(mem_size, GFP_KERNEL);
-	if (!profile->cccm_limits)
+	profile->aact_cccm_limits = kzalloc(mem_size, GFP_KERNEL);
+	if (!profile->aact_cccm_limits)
 		return -ENOMEM;
 
 	/* load C rates into profile->cccm_limits */
 	ret = of_property_read_u32_array(node, "google,aact-cc-limits",
-					 profile->cccm_limits,
+					 profile->aact_cccm_limits,
 					 cccm_array_size);
 	if (ret < 0) {
 		gbms_err(profile, "cannot read aact-cc-limits table, ret=%d\n", ret);
@@ -648,10 +667,36 @@ int gbms_init_aact_profile_internal(struct gbms_chg_profile *profile,
 		return -EINVAL;
 	}
 
-	profile->aact_init_profile = true;
 	return 0;
 }
 EXPORT_SYMBOL_GPL(gbms_init_aact_profile_internal);
+
+int gbms_update_chg_profile_from_aact(struct gbms_chg_profile *profile)
+{
+	u32 cccm_array_size, mem_size;
+	u32 temp_size = sizeof(s32) * profile->aact_temp_nb_limits;
+	u32 volt_size = sizeof(s32) * profile->aact_volt_nb_limits;
+
+	cccm_array_size = (profile->aact_temp_nb_limits - 1)
+			  * profile->aact_volt_nb_limits
+			  * profile->aact_nb_limits;
+	mem_size = sizeof(s32) * cccm_array_size;
+
+	profile->cccm_limits = kzalloc(mem_size, GFP_KERNEL);
+	if (!profile->cccm_limits)
+		return -ENOMEM;
+
+	/* copy aact_profile back to charge_profile */
+	memcpy(profile->cccm_limits, profile->aact_cccm_limits, mem_size);
+	memcpy(profile->temp_limits, profile->aact_temp_limits, temp_size);
+	memcpy(profile->volt_limits, profile->aact_volt_limits, volt_size);
+	profile->temp_nb_limits = profile->aact_temp_nb_limits;
+	profile->volt_nb_limits = profile->aact_volt_nb_limits;
+	profile->aact_init_profile = true;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(gbms_update_chg_profile_from_aact);
 
 int gbms_aact_get_index(const struct gbms_chg_profile *profile, const int cycles)
 {

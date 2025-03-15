@@ -1037,7 +1037,7 @@ static inline int perform_firmware_update(struct max77779_fwupdate *fwu, const c
 					  const size_t count)
 {
 	u32 written = 0;
-	enum max77779_fwupdate_err_code err_code = MAX77779_FWU_ERR_NONE;
+	enum gbms_fwupdate_max77779_err_code err_code = FWU_MAX77779_ERR_NONE;
 	int ret, ret_st;
 	struct max77779_fwupdate_stats stats_backup;
 
@@ -1066,18 +1066,18 @@ static inline int perform_firmware_update(struct max77779_fwupdate *fwu, const c
 
 	ret = max77779_fwl_prepare(fwu, data, count);
 	if (ret) {
-		err_code = MAX77779_FWU_ERR_PREPARE;
+		err_code = FWU_MAX77779_ERR_PREPARE;
 		goto perform_firmware_update_cleanup;
 	}
 
 	ret = max77779_fwl_write(fwu, data, 0, count, &written);
 	if (ret || written != count) {
-		err_code = MAX77779_FWU_ERR_DATA_TRANSFER;
+		err_code = FWU_MAX77779_ERR_DATA_TRANSFER;
 		goto perform_firmware_update_cleanup;
 	}
 
 	if (max77779_fwl_poll_complete(fwu) != 0)
-		err_code = MAX77779_FWU_ERR_POST_STATUS_CHECK;
+		err_code = FWU_MAX77779_ERR_POST_STATUS_CHECK;
 
 perform_firmware_update_cleanup:
 	max77779_fwl_cleanup(fwu);
@@ -1103,6 +1103,14 @@ perform_firmware_update_cleanup:
 	gbms_logbuffer_prlog(fwu->lb, LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
 			     "complete_firmware_update: %d %d %d (%d)", fwu->stats.count,
 			     fwu->stats.success, fwu->stats.fail, (int)err_code);
+
+	gbms_logbuffer_prlog(fwu->lb, LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
+			     "0x%04X %X %X %X %X %X %X %X %X %llX %X %X",
+			     MONITOR_TAG_FU, FWU_MSG_TYPE_UPDATE_END, FWU_MSG_CATEGORY_MAX77779,
+			     fwu->v_cur.major, fwu->v_cur.minor,
+			     data[MAX77779_OFFSET_VER_MAJOR], data[MAX77779_OFFSET_VER_MINOR],
+			     err_code, fwu->stats.count, ktime_get_real_seconds(),
+			     fwu->stats.success, fwu->stats.fail);
 
 	__pm_relax(fwu->fwupdate_wake_lock);
 	update_running_state(fwu, false);
