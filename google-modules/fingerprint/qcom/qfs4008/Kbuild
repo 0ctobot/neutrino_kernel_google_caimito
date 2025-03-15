@@ -19,5 +19,7 @@ endif
 endif
 
 ccflags-y += -I$(srctree)/../private/google-modules/fingerprint/qcom/qfs4008
+ccflags-y += -I$(srctree)/../private/google-modules/touch/common
+ccflags-y += -I$(srctree)/../private/google-modules/touch/common/include
 
 obj-$(CONFIG_QCOM_QBT_HANDLER) = qbt_handler.o
