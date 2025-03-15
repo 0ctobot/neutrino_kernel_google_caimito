@@ -1411,15 +1411,16 @@ static int power_reset_dump_cp(struct modem_ctl *mc, bool silent)
 		gpio_power_wreset_cp(mc);
 
 #if IS_ENABLED(CONFIG_CP_PMIC)
-	/* Execute PMIC warm reset sequence after toggling CP_PMIC_WRST. */
-	otp_version = pmic_get_otp(mc->pmic_dev);
-	if (otp_version < 0)
-		mif_info("PMIC OTP Version read fail\n");
-	else
-		mif_info("PMIC OTP Version %#x\n", otp_version);
+	if (mc->pmic_dev) {
+		otp_version = pmic_get_otp(mc->pmic_dev);
+		if (otp_version < 0)
+			mif_info("PMIC OTP Version read fail\n");
+		else
+			mif_info("PMIC OTP Version %#x\n", otp_version);
 
-	if (mc->pmic_dev)
+		/* Execute PMIC wreset sequence after toggling CP_PMIC_WRST */
 		pmic_warm_reset_sequence(mc->pmic_dev);
+	}
 #endif
 
 	mif_gpio_set_value(&mc->cp_gpio[CP_GPIO_AP2CP_AP_ACTIVE], 1, 0);
