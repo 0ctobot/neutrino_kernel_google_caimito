@@ -913,6 +913,7 @@ static struct of_device_id nitrous_match_table[] = {
 	{ .compatible = "goog,nitrous" },
 	{}
 };
+MODULE_DEVICE_TABLE(of, nitrous_match_table);
 
 static const struct dev_pm_ops nitrous_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(nitrous_suspend, nitrous_resume)
