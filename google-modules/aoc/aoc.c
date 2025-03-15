@@ -1049,6 +1049,7 @@ static const struct of_device_id aoc_match[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, aoc_match);
 
 static struct platform_driver aoc_driver = {
 	.probe = aoc_platform_probe,
@@ -2366,12 +2367,26 @@ bool aoc_create_dma_buf_heaps(struct aoc_prvdata *prvdata)
 	return true;
 }
 
+/* Returns true if `base` is located within the aoc dram carveout */
+static bool is_aoc_dma_buf(struct aoc_prvdata *prvdata, phys_addr_t base) {
+	phys_addr_t dram_carveout_start;
+	phys_addr_t dram_carveout_end;
+
+	dram_carveout_start = prvdata->dram_resource.start;
+	dram_carveout_end = dram_carveout_start + resource_size(&prvdata->dram_resource);
+	return (base <= dram_carveout_end && base >= dram_carveout_start);
+}
+
 long aoc_unlocked_ioctl_handle_ion_fd(unsigned int cmd, unsigned long arg)
 {
 	struct aoc_ion_handle handle;
 	struct dma_buf *dmabuf;
 	struct samsung_dma_buffer *dma_heap_buf;
+
+	struct ion_physical_heap *phys_heap;
+	phys_addr_t base;
 	long ret = -EINVAL;
+	struct aoc_prvdata *prvdata = platform_get_drvdata(aoc_platform_device);
 
 	BUILD_BUG_ON(sizeof(struct aoc_ion_handle) !=
 				_IOC_SIZE(AOC_IOCTL_ION_FD_TO_HANDLE));
@@ -2385,6 +2400,19 @@ long aoc_unlocked_ioctl_handle_ion_fd(unsigned int cmd, unsigned long arg)
 
 	dma_heap_buf = dmabuf->priv;
 	handle.handle = (u64)dma_heap_buf->priv;
+
+	/*
+	 * Ensure base is in aoc dram carveout. Ensures that the dmabuf
+	 * is created and maintained by AoC.
+	 */
+	base = 0;
+	if (dma_heap_buf->heap->priv) {
+		phys_heap = dma_heap_buf->heap->priv;
+		base = phys_heap->base;
+	}
+
+	if (!(is_aoc_dma_buf(prvdata, base)))
+		return ret;
 
 	dma_buf_put(dmabuf);
 

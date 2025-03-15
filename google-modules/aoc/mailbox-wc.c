@@ -65,6 +65,7 @@ static const struct of_device_id wc_mbox_match[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, wc_mbox_match);
 
 static struct platform_driver wc_mbox_driver = {
 	.probe = wc_mbox_probe,
