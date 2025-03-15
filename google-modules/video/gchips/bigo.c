@@ -886,6 +886,7 @@ static const struct of_device_id bigo_dt_match[] = {
 	{ .compatible = "google,bigocean"},
 	{}
 };
+MODULE_DEVICE_TABLE(of, bigo_dt_match);
 
 static struct platform_driver bigo_driver = {
 	.probe = bigo_probe,
