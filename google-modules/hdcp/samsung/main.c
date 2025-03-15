@@ -169,6 +169,7 @@ static const struct of_device_id exynos_hdcp_of_match_table[] = {
 	{ .compatible = "samsung,exynos-hdcp", },
 	{ },
 };
+MODULE_DEVICE_TABLE(of, exynos_hdcp_of_match_table);
 
 static struct platform_driver exynos_hdcp_driver = {
 	.probe = exynos_hdcp_probe,
