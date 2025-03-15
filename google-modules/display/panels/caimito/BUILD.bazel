@@ -36,6 +36,7 @@ ddk_module(
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
+        "//private/google-modules/display/common/gs_drm",
         "//private/google-modules/display/common/gs_panel",
     ],
 )
@@ -50,6 +51,7 @@ ddk_module(
     local_defines = _PANEL_LOCAL_DEFINES,
     deps = [
         ":common_headers",
+        "//private/google-modules/display/common/gs_drm",
         "//private/google-modules/display/common/gs_panel",
     ],
 )

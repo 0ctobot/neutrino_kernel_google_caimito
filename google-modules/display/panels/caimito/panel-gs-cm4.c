@@ -1516,7 +1516,7 @@ static int cm4_atomic_check(struct gs_panel *ctx, struct drm_atomic_state *state
 		struct drm_display_mode *mode = &new_crtc_state->adjusted_mode;
 
 		/* set clock to max refresh rate on self refresh exit or resume due to early exit */
-		mode->clock = mode->htotal * mode->vtotal * 120 / 1000;
+		mode->clock = gs_bts_fps_to_drm_mode_clock(mode, 120);
 
 		if (mode->clock != new_crtc_state->mode.clock) {
 			new_crtc_state->mode_changed = true;
@@ -1524,8 +1524,7 @@ static int cm4_atomic_check(struct gs_panel *ctx, struct drm_atomic_state *state
 				old_crtc_state->self_refresh_active ? "self refresh exit" :
 								      "resume");
 		}
-	} else if (old_crtc_state->active_changed &&
-		   (old_crtc_state->adjusted_mode.clock != old_crtc_state->mode.clock)) {
+	} else if (old_crtc_state->adjusted_mode.clock != old_crtc_state->mode.clock) {
 		/* clock hacked in last commit due to self refresh exit or resume, undo that */
 		new_crtc_state->mode_changed = true;
 		new_crtc_state->adjusted_mode.clock = new_crtc_state->mode.clock;
