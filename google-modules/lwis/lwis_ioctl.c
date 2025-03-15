@@ -41,6 +41,7 @@
 #define STRINGIFY(x) #x
 
 #define MAX_CMD_COUNT 10
+#define MAX_ECHO_SIZE (40 * 1024)
 
 static void create_top_device_worker_thread(struct lwis_client *client)
 {
@@ -485,6 +486,12 @@ static int cmd_echo(struct lwis_device *lwis_dev, struct lwis_cmd_pkt *header,
 
 	if (echo_msg.msg.size == 0) {
 		header->ret_code = 0;
+		return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
+	}
+
+	if (echo_msg.msg.size > MAX_ECHO_SIZE) {
+		dev_err(lwis_dev->dev, "Echo message size over the limit\n");
+		header->ret_code = -EINVAL;
 		return copy_pkt_to_user(lwis_dev, u_msg, (void *)header, sizeof(*header));
 	}
 

@@ -1118,6 +1118,7 @@ void lwis_device_error_event_emit(struct lwis_device *lwis_dev, int64_t event_id
 	struct lwis_client *lwis_client;
 	struct list_head *p, *n;
 	int64_t timestamp;
+	unsigned long flags;
 
 	if (event_id < LWIS_EVENT_ID_START_OF_ERROR_RANGE ||
 	    event_id >= LWIS_EVENT_ID_START_OF_SPECIALIZED_RANGE) {
@@ -1128,13 +1129,16 @@ void lwis_device_error_event_emit(struct lwis_device *lwis_dev, int64_t event_id
 	/* Latch timestamp */
 	timestamp = ktime_to_ns(lwis_get_time());
 
+	spin_lock_irqsave(&lwis_dev->lock, flags);
 	/* Notify clients */
 	list_for_each_safe(p, n, &lwis_dev->clients) {
 		lwis_client = list_entry(p, struct lwis_client, node);
 
 		event = kmalloc(sizeof(struct lwis_event_entry) + payload_size, GFP_ATOMIC);
-		if (!event)
+		if (!event) {
+			spin_unlock_irqrestore(&lwis_dev->lock, flags);
 			return;
+		}
 
 		event->event_info.event_id = event_id;
 		event->event_info.event_counter = 0;
@@ -1152,7 +1156,9 @@ void lwis_device_error_event_emit(struct lwis_device *lwis_dev, int64_t event_id
 						 "Failed to push error event to queue: ID 0x%llx\n",
 						 event_id);
 			kfree(event);
+			spin_unlock_irqrestore(&lwis_dev->lock, flags);
 			return;
 		}
 	}
+	spin_unlock_irqrestore(&lwis_dev->lock, flags);
 }
