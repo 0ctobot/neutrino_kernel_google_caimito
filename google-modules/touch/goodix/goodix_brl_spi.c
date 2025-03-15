@@ -440,6 +440,7 @@ static const struct of_device_id spi_matches[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, spi_matches);
 #endif
 
 static const struct spi_device_id spi_id_table[] = {
