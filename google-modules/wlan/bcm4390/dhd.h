@@ -2117,6 +2117,7 @@ typedef struct dhd_pub {
 	uint32 armpc;
 	uint32 arm_assert_phy_addr;
 	bool usr_trig_dmp;
+	bool reset_5g_rffe_vio;
 } dhd_pub_t;
 
 #if defined(__linux__)
