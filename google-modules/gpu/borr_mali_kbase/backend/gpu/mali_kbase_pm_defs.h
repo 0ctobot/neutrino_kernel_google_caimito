@@ -332,9 +332,6 @@ struct kbase_pm_event_log {
  *                     zeroed when a policy change occurs.
  * @reset_done:        Flag when a reset is complete
  * @reset_done_wait:   Wait queue to wait for changes to @reset_done
- * @gpu_cycle_counter_requests: The reference count of active gpu cycle counter
- *                              users
- * @gpu_cycle_counter_requests_lock: Lock to protect @gpu_cycle_counter_requests
  * @gpu_in_desired_state_wait: Wait queue set when the GPU is in the desired
  *                             state according to the L2 and shader power state
  *                             machines
@@ -533,8 +530,6 @@ struct kbase_pm_backend_data {
 	union kbase_pm_policy_data pm_policy_data;
 	bool reset_done;
 	wait_queue_head_t reset_done_wait;
-	int gpu_cycle_counter_requests;
-	spinlock_t gpu_cycle_counter_requests_lock;
 
 	wait_queue_head_t gpu_in_desired_state_wait;
 

@@ -399,7 +399,7 @@ enum {
 
 #if IS_ENABLED(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD)
 /* Default value of the time interval at which GPU metrics tracepoints are emitted. */
-#define DEFAULT_GPU_METRICS_TP_EMIT_INTERVAL_NS (500000000u) /* 500 ms */
+#define DEFAULT_GPU_METRICS_TP_EMIT_INTERVAL_NS (8000000u) /* 8 ms, or 125 Hz */
 #endif
 
 #endif /* _KBASE_CONFIG_DEFAULTS_H_ */

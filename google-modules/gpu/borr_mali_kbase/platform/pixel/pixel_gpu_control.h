@@ -61,4 +61,16 @@ int gpu_itmon_init(struct kbase_device *kbdev);
 void gpu_itmon_term(struct kbase_device *kbdev);
 #endif
 
+/**
+ * pixel_gpu_debugfs_init() - Create a debugfs entry for the Pixel integration
+ *
+ * @kbdev: Pointer to the GPU device for which to create the debugfs entry
+ */
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+void pixel_gpu_debugfs_init(struct kbase_device *kbdev);
+#else
+static inline void __maybe_unused pixel_gpu_debugfs_init(struct kbase_device *kbdev) {}
+#endif /* CONFIG_DEBUG_FS */
+
+
 #endif /* _PIXEL_GPU_CONTROL_H_ */

@@ -147,6 +147,8 @@ void gpu_dvfs_metrics_update(struct kbase_device *kbdev, int old_level, int new_
 	unsigned long flags;
 
 	lockdep_assert_held(&pc->dvfs.lock);
+
+	/* Grab the lock before modifying the entry upon a dvfs event. */
 	spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
 
 	if (pc->dvfs.metrics.last_power_state) {
@@ -268,6 +270,7 @@ int gpu_dvfs_kctx_init(struct kbase_context *kctx)
 	struct pid *pid;
 	kuid_t uid;
 	u8 uid_hash;
+	unsigned long flags;
 	struct gpu_dvfs_metrics_uid_stats *entry;
 	struct gpu_dvfs_metrics_uid_stats *stats = NULL;
 	int ret = 0;
@@ -304,7 +307,13 @@ int gpu_dvfs_kctx_init(struct kbase_context *kctx)
 			goto done;
 		}
 
+		/* Grab the lock before adding an entry: we can't guarantee tha the entry won't be
+		 * read from another thread before its initialization in this thread due to
+		 * possible compiler/CPU out of order optimizations.
+		 */
+		spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
 		hash_add(pc->dvfs.metrics.uid_stats_table, &stats->uid_list_node, uid_hash);
+		spin_unlock_irqrestore(&pc->dvfs.metrics.lock, flags);
 	}
 
 	stats->active_kctx_count++;

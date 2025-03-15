@@ -259,6 +259,7 @@ static ssize_t gpu_top_show(struct device *dev, struct device_attribute *attr, c
 	if (!pc)
 		return -ENODEV;
 
+	/* Grab the lock before reading and modifying the entries upon sysfs read. */
 	spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
 	hash_for_each(pc->dvfs.metrics.uid_stats_table, bkt, entry, uid_list_node) {
 		const u64 delta_ns = ktime_get_ns() - entry->timestamp_ns_last;
@@ -295,6 +296,7 @@ static ssize_t uid_time_in_state_show(struct device *dev, struct device_attribut
 	struct kbase_device *kbdev = dev->driver_data;
 	struct pixel_context *pc = kbdev->platform_context;
 	struct gpu_dvfs_metrics_uid_stats *entry = NULL;
+	unsigned long flags;
 	unsigned bkt;
 
 	if (!pc)
@@ -306,6 +308,8 @@ static ssize_t uid_time_in_state_show(struct device *dev, struct device_attribut
 			pc->dvfs.table[i].clk[GPU_DVFS_CLK_SHADERS]);
 	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
 
+	/* Grab the lock before reading the entries upon sysfs read. */
+	spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
 	hash_for_each(pc->dvfs.metrics.uid_stats_table, bkt, entry, uid_list_node) {
 		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%u: ", __kuid_val(entry->uid));
 		for (i=0; i < pc->dvfs.table_size; i++) {
@@ -315,6 +319,7 @@ static ssize_t uid_time_in_state_show(struct device *dev, struct device_attribut
 
 		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
 	}
+	spin_unlock_irqrestore(&pc->dvfs.metrics.lock, flags);
 
 	return ret;
 }
@@ -948,6 +953,7 @@ static int gpu_top_h_show(struct seq_file *file, void *data)
 	seq_printf(file, "|  UID  | CYCLES%% | TIME%% |\n");
 	seq_printf(file, "|-------+---------+-------|\n");
 
+	/* Grab the lock before reading and modifying the entries upon debugfs read. */
 	spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
 	hash_for_each(pc->dvfs.metrics.uid_stats_table, bkt, entry, uid_list_node) {
 		const u64 delta_ns = ktime_get_ns() - entry->timestamp_ns_last;
@@ -999,6 +1005,7 @@ static int uid_time_in_state_h_show(struct seq_file *file, void *data)
 	struct pixel_context *pc = kbdev->platform_context;
 	struct gpu_dvfs_metrics_uid_stats *entry = NULL;
 	u64 *totals;
+	unsigned long flags;
 	unsigned bkt;
 
 	CSTD_UNUSED(data);
@@ -1013,6 +1020,8 @@ static int uid_time_in_state_h_show(struct seq_file *file, void *data)
 		seq_printf(file, "%9u  ", pc->dvfs.table[i].clk[GPU_DVFS_CLK_SHADERS]);
 	seq_printf(file, "\n------------+-----------------------------------------------------------------\n");
 
+	/* Grab the lock before reading the entries upon debugfs read. */
+	spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
 	hash_for_each(pc->dvfs.metrics.uid_stats_table, bkt, entry, uid_list_node) {
 		seq_printf(file, "%6d (%2d) | ", __kuid_val(entry->uid), entry->active_kctx_count);
 		for (i=0; i < pc->dvfs.table_size; i++) {
@@ -1022,6 +1031,7 @@ static int uid_time_in_state_h_show(struct seq_file *file, void *data)
 
 		seq_printf(file, "\n");
 	}
+	spin_unlock_irqrestore(&pc->dvfs.metrics.lock, flags);
 
 	seq_printf(file, "------------+-----------------------------------------------------------------\n");
 

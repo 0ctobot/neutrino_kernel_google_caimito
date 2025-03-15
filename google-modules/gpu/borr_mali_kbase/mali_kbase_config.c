@@ -83,6 +83,26 @@ void kbasep_platform_context_term(struct kbase_context *kctx)
 		platform_funcs_p->platform_handler_context_term_func(kctx);
 }
 
+#if !MALI_USE_CSF
+void kbasep_platform_event_atom_submit(struct kbase_jd_atom *katom)
+{
+	struct kbase_platform_funcs_conf *platform_funcs_p;
+
+	platform_funcs_p = (struct kbase_platform_funcs_conf *)PLATFORM_FUNCS;
+	if (platform_funcs_p && platform_funcs_p->platform_handler_atom_submit_func)
+		platform_funcs_p->platform_handler_atom_submit_func(katom);
+}
+
+void kbasep_platform_event_atom_complete(struct kbase_jd_atom *katom)
+{
+	struct kbase_platform_funcs_conf *platform_funcs_p;
+
+	platform_funcs_p = (struct kbase_platform_funcs_conf *)PLATFORM_FUNCS;
+	if (platform_funcs_p && platform_funcs_p->platform_handler_atom_complete_func)
+		platform_funcs_p->platform_handler_atom_complete_func(katom);
+}
+#endif
+
 void kbasep_platform_context_active(struct kbase_context *kctx)
 {
 	struct kbase_platform_funcs_conf *platform_funcs_p;
@@ -99,24 +119,6 @@ void kbasep_platform_context_idle(struct kbase_context *kctx)
 	platform_funcs_p = (struct kbase_platform_funcs_conf*)PLATFORM_FUNCS;
 	if (platform_funcs_p && platform_funcs_p->platform_handler_context_idle)
 		platform_funcs_p->platform_handler_context_idle(kctx);
-}
-
-void kbasep_platform_event_work_begin(void *param)
-{
-	struct kbase_platform_funcs_conf *platform_funcs_p;
-
-	platform_funcs_p = (struct kbase_platform_funcs_conf*)PLATFORM_FUNCS;
-	if (platform_funcs_p && platform_funcs_p->platform_handler_work_begin_func)
-		platform_funcs_p->platform_handler_work_begin_func(param);
-}
-
-void kbasep_platform_event_work_end(void *param)
-{
-	struct kbase_platform_funcs_conf *platform_funcs_p;
-
-	platform_funcs_p = (struct kbase_platform_funcs_conf*)PLATFORM_FUNCS;
-	if (platform_funcs_p && platform_funcs_p->platform_handler_work_end_func)
-		platform_funcs_p->platform_handler_work_end_func(param);
 }
 
 void kbasep_platform_event_tick_tock(struct kbase_device *kbdev)

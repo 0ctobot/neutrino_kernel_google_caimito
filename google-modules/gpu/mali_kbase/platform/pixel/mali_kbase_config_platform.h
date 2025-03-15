@@ -234,9 +234,6 @@ struct gpu_dvfs_qos_vote;
 struct gpu_dvfs_metrics_uid_stats;
 #endif /* CONFIG_MALI_MIDGARD_DVFS */
 
-/* Forward declaration of gpu_uevent_ctx */
-struct gpu_uevent_ctx;
-
 /**
  * struct pixel_context - Pixel GPU context
  *
@@ -305,8 +302,11 @@ struct gpu_uevent_ctx;
  *                                 resident in each of the GPU's job slots, or CSG slots.
  *                                 Access is controlled by the dvfs.metrics.lock.
  * @dvfs.metrics.uid_stats_table:  8-bits hash table of the per-UID stats blocks.
- *                                 Modification to the hash table itself (not its elements) is
- *                                 protected by the kctx_list lock.
+ *                                 Modification to the hash table itself and to its elements is
+ *                                 protected by the dvfs.metrics.lock.
+ *                                 Reading of the elements is also protected by the same lock.
+ *                                 Elements are only added and never removed at run-time, so the
+ *                                 removal of all elements on destruction is not protected.
  *
  * @dvfs.governor.curr:  The currently enabled DVFS governor.
  * @dvfs.governor.delay: Governor specific variable. The basic governor uses this to store the

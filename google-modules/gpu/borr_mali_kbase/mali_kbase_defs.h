@@ -196,6 +196,8 @@ struct kbase_gpu_metrics {
  * @active_end_time:         Records the time at which the application last became
  *                           inactive in the current work period, or the time of the end of
  *                           previous work period if the application remained active.
+ * @active_start_cycles:     Records the cycles at which the application first became
+ *                           active in the current work period.
  * @aid:                     Unique identifier for an application.
  * @kctx_count:              Counter to keep a track of the number of Kbase contexts
  *                           created for an application. There may be multiple Kbase
@@ -208,6 +210,7 @@ struct kbase_gpu_metrics_ctx {
 	struct list_head link;
 	u64 active_start_time;
 	u64 active_end_time;
+	u64 active_start_cycles;
 	unsigned int aid;
 	unsigned int kctx_count;
 	u8 active_cnt;
@@ -1447,7 +1450,9 @@ struct kbase_device {
 #if MALI_USE_CSF
 	atomic_t fence_signal_timeout_enabled;
 #endif
-
+#if IS_ENABLED(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD) && !MALI_USE_CSF
+	u64 last_cycle_count;
+#endif
 	struct notifier_block pcm_prioritized_process_nb;
 
 };

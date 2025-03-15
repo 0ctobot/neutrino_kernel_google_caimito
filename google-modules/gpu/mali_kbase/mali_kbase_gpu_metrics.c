@@ -88,6 +88,8 @@ static void emit_tracepoint_for_active_gpu_metrics_ctx(
 		struct gpu_dvfs_metrics_uid_stats *entry = NULL;
 		unsigned long flags;
 		u8 uid_hash = gpu_dvfs_hash_uid_stats(gpu_metrics_ctx->aid);
+
+		/* Grab the lock before modifying the entry upon a work period event. */
 		spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
 		hash_for_each_possible(
 				pc->dvfs.metrics.uid_stats_table,

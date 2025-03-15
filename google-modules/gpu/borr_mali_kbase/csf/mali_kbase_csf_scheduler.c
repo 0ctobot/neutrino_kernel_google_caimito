@@ -2833,8 +2833,6 @@ static bool cleanup_csg_slot(struct kbase_queue_group *group)
 
 	unassign_user_doorbell_from_group(kbdev, group);
 
-	kbasep_platform_event_work_end(group);
-
 	/* The csg does not need cleanup other than drop its AS */
 	spin_lock_irqsave(&kctx->kbdev->hwaccess_lock, flags);
 	as_fault = kbase_ctx_flag(kctx, KCTX_AS_DISABLED_ON_FAULT);
@@ -3111,7 +3109,6 @@ skip_fw:
 				 (((u64)ep_cfg) << 32) | ((((u32)kctx->as_nr) & 0xF) << 16) |
 					 (state & (CSG_REQ_STATE_MASK >> CS_REQ_STATE_SHIFT)));
 
-	kbasep_platform_event_work_begin(group);
 	/* Update the heap reclaim manager */
 	kbase_csf_tiler_heap_reclaim_sched_notify_grp_active(group);
 

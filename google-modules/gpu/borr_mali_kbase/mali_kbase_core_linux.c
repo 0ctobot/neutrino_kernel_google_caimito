@@ -78,6 +78,7 @@
 
 /* Pixel includes */
 #include "platform/pixel/pixel_gpu_slc.h"
+#include "platform/pixel/pixel_gpu_control.h"
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -5109,7 +5110,7 @@ static struct dentry *init_debugfs(struct kbase_device *kbdev)
 	kbase_timeline_io_debugfs_init(kbdev);
 #endif
 	kbase_dvfs_status_debugfs_init(kbdev);
-
+	pixel_gpu_debugfs_init(kbdev);
 
 	return dentry;
 }
@@ -5975,6 +5976,9 @@ static int kbase_platform_device_probe(struct platform_device *pdev)
 	dev_set_drvdata(kbdev->dev, kbdev);
 #if (KERNEL_VERSION(5, 3, 0) <= LINUX_VERSION_CODE)
 	mutex_lock(&kbase_probe_mutex);
+#endif
+#if IS_ENABLED(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD) && !MALI_USE_CSF
+	kbdev->last_cycle_count = 0;
 #endif
 	err = kbase_device_init(kbdev);
 

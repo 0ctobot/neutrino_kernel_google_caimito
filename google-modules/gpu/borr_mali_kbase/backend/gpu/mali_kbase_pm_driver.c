@@ -1529,6 +1529,11 @@ static bool hctl_tiler_power_up_done(struct kbase_device *kbdev)
 	return true;
 }
 
+/* Forward declaration for kbase_pm_request_gpu_cycle_counter_do_request */
+static void kbase_pm_request_gpu_cycle_counter_do_request(struct kbase_device *kbdev);
+
+/* Forward declaration for kbase_pm_release_gpu_cycle_counter_nolock */
+void kbase_pm_release_gpu_cycle_counter_nolock(struct kbase_device *kbdev);
 
 static int kbase_pm_l2_update_state(struct kbase_device *kbdev)
 {
@@ -1537,6 +1542,9 @@ static int kbase_pm_l2_update_state(struct kbase_device *kbdev)
 	u64 tiler_present = kbdev->gpu_props.tiler_present;
 	bool l2_power_up_done;
 	enum kbase_l2_core_state prev_state;
+#if IS_ENABLED(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD) && !MALI_USE_CSF
+	u64 cycle_count, system_time;
+#endif /* IS_ENABLED(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD) && !MALI_USE_CSF */
 
 	lockdep_assert_held(&kbdev->hwaccess_lock);
 
@@ -1704,6 +1712,10 @@ static int kbase_pm_l2_update_state(struct kbase_device *kbdev)
 				kbase_hwcnt_context_enable(kbdev->hwcnt_gpu_ctx);
 				backend->hwcnt_disabled = false;
 			}
+#if IS_ENABLED(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD)
+			/* START the GPU cycle counter*/
+			kbase_pm_request_gpu_cycle_counter_do_request(kbdev);
+#endif /* IS_ENABLED(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD) */
 #endif
 			backend->l2_state = KBASE_L2_ON;
 			break;
@@ -1763,6 +1775,16 @@ static int kbase_pm_l2_update_state(struct kbase_device *kbdev)
 				backend->l2_state = KBASE_L2_ON_HWCNT_ENABLE;
 				break;
 			}
+
+#if IS_ENABLED(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD) && !MALI_USE_CSF
+			/* Retrieve the cycle count */
+			kbase_backend_get_gpu_time_norequest(
+					kbdev, &cycle_count, &system_time, NULL);
+			/* Store the last seen cycle count */
+			kbdev->last_cycle_count = cycle_count;
+			/* STOP cycle count */
+			kbase_pm_release_gpu_cycle_counter_nolock(kbdev);
+#endif /* IS_ENABLED(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD) & MALI_USE_CSF */
 
 			backend->hwcnt_desired = false;
 			if (!backend->hwcnt_disabled)
@@ -3767,19 +3789,13 @@ int kbase_pm_init_hw(struct kbase_device *kbdev, unsigned int flags)
 	WARN_ON(kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(GPU_STATUS)) &
 		GPU_STATUS_PROTECTED_MODE_ACTIVE);
 
-	/* If cycle counter was in use re-enable it, enable_irqs will only be
-	 * false when called from kbase_pm_powerup
-	 */
-	if (kbdev->pm.backend.gpu_cycle_counter_requests && (flags & PM_ENABLE_IRQS)) {
+	/* Re-enable the cycle counter */
+	if (flags & PM_ENABLE_IRQS) {
 		kbase_pm_enable_interrupts(kbdev);
 
-		/* Re-enable the counters if we need to */
-		spin_lock_irqsave(&kbdev->pm.backend.gpu_cycle_counter_requests_lock, irq_flags);
-		if (kbdev->pm.backend.gpu_cycle_counter_requests)
-			kbase_reg_write32(kbdev, GPU_CONTROL_ENUM(GPU_COMMAND),
-					  GPU_COMMAND_CYCLE_COUNT_START);
-		spin_unlock_irqrestore(&kbdev->pm.backend.gpu_cycle_counter_requests_lock,
-				       irq_flags);
+		/* Re-enable the counters */
+		kbase_reg_write32(kbdev, GPU_CONTROL_ENUM(GPU_COMMAND),
+				  GPU_COMMAND_CYCLE_COUNT_START);
 
 		kbase_pm_disable_interrupts(kbdev);
 	}
@@ -3806,8 +3822,7 @@ exit:
  * kbase_pm_request_gpu_cycle_counter_do_request - Request cycle counters
  * @kbdev:     The kbase device structure of the device
  *
- * Increase the count of cycle counter users and turn the cycle counters on if
- * they were previously off
+ * Turn on the GPU cycle counter if it's not already on.
  *
  * This function is designed to be called by
  * kbase_pm_request_gpu_cycle_counter() or
@@ -3818,28 +3833,13 @@ exit:
  */
 static void kbase_pm_request_gpu_cycle_counter_do_request(struct kbase_device *kbdev)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&kbdev->pm.backend.gpu_cycle_counter_requests_lock, flags);
-	++kbdev->pm.backend.gpu_cycle_counter_requests;
-
-	if (kbdev->pm.backend.gpu_cycle_counter_requests == 1)
+#if !IS_ENABLED(CONFIG_MALI_NO_MALI) && !MALI_USE_CSF
+	if (!(kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(GPU_STATUS)) &
+	      GPU_STATUS_CYCLE_COUNT_ACTIVE)) {
 		kbase_reg_write32(kbdev, GPU_CONTROL_ENUM(GPU_COMMAND),
 				  GPU_COMMAND_CYCLE_COUNT_START);
-	else {
-		/* This might happen after GPU reset.
-		 * Then counter needs to be kicked.
-		 */
-#if !IS_ENABLED(CONFIG_MALI_NO_MALI) && !MALI_USE_CSF
-		if (!(kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(GPU_STATUS)) &
-		      GPU_STATUS_CYCLE_COUNT_ACTIVE)) {
-			kbase_reg_write32(kbdev, GPU_CONTROL_ENUM(GPU_COMMAND),
-					  GPU_COMMAND_CYCLE_COUNT_START);
-		}
-#endif
 	}
-
-	spin_unlock_irqrestore(&kbdev->pm.backend.gpu_cycle_counter_requests_lock, flags);
+#endif
 }
 
 void kbase_pm_request_gpu_cycle_counter(struct kbase_device *kbdev)
@@ -3847,8 +3847,6 @@ void kbase_pm_request_gpu_cycle_counter(struct kbase_device *kbdev)
 	KBASE_DEBUG_ASSERT(kbdev != NULL);
 
 	KBASE_DEBUG_ASSERT(kbdev->pm.backend.gpu_powered);
-
-	KBASE_DEBUG_ASSERT(kbdev->pm.backend.gpu_cycle_counter_requests < INT_MAX);
 
 	kbase_pm_wait_for_l2_powered(kbdev);
 
@@ -3863,8 +3861,6 @@ void kbase_pm_request_gpu_cycle_counter_l2_is_on(struct kbase_device *kbdev)
 
 	KBASE_DEBUG_ASSERT(kbdev->pm.backend.gpu_powered);
 
-	KBASE_DEBUG_ASSERT(kbdev->pm.backend.gpu_cycle_counter_requests < INT_MAX);
-
 	kbase_pm_request_gpu_cycle_counter_do_request(kbdev);
 }
 
@@ -3872,23 +3868,13 @@ KBASE_EXPORT_TEST_API(kbase_pm_request_gpu_cycle_counter_l2_is_on);
 
 void kbase_pm_release_gpu_cycle_counter_nolock(struct kbase_device *kbdev)
 {
-	unsigned long flags;
-
 	KBASE_DEBUG_ASSERT(kbdev != NULL);
 
 	lockdep_assert_held(&kbdev->hwaccess_lock);
 
-	spin_lock_irqsave(&kbdev->pm.backend.gpu_cycle_counter_requests_lock, flags);
 
-	KBASE_DEBUG_ASSERT(kbdev->pm.backend.gpu_cycle_counter_requests > 0);
-
-	--kbdev->pm.backend.gpu_cycle_counter_requests;
-
-	if (kbdev->pm.backend.gpu_cycle_counter_requests == 0)
-		kbase_reg_write32(kbdev, GPU_CONTROL_ENUM(GPU_COMMAND),
-				  GPU_COMMAND_CYCLE_COUNT_STOP);
-
-	spin_unlock_irqrestore(&kbdev->pm.backend.gpu_cycle_counter_requests_lock, flags);
+	kbase_reg_write32(kbdev, GPU_CONTROL_ENUM(GPU_COMMAND),
+			  GPU_COMMAND_CYCLE_COUNT_STOP);
 }
 
 void kbase_pm_release_gpu_cycle_counter(struct kbase_device *kbdev)

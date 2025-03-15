@@ -135,17 +135,7 @@ void pixel_gpu_uevent_send(struct kbase_device *kbdev, const struct gpu_uevent *
     if (suppress_uevent)
         return;
 
-    if (in_atomic()) {
-        /*
-         * We don't intend to run on a preempt disabled kernel,
-         * so in_atomic() is fine. In the worst case, this just
-         * leads to a delayed uevent.
-         */
-        schedule_work(&gpu_uevent_ctx->gpu_uevent_work);
-        return;
-    }
-
-    pixel_gpu_uevent_send_worker(&gpu_uevent_ctx->gpu_uevent_work);
+    schedule_work(&gpu_uevent_ctx->gpu_uevent_work);
 }
 
 void pixel_gpu_uevent_kmd_error_send(struct kbase_device *kbdev, const enum gpu_uevent_info info)

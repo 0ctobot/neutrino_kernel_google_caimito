@@ -177,8 +177,6 @@ int kbase_hwaccess_pm_init(struct kbase_device *kbdev)
 	init_waitqueue_head(&kbdev->pm.resume_wait);
 	kbdev->pm.active_count = 0;
 
-	spin_lock_init(&kbdev->pm.backend.gpu_cycle_counter_requests_lock);
-
 	init_waitqueue_head(&kbdev->pm.backend.poweroff_wait);
 
 
@@ -725,7 +723,6 @@ KBASE_EXPORT_TEST_API(kbase_pm_wait_for_gpu_power_down);
 
 int kbase_hwaccess_pm_powerup(struct kbase_device *kbdev, unsigned int flags)
 {
-	unsigned long irq_flags;
 	int ret;
 
 	KBASE_DEBUG_ASSERT(kbdev != NULL);
@@ -774,11 +771,6 @@ int kbase_hwaccess_pm_powerup(struct kbase_device *kbdev, unsigned int flags)
 	}
 #endif
 
-	spin_lock_irqsave(&kbdev->pm.backend.gpu_cycle_counter_requests_lock, irq_flags);
-	/* Ensure cycle counter is off */
-	kbdev->pm.backend.gpu_cycle_counter_requests = 0;
-	spin_unlock_irqrestore(&kbdev->pm.backend.gpu_cycle_counter_requests_lock, irq_flags);
-
 	kbase_pm_enable_interrupts(kbdev);
 
 	WARN_ON(!kbdev->pm.backend.gpu_powered);
@@ -822,7 +814,6 @@ void kbase_hwaccess_pm_term(struct kbase_device *kbdev)
 {
 	KBASE_DEBUG_ASSERT(kbdev != NULL);
 	KBASE_DEBUG_ASSERT(kbdev->pm.active_count == 0);
-	KBASE_DEBUG_ASSERT(kbdev->pm.backend.gpu_cycle_counter_requests == 0);
 
 	cancel_work_sync(&kbdev->pm.backend.hwcnt_disable_work);
 
