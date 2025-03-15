@@ -239,7 +239,9 @@ static int gs_panel_parse_dt(struct gs_panel *ctx)
 	if (ret)
 		goto err;
 
-	ctx->touch_dev = of_parse_phandle(ctx->dev->of_node, "touch", 0);
+	ctx->touch_bridge_data.touch_dev = of_parse_phandle(ctx->dev->of_node, "touch", 0);
+	if (!ctx->touch_bridge_data.touch_dev)
+		dev_warn(ctx->dev, "Panel has no DT link to touch driver; continuing\n");
 
 	of_property_read_u32(ctx->dev->of_node, "orientation", &orientation);
 	if (orientation > DRM_MODE_PANEL_ORIENTATION_RIGHT_UP) {

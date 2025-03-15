@@ -24,6 +24,13 @@ int gs_panel_disable(struct drm_panel *panel)
 	ctx->cabc_mode = GCABC_OFF;
 	ctx->ssc_en = false;
 
+	if (ctx->touch_bridge_data.touch_dev && !ctx->touch_bridge_data.attached) {
+		dev_warn(ctx->dev,
+			 "Panel has DT link to touch bridge but did not attach after %u tries\n",
+			 ctx->touch_bridge_data.retry_count);
+	}
+	ctx->touch_bridge_data.retry_count = 0;
+
 	mutex_lock(&ctx->mode_lock); /*TODO(b/267170999): MODE*/
 	gs_panel_disable_normal_feat_locked(ctx);
 	gs_panel_send_cmdset(ctx, ctx->desc->off_cmdset);

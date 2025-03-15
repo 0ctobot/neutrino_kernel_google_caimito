@@ -1194,6 +1194,18 @@ struct gs_bl_notifier {
 };
 
 /**
+ * gs_touch_bridge_data - data relating to panel connection to touch bridge
+ * @touch_dev: pointer to device_node obtained from device tree
+ * @attached: whether we have found and attached a touch device
+ * @retry_count: number of attempts to find touch device
+ */
+struct gs_touch_bridge_data {
+	struct device_node *touch_dev;
+	bool attached;
+	u32 retry_count;
+};
+
+/**
  * struct gs_panel - data associated with panel driver operation
  * TODO: better documentation
  */
@@ -1255,7 +1267,8 @@ struct gs_panel {
 	u32 panel_rev;
 	enum drm_panel_orientation orientation;
 	struct gs_te2_data te2;
-	struct device_node *touch_dev;
+	/** @touch_bridge_data: keeps track of connection to touch bridge */
+	struct gs_touch_bridge_data touch_bridge_data;
 	struct gs_panel_timestamps timestamps;
 
 	struct gs_thermal_data *thermal;

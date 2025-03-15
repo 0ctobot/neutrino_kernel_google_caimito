@@ -48,16 +48,15 @@ static void gs_panel_connector_attach_touch(struct gs_panel *ctx,
 		return;
 	}
 
-	bridge = of_drm_find_bridge(ctx->touch_dev);
-	if (unlikely(!ctx->touch_dev))
-		dev_warn(ctx->dev, "%s can't get touch dev\n", __func__);
-	if (unlikely(!bridge))
-		dev_warn(ctx->dev, "%s can't find bridge\n", __func__);
-	if (!bridge || bridge->dev)
+	bridge = of_drm_find_bridge(ctx->touch_bridge_data.touch_dev);
+	ctx->touch_bridge_data.retry_count++;
+	if (!bridge)
 		return;
 
 	drm_bridge_attach(encoder, bridge, &ctx->bridge, 0);
-	dev_info(ctx->dev, "attach bridge %p to encoder %p\n", bridge, encoder);
+	dev_info(ctx->dev, "attach bridge %p to encoder %p after %u tries\n", bridge, encoder,
+		 ctx->touch_bridge_data.retry_count);
+	ctx->touch_bridge_data.attached = true;
 }
 
 /*
@@ -81,7 +80,7 @@ static int gs_panel_connector_atomic_check(struct drm_connector *connector,
 	else
 		return 0; /* connector is/was unused */
 
-	if (ctx->touch_dev)
+	if (!ctx->touch_bridge_data.attached && ctx->touch_bridge_data.touch_dev)
 		gs_panel_connector_attach_touch(ctx, conn_state);
 
 	return 0;

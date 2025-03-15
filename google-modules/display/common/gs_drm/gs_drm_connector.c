@@ -54,7 +54,11 @@ EXPORT_SYMBOL_GPL(gs_drm_mode_bts_fps);
 
 int gs_bts_fps_to_drm_mode_clock(const struct drm_display_mode *mode, int bts_fps)
 {
-	return DIV_ROUND_UP(mode->htotal * mode->vtotal * bts_fps, 1000);
+	int clock = DIV_ROUND_UP(mode->htotal * mode->vtotal * bts_fps, 1000);
+
+	if (mode->vscan > 1)
+		clock *= mode->vscan;
+	return clock;
 }
 EXPORT_SYMBOL_GPL(gs_bts_fps_to_drm_mode_clock);
 
