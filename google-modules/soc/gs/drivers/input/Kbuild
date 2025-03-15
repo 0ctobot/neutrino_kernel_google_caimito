@@ -4,7 +4,6 @@
 #
 
 obj-$(CONFIG_INPUT_MISC)	+= misc/
-obj-$(CONFIG_FPS_TOUCH_HANDLER) += fps_touch_handler/
 obj-$(CONFIG_GOODIX_FINGERPRINT)+= fingerprint/
 obj-$(CONFIG_INPUT_KEYBOARD)	+= keyboard/
 

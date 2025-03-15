@@ -524,6 +524,7 @@ static const struct of_device_id of_gs_chipid_ids[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, of_gs_chipid_ids);
 
 /**
  *  gs_chipid_early_init: Early chipid initialization

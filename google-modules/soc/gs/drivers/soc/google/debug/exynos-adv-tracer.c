@@ -604,6 +604,7 @@ static const struct of_device_id eat_match[] = {
 	{ .compatible = "google,exynos-adv-tracer" },
 	{},
 };
+MODULE_DEVICE_TABLE(of, eat_match);
 
 static struct platform_driver eat_info_driver = {
 	.probe	= adv_tracer_probe,

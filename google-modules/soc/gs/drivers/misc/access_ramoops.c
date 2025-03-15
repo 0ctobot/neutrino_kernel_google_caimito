@@ -243,6 +243,7 @@ static const struct of_device_id dt_match[] = {
 	{ .compatible = "access_ramoops" },
 	{}
 };
+MODULE_DEVICE_TABLE(of, dt_match);
 
 static struct platform_driver access_ramoops_driver = {
 	.driver		= {

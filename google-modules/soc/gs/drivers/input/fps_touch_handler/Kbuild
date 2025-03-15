@@ -1,4 +1,0 @@
-ccflags-y := -DDYNAMIC_DEBUG_MODULE
-
-obj-$(CONFIG_FPS_TOUCH_HANDLER) = fps_touch_handler.o
-

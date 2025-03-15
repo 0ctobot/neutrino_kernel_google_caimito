@@ -5552,6 +5552,7 @@ static const struct of_device_id exynos_pcie_rc_of_match[] = {
 	{ .compatible = "samsung,exynos-pcie-rc", },
 	{},
 };
+MODULE_DEVICE_TABLE(of, exynos_pcie_rc_of_match);
 
 static struct platform_driver exynos_pcie_rc_driver = {
 	.probe		= exynos_pcie_rc_probe,

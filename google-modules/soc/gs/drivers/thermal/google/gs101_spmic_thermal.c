@@ -489,6 +489,7 @@ static const struct of_device_id gs101_spmic_thermal_match_table[] = {
 	{ .compatible = "google,gs101-spmic-thermal" },
 	{}
 };
+MODULE_DEVICE_TABLE(of, gs101_spmic_thermal_match_table);
 
 static int gs101_spmic_thermal_get_dt_data(struct platform_device *pdev,
 					   struct gs101_spmic_thermal_chip *gs101_spmic_thermal)

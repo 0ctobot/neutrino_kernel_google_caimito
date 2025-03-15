@@ -566,7 +566,13 @@ static int dwc3_otg_reboot_notify(struct notifier_block *nb, unsigned long event
 	if (!exynos)
 		return -ENODEV;
 
+	mutex_lock(&exynos->dotg_lock);
+
 	dotg = exynos->dotg;
+	if (!dotg) {
+		mutex_unlock(&exynos->dotg_lock);
+		return -ENOENT;
+	}
 
 	switch (event) {
 	case SYS_HALT:
@@ -577,6 +583,7 @@ static int dwc3_otg_reboot_notify(struct notifier_block *nb, unsigned long event
 		break;
 	}
 
+	mutex_unlock(&exynos->dotg_lock);
 	return 0;
 }
 
@@ -765,6 +772,7 @@ void dwc3_exynos_otg_exit(struct dwc3 *dwc, struct dwc3_exynos *exynos)
 	gvotable_destroy_election(dotg->ssphy_restart_votable);
 	gvotable_destroy_election(dotg->usbdp_tca_votable);
 	sysfs_put(dotg->desired_role_kn);
+	unregister_reboot_notifier(&dwc3_otg_reboot_notifier);
 	unregister_pm_notifier(&dotg->pm_nb);
 	cancel_work_sync(&dotg->work);
 	wakeup_source_unregister(dotg->wakelock);

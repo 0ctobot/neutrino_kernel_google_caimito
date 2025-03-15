@@ -21,7 +21,9 @@
 		u32 timestamp2 =	\
 		boot_metrics_get(METRICS_PHASE_##_phase2, METRICS_##_phase2##_##_type2);	\
 		\
-		return sprintf(buf, "%u\n", timestamp2 - timestamp1);	\
+		u32 interval = boot_metrics_calculate_interval(timestamp1, timestamp2);		\
+		\
+		return sysfs_emit(buf, "%u\n", interval);	\
 	}	\
 	static struct kobj_attribute metrics_attr_##_name = __ATTR_RO(_name)
 
@@ -34,6 +36,20 @@ static struct metrics_header_t *metrics_header_info;
  * Sysfs structures
  */
 static struct kobject *boot_metrics_kobj;
+
+
+static u32 boot_metrics_calculate_interval(u32 timestamp_before, u32 timestamp_after)
+{
+	/*
+	 * The timestamps overflow at `METRICS_DATA_OVERFLOW`.
+	 * They are not full-range 32-bit integers.
+	 */
+
+	/* To make sure it is larger than `timestamp_before`. */
+	timestamp_after += METRICS_DATA_OVERFLOW;
+
+	return (timestamp_after - timestamp_before) % METRICS_DATA_OVERFLOW;
+}
 
 /*
  * Get metrics header.

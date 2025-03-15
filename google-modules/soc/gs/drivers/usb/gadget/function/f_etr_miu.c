@@ -496,6 +496,7 @@ static const struct of_device_id etr_miu_match[] __initconst = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, etr_miu_match);
 
 static int etr_miu_init(void)
 {

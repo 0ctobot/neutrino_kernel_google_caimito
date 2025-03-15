@@ -224,18 +224,18 @@ static void __ufs_get_attr(struct ufs_dbg_mgr *mgr,
 				if (i >= mgr->lanes)
 					val = 0xFFFFFFFF;
 				else
-					__ufs_set_pcs_read(handle,
+					val = __ufs_set_pcs_read(handle,
 							   TX_LANE_0 + i, cfg);
-				*(pval + 1) = val;
+				*pval = val;
 			}
 		} else if (sel_api == DBG_ATTR_PCS_RX) {
 			for (i = 0 ; i < ATTR_NUM_MAX_LANES ; i++) {
 				if (i >= mgr->lanes)
 					val = 0xFFFFFFFF;
 				else
-					__ufs_set_pcs_read(handle,
+					val = __ufs_set_pcs_read(handle,
 							   RX_LANE_0 + i, cfg);
-				*(pval + 1) = val;
+				*pval = val;
 			}
 		} else {
 			//TODO:

@@ -1695,6 +1695,7 @@ static const struct of_device_id sysmmu_of_match[] = {
 	{ .compatible = "samsung,sysmmu-v8" },
 	{ }
 };
+MODULE_DEVICE_TABLE(of, sysmmu_of_match);
 
 static struct platform_driver samsung_sysmmu_driver = {
 	.driver	= {

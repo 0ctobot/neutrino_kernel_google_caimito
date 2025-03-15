@@ -1455,6 +1455,7 @@ static const struct of_device_id samsung_pinctrl_dt_match[] = {
 #endif
 	{},
 };
+MODULE_DEVICE_TABLE(of, samsung_pinctrl_dt_match);
 
 static struct platform_driver samsung_pinctrl_driver = {
 	.probe		= samsung_pinctrl_probe,

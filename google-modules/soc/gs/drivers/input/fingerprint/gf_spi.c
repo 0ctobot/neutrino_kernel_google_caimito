@@ -761,6 +761,7 @@ static const struct of_device_id gx_match_table[] = {
 	{ .compatible = GF_SPIDEV_NAME },
 	{},
 };
+MODULE_DEVICE_TABLE(of, gx_match_table);
 
 #if defined(USE_SPI_BUS)
 static struct spi_driver gf_driver = {

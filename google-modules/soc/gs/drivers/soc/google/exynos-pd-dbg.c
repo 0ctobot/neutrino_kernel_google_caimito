@@ -125,6 +125,7 @@ static const struct of_device_id exynos_pd_dbg_match[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, exynos_pd_dbg_match);
 #endif
 
 static struct platform_driver exynos_pd_dbg_drv = {

@@ -47,6 +47,15 @@ enum vendor_inheritnace_t {
 	VI_MAX,
 };
 
+enum vendor_sched_qos {
+	SCHED_QOS_NONE,
+	SCHED_QOS_POWER_EFFICIENCY,
+	SCHED_QOS_SENSITIVE_STANDARD,
+	SCHED_QOS_SENSITIVE_HIGH,
+	SCHED_QOS_SENSITIVE_EXTREME,
+	SCHED_QOS_MAX,
+};
+
 struct vendor_inheritance_struct {
 	unsigned int uclamp[VI_MAX][UCLAMP_CNT];
 	short int adpf;
@@ -95,16 +104,10 @@ struct vendor_task_struct {
 	bool ignore_util_est_update;
 
 	/* sched qos attributes */
-	bool boost_prio;
-	bool prefer_fit;
-	bool prefer_idle;
-	bool adpf;
-	bool preempt_wakeup;
-	bool auto_uclamp_max;
-	bool prefer_high_cap;
 	unsigned int rampup_multiplier;
-
+	enum vendor_sched_qos sched_qos_profile;
 	unsigned long sched_qos_user_defined_flag;
+	unsigned long prev_sched_qos_user_defined_flag;
 
 	/*
 	 * A general field for time measurement in the same process context.

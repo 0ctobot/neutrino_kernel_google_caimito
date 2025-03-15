@@ -195,8 +195,8 @@ static int slc_dummy_probe(struct platform_device *pdev)
 static const struct of_device_id slc_dummy_of_match_table[] = {
 	{ .compatible = "google,pt", },
 	{ },
-
 };
+MODULE_DEVICE_TABLE(of, slc_dummy_of_match_table);
 
 static struct platform_driver slc_dummy_driver = {
 	.probe = slc_dummy_probe,

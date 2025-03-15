@@ -35,14 +35,14 @@
 /*
  * Bit definition for sched qos features.
  */
-#define SCHED_QOS_RAMPUP_MULTIPLIER_BIT	BIT(0)
-#define SCHED_QOS_PREFER_HIGH_CAP_BIT	BIT(1)
-#define SCHED_QOS_AUTO_UCLAMP_MAX_BIT	BIT(2)
-#define SCHED_QOS_PREEMPT_WAKEUP_BIT	BIT(3)
-#define SCHED_QOS_ADPF_BIT		BIT(4)
-#define SCHED_QOS_PREFER_IDLE_BIT	BIT(5)
-#define SCHED_QOS_PREFER_FIT_BIT	BIT(6)
-#define SCHED_QOS_BOOST_PRIO_BIT	BIT(7)
+#define SCHED_QOS_RAMPUP_MULTIPLIER_BIT	0
+#define SCHED_QOS_PREFER_HIGH_CAP_BIT	1
+#define SCHED_QOS_AUTO_UCLAMP_MAX_BIT	2
+#define SCHED_QOS_PREEMPT_WAKEUP_BIT	3
+#define SCHED_QOS_ADPF_BIT		4
+#define SCHED_QOS_PREFER_IDLE_BIT	5
+#define SCHED_QOS_PREFER_FIT_BIT	6
+#define SCHED_QOS_BOOST_PRIO_BIT	7
 
 /* Iterate thr' all leaf cfs_rq's on a runqueue */
 #define for_each_leaf_cfs_rq_safe(rq, cfs_rq, pos)			\
@@ -570,9 +570,11 @@ static inline bool get_adpf(struct task_struct *p, bool inherited)
 	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
 
 	if (inherited)
-		return (vp->adpf || vi->adpf) && vg[vp->group].qos_adpf_enable;
+		return (vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_ADPF_BIT) || vi->adpf) &&
+		       vg[vp->group].qos_adpf_enable;
 	else
-		return vp->adpf && vg[vp->group].qos_adpf_enable;
+		return vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_ADPF_BIT) &&
+		       vg[vp->group].qos_adpf_enable;
 }
 
 static inline bool is_binder_task(struct task_struct *p)
@@ -619,7 +621,8 @@ static inline bool get_prefer_idle(struct task_struct *p)
 	// Always perfer idle for tasks with prefer_idle set explicitly.
 	// In auto_prefer_idle case, only allow high prio tasks of the prefer_idle group,
 	// or high prio task with wake_q_count value greater than 0 in top-app.
-	if ((vp->prefer_idle || vi->prefer_idle) && vg[vp->group].qos_prefer_idle_enable)
+	if ((vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_PREFER_IDLE_BIT) || vi->prefer_idle) &&
+	    vg[vp->group].qos_prefer_idle_enable)
 		return true;
 	else if (vendor_sched_auto_prefer_idle)
 		return should_auto_prefer_idle(p, vp->group);
@@ -635,7 +638,16 @@ static inline bool get_prefer_fit(struct task_struct *p)
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
 	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
 
-	return (vp->prefer_fit || vi->prefer_fit) && vg[vp->group].qos_prefer_fit_enable;
+	return (vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_PREFER_FIT_BIT) ||
+	       vi->prefer_fit) && vg[vp->group].qos_prefer_fit_enable;
+}
+
+static inline bool get_boost_prio(struct task_struct *p)
+{
+	struct vendor_task_struct *vp = get_vendor_task_struct(p);
+
+	return (vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_BOOST_PRIO_BIT) &&
+		vg[vp->group].qos_boost_prio_enable);
 }
 
 static inline bool get_preempt_wakeup(struct task_struct *p)
@@ -643,24 +655,24 @@ static inline bool get_preempt_wakeup(struct task_struct *p)
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
 	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
 
-	return (vp->preempt_wakeup || vi->preempt_wakeup) &&
-	       vg[vp->group].qos_preempt_wakeup_enable;
+	return (vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_PREEMPT_WAKEUP_BIT) ||
+	       vi->preempt_wakeup) && vg[vp->group].qos_preempt_wakeup_enable;
 }
 
 static inline bool get_auto_uclamp_max(struct task_struct *p)
 {
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
 
-	return (vg[vp->group].auto_uclamp_max ||
-		(vp->auto_uclamp_max && vg[vp->group].qos_auto_uclamp_max_enable));
+	return vg[vp->group].auto_uclamp_max ||
+	       (vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_AUTO_UCLAMP_MAX_BIT) &&
+		vg[vp->group].qos_auto_uclamp_max_enable);
 }
 
-/* TODO: may use a dedicated qos in the future */
 static inline bool get_power_efficiency(struct task_struct *p)
 {
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
 
-	return vp->auto_uclamp_max;
+	return vp->sched_qos_profile == SCHED_QOS_POWER_EFFICIENCY;
 }
 
 static inline bool get_prefer_high_cap(struct task_struct *p)
@@ -669,8 +681,8 @@ static inline bool get_prefer_high_cap(struct task_struct *p)
 	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
 
 	return vg[vp->group].prefer_high_cap || vp->auto_prefer_high_cap ||
-	       ((vp->prefer_high_cap || vi->prefer_high_cap) &&
-	        vg[vp->group].qos_prefer_high_cap_enable);
+	       ((vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_PREFER_HIGH_CAP_BIT) ||
+		vi->prefer_high_cap) && vg[vp->group].qos_prefer_high_cap_enable);
 }
 
 static inline unsigned int get_rampup_multiplier(struct task_struct *p)
@@ -681,7 +693,7 @@ static inline unsigned int get_rampup_multiplier(struct task_struct *p)
 		return vendor_sched_adpf_rampup_multiplier;
 
 	if (vg[vp->group].qos_rampup_multiplier_enable &&
-	    (vp->sched_qos_user_defined_flag & SCHED_QOS_RAMPUP_MULTIPLIER_BIT))
+	    (vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT)))
 		return vp->rampup_multiplier;
 	else
 		return vg[vp->group].rampup_multiplier;
@@ -729,15 +741,10 @@ static inline void init_vendor_task_struct(struct vendor_task_struct *v_tsk)
 	v_tsk->util_enqueued = 0;
 	v_tsk->prev_util_enqueued = 0;
 	v_tsk->ignore_util_est_update = false;
-	v_tsk->boost_prio = false;
-	v_tsk->prefer_fit = false;
-	v_tsk->prefer_idle = false;
-	v_tsk->adpf = false;
-	v_tsk->preempt_wakeup = false;
-	v_tsk->auto_uclamp_max = false;
-	v_tsk->prefer_high_cap = false;
 	v_tsk->rampup_multiplier = 1;
+	v_tsk->sched_qos_profile = SCHED_QOS_NONE;
 	v_tsk->sched_qos_user_defined_flag = 0;
+	v_tsk->prev_sched_qos_user_defined_flag = 0;
 	init_vendor_inheritance_struct(&v_tsk->vi);
 	v_tsk->adpf_adj = 0;
 	v_tsk->real_cap_avg = 0;

@@ -515,6 +515,7 @@ static const struct of_device_id exynos_flexpmu_dbg_match[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, exynos_flexpmu_dbg_match);
 
 static struct platform_driver exynos_flexpmu_dbg_drv = {
 	.probe		= exynos_flexpmu_dbg_probe,

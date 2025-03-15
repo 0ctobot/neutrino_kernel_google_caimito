@@ -1641,6 +1641,11 @@ static void exynos_usbdrd_pipe3_tune(struct exynos_usbdrd_phy *phy_drd,
 	struct exynos_usb_tune_param *ss_tune_param = phy_drd->usbphy_sub_info.tune_param;
 	int i;
 
+	if (!ss_tune_param) {
+		dev_err(phy_drd->dev, "no tune param\n");
+		return;
+	}
+
 	for (i = 0; ss_tune_param[i].value != EXYNOS_USB_TUNE_LAST; i++) {
 		if (i == EXYNOS_DRD_MAX_TUNEPARAM_NUM)
 			break;

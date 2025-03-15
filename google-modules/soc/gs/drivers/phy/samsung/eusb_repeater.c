@@ -857,6 +857,7 @@ static const struct of_device_id eusb_repeater_match_table[] = {
 		{ .compatible = "samsung,eusb-repeater",},
 		{},
 };
+MODULE_DEVICE_TABLE(of, eusb_repeater_match_table);
 
 void eusb_repeater_update_usb_state(bool on)
 {

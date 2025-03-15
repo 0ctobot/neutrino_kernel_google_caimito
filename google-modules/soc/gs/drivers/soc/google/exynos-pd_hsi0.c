@@ -219,6 +219,7 @@ static const struct of_device_id hsi0_of_match[] = {
 	{ .compatible = "exynos-pd-hsi0", },
 	{},
 };
+MODULE_DEVICE_TABLE(of, hsi0_of_match);
 
 static struct platform_driver exynos_pd_hsi0 = {
 	.probe = exynos_pd_hsi0_probe,

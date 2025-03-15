@@ -36,6 +36,7 @@ static const struct of_device_id sysmmu_group_of_match[] = {
 	{ .compatible = "samsung,sysmmu-group" },
 	{ }
 };
+MODULE_DEVICE_TABLE(of, sysmmu_group_of_match);
 
 static struct platform_driver sysmmu_group_driver = {
 	.driver	= {

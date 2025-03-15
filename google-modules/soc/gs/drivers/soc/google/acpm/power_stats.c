@@ -655,6 +655,7 @@ static const struct of_device_id power_stats_match[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, power_stats_match);
 
 static struct platform_driver power_stats_dev = {
 	.probe	= power_stats_probe,

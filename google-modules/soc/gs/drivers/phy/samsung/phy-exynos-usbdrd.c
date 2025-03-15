@@ -1743,6 +1743,11 @@ static void exynos_usbdrd_pipe3_tune(struct exynos_usbdrd_phy *phy_drd,
 	struct exynos_usb_tune_param *ss_tune_param = phy_drd->usbphy_sub_info.tune_param;
 	int i;
 
+	if (!ss_tune_param) {
+		dev_err(phy_drd->dev, "no tune param\n");
+		return;
+	}
+
 	if (phy_state >= OTG_STATE_A_IDLE) {
 		/* for host mode */
 		for (i = 0; ss_tune_param[i].value != EXYNOS_USB_TUNE_LAST; i++) {
@@ -1770,6 +1775,11 @@ static void exynos_usbdrd_utmi_tune(struct exynos_usbdrd_phy *phy_drd,
 {
 	struct exynos_usb_tune_param *hs_tune_param = phy_drd->usbphy_info.tune_param;
 	int i;
+
+	if (!hs_tune_param) {
+		dev_err(phy_drd->dev, "no tune param\n");
+		return;
+	}
 
 	if (phy_state >= OTG_STATE_A_IDLE) {
 		/* for host mode */

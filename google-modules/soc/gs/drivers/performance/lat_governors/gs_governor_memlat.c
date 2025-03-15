@@ -399,9 +399,13 @@ static int gs_governor_memlat_driver_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id gs_governor_memlat_root_match[] = { {
-	.compatible = "google,gs_governor_memlat",
-} };
+static const struct of_device_id gs_governor_memlat_root_match[] = {
+	{
+		.compatible = "google,gs_governor_memlat",
+	},
+	{}
+};
+MODULE_DEVICE_TABLE(of, gs_governor_memlat_root_match);
 
 static struct platform_driver gs_governor_memlat_platform_driver = {
 	.probe = gs_governor_memlat_driver_probe,

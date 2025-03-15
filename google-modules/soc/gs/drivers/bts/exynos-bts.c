@@ -2132,6 +2132,7 @@ static const struct of_device_id exynos_bts_match[] = {
 	},
 	{ },
 };
+MODULE_DEVICE_TABLE(of, exynos_bts_match);
 
 static struct platform_driver bts_pdrv = {
 	.probe = bts_probe,

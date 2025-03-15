@@ -399,6 +399,7 @@ static const struct of_device_id s2mpu_of_match[] = {
 	{ .compatible = "google," S2MPU_NAME },
 	{},
 };
+MODULE_DEVICE_TABLE(of, s2mpu_of_match);
 
 static struct platform_driver s2mpu_driver = {
 	.probe = s2mpu_probe,

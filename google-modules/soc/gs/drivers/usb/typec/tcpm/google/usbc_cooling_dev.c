@@ -602,6 +602,7 @@ static const struct of_device_id match_table[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, match_table);
 
 static struct platform_driver usb_cdev_driver = {
 	.driver = {

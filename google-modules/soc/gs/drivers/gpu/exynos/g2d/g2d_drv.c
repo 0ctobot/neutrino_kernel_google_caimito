@@ -794,6 +794,7 @@ static const struct of_device_id of_g2d_match[] __refconst = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, of_g2d_match);
 
 static int g2d_probe(struct platform_device *pdev)
 {

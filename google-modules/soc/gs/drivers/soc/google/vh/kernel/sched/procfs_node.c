@@ -85,6 +85,20 @@ extern spinlock_t prefer_idle_task_name_lock;
 static const char *GRP_NAME[VG_MAX] = {"sys", "ta", "fg", "cam", "cam_power", "bg", "sys_bg",
 				       "nnapi", "rt", "dex2oat", "ota", "sf", "fg_wi"};
 
+static const unsigned int SCHED_QOS_PROFILES[SCHED_QOS_MAX] = {
+	/* SCHED_QOS_NONE */
+	0,
+	/* SCHED_QOS_POWER_EFFICIENCY */
+	BIT(SCHED_QOS_AUTO_UCLAMP_MAX_BIT),
+	/* SCHED_QOS_SENSITIVE_STANDARD */
+	BIT(SCHED_QOS_ADPF_BIT) | BIT(SCHED_QOS_PREFER_IDLE_BIT) | BIT(SCHED_QOS_PREFER_FIT_BIT),
+	/* SCHED_QOS_SENSITIVE_HIGH */
+	BIT(SCHED_QOS_ADPF_BIT) | BIT(SCHED_QOS_PREFER_IDLE_BIT) | BIT(SCHED_QOS_PREFER_FIT_BIT) |
+	BIT(SCHED_QOS_PREEMPT_WAKEUP_BIT),
+	/* SCHED_QOS_SENSITIVE_EXTREME */
+	BIT(SCHED_QOS_ADPF_BIT) | BIT(SCHED_QOS_PREFER_IDLE_BIT) | BIT(SCHED_QOS_PREFER_FIT_BIT) |
+	BIT(SCHED_QOS_PREEMPT_WAKEUP_BIT) | BIT(SCHED_QOS_BOOST_PRIO_BIT) };
+
 enum vendor_procfs_type {
 	DEFAULT_TYPE = 0,
 	GROUPED_CONTROL,
@@ -387,7 +401,7 @@ enum vendor_procfs_type {
 		PROC_OPS_WO(__attr##_clear);
 
 #define PER_TASK_UINT_ATTRIBUTE(__attr)						      \
-		static ssize_t __attr##_set##_store(struct file *filp, \
+		static ssize_t __attr##_store(struct file *filp, \
 			const char __user *ubuf, \
 			size_t count, loff_t *pos) \
 		{									      \
@@ -398,26 +412,10 @@ enum vendor_procfs_type {
 			if (copy_from_user(buf, ubuf, count))	\
 				return -EFAULT;	\
 			buf[count] = '\0';	\
-			ret = update_##__attr(buf, true, count);   \
+			ret = update_##__attr(buf, count);   \
 			return ret ?: count;						      \
 		}									      \
-		PROC_OPS_WO(__attr##_set);	\
-		static ssize_t __attr##_clear##_store(struct file *filp, \
-			const char __user *ubuf, \
-			size_t count, loff_t *pos) \
-		{									      \
-			char buf[MAX_PROC_SIZE];	\
-			int ret;	\
-			if (count >= sizeof(buf))	\
-				return -EINVAL;	\
-			if (copy_from_user(buf, ubuf, count))	\
-				return -EFAULT;	\
-			buf[count] = '\0';	\
-			ret = update_##__attr(buf, false, count);   \
-			return ret ?: count;						      \
-		}									      \
-		PROC_OPS_WO(__attr##_clear);
-
+		PROC_OPS_WO(__attr);
 
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 #define UTILIZATION_GROUP_UINT_ATTRIBUTE(__grp, __attr, __ug)				      \
@@ -1412,12 +1410,11 @@ static int update_prefer_idle(const char *buf, bool val)
 	}
 
 	vp = get_vendor_task_struct(p);
-	vp->prefer_idle = val;
 
 	if (val)
-		vp->sched_qos_user_defined_flag |= SCHED_QOS_PREFER_IDLE_BIT;
+		set_bit(SCHED_QOS_PREFER_IDLE_BIT, &vp->sched_qos_user_defined_flag);
 	else
-		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_PREFER_IDLE_BIT;
+		clear_bit(SCHED_QOS_PREFER_IDLE_BIT, &vp->sched_qos_user_defined_flag);
 
 	put_task_struct(p);
 	rcu_read_unlock();
@@ -1432,6 +1429,7 @@ static int update_boost_prio(const char *buf, bool val)
 	pid_t pid;
 	struct rq_flags rf;
 	struct rq *rq;
+	bool prev_boost_prio;
 
 	if (kstrtoint(buf, 0, &pid) || pid <= 0)
 		return -EINVAL;
@@ -1452,21 +1450,25 @@ static int update_boost_prio(const char *buf, bool val)
 	}
 
 	vp = get_vendor_task_struct(p);
+	prev_boost_prio = !!(vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_BOOST_PRIO_BIT));
 
-	if (vp->boost_prio != val) {
-		vp->boost_prio = val;
-		/* Only allow update_task_prio when group qos_boost_prio_enable is true. */
-		if (vg[vp->group].qos_boost_prio_enable) {
+	if (val)
+		set_bit(SCHED_QOS_BOOST_PRIO_BIT, &vp->sched_qos_user_defined_flag);
+	else
+		clear_bit(SCHED_QOS_BOOST_PRIO_BIT, &vp->sched_qos_user_defined_flag);
+
+	if (prev_boost_prio != val) {
+		/* Only boost task prio when both val and group qos_boost_prio_enable are true. */
+		if (val && vg[vp->group].qos_boost_prio_enable) {
 			rq = task_rq_lock(p, &rf);
-			update_task_prio(p, vp, val);
+			update_task_prio(p, vp, true);
+			task_rq_unlock(rq, p, &rf);
+		} else {
+			rq = task_rq_lock(p, &rf);
+			update_task_prio(p, vp, false);
 			task_rq_unlock(rq, p, &rf);
 		}
 	}
-
-	if (val)
-		vp->sched_qos_user_defined_flag |= SCHED_QOS_BOOST_PRIO_BIT;
-	else
-		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_BOOST_PRIO_BIT;
 
 	put_task_struct(p);
 	rcu_read_unlock();
@@ -1499,12 +1501,11 @@ static int update_prefer_fit(const char *buf, bool val)
 	}
 
 	vp = get_vendor_task_struct(p);
-	vp->prefer_fit = val;
 
 	if (val)
-		vp->sched_qos_user_defined_flag |= SCHED_QOS_PREFER_FIT_BIT;
+		set_bit(SCHED_QOS_PREFER_FIT_BIT, &vp->sched_qos_user_defined_flag);
 	else
-		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_PREFER_FIT_BIT;
+		clear_bit(SCHED_QOS_PREFER_FIT_BIT, &vp->sched_qos_user_defined_flag);
 
 	put_task_struct(p);
 	rcu_read_unlock();
@@ -1517,6 +1518,7 @@ static int update_adpf(const char *buf, bool val)
 	struct vendor_task_struct *vp;
 	struct task_struct *p;
 	pid_t pid;
+	bool old_adpf;
 
 	if (kstrtoint(buf, 0, &pid) || pid <= 0)
 		return -EINVAL;
@@ -1537,12 +1539,25 @@ static int update_adpf(const char *buf, bool val)
 	}
 
 	vp = get_vendor_task_struct(p);
-	vp->adpf = val;
+	raw_spin_lock(&p->pi_lock);
 
-	if (val)
-		vp->sched_qos_user_defined_flag |= SCHED_QOS_ADPF_BIT;
-	else
-		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_ADPF_BIT;
+	old_adpf = !!(vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_ADPF_BIT));
+
+	if (old_adpf != val) {
+		if (val)
+			set_bit(SCHED_QOS_ADPF_BIT, &vp->sched_qos_user_defined_flag);
+		else
+			clear_bit(SCHED_QOS_ADPF_BIT, &vp->sched_qos_user_defined_flag);
+
+		if (task_on_rq_queued(p)) {
+			if (old_adpf && !get_adpf(p, true))
+				dec_adpf_counter(p, task_rq(p));
+			else if (!old_adpf && get_adpf(p, true))
+				inc_adpf_counter(p, task_rq(p));
+		}
+	}
+
+	raw_spin_unlock(&p->pi_lock);
 
 	put_task_struct(p);
 	rcu_read_unlock();
@@ -1575,12 +1590,11 @@ static int update_preempt_wakeup(const char *buf, bool val)
 	}
 
 	vp = get_vendor_task_struct(p);
-	vp->preempt_wakeup = val;
 
 	if (val)
-		vp->sched_qos_user_defined_flag |= SCHED_QOS_PREEMPT_WAKEUP_BIT;
+		set_bit(SCHED_QOS_PREEMPT_WAKEUP_BIT, &vp->sched_qos_user_defined_flag);
 	else
-		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_PREEMPT_WAKEUP_BIT;
+		clear_bit(SCHED_QOS_PREEMPT_WAKEUP_BIT, &vp->sched_qos_user_defined_flag);
 
 	put_task_struct(p);
 	rcu_read_unlock();
@@ -1613,12 +1627,11 @@ static int update_auto_uclamp_max(const char *buf, bool val)
 	}
 
 	vp = get_vendor_task_struct(p);
-	vp->auto_uclamp_max = val;
 
 	if (val)
-		vp->sched_qos_user_defined_flag |= SCHED_QOS_AUTO_UCLAMP_MAX_BIT;
+		set_bit(SCHED_QOS_AUTO_UCLAMP_MAX_BIT, &vp->sched_qos_user_defined_flag);
 	else
-		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_AUTO_UCLAMP_MAX_BIT;
+		clear_bit(SCHED_QOS_AUTO_UCLAMP_MAX_BIT, &vp->sched_qos_user_defined_flag);
 
 	put_task_struct(p);
 	rcu_read_unlock();
@@ -1651,12 +1664,11 @@ static int update_prefer_high_cap(const char *buf, bool val)
 	}
 
 	vp = get_vendor_task_struct(p);
-	vp->prefer_high_cap = val;
 
 	if (val)
-		vp->sched_qos_user_defined_flag |= SCHED_QOS_PREFER_HIGH_CAP_BIT;
+		set_bit(SCHED_QOS_PREFER_HIGH_CAP_BIT, &vp->sched_qos_user_defined_flag);
 	else
-		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_PREFER_HIGH_CAP_BIT;
+		clear_bit(SCHED_QOS_PREFER_HIGH_CAP_BIT, &vp->sched_qos_user_defined_flag);
 
 	put_task_struct(p);
 	rcu_read_unlock();
@@ -1664,7 +1676,10 @@ static int update_prefer_high_cap(const char *buf, bool val)
 	return 0;
 }
 
-static int update_rampup_multiplier(const char *buf, bool set, int count)
+/*
+ * To set per task rampup multiplier, write the format of pid:multiplier.
+ */
+static int update_rampup_multiplier_set(const char *buf, int count)
 {
 	struct vendor_task_struct *vp;
 	struct task_struct *p;
@@ -1673,78 +1688,317 @@ static int update_rampup_multiplier(const char *buf, bool set, int count)
 	char *str1, *str2, *pid_str, *multiplier_str;
 	int ret = 0;
 
-	if (set) {
-		str1 = kstrndup(buf, count, GFP_KERNEL);
-		if (!str1)
-			return -ENOMEM;
+	str1 = kstrndup(buf, count, GFP_KERNEL);
+	if (!str1)
+		return -ENOMEM;
 
-		str2 = str1;
-		pid_str = strsep(&str2, ":");
-		multiplier_str = str2;
+	str2 = str1;
+	pid_str = strsep(&str2, ":");
+	multiplier_str = str2;
 
-		if (pid_str == NULL || multiplier_str == NULL) {
-			ret = -EINVAL;
-			goto error_free;
-		}
-
-		if (kstrtouint(pid_str, 0, &pid) || kstrtouint(multiplier_str, 0, &multiplier)) {
-			ret = -EINVAL;
-			goto error_free;
-		}
-
-		rcu_read_lock();
-		p = find_task_by_vpid(pid);
-		if (!p) {
-			ret = -ESRCH;
-			goto error_unlock_set;
-		}
-
-		get_task_struct(p);
-
-		if (!check_cred(p)) {
-			ret = -EACCES;
-			goto error_put_task_set;
-		}
-
-		vp = get_vendor_task_struct(p);
-		vp->rampup_multiplier = multiplier;
-		vp->sched_qos_user_defined_flag |= SCHED_QOS_RAMPUP_MULTIPLIER_BIT;
-error_put_task_set:
-		put_task_struct(p);
-error_unlock_set:
-		rcu_read_unlock();
-error_free:
-		kfree(str1);
-
-	} else {
-
-		if (kstrtoint(buf, 0, &pid) || pid <= 0)
-			return -EINVAL;
-
-		rcu_read_lock();
-		p = find_task_by_vpid(pid);
-		if (!p) {
-			ret = -ESRCH;
-			goto error_unlock_clear;
-		}
-
-		get_task_struct(p);
-
-		if (!check_cred(p)) {
-			ret = -EACCES;
-			goto error_put_task_clear;
-		}
-
-		vp = get_vendor_task_struct(p);
-		vp->rampup_multiplier = 1;
-		vp->sched_qos_user_defined_flag &= ~SCHED_QOS_RAMPUP_MULTIPLIER_BIT;
-error_put_task_clear:
-		put_task_struct(p);
-error_unlock_clear:
-		rcu_read_unlock();
+	if (pid_str == NULL || multiplier_str == NULL) {
+		ret = -EINVAL;
+		goto error_free;
 	}
 
+	if (kstrtouint(pid_str, 0, &pid) || kstrtouint(multiplier_str, 0, &multiplier)) {
+		ret = -EINVAL;
+		goto error_free;
+	}
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		ret = -ESRCH;
+		goto error_unlock;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		ret = -EACCES;
+		goto error_put_task;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->rampup_multiplier = multiplier;
+	set_bit(SCHED_QOS_RAMPUP_MULTIPLIER_BIT, &vp->sched_qos_user_defined_flag);
+
+error_put_task:
+	put_task_struct(p);
+error_unlock:
+	rcu_read_unlock();
+error_free:
+	kfree(str1);
+
 	return ret;
+}
+
+/*
+ * To clear per task rampup multiplier, just write pid.
+ */
+static int update_rampup_multiplier_clear(const char *buf, int count)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->rampup_multiplier = 1;
+	clear_bit(SCHED_QOS_RAMPUP_MULTIPLIER_BIT, &vp->sched_qos_user_defined_flag);
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
+}
+
+/*
+ * sched qos profiels that need to take effect immediately.
+ */
+static void update_sched_qos_profiles(struct task_struct *p, struct vendor_task_struct *vp)
+{
+	struct rq_flags rf;
+	struct rq *rq;
+	bool old, new;
+
+	/* boost prio */
+	old = !!(vp->prev_sched_qos_user_defined_flag & BIT(SCHED_QOS_BOOST_PRIO_BIT));
+	new = !!(vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_BOOST_PRIO_BIT));
+
+	if (old != new) {
+		/* Only boost task prio when both new and group qos_boost_prio_enable are true. */
+		if (new && vg[vp->group].qos_boost_prio_enable) {
+			rq = task_rq_lock(p, &rf);
+			update_task_prio(p, vp, true);
+			task_rq_unlock(rq, p, &rf);
+		} else {
+			rq = task_rq_lock(p, &rf);
+			update_task_prio(p, vp, false);
+			task_rq_unlock(rq, p, &rf);
+		}
+	}
+}
+
+static int update_sched_qos_none(const char *buf, int count)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->sched_qos_profile = SCHED_QOS_NONE;
+	vp->prev_sched_qos_user_defined_flag = vp->sched_qos_user_defined_flag;
+	/*
+	 * Clear all bits except SCHED_QOS_RAMPUP_MULTIPLIER_BIT.
+	 */
+	vp->sched_qos_user_defined_flag &= BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
+	update_sched_qos_profiles(p, vp);
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int update_sched_qos_power_efficiency(const char *buf, int count)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->sched_qos_profile = SCHED_QOS_POWER_EFFICIENCY;
+	vp->prev_sched_qos_user_defined_flag = vp->sched_qos_user_defined_flag;
+	/*
+	 Clear all bits except SCHED_QOS_RAMPUP_MULTIPLIER_BIT.
+	*/
+	vp->sched_qos_user_defined_flag &= BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
+
+	vp->sched_qos_user_defined_flag |= SCHED_QOS_PROFILES[SCHED_QOS_POWER_EFFICIENCY];
+	update_sched_qos_profiles(p, vp);
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int update_sched_qos_sensitive_standard(const char *buf, int count)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->sched_qos_profile = SCHED_QOS_SENSITIVE_STANDARD;
+	vp->prev_sched_qos_user_defined_flag = vp->sched_qos_user_defined_flag;
+	/*
+	 Clear all bits except SCHED_QOS_RAMPUP_MULTIPLIER_BIT.
+	*/
+	vp->sched_qos_user_defined_flag &= BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
+
+	vp->sched_qos_user_defined_flag |= SCHED_QOS_PROFILES[SCHED_QOS_SENSITIVE_STANDARD];
+	update_sched_qos_profiles(p, vp);
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int update_sched_qos_sensitive_high(const char *buf, int count)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->sched_qos_profile = SCHED_QOS_SENSITIVE_HIGH;
+	vp->prev_sched_qos_user_defined_flag = vp->sched_qos_user_defined_flag;
+	/*
+	 Clear all bits except SCHED_QOS_RAMPUP_MULTIPLIER_BIT.
+	*/
+	vp->sched_qos_user_defined_flag &= BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
+
+	vp->sched_qos_user_defined_flag |= SCHED_QOS_PROFILES[SCHED_QOS_SENSITIVE_HIGH];
+	update_sched_qos_profiles(p, vp);
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int update_sched_qos_sensitive_extreme(const char *buf, int count)
+{
+	struct vendor_task_struct *vp;
+	struct task_struct *p;
+	pid_t pid;
+
+	if (kstrtoint(buf, 0, &pid) || pid <= 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(pid);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	vp = get_vendor_task_struct(p);
+	vp->sched_qos_profile = SCHED_QOS_SENSITIVE_EXTREME;
+	vp->prev_sched_qos_user_defined_flag = vp->sched_qos_user_defined_flag;
+	/*
+	 Clear all bits except SCHED_QOS_RAMPUP_MULTIPLIER_BIT.
+	*/
+	vp->sched_qos_user_defined_flag &= BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
+
+	vp->sched_qos_user_defined_flag |= SCHED_QOS_PROFILES[SCHED_QOS_SENSITIVE_EXTREME];
+	update_sched_qos_profiles(p, vp);
+
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	return 0;
 }
 
 static inline void migrate_boost_prio(struct task_struct *p, unsigned int old, unsigned int new)
@@ -1753,7 +2007,8 @@ static inline void migrate_boost_prio(struct task_struct *p, unsigned int old, u
 	struct rq *rq;
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
 
-	if (vp->boost_prio && vg[old].qos_boost_prio_enable != vg[new].qos_boost_prio_enable) {
+	if (vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_BOOST_PRIO_BIT) &&
+	    vg[old].qos_boost_prio_enable != vg[new].qos_boost_prio_enable) {
 		/* Boost prio to 100. */
 		if (vg[new].qos_boost_prio_enable) {
 			rq = task_rq_lock(p, &rf);
@@ -1978,7 +2233,13 @@ PER_TASK_BOOL_ATTRIBUTE(adpf);
 PER_TASK_BOOL_ATTRIBUTE(preempt_wakeup);
 PER_TASK_BOOL_ATTRIBUTE(auto_uclamp_max);
 PER_TASK_BOOL_ATTRIBUTE(prefer_high_cap);
-PER_TASK_UINT_ATTRIBUTE(rampup_multiplier);
+PER_TASK_UINT_ATTRIBUTE(rampup_multiplier_set);
+PER_TASK_UINT_ATTRIBUTE(rampup_multiplier_clear);
+PER_TASK_UINT_ATTRIBUTE(sched_qos_none);
+PER_TASK_UINT_ATTRIBUTE(sched_qos_power_efficiency);
+PER_TASK_UINT_ATTRIBUTE(sched_qos_sensitive_standard);
+PER_TASK_UINT_ATTRIBUTE(sched_qos_sensitive_high);
+PER_TASK_UINT_ATTRIBUTE(sched_qos_sensitive_extreme);
 
 static int dump_task_show(struct seq_file *m, void *v)
 {
@@ -1988,18 +2249,10 @@ static int dump_task_show(struct seq_file *m, void *v)
 	unsigned int uclamp_min, uclamp_max, uclamp_eff_min, uclamp_eff_max, adpf_adj;
 	enum vendor_group group;
 	const char *grp_name = "unknown";
-	bool adpf;
-	bool prefer_idle;
-	bool prefer_fit;
-	bool boost_prio;
-	bool preempt_wakeup;
-	bool auto_uclamp_max;
-	bool prefer_high_cap;
 	unsigned int rampup_multiplier;
 
 	seq_printf(m, "pid comm group uclamp_min uclamp_max uclamp_eff_min uclamp_eff_max " \
-		   "adpf_adj real_cap_avg adpf prefer_idle prefer_fit boost_prio " \
-		   "preempt_wakeup auto_uclamp_max prefer_high_cap rampup_multiplier\n");
+		   "adpf_adj real_cap_avg sched_qos_user_defined_flag rampup_multiplier\n");
 
 	rcu_read_lock();
 
@@ -2015,21 +2268,13 @@ static int dump_task_show(struct seq_file *m, void *v)
 		uclamp_max = t->uclamp_req[UCLAMP_MAX].value;
 		uclamp_eff_min = uclamp_eff_value_pixel_mod(t, UCLAMP_MIN);
 		uclamp_eff_max = uclamp_eff_value_pixel_mod(t, UCLAMP_MAX);
-		adpf = vp->adpf;
-		prefer_idle = vp->prefer_idle;
-		prefer_fit = vp->prefer_fit;
-		boost_prio = vp->boost_prio;
-		preempt_wakeup = vp->preempt_wakeup;
-		auto_uclamp_max = vp->auto_uclamp_max;
-		prefer_high_cap = vp->prefer_high_cap;
 		rampup_multiplier = vp->rampup_multiplier;
 		put_task_struct(t);
 
-		seq_printf(m, "%u %s %s %u %u %u %u 0x%X %llu %d %d %d %d %d %d %d %u\n",
+		seq_printf(m, "%u %s %s %u %u %u %u 0x%X %llu 0x%lx %u\n",
 			   t->pid, t->comm, grp_name, uclamp_min, uclamp_max, uclamp_eff_min,
-			   uclamp_eff_max, adpf_adj, real_cap_avg, adpf, prefer_idle,
-			   prefer_fit, boost_prio, preempt_wakeup,
-			   auto_uclamp_max, prefer_high_cap, rampup_multiplier);
+			   uclamp_eff_max, adpf_adj, real_cap_avg, vp->sched_qos_user_defined_flag,
+			   rampup_multiplier);
 	}
 
 	rcu_read_unlock();
@@ -3778,6 +4023,11 @@ static struct pentry entries[] = {
 	PROC_SCHED_QOS_ENTRY(prefer_high_cap_clear),
 	PROC_SCHED_QOS_ENTRY(rampup_multiplier_set),
 	PROC_SCHED_QOS_ENTRY(rampup_multiplier_clear),
+	PROC_SCHED_QOS_ENTRY(sched_qos_none),
+	PROC_SCHED_QOS_ENTRY(sched_qos_power_efficiency),
+	PROC_SCHED_QOS_ENTRY(sched_qos_sensitive_standard),
+	PROC_SCHED_QOS_ENTRY(sched_qos_sensitive_high),
+	PROC_SCHED_QOS_ENTRY(sched_qos_sensitive_extreme),
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
 	// FG util group attributes
 #if IS_ENABLED(CONFIG_USE_GROUP_THROTTLE)

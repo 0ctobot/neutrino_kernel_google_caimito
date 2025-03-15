@@ -322,6 +322,7 @@ static const struct of_device_id keydebug_match_table[] = {
 	{ .compatible = KEYDEBUG_NAME},
 	{},
 };
+MODULE_DEVICE_TABLE(of, keydebug_match_table);
 #else
 #define keydebug_match_table NULL
 #endif

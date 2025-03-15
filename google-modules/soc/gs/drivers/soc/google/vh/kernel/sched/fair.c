@@ -2599,7 +2599,7 @@ void rvh_set_user_nice_locked_pixel_mod(void *data, struct task_struct *p, long 
 		return;
 
 	vp = get_vendor_task_struct(p);
-	if (vp->boost_prio) {
+	if (get_boost_prio(p)) {
 		raw_spin_lock_irqsave(&vp->lock, irqflags);
 		p->normal_prio = p->static_prio = vp->orig_prio = NICE_TO_PRIO(*nice);
 		raw_spin_unlock_irqrestore(&vp->lock, irqflags);
@@ -2623,7 +2623,7 @@ void rvh_setscheduler_pixel_mod(void *data, struct task_struct *p)
 		return;
 
 	vp = get_vendor_task_struct(p);
-	if (vp->boost_prio) {
+	if (get_boost_prio(p)) {
 		raw_spin_lock_irqsave(&vp->lock, irqflags);
 		vp->orig_prio = p->static_prio;
 		raw_spin_unlock_irqrestore(&vp->lock, irqflags);

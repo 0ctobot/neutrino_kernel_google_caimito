@@ -1985,6 +1985,7 @@ static const struct of_device_id sysmmu_of_match[] = {
 	{ .compatible	= "samsung,pcie-sysmmu", },
 	{ },
 };
+MODULE_DEVICE_TABLE(of, sysmmu_of_match);
 
 static struct platform_driver exynos_sysmmu_driver __refdata = {
 	.probe	= exynos_sysmmu_probe,

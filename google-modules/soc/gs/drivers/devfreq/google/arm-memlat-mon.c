@@ -1009,6 +1009,7 @@ static const struct of_device_id memlat_match_table[] = {
 	{ .compatible = "arm-memlat-mon", .data = &spec[1] },
 	{}
 };
+MODULE_DEVICE_TABLE(of, memlat_match_table);
 
 static struct platform_driver arm_memlat_mon_driver = {
 	.probe = arm_memlat_mon_driver_probe,

@@ -144,6 +144,7 @@ static const struct of_device_id cmuewf_match[] = {
 	{ .compatible = "samsung,exynos-cmuewf" },
 	{},
 };
+MODULE_DEVICE_TABLE(of, cmuewf_match);
 
 static struct platform_driver samsung_cmuewf_driver = {
 	.probe	= cmuewf_probe,

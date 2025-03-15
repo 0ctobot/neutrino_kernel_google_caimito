@@ -858,9 +858,13 @@ err_client_data:
 	return ret;
 }
 
-static const struct of_device_id gs_perf_mon_root_match[] = { {
-	.compatible = "google,gs_perf_mon",
-} };
+static const struct of_device_id gs_perf_mon_root_match[] = {
+	{
+		.compatible = "google,gs_perf_mon",
+	},
+	{}
+};
+MODULE_DEVICE_TABLE(of, gs_perf_mon_root_match);
 
 static struct platform_driver gs_perf_mon_platform_driver = {
 	.probe = gs_perf_mon_driver_probe,
