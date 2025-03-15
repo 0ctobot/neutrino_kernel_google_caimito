@@ -722,8 +722,7 @@ err:
 static void dp_init_link_training_eq(struct dp_device *dp, u8 tps)
 {
 	/* Set DP Training Pattern */
-	if ((tps & DP_SUPPORT_TPS(4)) &&
-	    drm_dp_link_rate_to_bw_code(dp->link.link_rate) == DP_LINK_BW_8_1) {
+	if (tps & DP_SUPPORT_TPS(4)) {
 		dp_info(dp, "enable DP training pattern 4\n");
 		dp_hw_set_training_pattern(TRAINING_PATTERN_4);
 		drm_dp_dpcd_writeb(&dp->dp_aux, DP_TRAINING_PATTERN_SET,
@@ -1048,7 +1047,8 @@ static int dp_link_up(struct dp_device *dp)
 	}
 
 	/* Get DFP count */
-	if (dpcd[DP_DOWNSTREAMPORT_PRESENT] & DP_DWN_STRM_PORT_PRESENT) {
+	if (drm_dp_is_branch(dpcd)) {
+		dp->branch_dev = true;
 		dp->dfp_count = dpcd[DP_DOWN_STREAM_PORT_COUNT] & DP_PORT_COUNT_MASK;
 		ret = drm_dp_dpcd_read(&dp->dp_aux, DP_DOWNSTREAM_PORT_0, dfp_info,
 				       DP_MAX_DOWNSTREAM_PORTS);
@@ -1070,6 +1070,7 @@ static int dp_link_up(struct dp_device *dp)
 			return -EINVAL;
 		}
 	} else {
+		dp->branch_dev = false;
 		dp->dfp_count = 0;
 		dp_info(dp, "DP Sink: sink count = %d\n", dp->sink_count);
 
@@ -1812,15 +1813,16 @@ static void dp_automated_test_set_lane_req(struct dp_device *dp, u8 *val)
 
 static int dp_automated_test_irq_handler(struct dp_device *dp)
 {
-	u8 dpcd_test_req = 0, dpcd_test_res = 0;
-	u8 dpcd_req_lane[2] = { 0 }, dpcd_phy_test_pattern = 0;
+	u8 dpcd_test_req = 0;
+	u8 dpcd_test_res = DP_TEST_ACK;
+	u8 dpcd_req_lane[2] = { 0, 0 };
+	u8 dpcd_phy_test_pattern = 0;
 
 	drm_dp_dpcd_readb(&dp->dp_aux, DP_TEST_REQUEST, &dpcd_test_req);
 
-	dpcd_test_res = DP_TEST_ACK;
-	drm_dp_dpcd_writeb(&dp->dp_aux, DP_TEST_RESPONSE, dpcd_test_res);
-
 	if (dpcd_test_req & DP_TEST_LINK_PHY_TEST_PATTERN) {
+		dp_info(dp, "Automated Test: PHY Test Pattern\n");
+
 		dp_hw_stop();
 		msleep(120);
 
@@ -1850,14 +1852,50 @@ static int dp_automated_test_irq_handler(struct dp_device *dp)
 			dp_hw_set_quality_pattern(HBR2_COMPLIANCE, ENABLE_SCRAM);
 			break;
 		default:
-			dp_err(dp, "Not Supported PHY_TEST_PATTERN: %02x\n", dpcd_phy_test_pattern);
+			dp_err(dp, "Unsupported PHY Test Pattern: %02x\n", dpcd_phy_test_pattern);
+			dpcd_test_res = DP_TEST_NAK;
 			break;
 		}
+
+	} else if (dpcd_test_req & DP_TEST_LINK_EDID_READ) {
+		u8 data[EDID_LENGTH];
+		u8 ext_count;
+		u8 checksum;
+		u8 i;
+
+		dp_info(dp, "Automated Test: EDID Read\n");
+
+		/* read EDID block 0 */
+		dp_hw_read_edid(0, EDID_LENGTH, data);
+		dp_info(dp, "EDID: block 0\n");
+		print_hex_dump(KERN_INFO, "exynos-drmdp: ", DUMP_PREFIX_NONE, 16, 1,
+				data, EDID_LENGTH, true);
+
+		/* read all extension blocks */
+		ext_count = data[EDID_LENGTH - 2];
+		for (i = 1; i <= ext_count; i++) {
+			dp_hw_read_edid(i, EDID_LENGTH, data);
+			dp_info(dp, "EDID: block %u\n", i);
+			print_hex_dump(KERN_INFO, "exynos-drmdp: ", DUMP_PREFIX_NONE, 16, 1,
+					data, EDID_LENGTH, true);
+		}
+
+		/* re-calculate checksum from the last EDID block */
+		checksum = 0;
+		for (i = 0; i < EDID_LENGTH - 1; i++)
+			checksum += data[i];
+		checksum = -checksum;
+		dp_info(dp, "EDID: last block checksum = %02x\n", checksum);
+
+		drm_dp_dpcd_writeb(&dp->dp_aux, DP_TEST_EDID_CHECKSUM, checksum);
+		dpcd_test_res |= DP_TEST_EDID_CHECKSUM_WRITE;
+
 	} else {
-		dp_err(dp, "Not Supported AUTOMATED_TEST_REQUEST: %02x\n", dpcd_test_req);
-		return -EINVAL;
+		dp_err(dp, "Automated Test: Unsupported Request: %02x\n", dpcd_test_req);
+		dpcd_test_res = DP_TEST_NAK;
 	}
 
+	drm_dp_dpcd_writeb(&dp->dp_aux, DP_TEST_RESPONSE, dpcd_test_res);
 	return 0;
 }
 
@@ -1934,6 +1972,7 @@ static void dp_work_hpd(enum hotplug_state state)
 	struct exynos_drm_private *private = drm_to_exynos_dev(dev);
 	enum link_training_status link_status = LINK_TRAINING_UNKNOWN;
 	int ret;
+	u8 irq = 0;
 
 	if (dp->restart_pending) {
 		dp_debug(dp, "%s: ignored, because of restart_pending", __func__);
@@ -1984,6 +2023,15 @@ static void dp_work_hpd(enum hotplug_state state)
 			dp_update_link_status(dp, LINK_TRAINING_SUCCESS);
 			dp_on_by_hpd_plug(dp);
 		}
+
+		/* check for automated test request and schedule HPD_IRQ to handle it */
+		if (dp->sink.revision <= DP_DPCD_REV_12)
+			drm_dp_dpcd_readb(&dp->dp_aux, DP_DEVICE_SERVICE_IRQ_VECTOR, &irq);
+		else
+			drm_dp_dpcd_readb(&dp->dp_aux, DP_DEVICE_SERVICE_IRQ_VECTOR_ESI0, &irq);
+
+		if (irq & DP_AUTOMATED_TEST_REQUEST)
+			queue_work(dp->dp_wq, &dp->hpd_irq_work);
 
 		dp_info(dp, "[HPD_PLUG done]\n");
 
@@ -2102,9 +2150,10 @@ static void dp_work_hpd_irq(struct work_struct *work)
 		sink_count = drm_dp_read_sink_count(&dp->dp_aux);
 		dp_info(dp, "[HPD IRQ] sink count = %u\n", sink_count);
 
-		if (drm_dp_dpcd_readb(&dp->dp_aux, DP_DEVICE_SERVICE_IRQ_VECTOR, &irq) == 1)
+		if (drm_dp_dpcd_readb(&dp->dp_aux, DP_DEVICE_SERVICE_IRQ_VECTOR, &irq) == 1) {
 			dp_info(dp, "[HPD IRQ] device irq vector = %02x\n", irq);
-		else
+			drm_dp_dpcd_writeb(&dp->dp_aux, DP_DEVICE_SERVICE_IRQ_VECTOR, irq);
+		} else
 			dp_err(dp, "[HPD IRQ] cannot read DP_DEVICE_SERVICE_IRQ_VECTOR\n");
 
 		if (drm_dp_dpcd_read_link_status(&dp->dp_aux, link_status) == DP_LINK_STATUS_SIZE)
@@ -2119,19 +2168,22 @@ static void dp_work_hpd_irq(struct work_struct *work)
 		} else
 			dp_err(dp, "[HPD IRQ] cannot read DP_SINK_COUNT_ESI\n");
 
-		if (drm_dp_dpcd_readb(&dp->dp_aux, DP_DEVICE_SERVICE_IRQ_VECTOR_ESI0, &irq) == 1)
+		if (drm_dp_dpcd_readb(&dp->dp_aux, DP_DEVICE_SERVICE_IRQ_VECTOR_ESI0, &irq) == 1) {
 			dp_info(dp, "[HPD IRQ] device irq vector esi0 = %02x\n", irq);
-		else
+			drm_dp_dpcd_writeb(&dp->dp_aux, DP_DEVICE_SERVICE_IRQ_VECTOR_ESI0, irq);
+		} else
 			dp_err(dp, "[HPD IRQ] cannot read DP_DEVICE_SERVICE_IRQ_VECTOR_ESI0\n");
 
-		if (drm_dp_dpcd_readb(&dp->dp_aux, DP_DEVICE_SERVICE_IRQ_VECTOR_ESI1, &irq2) == 1)
+		if (drm_dp_dpcd_readb(&dp->dp_aux, DP_DEVICE_SERVICE_IRQ_VECTOR_ESI1, &irq2) == 1) {
 			dp_info(dp, "[HPD IRQ] device irq vector esi1 = %02x\n", irq2);
-		else
+			drm_dp_dpcd_writeb(&dp->dp_aux, DP_DEVICE_SERVICE_IRQ_VECTOR_ESI1, irq2);
+		} else
 			dp_err(dp, "[HPD IRQ] cannot read DP_DEVICE_SERVICE_IRQ_VECTOR_ESI1\n");
 
-		if (drm_dp_dpcd_readb(&dp->dp_aux, DP_LINK_SERVICE_IRQ_VECTOR_ESI0, &irq3) == 1)
+		if (drm_dp_dpcd_readb(&dp->dp_aux, DP_LINK_SERVICE_IRQ_VECTOR_ESI0, &irq3) == 1) {
 			dp_info(dp, "[HPD IRQ] link irq vector esi0 = %02x\n", irq3);
-		else
+			drm_dp_dpcd_writeb(&dp->dp_aux, DP_LINK_SERVICE_IRQ_VECTOR_ESI0, irq3);
+		} else
 			dp_err(dp, "[HPD IRQ] cannot read DP_LINK_SERVICE_IRQ_VECTOR_ESI0\n");
 
 		if (drm_dp_dpcd_read(&dp->dp_aux, DP_LANE0_1_STATUS_ESI, link_status,
@@ -2142,9 +2194,9 @@ static void dp_work_hpd_irq(struct work_struct *work)
 			dp_err(dp, "[HPD IRQ] cannot read link status\n");
 	}
 
-	if (dp->dfp_count > 0) {
+	if (dp->branch_dev) {
 		/* Sanity-check the sink count */
-		if (sink_count > dp->dfp_count) {
+		if (sink_count > dp->dfp_count + 1) {
 			dp_err(dp, "[HPD IRQ] invalid sink count, adjusting to 0\n");
 			sink_count = 0;
 		}
@@ -2172,13 +2224,16 @@ process_irq:
 	if (irq & DP_CP_IRQ) {
 		dp_info(dp, "[HPD IRQ] Content Protection\n");
 		hdcp_dplink_handle_irq();
-	} else if (irq & DP_AUTOMATED_TEST_REQUEST) {
+		irq &= ~DP_CP_IRQ;
+	}
+
+	if (irq & DP_AUTOMATED_TEST_REQUEST) {
 		dp_info(dp, "[HPD IRQ] Automated Test Request\n");
 		dp_automated_test_irq_handler(dp);
-	} else if (irq & DP_SINK_SPECIFIC_IRQ) {
-		dp_info(dp, "[HPD IRQ] Sink Specific\n");
-		dp_link_down_event_handler(dp);
-	} else
+		irq &= ~DP_AUTOMATED_TEST_REQUEST;
+	}
+
+	if (irq)
 		dp_info(dp, "[HPD IRQ] unknown IRQ (0x%X)\n", irq);
 
 release_irq_resource:

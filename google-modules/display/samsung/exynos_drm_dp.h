@@ -211,6 +211,7 @@ struct dp_device {
 	struct dp_sink sink;
 
 	/* DP Branch Device support */
+	bool branch_dev;
 	int sink_count;
 	int dfp_count;
 

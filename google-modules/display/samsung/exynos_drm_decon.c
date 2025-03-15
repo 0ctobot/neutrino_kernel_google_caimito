@@ -1210,9 +1210,21 @@ static u32 _decon_get_current_fps(struct decon_device *decon)
 {
 	struct drm_crtc *crtc = &decon->crtc->base;
 	const struct drm_crtc_state *crtc_state = crtc->state;
-	u32 min_fps = min_t(u32, decon->bts.fps, drm_mode_vrefresh(&crtc_state->mode));
+	u32 min_fps;
 
-	return min_fps ? min_fps : 60;
+	if (!crtc_state->enable) {
+		decon_debug(decon, "when turning off the CRTC, use default fps to 60\n");
+		return 60;
+	}
+
+	min_fps = min_t(u32, decon->bts.fps, drm_mode_vrefresh(&crtc_state->mode));
+	if (!min_fps) {
+		decon_warn(decon, "invalid fps (bts.fps=%u, vrefresh=%d), use default fps=60\n",
+			   decon->bts.fps, drm_mode_vrefresh(&crtc_state->mode));
+		return 60;
+	}
+
+	return min_fps;
 }
 
 static void decon_print_config_info(struct decon_device *decon)
@@ -1324,9 +1336,9 @@ static void decon_mode_update_bts(struct decon_device *decon,
 	decon->config.image_width = mode->hdisplay;
 	decon->config.image_height = mode->vdisplay;
 
-	decon_info(decon, "update decon bts config for mode: %dx%dx%d(%d)\n",
-		mode->hdisplay, mode->vdisplay,
-		_decon_get_current_fps(decon), decon->bts.fps);
+	decon_info(decon, "update decon bts for mode: %s(%x:%d)(bts fps:%u mode:%d op:%u)\n",
+		   mode->name, mode->flags, mode->clock, decon->bts.fps, mode_bts_fps,
+		   decon->bts.op_rate);
 
 	atomic_set(&decon->bts.delayed_update, 0);
 

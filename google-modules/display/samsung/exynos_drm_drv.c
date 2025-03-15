@@ -145,8 +145,8 @@ static struct exynos_drm_priv_state *exynos_drm_get_priv_state(struct drm_atomic
 	struct drm_private_state *priv_state;
 
 	priv_state = drm_atomic_get_private_obj_state(state, &priv->obj);
-	if (IS_ERR(priv))
-		return ERR_CAST(priv);
+	if (IS_ERR(priv_state))
+		return ERR_CAST(priv_state);
 
 	return to_exynos_priv_state(priv_state);
 }

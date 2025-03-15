@@ -369,8 +369,12 @@ EXPORT_SYMBOL_GPL(exynos_drm_mode_te_freq);
 
 int exynos_drm_mode_bts_fps(const struct drm_display_mode *mode, unsigned int min_bts_fps)
 {
-	unsigned int bts_fps = drm_mode_vrefresh(mode);
+	int bts_fps = drm_mode_vrefresh(mode);
 
+	if (!bts_fps) {
+		bts_fps = 120;
+		pr_warn("invalid drm mode, use default bts_fps=120\n");
+	}
 	return (min_bts_fps > bts_fps) ? min_bts_fps : bts_fps;
 }
 EXPORT_SYMBOL_GPL(exynos_drm_mode_bts_fps);

@@ -72,6 +72,7 @@ static const struct of_device_id wb_of_match[] = {
 	},
 	{ /* sentinel */ },
 };
+MODULE_DEVICE_TABLE(of, wb_of_match);
 
 static int exynos_drm_add_writeback_modes(struct drm_connector *connector)
 {

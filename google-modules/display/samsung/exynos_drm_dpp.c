@@ -185,9 +185,10 @@ static const struct of_device_id dpp_of_match[] = {
 	{
 		.compatible = "samsung,exynos-dpp",
 		.data = &dpp_drv_data,
-	}, {
 	},
+	{},
 };
+MODULE_DEVICE_TABLE(of, dpp_of_match);
 
 static inline const char *get_comp_type_str(enum dpp_comp_type type)
 {
