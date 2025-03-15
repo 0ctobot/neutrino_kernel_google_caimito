@@ -191,6 +191,7 @@ static const struct of_device_id pixel_reboot_of_match[] = {
 	{ .compatible = "google,pixel-reboot" },
 	{}
 };
+MODULE_DEVICE_TABLE(of, pixel_reboot_of_match);
 
 static struct platform_driver pixel_reboot_driver = {
 	.probe = pixel_reboot_probe,
