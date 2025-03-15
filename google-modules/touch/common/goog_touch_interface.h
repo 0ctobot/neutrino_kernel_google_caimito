@@ -849,9 +849,8 @@ struct gti_pm {
  * @lptw_track_max_y: maximum y of tracking area.
  * @lptw_cancel_delayed_work: delayed work for canceling finger.
  * @lptw_cancel_time: record the time for lptw cancel timeout.
- * @qbt_lptw_down: true if the finger is still on the screen.
- * @qbt_lptw_x: x coordinate for the tracking finger.
- * @qbt_lptw_y: y coordinate for the tracking finger.
+ * @lptw_down: true if the finger is still on the screen.
+ * @lptw_data: x, y, major, minor, angle for the tracking finger.
  * @ignore_force_active: Ignore the force_active sysfs request.
  * @offload_id: id that used by touch offload.
  * @heatmap_buf: heatmap buffer that used by v4l2.
@@ -960,11 +959,18 @@ struct goog_touch_interface {
 	u32 lptw_track_max_y;
 	struct delayed_work lptw_cancel_delayed_work;
 	ktime_t lptw_cancel_time;
-#if IS_ENABLED(CONFIG_QCOM_QBT_HANDLER)
-	bool qbt_lptw_down;
-	int qbt_lptw_x;
-	int qbt_lptw_y;
-#endif
+
+	bool lptw_down;
+	union {
+		int lptw_data[5];
+		struct {
+			int lptw_x;
+			int lptw_y;
+			int lptw_major;
+			int lptw_minor;
+			int lptw_angle;
+		};
+	};
 
 	bool ignore_force_active;
 	bool gesture_config_enabled;
@@ -1085,6 +1091,7 @@ void gti_debug_healthcheck_dump(struct goog_touch_interface *gti);
 void gti_debug_input_dump(struct goog_touch_interface *gti);
 
 int goog_get_lptw_triggered(struct goog_touch_interface *gti);
+void goog_lptw_notifier_register(struct notifier_block *nb, bool reg);
 
 int goog_get_max_touch_report_rate(struct goog_touch_interface *gti);
 int goog_get_panel_id(struct device_node *node);

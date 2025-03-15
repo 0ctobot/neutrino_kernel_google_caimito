@@ -10,6 +10,7 @@ filegroup(
     ]),
     visibility = [
         "//private/devices/google:__subpackages__",
+        "//private/google-modules/fingerprint:__subpackages__",
         "//private/google-modules/touch:__subpackages__",
     ],
 )
@@ -21,6 +22,7 @@ filegroup(
     ],
     visibility = [
         "//private/devices/google:__subpackages__",
+        "//private/google-modules/fingerprint:__subpackages__",
         "//private/google-modules/soc/gs:__pkg__",
     ],
 )
@@ -55,7 +57,6 @@ kernel_module(
         "//private/google-modules/display/common:headers",
         "//private/google-modules/display/samsung:headers",
         "//private/google-modules/display/samsung/include:headers",
-        "//private/google-modules/fingerprint/qcom/qfs4008:headers",
         "//private/google-modules/soc/gs:gs_soc_headers",
     ],
     outs = [
@@ -67,6 +68,7 @@ kernel_module(
     kernel_build = "//private/devices/google/common:kernel",
     visibility = [
         "//private/devices/google:__subpackages__",
+        "//private/google-modules/fingerprint:__subpackages__",
         "//private/google-modules/soc/gs:__pkg__",
         "//private/google-modules/touch:__subpackages__",
     ],
@@ -75,10 +77,5 @@ kernel_module(
         "//private/google-modules/display/common/gs_drm",
         "//private/google-modules/display/samsung:display.samsung",
         "//private/google-modules/soc/gs:gs_soc_module",
-    ] + select({
-        "//private/google-modules/touch/common:touch_udfps_notification_enabled": [
-            "//private/google-modules/fingerprint/qcom/qfs4008:qbt_handler",
-        ],
-        "//private/google-modules/touch/common:touch_udfps_notification_disabled": [],
-    }),
+    ],
 )

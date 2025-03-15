@@ -8,14 +8,12 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/input/mt.h>
+#include <linux/notifier.h>
 #include <linux/of.h>
 #include <linux/power_supply.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <trace/hooks/systrace.h>
-#if IS_ENABLED(CONFIG_QCOM_QBT_HANDLER)
-#include <qbt_handler.h>
-#endif
 
 #if IS_ENABLED(CONFIG_GS_DRM_PANEL_UNIFIED)
 #include <gs_drm/gs_drm_connector.h>
@@ -39,12 +37,11 @@ static int goog_precheck_heatmap(struct goog_touch_interface *gti);
 static void goog_set_display_state(struct goog_touch_interface *gti,
 	enum gti_display_state_setting display_state);
 static int goog_do_selftest(struct goog_touch_interface *gti);
-#if IS_ENABLED(CONFIG_QCOM_QBT_HANDLER)
-void goog_notify_lptw_triggered(struct TbnLptwEvent* lptw, void* data);
-void goog_notify_lptw_left(void* data);
-void goog_track_lptw_slot(struct goog_touch_interface *gti, u16 x, u16 y, int slot_bit);
-#endif
+static void goog_notify_lptw_triggered(struct TbnLptwEvent *lptw, void *data);
+static int goog_notify_lptw_left(struct goog_touch_interface *gti);
+static void goog_track_lptw_slot(struct goog_touch_interface *gti, u16 x, u16 y, int slot_bit);
 static void gti_input_set_timestamp(struct goog_touch_interface *gti, ktime_t timestamp);
+static RAW_NOTIFIER_HEAD(lptw_notifier);
 
 /*-----------------------------------------------------------------------------
  * GTI/proc: forward declarations, structures and functions.
@@ -3224,12 +3221,13 @@ static void goog_offload_set_running(struct goog_touch_interface *gti, bool runn
 static void goog_report_lptw_cancel(struct goog_touch_interface *gti,
 		unsigned long slot_bit_cancel)
 {
-#if IS_ENABLED(CONFIG_QCOM_QBT_HANDLER)
-	goog_notify_lptw_left((void *)gti);
-#else
 	int i = 0;
 	int coord_x = (gti->lptw_track_min_x + gti->lptw_track_max_x) / 2;
 	int coord_y = (gti->lptw_track_min_y + gti->lptw_track_max_y) / 2;
+
+	/* Early return if notification succeed, otherwise report it by input. */
+	if (goog_notify_lptw_left(gti) == NOTIFY_OK)
+		return;
 
 	/* Skip reporting input cancel if the finger stays over 500ms. */
 	if (ktime_after(ktime_get(), ktime_add_ms(gti->lptw_cancel_time, 500)))
@@ -3270,7 +3268,6 @@ static void goog_report_lptw_cancel(struct goog_touch_interface *gti,
 	}
 
 	goog_input_unlock(gti);
-#endif
 }
 
 static void goog_lptw_cancel_delayed_work(struct work_struct *work)
@@ -3358,10 +3355,8 @@ void goog_offload_input_report(void *handle,
 				}
 
 				if (test_bit(i, &gti->slot_bit_lptw_track)) {
-#if IS_ENABLED(CONFIG_QCOM_QBT_HANDLER)
 					goog_track_lptw_slot(gti, report->coords[i].x,
 							report->coords[i].y, i);
-#endif
 					GOOG_DBG(gti, "Skip reporting lptw tracking slot %d", i);
 					continue;
 				}
@@ -4024,9 +4019,7 @@ void goog_register_tbn(struct goog_touch_interface *gti)
 			gti->tbn_enabled = false;
 		} else {
 			GOOG_INFO(gti, "tbn_register_mask = %#x.\n", gti->tbn_register_mask);
-#if IS_ENABLED(CONFIG_QCOM_QBT_HANDLER)
 			register_tbn_lptw_callback(goog_notify_lptw_triggered, gti);
-#endif
 		}
 	}
 }
@@ -4954,48 +4947,63 @@ int goog_get_lptw_triggered(struct goog_touch_interface *gti)
 }
 EXPORT_SYMBOL_GPL(goog_get_lptw_triggered);
 
-#if IS_ENABLED(CONFIG_QCOM_QBT_HANDLER)
-void goog_notify_lptw_triggered(struct TbnLptwEvent* lptw, void* data)
+static void goog_notify_lptw_triggered(struct TbnLptwEvent *lptw, void *data)
 {
 	struct goog_touch_interface *gti = (struct goog_touch_interface *)data;
 
 	GOOG_INFO(gti, "Notify lptw event down");
 
-	gti->qbt_lptw_x = lptw->x;
-	gti->qbt_lptw_y = lptw->y;
-	qbt_lptw_report_event(gti->qbt_lptw_x, gti->qbt_lptw_y, 1);
-	gti->qbt_lptw_down = true;
+	gti->lptw_x = lptw->x;
+	gti->lptw_y = lptw->y;
+	gti->lptw_major = lptw->major;
+	gti->lptw_minor = lptw->minor;
+	gti->lptw_angle = lptw->angle;
+	raw_notifier_call_chain(&lptw_notifier, 1, (void *) &gti->lptw_data[0]);
+	gti->lptw_down = true;
 }
 
-void goog_notify_lptw_left(void* data)
+void goog_lptw_notifier_register(struct notifier_block *nb, bool reg)
 {
-	struct goog_touch_interface *gti = (struct goog_touch_interface *)data;
+	if (reg)
+		raw_notifier_chain_register(&lptw_notifier, nb);
+	else
+		raw_notifier_chain_unregister(&lptw_notifier, nb);
+}
+EXPORT_SYMBOL_GPL(goog_lptw_notifier_register);
 
-	if (gti->qbt_lptw_down) {
-		qbt_lptw_report_event(gti->qbt_lptw_x, gti->qbt_lptw_y, 0);
+static int goog_notify_lptw_left(struct goog_touch_interface *gti)
+{
+	int ret = 0;
+
+	if (gti->lptw_down) {
 		GOOG_INFO(gti, "Notify lptw event up");
-		gti->qbt_lptw_down = false;
+		gti->lptw_down = false;
+		ret = raw_notifier_call_chain(&lptw_notifier, 0, (void *) &gti->lptw_data[0]);
+		if (ret != NOTIFY_OK)
+			GOOG_INFO(gti, "Notify lptw event up failed, ret=%d", ret);
 	} else {
 		GOOG_INFO(gti, "Lptw event already up");
+		ret = NOTIFY_OK;
 	}
+
+	return ret;
 }
 
-void goog_track_lptw_slot(struct goog_touch_interface *gti, u16 x, u16 y, int slot_bit)
+static void goog_track_lptw_slot(struct goog_touch_interface *gti, u16 x, u16 y, int slot_bit)
 {
-	gti->qbt_lptw_x = x;
-	gti->qbt_lptw_y = y;
+	gti->lptw_x = x;
+	gti->lptw_y = y;
 
-	if (!gti->qbt_lptw_down)
+	if (!gti->lptw_down)
 		return;
 
 	if ((x < gti->lptw_track_min_x) || (x > gti->lptw_track_max_x) ||
 		(y < gti->lptw_track_min_y) || (y > gti->lptw_track_max_y)) {
 		GOOG_INFO(gti, "The tracking slot %#x moves out from the tracking area",
 				slot_bit);
-		goog_notify_lptw_left((void *)gti);
+		goog_notify_lptw_left(gti);
 	}
 }
-#endif
 
 static void gti_input_set_timestamp(struct goog_touch_interface *gti, ktime_t timestamp)
 {

@@ -596,6 +596,7 @@ static struct of_device_id tbn_of_match_table[] = {
 	},
 	{},
 };
+MODULE_DEVICE_TABLE(of, tbn_of_match_table);
 
 static struct platform_driver tbn_driver = {
 	.driver = {
