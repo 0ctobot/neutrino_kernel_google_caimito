@@ -743,6 +743,34 @@ static int batt_ttf_estimate(ktime_t *res, struct batt_drv *batt_drv);
 static int gbatt_restore_capacity(struct batt_drv *batt_drv);
 static bool aafv_update_voltage(struct batt_drv *batt_drv, int *fv_uv, int *offset);
 
+static bool aafv_enabled(const int state, const int opt_out)
+{
+	switch(state) {
+		case BATT_AAFV_UNKNOWN:
+			return false;
+		case BATT_AAFV_ENABLED:
+			return true;
+		case BATT_AAFV_DISABLED:
+			return !opt_out;
+		default:
+			return false;
+	}
+}
+
+static bool aact_enabled(const int state, const int opt_out)
+{
+	switch(state) {
+		case BATT_AACT_UNKNOWN:
+			return false;
+		case BATT_AACT_ENABLED:
+			return true;
+		case BATT_AACT_DISABLED:
+			return !opt_out;
+		default:
+			return false;
+	}
+}
+
 static int batt_get_filter_temp(struct batt_temp_filter *temp_filter)
 {
 	int sum = 0, max, min, i;
@@ -4999,7 +5027,7 @@ static u32 aafv_update_state(struct batt_drv *batt_drv)
 
 	mutex_lock(&batt_drv->aacp_state_lock);
 
-	if (batt_drv->aacp_opt_out || batt_drv->aafv_state == BATT_AAFV_DISABLED)
+	if (aafv_enabled(batt_drv->aafv_state, batt_drv->aacp_opt_out) == false)
 		goto exit_done;
 
 	if (batt_drv->aafv_apply_max)
@@ -5581,10 +5609,10 @@ static int aact_update_chg_table(struct batt_drv *batt_drv)
 {
 	struct gbms_chg_profile *profile = &batt_drv->chg_profile;
 	struct device_node *node = batt_drv->device->of_node;
-	bool aact_enabled = !batt_drv->aacp_opt_out && batt_drv->aact_state == BATT_AACT_ENABLED;
+	const bool enabled = aact_enabled(batt_drv->aact_state, batt_drv->aacp_opt_out);
 	int ret;
 
-	if (!profile->aact_init_profile && aact_enabled) {
+	if (!profile->aact_init_profile && enabled) {
 		/* init AACT charge table */
 		ret = gbms_init_aact_profile(profile, node);
 		if (ret < 0)
@@ -5593,7 +5621,7 @@ static int aact_update_chg_table(struct batt_drv *batt_drv)
 		if (ret < 0)
 			return ret;
 		gbms_init_chg_table(profile, node, batt_drv->battery_capacity);
-	} else if (profile->aact_init_profile && !aact_enabled) {
+	} else if (profile->aact_init_profile && !enabled) {
 		/* reset AACT */
 		aact_reset(profile);
 
@@ -5605,7 +5633,7 @@ static int aact_update_chg_table(struct batt_drv *batt_drv)
 		gbms_init_chg_table(profile, node, batt_drv->battery_capacity);
 	}
 
-	if (aact_enabled)
+	if (enabled)
 		profile->aact_idx = aact_get_index(batt_drv);
 
 	return 0;
@@ -6516,14 +6544,13 @@ static ssize_t debug_get_chg_raw_profile(struct file *filp,
 	if (raw_profile_cycles) {
 		struct gbms_chg_profile profile;
 		int count;
-		bool aact_enabled = !batt_drv->aacp_opt_out &&
-				    batt_drv->aact_state == BATT_AACT_ENABLED;
+		const bool enabled = aact_enabled(batt_drv->aact_state, batt_drv->aacp_opt_out);
 
 		len = gbms_init_chg_profile(&profile, batt_drv->device->of_node);
 		if (len < 0)
 			goto exit_done;
 
-		if (aact_enabled) {
+		if (enabled) {
 			len = gbms_init_aact_profile(&profile, batt_drv->device->of_node);
 			if (len < 0)
 				goto exit_done;
