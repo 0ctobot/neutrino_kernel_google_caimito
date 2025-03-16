@@ -62,7 +62,7 @@
 /* AAFV default slope is disabled by default */
 #define AAFV_APPLY_MAX_DEFAULT		0 /* disabled */
 #define AAFV_MAX_OFFSET_DEFAULT		100
-#define AAFV_CLIFF_CYCLE_DEFAULT	1000
+#define AAFV_CLIFF_CYCLE_DEFAULT	-1
 #define AAFV_CLIFF_OFFSET_DEFAULT	100
 
 /* AACP */
@@ -5051,7 +5051,7 @@ static u32 aafv_get_offset_by_cycles(const struct batt_drv *batt_drv, int cycle_
 
 	if (batt_drv->aafv_apply_max)
 		aafv_offset = batt_drv->aafv_max_offset;
-	else if (cycle_count >= batt_drv->aafv_cliff_cycle)
+	else if (batt_drv->aafv_cliff_cycle >= 0 && cycle_count >= batt_drv->aafv_cliff_cycle)
 		aafv_offset = batt_drv->aafv_cliff_offset;
 	else
 		aafv_offset = gbms_aafv_get_offset(&batt_drv->chg_profile, cycle_count);
