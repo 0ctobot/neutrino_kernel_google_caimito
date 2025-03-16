@@ -2662,7 +2662,6 @@ static struct task_struct *detach_important_task(struct rq *src_rq, int dst_cpu)
 
 	lockdep_assert_held(&src_rq->__lock);
 
-	rcu_read_lock();
 
 	list_for_each_entry_reverse(p, &src_rq->cfs_tasks, se.group_node) {
 		bool is_ui = false, is_boost = false;
@@ -2739,7 +2738,6 @@ static struct task_struct *detach_important_task(struct rq *src_rq, int dst_cpu)
 			cpu_rq(dst_cpu)->misfit_task_load = 0;
 	}
 
-	rcu_read_unlock();
 	return p;
 }
 
@@ -2851,6 +2849,8 @@ void sched_newidle_balance_pixel_mod(void *data, struct rq *this_rq, struct rq_f
 			continue;
 		}
 
+		rcu_read_lock();
+
 		p = detach_important_task(src_rq, this_cpu);
 
 		rq_unlock(src_rq, &src_rf);
@@ -2858,10 +2858,12 @@ void sched_newidle_balance_pixel_mod(void *data, struct rq *this_rq, struct rq_f
 		if (p) {
 			attach_one_task(this_rq, p);
 			local_irq_restore(src_rf.flags);
+			rcu_read_unlock();
 			break;
 		}
 
 		local_irq_restore(src_rf.flags);
+		rcu_read_unlock();
 	}
 
 	raw_spin_rq_lock(this_rq);
