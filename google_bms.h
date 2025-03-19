@@ -421,6 +421,8 @@ struct gbms_charging_event {
 
 	int aacp_version;
 	int aacc;
+	int aafv;
+	int max_charge_voltage;
 
 	/* health based charging */
 	struct batt_chg_health		ce_health;	/* updated on close */

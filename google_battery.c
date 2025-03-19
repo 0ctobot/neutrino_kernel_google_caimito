@@ -2043,6 +2043,8 @@ static void batt_chg_stats_update(struct batt_drv *batt_drv, int temp_idx,
 	const int msc_state = batt_drv->msc_state; /* last msc_state */
 	struct gbms_charging_event *ce_data = &batt_drv->ce_data;
 	struct gbms_ce_tier_stats *tier = NULL;
+	struct gbms_chg_profile *profile = &batt_drv->chg_profile;
+	const int last_vbatt_idx = profile->volt_nb_limits - 1;
 	int cc, soc_in;
 
 	if (elap == 0)
@@ -2067,9 +2069,10 @@ static void batt_chg_stats_update(struct batt_drv *batt_drv, int temp_idx,
 	ce_data->csi_aggregate_status = batt_drv->csi_stats.aggregate_status;
 	ce_data->csi_aggregate_type = batt_drv->csi_stats.aggregate_type;
 
-	/* Log aacp_version and aacc into chg_stats */
+	/* Log aacp_version, aacc and aafv into chg_stats */
 	ce_data->aacp_version = batt_drv->aacp_version;
 	ce_data->aacc = batt_drv->aacc;
+	ce_data->aafv = profile->volt_limits[last_vbatt_idx] / 1000;
 
 	/* Note: To log new voltage tiers, add to list in go/pixel-vtier-defs */
 	/* ---  Log tiers in PARALLEL below ---  */
@@ -2484,7 +2487,7 @@ static int batt_chg_stats_cstr(char *buff, int size,
 				ce_data->adapter_details.ad_voltage * 100,
 				ce_data->adapter_details.ad_amperage * 100);
 
-	len += scnprintf(&buff[len], size - len, "%s%hu,%hu, %hu,%hu %d %hu,%hu, %d,%d",
+	len += scnprintf(&buff[len], size - len, "%s%hu,%hu, %hu,%hu %d %hu,%hu, %d,%d,%d,%d",
 				(verbose) ?  "\nS: " : ", ",
 				ce_data->charging_stats.ssoc_in,
 				ce_data->charging_stats.voltage_in,
@@ -2494,7 +2497,9 @@ static int batt_chg_stats_cstr(char *buff, int size,
 				ce_data->csi_aggregate_status,
 				ce_data->csi_aggregate_type,
 				ce_data->aacp_version,
-				ce_data->aacc);
+				ce_data->aacc,
+				ce_data->aafv,
+				ce_data->max_charge_voltage / 1000);
 
 
 	if (verbose) {
@@ -5157,6 +5162,7 @@ static int msc_logic(struct batt_drv *batt_drv)
 			   "MSC_JEITA temp=%d ok, enabling charging\n",
 			   temp);
 		batt_drv->jeita_stop_charging = 0;
+		batt_drv->ce_data.max_charge_voltage = 0;
 	}
 
 	ibatt = GPSY_GET_INT_PROP(fg_psy, POWER_SUPPLY_PROP_CURRENT_NOW,
@@ -5167,6 +5173,9 @@ static int msc_logic(struct batt_drv *batt_drv)
 	vbatt = GPSY_GET_PROP(fg_psy, POWER_SUPPLY_PROP_VOLTAGE_NOW);
 	if (vbatt < 0)
 		return -EIO;
+
+	/* save the maximum battery voltage */
+	batt_drv->ce_data.max_charge_voltage = max(batt_drv->ce_data.max_charge_voltage, vbatt);
 
 	/*
 	 * Multi Step Charging with IRDROP compensation when vchrg is != 0
