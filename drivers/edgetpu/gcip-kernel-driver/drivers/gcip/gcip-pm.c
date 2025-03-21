@@ -199,7 +199,30 @@ unlock:
 
 void gcip_pm_put_async(struct gcip_pm *pm)
 {
-	schedule_work(&pm->put_async_work);
+	bool ret;
+
+	if (!pm)
+		return;
+
+	mutex_lock(&pm->lock);
+
+	ret = schedule_work(&pm->put_async_work);
+	if (ret)
+		goto unlock;
+
+	/* work already exist in workqueue, just decrement the pm->count. */
+	if (unlikely(pm->count < 2)) {
+		/*
+		 * gcip_pm_put is concluded to be scheduled, pm count can only
+		 * be decremented down to value 1.
+		 */
+		dev_warn(pm->dev, "Unbalanced pm count: %d", pm->count);
+		goto unlock;
+	}
+	--pm->count;
+
+unlock:
+	mutex_unlock(&pm->lock);
 }
 
 void gcip_pm_flush_put_work(struct gcip_pm *pm)
