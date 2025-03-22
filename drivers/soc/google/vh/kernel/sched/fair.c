@@ -75,6 +75,7 @@ struct vendor_group_property vg[VG_MAX];
 extern struct vendor_group_list vendor_group_list[VG_MAX];
 
 bool wait_for_init = true;
+bool in_suspend_resume;
 
 unsigned int vh_sched_max_load_balance_interval;
 unsigned int vh_sched_min_granularity_ns;
@@ -2164,7 +2165,7 @@ uclamp_tg_restrict_pixel_mod(struct task_struct *p, enum uclamp_id clamp_id)
 		value = max(value, (unsigned int)capacity_orig_of(pixel_cluster_start_cpu[0]) + 1);
 
 	/* Boost tasks during suspend/resume */
-	if (clamp_id == UCLAMP_MIN && cpuhp_tasks_frozen)
+	if (clamp_id == UCLAMP_MIN && in_suspend_resume)
 		value = max(value, SCHED_CAPACITY_SCALE/4);
 
 	// For uclamp min, if task has a valid per-task setting that is lower than or equal to its
@@ -2661,7 +2662,6 @@ static struct task_struct *detach_important_task(struct rq *src_rq, int dst_cpu)
 
 	lockdep_assert_held(&src_rq->__lock);
 
-	rcu_read_lock();
 
 	list_for_each_entry_reverse(p, &src_rq->cfs_tasks, se.group_node) {
 		bool is_ui = false, is_boost = false;
@@ -2738,7 +2738,6 @@ static struct task_struct *detach_important_task(struct rq *src_rq, int dst_cpu)
 			cpu_rq(dst_cpu)->misfit_task_load = 0;
 	}
 
-	rcu_read_unlock();
 	return p;
 }
 
@@ -2850,6 +2849,8 @@ void sched_newidle_balance_pixel_mod(void *data, struct rq *this_rq, struct rq_f
 			continue;
 		}
 
+		rcu_read_lock();
+
 		p = detach_important_task(src_rq, this_cpu);
 
 		rq_unlock(src_rq, &src_rf);
@@ -2857,10 +2858,12 @@ void sched_newidle_balance_pixel_mod(void *data, struct rq *this_rq, struct rq_f
 		if (p) {
 			attach_one_task(this_rq, p);
 			local_irq_restore(src_rf.flags);
+			rcu_read_unlock();
 			break;
 		}
 
 		local_irq_restore(src_rf.flags);
+		rcu_read_unlock();
 	}
 
 	raw_spin_rq_lock(this_rq);
