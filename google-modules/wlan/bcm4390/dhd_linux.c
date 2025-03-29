@@ -15835,6 +15835,7 @@ static int
 dhd_reboot_callback(struct notifier_block *this, unsigned long code, void *unused)
 {
 	dhd_pub_t *dhdp = g_dhd_pub;
+	dhdp->reset_5g_rffe_vio = TRUE;
 
 	BCM_REFERENCE(dhdp);
 	DHD_PRINT(("%s: code = %ld\n", __FUNCTION__, code));
