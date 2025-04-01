@@ -3523,6 +3523,71 @@ static ssize_t is_tgid_system_ui_store(struct file *filp,
 }
 PROC_OPS_WO(is_tgid_system_ui);
 
+int boost_at_fork_task_name_show(struct seq_file *m, void *v)
+{
+	unsigned long irqflags;
+
+	raw_spin_lock_irqsave(&boost_at_fork_task_name_lock, irqflags);
+	seq_printf(m, "%s\n", boost_at_fork_task_name);
+	raw_spin_unlock_irqrestore(&boost_at_fork_task_name_lock, irqflags);
+	return 0;
+}
+
+/*
+ * Accepts a single value only.
+ */
+ssize_t boost_at_fork_task_name_store(struct file *filp, const char __user *ubuf, size_t count,
+				 loff_t *ppos)
+{
+	char tmp[sizeof(boost_at_fork_task_name)];
+	unsigned long irqflags;
+
+	if (count >= sizeof(boost_at_fork_task_name))
+		return -EINVAL;
+
+	if (copy_from_user(tmp, ubuf, count))
+		return -EFAULT;
+	tmp[count] = '\0';
+
+	raw_spin_lock_irqsave(&boost_at_fork_task_name_lock, irqflags);
+	strlcpy(boost_at_fork_task_name, tmp, sizeof(boost_at_fork_task_name));
+	raw_spin_unlock_irqrestore(&boost_at_fork_task_name_lock, irqflags);
+	return count;
+}
+PROC_OPS_RW(boost_at_fork_task_name);
+
+static int boost_at_fork_value_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%lu\n", vendor_sched_boost_at_fork_value);
+	return 0;
+}
+static ssize_t boost_at_fork_value_store(struct file *filp,
+					 const char __user *ubuf,
+					 size_t count, loff_t *pos)
+{
+	unsigned int val;
+	char buf[MAX_PROC_SIZE];
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+
+	buf[count] = '\0';
+
+	if (kstrtouint(buf, 0, &val))
+		return -EINVAL;
+
+	if (val > SCHED_CAPACITY_SCALE)
+		return -EINVAL;
+
+	vendor_sched_boost_at_fork_value = val;
+
+	return count;
+}
+PROC_OPS_RW(boost_at_fork_value);
+
 static ssize_t adpf_adjustment_store(struct file *filp,
 				  const char __user *ubuf,
 				  size_t count, loff_t *pos)
@@ -3681,6 +3746,9 @@ static struct pentry entries[] = {
 	PROC_ENTRY(prefer_idle_task_name),
 	// check whether tgid belongs to systemui/nexuslauncher
 	PROC_ENTRY(is_tgid_system_ui),
+	/* boost at fork */
+	PROC_ENTRY(boost_at_fork_task_name),
+	PROC_ENTRY(boost_at_fork_value),
 };
 
 

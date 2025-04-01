@@ -711,9 +711,13 @@ unsigned long schedutil_cpu_util_pixel_mod(int cpu, unsigned long util_cfs,
 	 *              max - irq
 	 *   U' = irq + --------- * U
 	 *                 max
+	 *
+	 * We don't need to apply dvfs headroom to scale_irq_capacity() as util
+	 * (U) already got the headroom applied. Only the 'irq' part needs to
+	 * be multiplied by the headroom.
 	 */
 	util = scale_irq_capacity(util, irq, max);
-	util += irq;
+	util += type == FREQUENCY_UTIL ? apply_dvfs_headroom(irq, cpu, false) : irq;
 
 	/*
 	 * Bandwidth required by DEADLINE must always be granted while, for
@@ -726,7 +730,7 @@ unsigned long schedutil_cpu_util_pixel_mod(int cpu, unsigned long util_cfs,
 	 * an interface. So, we only do the latter for now.
 	 */
 	if (type == FREQUENCY_UTIL)
-		util += cpu_bw_dl(rq);
+		util += apply_dvfs_headroom(cpu_bw_dl(rq), cpu, false);
 
 	return min(max, util);
 }

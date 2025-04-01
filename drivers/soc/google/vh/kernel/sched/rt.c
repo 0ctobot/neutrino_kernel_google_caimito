@@ -486,7 +486,6 @@ static void vrq_update_util_removed(struct rq *rq, u32 divider) {
 		sub_positive(&rq->avg_rt.util_sum, removed_util * divider);
 		rq->avg_rt.util_sum = max_t(unsigned long, rq->avg_rt.util_sum,
 					    rq->avg_rt.util_avg * PELT_MIN_DIVIDER);
-		trace_pelt_rt_tp(rq);
 	}
 }
 
@@ -496,18 +495,9 @@ void rvh_update_rt_rq_load_avg_pixel_mod(void *data, u64 now, struct rq *rq, str
 	u32 divider = get_pelt_divider(&rq->avg_rt);
 
 	if (p->dl.flags & SCHED_FLAG_SUGOV) {
-		struct vendor_rq_struct *vrq = get_vendor_rq_struct(rq);
-		unsigned long flags;
-
-		/* GKI already added this to rq->util_avg. Undo this adding */
-		update_load_avg_se(now, &p->se, running);
-		raw_spin_lock_irqsave(&vrq->lock, flags);
-		vrq->util_removed += p->se.avg.util_avg;
-		raw_spin_unlock_irqrestore(&vrq->lock, flags);
-		vrq_update_util_removed(rq, divider);
-
 		p->se.avg.util_sum = 0;
 		p->se.avg.util_avg = 0;
+		vrq_update_util_removed(rq, divider);
 		return;
 	}
 
@@ -517,7 +507,6 @@ void rvh_update_rt_rq_load_avg_pixel_mod(void *data, u64 now, struct rq *rq, str
 		p->se.avg.util_sum = p->se.avg.util_avg * divider;
 		rq->avg_rt.util_avg += p->se.avg.util_avg;
 		rq->avg_rt.util_sum += p->se.avg.util_sum;
-		trace_pelt_rt_tp(rq);
 	}
 
 	vrq_update_util_removed(rq, divider);
