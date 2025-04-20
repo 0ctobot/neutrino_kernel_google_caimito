@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2011-2024 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2011-2025 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -781,7 +781,55 @@ void kbasep_js_kctx_term(struct kbase_context *kctx)
 		mutex_unlock(&kbdev->js_data.runpool_mutex);
 	}
 
-	kbase_ctx_sched_remove_ctx(kctx);
+	/* A work item to handle page_fault/bus_fault/gpu_fault could be
+	 * pending for the outgoing context which we no longer care about.
+	 * Ensure that the context won't be accessed anymore by the fault
+	 * workers.
+	 */
+	while (true) {
+		unsigned long flags;
+		int refcount;
+
+		mutex_lock(&kbdev->mmu_hw_mutex);
+		spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
+		refcount = atomic_read(&kctx->refcount);
+		if ((refcount != 0) && !WARN_ON_ONCE(kctx->as_nr == KBASEP_AS_NR_INVALID)) {
+			struct kbase_as *as = &kctx->kbdev->as[kctx->as_nr];
+			int new_refcount;
+
+			dev_dbg(kbdev->dev,
+				"Waiting for pending fault worker to complete when terminating context (%d_%d)",
+				kctx->tgid, kctx->id);
+			spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
+			mutex_unlock(&kbdev->mmu_hw_mutex);
+			flush_workqueue(as->pf_wq);
+			new_refcount = atomic_read(&kctx->refcount);
+			if (refcount != new_refcount) {
+				/* Fault workers executed and released some references, re-check */
+				continue;
+			} else {
+				/* Waiting for pending fault workers to execute was not effective,
+				 * we're going to forcefully de-assign the AS from this context
+				 * because nothing else should still be accessing the context at
+				 * this point.
+				 *
+				 * This should never happen and a WARN_ON() would be printed by
+				 * kbase_ctx_sched_remove_ctx() if the refcount is non-zero.
+				 */
+				dev_warn(
+					kbdev->dev,
+					"No fault workers executed, %d refs remain for terminating context (%d_%d)",
+					new_refcount, kctx->tgid, kctx->id);
+				kbase_ctx_sched_remove_ctx(kctx);
+			}
+		} else {
+			kbase_ctx_sched_remove_ctx_nolock(kctx);
+			spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
+			mutex_unlock(&kbdev->mmu_hw_mutex);
+		}
+		break;
+	}
+
 #if IS_ENABLED(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD)
 	gpu_metrics_ctx_term(kctx);
 #endif

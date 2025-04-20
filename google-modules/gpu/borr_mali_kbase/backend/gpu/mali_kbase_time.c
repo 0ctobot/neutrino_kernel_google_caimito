@@ -151,8 +151,9 @@ KBASE_EXPORT_TEST_API(kbase_backend_read_gpu_timestamp_offset_reg);
 void kbase_backend_get_gpu_time_norequest(struct kbase_device *kbdev, u64 *cycle_counter,
 					  u64 *system_time, struct timespec64 *ts)
 {
-	if (cycle_counter)
+	if (cycle_counter) {
 		*cycle_counter = kbase_backend_get_cycle_cnt(kbdev);
+	}
 
 	if (system_time) {
 		*system_time = kbase_reg_read64_coherent(kbdev, GPU_CONTROL_ENUM(TIMESTAMP));
@@ -201,14 +202,10 @@ void kbase_backend_get_gpu_time(struct kbase_device *kbdev, u64 *cycle_counter, 
 				struct timespec64 *ts)
 {
 #if !MALI_USE_CSF
-	kbase_pm_request_gpu_cycle_counter(kbdev);
 	WARN_ONCE(kbdev->pm.backend.l2_state != KBASE_L2_ON, "L2 not powered up");
 	WARN_ONCE((!timedwait_cycle_count_active(kbdev)), "Timed out on CYCLE_COUNT_ACTIVE");
 #endif
 	kbase_backend_get_gpu_time_norequest(kbdev, cycle_counter, system_time, ts);
-#if !MALI_USE_CSF
-	kbase_pm_release_gpu_cycle_counter(kbdev);
-#endif
 }
 KBASE_EXPORT_TEST_API(kbase_backend_get_gpu_time);
 
@@ -352,7 +349,11 @@ KBASE_EXPORT_TEST_API(kbase_get_timeout_ms);
 
 u64 kbase_backend_get_cycle_cnt(struct kbase_device *kbdev)
 {
-	return kbase_reg_read64_coherent(kbdev, GPU_CONTROL_ENUM(CYCLE_COUNT));
+	if (kbdev->pm.backend.l2_state != KBASE_L2_ON) {
+		return kbdev->last_cycle_count;
+	} else {
+		return kbase_reg_read64_coherent(kbdev, GPU_CONTROL_ENUM(CYCLE_COUNT));
+	}
 }
 
 #if MALI_USE_CSF

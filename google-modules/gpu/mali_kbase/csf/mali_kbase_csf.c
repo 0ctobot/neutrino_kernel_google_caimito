@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2018-2024 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2018-2025 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -266,6 +266,7 @@ static bool release_queue(struct kbase_queue *queue);
 void kbase_csf_free_command_stream_user_pages(struct kbase_context *kctx, struct kbase_queue *queue)
 {
 	kernel_unmap_user_io_pages(kctx, queue);
+	queue->user_io_addr = NULL;
 
 	kbase_mem_pool_free_pages(&kctx->mem_pools.small[KBASE_MEM_GROUP_CSF_IO],
 				  KBASEP_NUM_CS_USER_IO_PAGES, queue->phys, true, false);
@@ -721,6 +722,12 @@ int kbase_csf_queue_bind(struct kbase_context *kctx, union kbase_ioctl_cs_queue_
 
 	if (bind->in.csi_index >= max_streams)
 		goto out;
+
+	if (queue->user_io_addr != NULL) {
+		dev_err(kctx->kbdev->dev, "Queue with stale user_io address: %pK",
+			(void *)queue->user_io_addr);
+		goto out;
+	}
 
 	if (group->run_state == KBASE_CSF_GROUP_TERMINATED)
 		goto out;
@@ -1793,8 +1800,6 @@ void kbase_csf_ctx_handle_fault(struct kbase_context *kctx, struct kbase_fault *
 void kbase_csf_ctx_term(struct kbase_context *kctx)
 {
 	struct kbase_device *kbdev = kctx->kbdev;
-	struct kbase_as *as = NULL;
-	unsigned long flags;
 	u32 i;
 	int err;
 	bool reset_prevented = false;
@@ -1863,15 +1868,57 @@ void kbase_csf_ctx_term(struct kbase_context *kctx)
 	flush_work(&kctx->kbdev->csf.glb_fatal_work);
 
 	/* A work item to handle page_fault/bus_fault/gpu_fault could be
-	 * pending for the outgoing context. Flush the workqueue that will
-	 * execute that work item.
+	 * pending for the outgoing context which we no longer care about.
+	 * Ensure that the context won't be accessed anymore by the fault
+	 * workers.
 	 */
-	spin_lock_irqsave(&kctx->kbdev->hwaccess_lock, flags);
-	if (kctx->as_nr != KBASEP_AS_NR_INVALID)
-		as = &kctx->kbdev->as[kctx->as_nr];
-	spin_unlock_irqrestore(&kctx->kbdev->hwaccess_lock, flags);
-	if (as)
-		flush_workqueue(as->pf_wq);
+	while (true) {
+		unsigned long flags;
+		int refcount;
+
+		mutex_lock(&kbdev->mmu_hw_mutex);
+		spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
+
+		refcount = atomic_read(&kctx->refcount);
+		if ((refcount != 0) && !WARN_ON_ONCE(kctx->as_nr == KBASEP_AS_NR_INVALID)) {
+			struct kbase_as *as = &kctx->kbdev->as[kctx->as_nr];
+			int new_refcount;
+
+			dev_dbg(kbdev->dev,
+				"Waiting for pending fault worker to complete when terminating context (%d_%d)",
+				kctx->tgid, kctx->id);
+			spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
+			mutex_unlock(&kbdev->mmu_hw_mutex);
+			flush_workqueue(as->pf_wq);
+
+			new_refcount = atomic_read(&kctx->refcount);
+			if (refcount != new_refcount) {
+				/* Fault workers executed and released some references, re-check */
+				continue;
+			} else {
+				/* Waiting for pending fault workers to execute was not effective,
+				 * we're going to forcefully de-assign the AS from this context
+				 * because nothing else should still be accessing the context at
+				 * this point.
+				 *
+				 * This should never happen and a WARN_ON() would be printed by
+				 * kbase_ctx_sched_remove_ctx() if the refcount is non-zero.
+				 */
+				dev_warn(
+					kbdev->dev,
+					"No fault workers executed, %d refs remain for terminating context (%d_%d)",
+					new_refcount, kctx->tgid, kctx->id);
+				kbase_ctx_sched_remove_ctx(kctx);
+			}
+		} else {
+			kbase_ctx_sched_remove_ctx_nolock(kctx);
+
+			spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
+			mutex_unlock(&kbdev->mmu_hw_mutex);
+		}
+
+		break;
+	}
 
 	rt_mutex_lock(&kctx->csf.lock);
 
