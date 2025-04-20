@@ -942,6 +942,13 @@ static SOC_ENUM_SINGLE_DECL(current_limit, CS35L41_BSTCVRT_PEAK_CUR,
 				CS35L41_BST_IPK_SHIFT,
 				cs35l41_boost_current_limit_text);
 
+static const char * const cs35l41_noise_gate_delay_text[] =  {
+	"5ms", "10ms", "25ms", "50ms", "100ms", "250ms", "500ms", "1000ms"};
+
+static SOC_ENUM_SINGLE_DECL(cs35l41_noise_gate_delay,
+			    CS35L41_NG_CFG, CS35L41_HW_NG_DLY_SHIFT,
+			    cs35l41_noise_gate_delay_text);
+
 static int cs35l41_reload_tuning_get(struct snd_kcontrol *kcontrol,
 				     struct snd_ctl_elem_value *ucontrol)
 {
@@ -1831,6 +1838,7 @@ static const struct snd_kcontrol_new cs35l41_aud_controls[] = {
 #endif
 	SOC_SINGLE_EXT("Default 96K", SND_SOC_NOPM, 0, 1, 0,
 			cs35l41_default_96k_get, cs35l41_default_96k_put),
+	SOC_ENUM("Noise Gate Delay", cs35l41_noise_gate_delay),
 };
 
 static const struct cs35l41_otp_map_element_t *cs35l41_find_otp_map(u32 otp_id)
@@ -3778,6 +3786,7 @@ static int cs35l41_enter_hibernate(struct cs35l41_private *cs35l41)
 		regmap_read(cs35l41->regmap, cs35l41_ctl_cache_regs[i],
 			    &cs35l41->ctl_cache[i]);
 
+	disable_irq(cs35l41->irq);
 	/* Disable interrupts */
 	regmap_write(cs35l41->regmap, CS35L41_IRQ1_MASK1, 0xFFFFFFFF);
 
@@ -3921,6 +3930,8 @@ static int cs35l41_exit_hibernate(struct cs35l41_private *cs35l41)
 		ret = cs35l41_restore(cs35l41);
 		usleep_range(4000, 5000);
 	} while (ret < 0 && --retries > 0);
+
+	enable_irq(cs35l41->irq);
 
 	if (retries <= 0)
 		dev_err(cs35l41->dev, "Failed to exit from hibernate\n");
