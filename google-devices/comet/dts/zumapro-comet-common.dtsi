@@ -27,3 +27,4 @@
 #include "zumapro-comet-pmic.dtsi"
 #include "zumapro-comet-gpu.dtsi"
 #include "zuma/gs101-faceauth-dma-heap.dtsi"
+#include "zumapro-comet-sbbm.dtsi"
