@@ -4,7 +4,7 @@
  * This file describes the payloads of PHY related event log entries that are data buffers
  * rather than formatted string entries.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you

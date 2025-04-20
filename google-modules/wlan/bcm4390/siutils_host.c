@@ -3,7 +3,7 @@
  * of the SiliconBackplane-based Broadcom chips.
  * For DHD only.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -385,6 +385,7 @@ int si_get_amni_slave_cfg_cc_reg_addrs(si_t *sih, volatile uint32 **idm_errstatu
 	}
 }
 #endif /* SOCI_NCI_BUS */
+
 
 /*
  * Reset 5G RFFE Gpio lines on reboot from DHD.

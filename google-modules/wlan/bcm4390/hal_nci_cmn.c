@@ -2,7 +2,7 @@
  * Shared code between the legacy nci implementation which depended on the EROM and the
  * implementation which depends on vlsi_data.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you

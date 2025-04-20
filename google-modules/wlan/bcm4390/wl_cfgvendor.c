@@ -1,7 +1,7 @@
 /*
  * Linux cfg80211 Vendor Extension Code
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -412,11 +412,11 @@ wl_cfgvendor_get_feature_set(struct wiphy *wiphy,
 {
 	int err = 0;
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
-	int reply;
+	uint64 reply;
 
 	reply = dhd_dev_get_feature_set(bcmcfg_to_prmry_ndev(cfg));
 
-	err =  wl_cfgvendor_send_cmd_reply(wiphy, &reply, sizeof(int));
+	err =  wl_cfgvendor_send_cmd_reply(wiphy, &reply, sizeof(uint64));
 	if (unlikely(err))
 		WL_ERR(("Vendor Command reply failed ret:%d \n", err));
 
@@ -430,7 +430,7 @@ wl_cfgvendor_get_feature_set_matrix(struct wiphy *wiphy,
 	int err = 0;
 	struct bcm_cfg80211 *cfg = wiphy_priv(wiphy);
 	struct sk_buff *skb;
-	int reply;
+	uint32 reply;
 	int mem_needed, i;
 
 	mem_needed = VENDOR_REPLY_OVERHEAD +
@@ -8010,6 +8010,9 @@ wl_cfgvendor_nan_stop_handler(struct wiphy *wiphy,
 	}
 exit:
 	mutex_unlock(&cfg->if_sync);
+	if (cmd_data) {
+		MFREE(cfg->osh, cmd_data, sizeof(*cmd_data));
+	}
 	NAN_DBG_EXIT();
 	return ret;
 }
@@ -11996,7 +11999,7 @@ wl_cfgvendor_tx_power_scenario(struct wiphy *wiphy,
 #ifndef USE_DEFAULT_SAR_TX_PWR
 		WL_ERR(("sarconfig not found, trigger hang_event\n"));
 		wl_cfg80211_handle_hang_event(primary_ndev,
-				HANG_REASON_UNKNOWN, DUMP_TYPE_CFG_VENDOR_TRIGGERED);
+				HANG_REASON_UNKNOWN, DUMP_TYPE_SAR_CONF_NOTFOUND);
 		err = -EINVAL;
 		goto exit;
 #else

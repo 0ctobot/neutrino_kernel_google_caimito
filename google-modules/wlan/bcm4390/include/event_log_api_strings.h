@@ -3,7 +3,7 @@
  * The strings defined in this file are "API" strings and therefore can't be changed without
  * consulting the consumers of these strings
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you

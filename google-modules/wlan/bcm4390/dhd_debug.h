@@ -1,7 +1,7 @@
 /*
  * DHD debugability header file
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -732,6 +732,7 @@ typedef struct dhd_dbg {
 	dbg_pullreq_t pullreq;
 	dbg_urgent_noti_t urgent_notifier;
 	dhd_dbg_buf_t wrapper_buf;
+	dhd_dbg_buf_t logbuf;
 	uint32 wrapper_regdump_size;
 	/* event log timestamp version being supported */
 	uint32 event_log_ts_ver;

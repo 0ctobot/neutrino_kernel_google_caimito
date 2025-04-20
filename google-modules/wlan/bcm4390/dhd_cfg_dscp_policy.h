@@ -4,7 +4,7 @@
  * Provides type definitions and function prototypes to manage the DSCP policy
  * entries for the network-centric QoS Management in the DHD.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you

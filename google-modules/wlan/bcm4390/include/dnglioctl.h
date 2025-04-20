@@ -1,7 +1,7 @@
 /*
  * HND Run Time Environment ioctl.
  *
- * Copyright (C) 2024, Broadcom.
+ * Copyright (C) 2025, Broadcom.
  *
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -100,7 +100,9 @@ enum hnd_ioctl_cmd {
 	BUS_UPDATE_RESVPOOL_STATE = 19,	/* Update resvpool state */
 	BUS_GET_MAX_RING_NUM = 20, /* Get the Max num of the Tx rings */
 	BUS_M2M_LOW_PRIO_DESCR = 21, /* enable/disable m2m low prio descriptor */
-	BUS_SET_DEV_TRAP_FATAL = 22 /* communicate to host to perform big-hammer */
+	BUS_SET_DEV_TRAP_FATAL = 22, /* communicate to host to perform big-hammer */
+	BUS_UPDATE_RX_PKTFETCH_CNT = 23, /* Num of Rx packets fetched from host */
+	BUS_UPDATE_RX_PKTFETCH_FW_CNSMD = 24 /* Num of Rx packets fetched and consumed in FW */
 };
 
 #define SDPCMDEV_SET_MAXTXPKTGLOM	1
