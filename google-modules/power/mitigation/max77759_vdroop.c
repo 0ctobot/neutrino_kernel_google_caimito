@@ -64,6 +64,22 @@ int max77759_clr_irq(struct bcl_device *bcl_dev, int idx)
 
 }
 
+int max77759_adjust_batoilo_lvl(struct bcl_device *bcl_dev, u8 lower_enable, u8 set_batoilo1_lvl)
+{
+	int ret;
+	u8 val, batoilo1_lvl;
+
+	if (lower_enable)
+		batoilo1_lvl = set_batoilo1_lvl;
+	else
+		batoilo1_lvl = bcl_dev->batt_irq_conf1.batoilo_trig_lvl;
+	ret = max77759_external_reg_read(bcl_dev->intf_pmic_dev, MAX77759_CHG_CNFG_14, &val);
+	if (ret < 0)
+		return ret;
+	val = _chg_cnfg_14_bat_oilo_set(val, batoilo1_lvl);
+	return max77759_external_reg_write(bcl_dev->intf_pmic_dev, MAX77759_CHG_CNFG_14, val);
+}
+
 int max77759_vimon_read(struct bcl_device *bcl_dev)
 {
 	return 0;

@@ -14,6 +14,12 @@
 
 #define MAX77779_VIMON_BCL_CLIENT 0
 #define MAX77779_VIMON_BCL_SAMPLE_COUNT 16
+#define MAX77779_VIMON_CLIENT_TRIG_FOREVER -1
+
+struct max77779_sample_data {
+	uint16_t v_val;
+	int16_t i_val;
+} __packed;
 
 int max77779_adjust_bat_open_to(struct bcl_device *bcl_dev, bool enable)
 {
@@ -141,49 +147,79 @@ int max77779_vimon_read(struct bcl_device *bcl_dev)
 	return ret;
 }
 
-static void max77779_vimon_bcl_callback(struct device *dev, uint16_t *buf, int rd_addr)
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
+static void max77779_bcl_on_sample_ready(void *device, const enum vimon_trigger_source reason,
+					 const u16 *buf, const size_t buf_size)
 {
-	int i, v_rdback, i_rdback;
-	int16_t i_data;
+	struct bcl_device *bcl_dev = device;
 	int i_max = 0;
-	struct bcl_device *bcl_dev = dev_get_drvdata(dev);
+	const int count = buf_size / sizeof(struct max77779_sample_data);
+	const struct max77779_sample_data *sample = (const struct max77779_sample_data *)buf;
+	int i, i_rdback;
 
-	for (i = bcl_dev->vimon_pwr_loop_cnt * MAX77779_VIMON_ENTRIES_PER_VI_PAIR; i < rd_addr;
-	     i += MAX77779_VIMON_ENTRIES_PER_VI_PAIR) {
-		v_rdback = ((uint64_t)buf[i] * MAX77779_VIMON_NV_PER_LSB) /
+	if (reason == VIMON_CLIENT_REQUEST)
+		goto max77779_bcl_trigger_mitigation;
+
+	for (i = 0; i < count; i++) {
+		i_rdback = ((int64_t)sample->i_val * MAX77779_VIMON_NA_PER_LSB) /
 			   MILLI_UNITS_TO_NANO_UNITS;
-		i_data = (int16_t)buf[i + 1];
-		i_rdback = ((int64_t)i_data * MAX77779_VIMON_NA_PER_LSB) /
-			   MILLI_UNITS_TO_NANO_UNITS;
+
 		i_max = max(i_max, i_rdback);
+		sample++;
 	}
-	if (i_max > bcl_dev->vimon_pwr_loop_thresh)
-		google_pwr_loop_trigger_mitigation(bcl_dev);
+
+	if (i_max <= bcl_dev->vimon_pwr_loop_thresh)
+		return;
+
+max77779_bcl_trigger_mitigation:
+	google_pwr_loop_trigger_mitigation(bcl_dev);
 }
 
-int max77779_req_vimon_conv(struct bcl_device *bcl_dev, int idx)
+static void max77779_bcl_on_sample_removed(void *device)
+{
+}
+
+static bool max77779_bcl_extra_trigger(void *device, const uint16_t *buf, const size_t buf_size)
+{
+	struct bcl_device *bcl_dev = device;
+	const int count = buf_size / sizeof(struct max77779_sample_data);
+	const struct max77779_sample_data *sample = (const struct max77779_sample_data *)buf;
+	int i, i_rdback;
+
+	if (!bcl_dev->vimon_pwr_loop_en)
+		return false;
+
+	for (i = 0; i < count; i++) {
+		i_rdback = ((int64_t)sample->i_val * MAX77779_VIMON_NA_PER_LSB) /
+			   MILLI_UNITS_TO_NANO_UNITS;
+
+		if (i_rdback > bcl_dev->vimon_pwr_loop_thresh)
+			return true;
+
+		sample++;
+	}
+
+	return false;
+}
+
+static struct vimon_client_callbacks max77779_vimon_bcl_client = {
+	.on_sample_ready = max77779_bcl_on_sample_ready,
+	.on_removed = max77779_bcl_on_sample_removed,
+	.extra_trigger = max77779_bcl_extra_trigger,
+};
+#endif
+
+int max77779_vimon_register_callback(struct bcl_device *bcl_dev)
 {
 	int ret = 0;
 
-	if (!IS_ENABLED(CONFIG_SOC_ZUMAPRO))
-		return ret;
-
-	if (!bcl_dev->vimon_pwr_loop_en)
-		return 0;
-
-	switch (idx) {
-	case UVLO1:
-	case UVLO2:
-		break;
-	case BATOILO1:
-		ret = max77779_external_vimon_request_conv(bcl_dev->vimon_dev, bcl_dev->device,
-							   MAX77779_VIMON_BCL_CLIENT,
-							   MAX77779_VIMON_BCL_SAMPLE_COUNT,
-							   &max77779_vimon_bcl_callback);
-		break;
-	case BATOILO2:
-		break;
-	}
+#if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
+	ret = vimon_register_callback(bcl_dev->vimon_dev, VIMON_BATOILO1_TRIGGER,
+				      MAX77779_VIMON_CLIENT_TRIG_FOREVER, bcl_dev,
+				      &max77779_vimon_bcl_client);
+	if (ret)
+		dev_err(bcl_dev->device, "bcl_vimon_client register callback failed %d\n", ret);
+#endif
 
 	return ret;
 }

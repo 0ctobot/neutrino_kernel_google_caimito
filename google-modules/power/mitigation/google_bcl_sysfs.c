@@ -19,18 +19,22 @@
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include "bcl.h"
+#include "soc/google/debug-snapshot.h"
 #include <linux/regulator/pmic_class.h>
 #if IS_ENABLED(CONFIG_REGULATOR_S2MPG14)
 #include <dt-bindings/interrupt-controller/zuma.h>
+#include <linux/mfd/samsung/rtc-s2mpg14.h>
 #include <linux/mfd/samsung/s2mpg14-register.h>
 #include <linux/mfd/samsung/s2mpg15-register.h>
 #include <max77779_regs.h>
 #elif IS_ENABLED(CONFIG_REGULATOR_S2MPG12)
 #include <dt-bindings/interrupt-controller/gs201.h>
+#include <linux/mfd/samsung/rtc-s2mpg12.h>
 #include <linux/mfd/samsung/s2mpg12-register.h>
 #include <linux/mfd/samsung/s2mpg13-register.h>
 #elif IS_ENABLED(CONFIG_REGULATOR_S2MPG10)
 #include <dt-bindings/interrupt-controller/gs101.h>
+#include <linux/mfd/samsung/rtc-s2mpg10.h>
 #include <linux/mfd/samsung/s2mpg10-register.h>
 #include <linux/mfd/samsung/s2mpg11-register.h>
 #endif
@@ -1716,6 +1720,82 @@ static struct attribute *triggered_lvl_attrs[] = {
 static const struct attribute_group triggered_lvl_group = {
 	.attrs = triggered_lvl_attrs,
 	.name = "triggered_lvl",
+};
+
+static ssize_t bat_ktimer_show(struct device *dev,
+			       struct device_attribute *attr, char *buf)
+{
+	struct platform_device *pdev =
+		container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+
+	if (!bcl_dev->bat_ktimer_en) {
+		return -EIO;
+	}
+	return sysfs_emit(buf, "%ums\n", bcl_dev->bat_ktimer);
+}
+
+static ssize_t bat_ktimer_store(struct device *dev,
+				struct device_attribute *attr, const char *buf,
+				size_t size)
+{
+	struct platform_device *pdev =
+		container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+	unsigned int value;
+	int ret;
+
+	ret = kstrtou32(buf, 10, &value);
+	if (ret)
+		return ret;
+	if (value < BAT_KTIMER_LIMIT_MS)
+		return -EINVAL;
+
+	bcl_dev->bat_ktimer = value;
+	return size;
+}
+
+static DEVICE_ATTR_RW(bat_ktimer);
+
+static ssize_t bat_ktimer_enable_show(struct device *dev,
+				      struct device_attribute *attr, char *buf)
+{
+	struct platform_device *pdev =
+		container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+
+	return sysfs_emit(buf, "%d\n", bcl_dev->bat_ktimer_en);
+}
+
+static ssize_t bat_ktimer_enable_store(struct device *dev,
+				       struct device_attribute *attr,
+				       const char *buf, size_t size)
+{
+	struct platform_device *pdev =
+		container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+	bool value;
+	int ret;
+
+	ret = kstrtobool(buf, &value);
+	if (ret)
+		return -EINVAL;
+
+	bcl_dev->bat_ktimer_en = value;
+	return size;
+}
+
+static DEVICE_ATTR_RW(bat_ktimer_enable);
+
+static struct attribute *ktimer_attrs[] = {
+	&dev_attr_bat_ktimer.attr,
+	&dev_attr_bat_ktimer_enable.attr,
+	NULL,
+};
+
+static const struct attribute_group ktimer_group = {
+	.attrs = ktimer_attrs,
+	.name = "batfet_kernel_timer",
 };
 
 static ssize_t clk_div_show(struct bcl_device *bcl_dev, int idx, char *buf)
@@ -4291,5 +4371,6 @@ const struct attribute_group *mitigation_sq_groups[] = {
 	&triggered_state_sq_group,
 	&mitigation_group,
 	&irq_config_group,
+	&ktimer_group,
 	NULL,
 };

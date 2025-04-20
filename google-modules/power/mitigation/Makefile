@@ -13,8 +13,9 @@ google_bcl-y			+= google_bcl_debugfs.o
 google_bcl-y			+= max77759_vdroop.o
 google_bcl-y			+= max77779_vdroop.o
 google_bcl-y			+= google_bcl_data_logging.o
-ifneq ($(filter y, $(CONFIG_SOC_ZUMAPRO)),)
-google_bcl-y			+= google_bcl_votable.o
+# ifeq ($(filter y, $(CONFIG_REGULATOR_S2MPG10)),)
+ifneq ($(filter m,$(CONFIG_REGULATOR_S2MPG12)$(CONFIG_REGULATOR_S2MPG14)),)
+	google_bcl-y			+= google_bcl_votable.o
 endif
 
 KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
