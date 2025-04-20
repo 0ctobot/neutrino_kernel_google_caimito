@@ -3608,22 +3608,6 @@ static int syna_dev_remove(struct platform_device *pdev)
 }
 
 /*
- * syna_dev_shutdown()
- *
- * Call syna_dev_remove() to release all resources
- *
- * @param
- *    [in] pdev: an instance of platform device
- *
- * @return
- *    none.
- */
-static void syna_dev_shutdown(struct platform_device *pdev)
-{
-	syna_dev_remove(pdev);
-}
-
-/*
  * Declare a TouchComm platform device
  */
 #if IS_ENABLED(CONFIG_PM) || IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
@@ -3645,7 +3629,6 @@ static struct platform_driver syna_dev_driver = {
 	},
 	.probe = syna_dev_probe,
 	.remove = syna_dev_remove,
-	.shutdown = syna_dev_shutdown,
 };
 
 
