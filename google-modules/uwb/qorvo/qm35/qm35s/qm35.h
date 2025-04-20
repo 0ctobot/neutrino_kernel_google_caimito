@@ -107,7 +107,7 @@ int qm_get_dev_id(struct qm35_ctx *qm35_hdl, uint16_t *dev_id);
 int qm_get_soc_id(struct qm35_ctx *qm35_hdl, uint8_t *soc_id);
 
 void qm35_hsspi_start(struct qm35_ctx *qm35_hdl);
-void qm35_hsspi_stop(struct qm35_ctx *qm35_hdl);
+bool qm35_hsspi_stop(struct qm35_ctx *qm35_hdl);
 
 void qmrom_set_fwname(const char *name);
 

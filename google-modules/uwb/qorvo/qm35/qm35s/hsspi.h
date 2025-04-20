@@ -133,6 +133,7 @@ enum hsspi_state {
 	HSSPI_RUNNING = 0,
 	HSSPI_ERROR = 1,
 	HSSPI_STOPPED = 2,
+	HSSPI_SUSPENDED = 3,
 };
 
 /**
