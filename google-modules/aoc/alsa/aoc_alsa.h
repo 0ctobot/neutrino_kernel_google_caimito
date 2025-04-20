@@ -152,6 +152,8 @@ enum bluetooth_mode {
 	AHS_BT_MODE_A2DP_ENC_OPUS,
 	AHS_BT_MODE_A2DP_RAW,
 	AHS_BT_MODE_ESCO_LC3,
+	AHS_BT_MODE_A2DP_ENC,
+	AHS_BT_MODE_BLE_MEDIA,
 };
 
 enum TelephonyModes {

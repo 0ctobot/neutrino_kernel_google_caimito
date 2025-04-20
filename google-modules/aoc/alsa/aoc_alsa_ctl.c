@@ -2422,7 +2422,8 @@ static const char *bt_mode_texts[] = { "Unconfigured", "SCO",
 				       "A2DP_ENC_SBC", "A2DP_ENC_AAC",
 				       "A2DP_ENC_LC3", "BLE_ENC_LC3",
 				       "BLE_CONVERSATION", "A2DP_ENC_OPUS",
-				       "A2DP_RAW",     "ESCO_LC3" };
+				       "A2DP_RAW",     "ESCO_LC3",
+				       "A2DP_ENC", "BLE_MEDIA" };
 static SOC_ENUM_SINGLE_DECL(bt_mode_enum, 1, SINK_BT, bt_mode_texts);
 
 static const char *usb_mode_texts[] = { "Unconfigured", "USB",
