@@ -1666,6 +1666,8 @@ const struct maxfg_reg max_m5[] = {
 	[MAXFG_TAG_qrtable20] = { ATOM_INIT_REG16(MAX_M5_QRTABLE20)},
 	[MAXFG_TAG_qrtable30] = { ATOM_INIT_REG16(MAX_M5_QRTABLE30)},
 	[MAXFG_TAG_status] = { ATOM_INIT_REG16(MAX_M5_STATUS)},
+	[MAXFG_TAG_fullsocthr] = { ATOM_INIT_REG16(MAX_M5_FULLSOCTHR)},
+	[MAXFG_TAG_misccfg] = { ATOM_INIT_REG16(MAX_M5_MISCCFG)},
 };
 
 int max_m5_regmap_init(struct maxfg_regmap *regmap, struct i2c_client *clnt)
@@ -1680,4 +1682,18 @@ int max_m5_regmap_init(struct maxfg_regmap *regmap, struct i2c_client *clnt)
 	regmap->regtags.map = max_m5;
 	regmap->regmap = map;
 	return 0;
+}
+
+/*
+ * The model data's custom_parameters contain values for FullSOCThr and MISCCFG.
+ *  - before the model data is loaded using max1720x_model_load,
+ *    these values must be updated based on aafv.
+ */
+void max_m5_model_apply_aaf_fullsoc(struct max_m5_data *m5_data, const struct aafv_fg_config *cfg)
+{
+	struct max_m5_custom_parameters *cp = &m5_data->parameters;
+
+	cp->fullsocthr = percentage_to_reg(cfg->fullsoc);
+	cp->misccfg = (MAX_M5_MISCCFG_OOPSFILTER_CLEAR & cp->misccfg) |
+		      (cfg->fus << MAX_M5_MISCCFG_OOPSFILTER_SHIFT);
 }

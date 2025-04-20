@@ -37,7 +37,7 @@ void dump_model(struct device *dev, u16 model_start, u16 *data, int count)
 int maxfg_get_fade_rate(struct device *dev, int bhi_fcn_count, int *fade_rate, enum gbms_property p)
 {
 	struct maxfg_eeprom_history hist = { 0 };
-	int ret, ratio, i, fcn_sum = 0, fcr_sum = 0, hist_max_size;
+	int ret, ratio, i, fc_sum = 0, fc = 0, hist_max_size, max = 0, min = 0;
 	u16 hist_idx;
 
 	ret = gbms_storage_read(GBMS_TAG_HCNT, &hist_idx, sizeof(hist_idx));
@@ -57,6 +57,9 @@ int maxfg_get_fade_rate(struct device *dev, int bhi_fcn_count, int *fade_rate, e
 	/* no fade for new battery (less than 30 cycles) */
 	if (hist_idx < bhi_fcn_count)
 		return 0;
+
+	if (hist_idx > bhi_fcn_count + BHI_CAP_FILTER_VALUE_COUNT)
+		bhi_fcn_count += BHI_CAP_FILTER_VALUE_COUNT;
 
 	while (hist_idx >= hist_max_size && bhi_fcn_count > 1) {
 		hist_idx--;
@@ -79,13 +82,29 @@ int maxfg_get_fade_rate(struct device *dev, int bhi_fcn_count, int *fade_rate, e
 			return -EINVAL;
 
 		/* hist.fullcapnom = fullcapnom * 800 / designcap */
-		fcn_sum += hist.fullcapnom;
-		fcr_sum += hist.fullcaprep;
+		fc = p == GBMS_PROP_CAPACITY_FADE_RATE_FCR ? hist.fullcaprep : hist.fullcapnom;
+
+		fc_sum += fc;
+
+		if (max == 0 || min == 0)
+			max = min = fc;
+
+		if (fc < min)
+			min = fc;
+
+		if (fc > max)
+			max = fc;
+
+	}
+
+	if (bhi_fcn_count > BHI_CAP_FILTER_VALUE_COUNT) {
+		/* filter max/min values */
+		fc_sum = fc_sum - min - max;
+		bhi_fcn_count -= BHI_CAP_FILTER_VALUE_COUNT;
 	}
 
 	/* convert from maxfg_eeprom_history to percent */
-	ratio = (p == GBMS_PROP_CAPACITY_FADE_RATE_FCR) ? fcr_sum / (bhi_fcn_count * 8)
-							: fcn_sum / (bhi_fcn_count * 8);
+	ratio = fc_sum / (bhi_fcn_count * 8);
 
 	/* allow negative value when capacity larger than design */
 	*fade_rate = 100 - ratio;
@@ -1150,4 +1169,249 @@ void maxfg_dynrel_log(struct logbuffer *mon, struct device *dev, u16 fstat,
 {
 	maxfg_dynrel_log__(mon, dev, dr_state, fstat, dr_state->vfocv_last,
 			   dr_state->vfsoc_last, dr_state->temp_last);
+}
+
+int maxfg_aafv_scan_inputs(const char *inputs, const int input_sz,
+			   struct aafv_fg_config* cfg, const int cfg_max)
+{
+	int idx = 0, pos = 0, rb;
+
+	while (pos < input_sz) {
+		if (idx >= cfg_max)
+			return -ERANGE;
+
+		if (sscanf(&inputs[pos], "%u,%u,%u,%u%n", &cfg[idx].cycles, &cfg[idx].voffset,
+			   &cfg[idx].fullsoc, &cfg[idx].fus, &rb) != 4)
+			return -EINVAL;
+		pos += rb;
+
+		if (inputs[pos] == ',')
+			pos++;
+
+		idx++;
+	}
+
+	/* empty inputs */
+	if (idx == 0)
+		idx = -EINVAL;
+
+	return idx;
+}
+
+static inline int maxfg_aafv_pick_config(const struct aafv_fg_config *cfgs, const int cfg_max,
+					 int aafv)
+{
+	const struct aafv_fg_config *cfg;
+	int idx;
+
+	/*
+	 * when google_battery set aafv through GBMS_PROPERTY,
+	 * it scales with GBMS_AAFV_VOLTAGE_OFFSET_SCALE.
+	 */
+	aafv /= GBMS_AAFV_VOLTAGE_OFFSET_SCALE;
+
+	for (idx = 0; idx < cfg_max; idx++) {
+		cfg = &cfgs[idx];
+		if (aafv < cfg->voffset) {
+			idx--;
+			break;
+		}
+	}
+
+	if (idx == cfg_max)
+		idx--;
+
+	if (idx < 0)
+		return -ERANGE;
+
+	return idx;
+}
+
+int maxfg_aafv_apply(struct maxfg_regmap *regmap, int aafv,
+		     const struct aafv_fg_config *cfgs, const int cfg_max,
+		     int fus_clear, int fus_shift, int *aafv_cur_index)
+{
+	const struct aafv_fg_config *cfg;
+	u16 fullsoc, fullsoc_reg, misccfg;
+	int ret, idx;
+
+	idx = maxfg_aafv_pick_config(cfgs, cfg_max, aafv);
+	if (idx < 0) {
+		pr_err("failed to find aafv_cfg (%d) for offset(%d)\n", idx, aafv);
+		return idx;
+	}
+
+	cfg = &cfgs[idx];
+	fullsoc = percentage_to_reg(cfg->fullsoc);
+
+	ret = maxfg_reg_read(regmap, MAXFG_TAG_fullsocthr, &fullsoc_reg);
+	if (ret) {
+		pr_err("fail maxfg_aafv_apply_fus on reading misccfg(%d)\n", ret);
+		return ret;
+	}
+
+	if ( fullsoc_reg == fullsoc) {
+		pr_info("the same aafv(%d) is already applied\n", aafv);
+		return 0;
+	}
+
+	ret = maxfg_reg_write_verify(regmap, MAXFG_TAG_fullsocthr, fullsoc);
+	if (ret) {
+		pr_err("fail update_aafv_fullsoc on wring fullsocthr(%d)\n", ret);
+		return ret;
+	}
+
+	ret = maxfg_reg_read(regmap, MAXFG_TAG_misccfg, &misccfg);
+	if (ret) {
+		pr_err("fail maxfg_aafv_apply_fus on reading misccfg(%d)\n", ret);
+		return ret;
+	}
+
+	misccfg = (fus_clear & misccfg) | (cfg->fus << fus_shift);
+
+	ret = maxfg_reg_write_verify(regmap, MAXFG_TAG_misccfg, misccfg);
+	if (ret)
+		pr_err("fail update_aafv_fullsoc on wring misccfg(%d)\n", ret);
+
+	if (ret == 0)
+		*aafv_cur_index = idx;
+
+	return ret;
+}
+
+int maxfg_aafv_restore_fus(struct maxfg_regmap *regmap, int fus_clear, int fus_shift, u16 fus)
+{
+	int ret;
+	u16 misccfg;
+
+	ret = maxfg_reg_read(regmap, MAXFG_TAG_misccfg, &misccfg);
+	if (ret) {
+		pr_err("fail to read misccfg(%d)\n", ret);
+		return ret;
+	}
+
+	misccfg = (fus_clear & misccfg) | (fus << fus_shift);
+
+	ret = maxfg_reg_write_verify(regmap, MAXFG_TAG_misccfg, misccfg);
+	if (ret)
+		pr_err("fail to write misccfg(%d)\n", ret);
+
+	return ret;
+}
+
+/*
+ * TODO: b/394147776 - question 3
+ * if FUS value is only modified by host side, read MISCCFG and update
+ * aafv_modified_fus flag in caller of maxfg_aafv_init
+ */
+int maxfg_aafv_init(struct device_node *node, const char * prop,
+		    struct aafv_fg_config *config, int *config_limits)
+{
+	const int aafv_u32_sz = sizeof(struct aafv_fg_config) / sizeof(u32);
+	int cnt, ret;
+
+	if (!node)
+		return -EPROBE_DEFER;
+
+	cnt = of_property_count_elems_of_size(node, prop, sizeof(struct aafv_fg_config));
+	if (cnt <= 0)
+		goto maxfg_aafv_init_no_data;
+
+	if (cnt > GBMS_AAFV_DATA_MAX)
+		cnt = GBMS_AAFV_DATA_MAX;
+
+	ret = of_property_read_u32_array(node, prop, (u32 *)config, cnt * aafv_u32_sz);
+	if (ret)
+		return ret;
+
+	*config_limits = cnt;
+
+maxfg_aafv_init_no_data:
+	return 0;
+}
+
+/*
+ * expected input string ormat: (can be multiline)
+ * - batt_id, c0, v0, s0, f0, c1, v1, s1, f1
+ *    cX: cycle count
+ *    vX: voltage offset
+ *    sX: fullsoc thr
+ *    fX: fus
+ */
+ssize_t maxfg_aafv_config_store(struct device *dev, const int batt_id,
+				const char *buf, size_t count,
+				struct aafv_fg_config *aafv_cfgs, int *aafv_config_limits)
+{
+	struct aafv_fg_config cfg[GBMS_AAFV_DATA_MAX] = { {0} };
+	int pos_buf = 0, ret = count;
+	bool valid = false;
+	char *inputs = kmalloc(count, GFP_KERNEL);
+	int id, cur, input_len, config_cnt;
+
+
+	while (pos_buf < count) {
+		if (sscanf(&buf[pos_buf], "%s", inputs) != 1) {
+			dev_err(dev, "invalid input format\n");
+			ret = -EINVAL;
+			goto maxfg_aafv_config_cleanup;
+		}
+
+		if (sscanf(inputs, "%d,%n", &id, &cur) != 1) {
+			dev_err(dev, "aavf config must start with batt_id\n");
+			ret = -EINVAL;
+			goto maxfg_aafv_config_cleanup;
+		}
+
+		/* buf[input_len] will be \n or \0 */
+		input_len = strlen(inputs);
+		pos_buf += input_len + 1;
+
+		if (batt_id != id)
+			continue;
+
+		config_cnt = maxfg_aafv_scan_inputs(&inputs[cur], input_len - cur, cfg,
+						    GBMS_AAFV_DATA_MAX);
+		if (config_cnt < 0) {
+			dev_err(dev,
+				"aavf malformed input (%d)\n", config_cnt);
+			ret = config_cnt;
+			goto maxfg_aafv_config_cleanup;
+		}
+
+		valid = true;
+	}
+
+	if (valid) {
+		memcpy(aafv_cfgs, &cfg, sizeof(struct aafv_fg_config) * config_cnt);
+		*aafv_config_limits = (u32)config_cnt;
+		dev_info(dev, "aafv updated with %d entries\n", config_cnt);
+	}
+
+maxfg_aafv_config_cleanup:
+	kfree(inputs);
+
+	return ret;
+}
+
+ssize_t maxfg_aafv_config_show(struct aafv_fg_config *cfgs, const int config_limits,
+			       const int batt_id, char *buf)
+{
+	ssize_t count = 0;
+	struct aafv_fg_config *cfg;
+	int i;
+
+	if (config_limits == 0)
+		return count;
+
+	count += sysfs_emit_at(buf, count, "%d", batt_id);
+
+	for (i = 0; i < config_limits ; i++) {
+		cfg = &cfgs[i];
+		count += sysfs_emit_at(buf, count, ",<%u>:<%u>:<%u>:<%u>",
+				       cfg->cycles, cfg->voffset, cfg->fullsoc, cfg->fus);
+	}
+
+	count += sysfs_emit_at(buf, count, "\n");
+
+	return count;
 }

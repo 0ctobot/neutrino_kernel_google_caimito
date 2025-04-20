@@ -81,6 +81,8 @@ static const struct maxfg_reg max77779_fg[] = {
 	[MAXFG_TAG_qrtable20] = { ATOM_INIT_REG16(MAX77779_FG_QRTable20)},
 	[MAXFG_TAG_qrtable30] = { ATOM_INIT_REG16(MAX77779_FG_QRTable30)},
 	[MAXFG_TAG_status] = { ATOM_INIT_REG16(MAX77779_FG_Status)},
+	[MAXFG_TAG_fullsocthr] = { ATOM_INIT_REG16(MAX77779_FG_FullSocThr)},
+	[MAXFG_TAG_misccfg] = { ATOM_INIT_REG16(MAX77779_FG_MiscCfg)},
 };
 
 static const struct maxfg_reg max77779_debug_fg[] = {
@@ -197,6 +199,10 @@ struct max77779_fg_chip {
 
 	/* AAFV: Aged Adjusted Float Voltage */
 	int aafv;
+	int aafv_config_limits;
+	int aafv_cur_idx;
+	bool aafv_modified_fus;
+	struct aafv_fg_config aafv_cfgs[GBMS_AAFV_DATA_MAX];
 };
 
 /** ------------------------------------------------------------------------ */
@@ -276,6 +282,8 @@ int max77779_reset_state_data(struct max77779_model_data *model_data);
 int max77779_needs_reset_model_data(const struct max77779_model_data *model_data);
 u16 max77779_get_designcap(const struct max77779_model_data *model_data);
 u16 max77779_get_relaxcfg(const struct max77779_model_data *model_data);
+void max77779_model_apply_aaf_fullsoc(struct max77779_model_data *model_data,
+				      const struct aafv_fg_config *cfg);
 
 /*
  * max77779 might use the low 8 bits of devname to keep the model version number

@@ -48,8 +48,6 @@ enum max77779_fg_command_bits {
 	MAX77779_FG_COMMAND_HARDWARE_RESET = 0x000F,
 };
 
-#define BHI_CAP_FCN_COUNT	3
-
 #define DEFAULT_STATUS_CHARGE_MA	100
 
 /* No longer used in 79, used for taskperiod re-scaling in 59 */
@@ -62,6 +60,10 @@ enum max77779_fg_command_bits {
 #define MAX77779_FG_EVENT_REPSOC             BIT(4)
 #define MAX77779_FG_EVENT_VFOCV              BIT(5)
 #define MAX77779_FG_EVENT_STUCK              BIT(6)
+
+#define MAX77779_FG_AAFV_DEFAULT_FULLSOCTHR  95
+#define MAX77779_FG_AAFV_DEFAULT_FUS         0x0
+#define MAX77779_FG_AAFV_RESTORE_FUS         0x3
 
 static irqreturn_t max77779_fg_irq_thread_fn(int irq, void *obj);
 static int max77779_fg_set_next_update(struct max77779_fg_chip *chip);
@@ -494,6 +496,29 @@ static ssize_t resistance_show(struct device *dev,
 
 static DEVICE_ATTR_RO(resistance);
 
+static ssize_t aafv_config_store(struct device *dev,
+				    struct device_attribute *attr,
+				    const char *buf, size_t count)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max77779_fg_chip *chip = power_supply_get_drvdata(psy);
+
+	return maxfg_aafv_config_store(chip->dev, chip->batt_id, buf, count,
+				       chip->aafv_cfgs, &chip->aafv_config_limits);
+}
+
+static ssize_t aafv_config_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max77779_fg_chip *chip = power_supply_get_drvdata(psy);
+
+	return maxfg_aafv_config_show(chip->aafv_cfgs, chip->aafv_config_limits, chip->batt_id,
+				      buf);
+}
+
+static DEVICE_ATTR_RW(aafv_config);
+
 /* lsb 1/256, race with max77779_fg_model_work()  */
 static int max77779_fg_get_capacity_raw(struct max77779_fg_chip *chip, u16 *data)
 {
@@ -601,6 +626,29 @@ static int max77779_fg_get_battery_status(struct max77779_fg_chip *chip)
 						  POWER_SUPPLY_STATUS_CHARGING);
 
 			status = POWER_SUPPLY_STATUS_FULL;
+
+			if (chip->aafv_modified_fus) {
+				err = max77779_fg_usr_lock_section(&chip->regmap,
+								   MAX77779_FG_ALL_SECTION, false);
+				if (err)
+					dev_err(chip->dev, "failed to unlock FG (%d)\n", err);
+				else
+					err = maxfg_aafv_restore_fus(&chip->regmap,
+								     MAX77779_FG_MiscCfg_FUS_CLEAR,
+								     MAX77779_FG_MiscCfg_FUS_SHIFT,
+								     MAX77779_FG_AAFV_RESTORE_FUS);
+				if (err == 0) {
+					chip->aafv_modified_fus = false;
+					logbuffer_log(chip->ce_log, "restored_fus on cycles %d",
+						      chip->cycle_count);
+				}
+
+				err = max77779_fg_usr_lock_section(&chip->regmap,
+								   MAX77779_FG_ALL_SECTION, true);
+				if (err)
+					dev_err(chip->dev, "failed to lock FG (%d)\n", err);
+			}
+
 			if (needs_prime)
 				max77779_fg_prime_battery_qh_capacity(chip);
 		} else {
@@ -1616,6 +1664,46 @@ static int max77779_fg_property_is_writeable(struct power_supply *psy,
 	return 0;
 }
 
+/* chip->model_lock is acquired by caller */
+static int max77779_fg_aafv_update(struct max77779_fg_chip *chip)
+{
+	const struct aafv_fg_config *cfg;
+	int ret, idx;
+
+	ret = max77779_fg_usr_lock_section(&chip->regmap, MAX77779_FG_ALL_SECTION, false);
+	if (ret) {
+		dev_err(chip->dev, "failed to unlock ret=%d\n", ret);
+		return ret;
+	}
+
+	ret = maxfg_aafv_apply(&chip->regmap, chip->aafv,
+			       chip->aafv_cfgs, chip->aafv_config_limits,
+			       MAX77779_FG_MiscCfg_FUS_CLEAR, MAX77779_FG_MiscCfg_FUS_SHIFT,
+			       &idx);
+	if (ret) {
+		dev_err(chip->dev, "failed to maxfg_aafv_apply (%d)\n", ret);
+		return ret;
+	}
+
+	if (chip->aafv_cur_idx != idx) {
+		cfg = &chip->aafv_cfgs[idx];
+		chip->aafv_cur_idx = idx;
+		chip->aafv_modified_fus = true;
+
+		gbms_logbuffer_devlog(chip->monitor_log, chip->dev, LOGLEVEL_INFO, 0,
+				      LOGLEVEL_INFO,
+				      "aafv_fullsoc_update with %d %d %d %d",
+				      chip->cycle_count, cfg->fullsoc, cfg->voffset,
+				      cfg->fus);
+	}
+
+	ret = max77779_fg_usr_lock_section(&chip->regmap, MAX77779_FG_ALL_SECTION, true);
+	if (ret)
+		dev_err(chip->dev, "failed to lock ret=%d\n", ret);
+
+	return ret;
+}
+
 static int max77779_gbms_fg_get_property(struct power_supply *psy,
 					 enum gbms_property psp,
 					 union gbms_propval *val)
@@ -1747,7 +1835,10 @@ static int max77779_gbms_fg_set_property(struct power_supply *psy,
 		/* TODO: under porting */
 		break;
 	case GBMS_PROP_AAFV:
+		mutex_lock(&chip->model_lock);
 		chip->aafv = val->prop.intval;
+		rc = max77779_fg_aafv_update(chip);
+		mutex_unlock(&chip->model_lock);
 		break;
 	default:
 		pr_debug("%s: route to max77779_fg_set_property, psp:%d\n", __func__, psp);
@@ -3167,6 +3258,9 @@ static int max77779_fg_model_load(struct max77779_fg_chip *chip)
 	if (ret != 0)
 		dev_warn(chip->dev, "Load Model Using Default State (%d)\n", ret);
 
+	/* update fullsocthr based on aafv */
+	max77779_model_apply_aaf_fullsoc(chip->model_data, &chip->aafv_cfgs[chip->aafv_cur_idx]);
+
 	/* get fw version from pmic if it's not ready during init */
 	if (!chip->fw_rev && !chip->fw_sub_rev)
 		max77779_fg_get_fw_ver(chip);
@@ -3444,6 +3538,12 @@ static int max77779_fg_init_chip(struct max77779_fg_chip *chip)
 		return -EPROBE_DEFER;
 	dev_info(chip->dev, "RSense value %d micro Ohm\n", chip->RSense * 10);
 
+	/* loading default aafv values from device tree */
+	ret = maxfg_aafv_init(chip->batt_node, "max77779,fg-aafv", chip->aafv_cfgs,
+			      &chip->aafv_config_limits);
+	if (ret < 0)
+		dev_warn(chip->dev, "Cannot load aafv config(%d)\n", ret);
+
 	ret = REGMAP_READ(&chip->regmap, MAX77779_FG_FG_INT_STS, &data);
 	if (!ret && data & MAX77779_FG_FG_INT_STS_Br_MASK) {
 		dev_info(chip->dev, "Clearing Battery Removal bit\n");
@@ -3680,6 +3780,7 @@ static struct attribute *max77779_fg_attrs[] = {
 	&dev_attr_fg_abnormal_events.attr,
 	&dev_attr_fg_learning_events.attr,
 	&dev_attr_registers_dump.attr,
+	&dev_attr_aafv_config.attr,
 	NULL,
 };
 
@@ -3894,6 +3995,7 @@ int max77779_fg_init(struct max77779_fg_chip *chip)
 
 	/* use VFSOC until it can confirm that FG Model is running */
 	chip->reg_prop_capacity_raw = MAX77779_FG_VFSOC;
+	chip->aafv_cur_idx = 0;
 
 	INIT_DELAYED_WORK(&chip->cap_estimate.settle_timer,
 			  batt_ce_capacityfiltered_work);

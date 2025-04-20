@@ -22,11 +22,20 @@
 
 #define MAX77779_VIMON_SMPL_CNT 8
 #define MAX77779_VIMON_DATA_RETRIEVE_DELAY 0
+
+/*
+ * TODO: b/376771907: needs to be removed
+ * - MAX77779_VIMON_DATA_RETRY_DELAY_MS
+ * - MAX77779_VIMON_NV_PER_LSB
+ * - MAX77779_VIMON_NA_PER_LSB
+ * - MILLI_UNITS_TO_NANO_UNITS
+ */
 #define MAX77779_VIMON_DATA_RETRY_DELAY_MS 100
 
 #define MAX77779_VIMON_NV_PER_LSB 78122
 #define MAX77779_VIMON_NA_PER_LSB 781250
 #define MILLI_UNITS_TO_NANO_UNITS 1000000
+#define VIMON_CLIENT_ALWAYS_RUN -1
 
 enum max77779_vimon_state {
 	MAX77779_VIMON_ERROR = -1,
@@ -36,20 +45,38 @@ enum max77779_vimon_state {
 	MAX77779_VIMON_DATA_AVAILABLE,
 };
 
-enum max77779_vimon_client_names {
-	MAX77779_BCL_CLIENT,
-	MAX77779_BMS_CLIENT,
-	MAX77779_VIMON_DEBUGFS_CLIENT,
-	MAX77779_VIMON_CLIENT_MAX,
+enum vimon_trigger_source {
+	VIMON_IMMEDIATE_TRIGGER            = BIT(0),
+	VIMON_BATOILO1_TRIGGER             = BIT(1),
+	VIMON_BATOILO2_TRIGGER             = BIT(2),
+	VIMON_SYSUVLO1_TRIGGER             = BIT(3),
+	VIMON_SYSUVLO2_TRIGGER             = BIT(4),
+	VIMON_VBATT_MEASUREMENT_TRIGGER    = BIT(5),
+	VIMON_IBATT_MEASUREMENT_TRIGGER    = BIT(6),
+	VIMON_VBATT_SAMPLE_TRIGGER_AVERAGE = BIT(7),
+	VIMON_VBATT_SAMPLE_TRIGGER_MINIMUM = BIT(8),
+	VIMON_VBATT_SAMPLE_TRIGGER_MAXIMUM = BIT(9),
+	VIMON_IBATT_SAMPLE_TRIGGER_AVERAGE = BIT(10),
+	VIMON_IBATT_SAMPLE_TRIGGER_MINIMUM = BIT(11),
+	VIMON_IBATT_SAMPLE_TRIGGER_MAXIMUM = BIT(12),
+	VIMON_CLIENT_REQUEST               = BIT(15), /* if extra_trigger returns true */
 };
 
-struct max77779_vimon_client {
-	struct device *client_dev;
-	void (*cb)(struct device *dev, uint16_t *buf, int rd_bytes);
-	atomic_t pending_request;
-	atomic_t active_request;
-	int sample_count;
+struct vimon_client_callbacks {
+	/* on_sample_ready: required */
+	void (*on_sample_ready)(void *private, const enum vimon_trigger_source reason,
+				const u16 *data, const size_t len);
+
+	/* on_unregistered: required */
+	void (*on_removed)(void *private);
+
+	/* extra_trigger: optional */
+	bool (*extra_trigger)(void *private, const u16 *data, const size_t len);
 };
+
+int vimon_register_callback(struct device *dev, const u16 mask, const int count, void *private,
+			    struct vimon_client_callbacks *cb);
+void vimon_unregister_callback(struct device *dev, struct vimon_client_callbacks *cb);
 
 struct max77779_vimon_data {
 	struct device *dev;
@@ -61,6 +88,7 @@ struct max77779_vimon_data {
 	bool run_in_offmode;
 
 	struct mutex vimon_lock;
+	struct mutex vimon_cb_lock;
 	unsigned max_cnt;
 	unsigned max_triggers;
 	enum max77779_vimon_state state;
@@ -71,16 +99,12 @@ struct max77779_vimon_data {
 	/* debug interface, register to read or write */
 	u32 debug_reg_address;
 	u8 debug_buffer_page;
-	uint16_t *debug_buf;
-	size_t debug_buf_len;
 
 	struct delayed_work read_data_work;
 
 	int (*direct_reg_read)(struct max77779_vimon_data *data, u8 reg, unsigned int *val);
 	int (*direct_reg_write)(struct max77779_vimon_data *data, u8 reg, unsigned int val);
-
-	struct delayed_work pending_conv_work;
-	struct max77779_vimon_client clients[MAX77779_VIMON_CLIENT_MAX];
+	u16 trigger_src;
 };
 
 int max77779_vimon_init(struct max77779_vimon_data *data);

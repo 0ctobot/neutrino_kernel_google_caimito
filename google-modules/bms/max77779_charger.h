@@ -99,6 +99,7 @@ struct max77779_chgr_data {
 	/* debug interface, register to read or write */
 	u32 debug_reg_address;
 
+	struct gvotable_election *msc_last_votable;
 	int chg_term_voltage;
 	int chg_term_volt_debounce;
 };

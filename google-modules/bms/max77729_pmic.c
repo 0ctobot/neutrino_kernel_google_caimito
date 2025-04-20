@@ -348,7 +348,7 @@ static irqreturn_t max777x9_pmic_irq(int irq, void *ptr)
 	}
 
 	/* just clear for max77729f */
-	pr_debug("irq=%d INTSRC:%x\n", irq, intsrc);
+	dev_info_ratelimited(data->dev, "irq=%d INTSRC:%x\n", irq, intsrc);
 	if (data->pmic_id != MAX77759_PMIC_PMIC_ID_MW)
 		return IRQ_HANDLED;
 

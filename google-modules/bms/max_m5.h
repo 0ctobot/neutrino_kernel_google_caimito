@@ -55,6 +55,11 @@
 
 #define MAX_M5_COTRIM	0xEB
 
+/* AAFV */
+#define MAX_M5_AAFV_DEFAULT_FULLSOCTHR	95
+#define MAX_M5_AAFV_DEFAULT_FUS		0x0
+#define MAX_M5_AAFV_RESTORE_FUS		0x3
+
 /** ------------------------------------------------------------------------ */
 
 /*
@@ -239,6 +244,8 @@ int max_m5_get_rc_switch_param(struct max_m5_data *m5_data, u16 *rc2_tempco, u16
 
 /* read saved value */
 ssize_t max_m5_gmsr_state_cstr(char *buf, int max);
+
+void max_m5_model_apply_aaf_fullsoc(struct max_m5_data *m5_data, const struct aafv_fg_config *cfg);
 
 /** ------------------------------------------------------------------------ */
 

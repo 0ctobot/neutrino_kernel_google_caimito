@@ -106,8 +106,6 @@ struct max1720x_rc_switch {
 #define DEFAULT_CAP_SETTLE_INTERVAL	3
 #define DEFAULT_CAP_FILTER_LENGTH	12
 
-#define BHI_CAP_FCN_COUNT	3
-
 #define DEFAULT_STATUS_CHARGE_MA	100
 
 struct max1720x_history {
@@ -246,6 +244,11 @@ struct max1720x_chip {
 
 	/* AAFV: Aged Adjusted Float Voltage */
 	int aafv;
+	int aafv_config_limits;
+	int aafv_cur_idx;
+	bool aafv_modified_fus;
+	struct aafv_fg_config aafv_cfgs[GBMS_AAFV_DATA_MAX];
+
 	/* total number of model loading attempts counter since boot */
 	int ml_cnt;
 	/* total number of model loading failures since boot */
@@ -999,6 +1002,29 @@ static ssize_t fix_cycle_count_store(struct device *dev,
 
 static const DEVICE_ATTR_WO(fix_cycle_count);
 
+static ssize_t aafv_config_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max1720x_chip *chip = power_supply_get_drvdata(psy);
+
+	return maxfg_aafv_config_store(chip->dev, chip->batt_id, buf, count,
+				       chip->aafv_cfgs, &chip->aafv_config_limits);
+}
+
+static ssize_t aafv_config_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max1720x_chip *chip = power_supply_get_drvdata(psy);
+
+	return maxfg_aafv_config_show(chip->aafv_cfgs, chip->aafv_config_limits, chip->batt_id,
+				      buf);
+}
+
+static DEVICE_ATTR_RW(aafv_config);
+
 /* lsb 1/256, race with max1720x_model_work()  */
 static int max1720x_get_capacity_raw(struct max1720x_chip *chip, u16 *data)
 {
@@ -1154,6 +1180,19 @@ static int max1720x_get_battery_status(struct max1720x_chip *chip)
 						  POWER_SUPPLY_STATUS_CHARGING);
 
 			status = POWER_SUPPLY_STATUS_FULL;
+
+			if (chip->aafv_modified_fus) {
+				err = maxfg_aafv_restore_fus(&chip->regmap,
+							     MAX_M5_MISCCFG_OOPSFILTER_CLEAR,
+							     MAX_M5_MISCCFG_OOPSFILTER_SHIFT,
+							     MAX_M5_AAFV_RESTORE_FUS);
+				if (err == 0) {
+					chip->aafv_modified_fus = false;
+					logbuffer_log(chip->ce_log, "restored_fus on cycles %d",
+						      chip->cycle_count);
+				}
+			}
+
 			if (needs_prime)
 				max1720x_prime_battery_qh_capacity(chip,
 								   status);
@@ -1813,7 +1852,7 @@ static int max1720x_get_cycle_count_offset(struct max1720x_chip *chip)
 static int max1720x_get_cycle_count(struct max1720x_chip *chip)
 {
 	/* return 0 if cycles register not restored or fixed */
-	if (!chip->cycle_reg_ok)
+	if (!chip->cycle_reg_ok && chip->gauge_type == MAX_M5_GAUGE_TYPE)
 		return 0;
 
 	return chip->cycle_count;
@@ -2652,6 +2691,37 @@ static int max1720x_property_is_writeable(struct power_supply *psy,
 	return 0;
 }
 
+/* chip->model_lock is acquired by caller */
+static int max1720x_aafv_update(struct max1720x_chip *chip)
+{
+	const struct aafv_fg_config *cfg;
+	int ret, idx;
+
+	ret = maxfg_aafv_apply(&chip->regmap, chip->aafv,
+			       chip->aafv_cfgs, chip->aafv_config_limits,
+			       MAX_M5_MISCCFG_OOPSFILTER_CLEAR, MAX_M5_MISCCFG_OOPSFILTER_SHIFT,
+			       &idx);
+	if (ret) {
+		dev_err(chip->dev, "failed to maxfg_aafv_apply (%d)\n", ret);
+		return ret;
+	}
+
+	if (chip->aafv_cur_idx != idx) {
+		cfg = &chip->aafv_cfgs[idx];
+		chip->aafv_cur_idx = idx;
+		chip->aafv_modified_fus = true;
+
+		gbms_logbuffer_devlog(chip->monitor_log, chip->dev, LOGLEVEL_INFO, 0,
+				       LOGLEVEL_INFO,
+				      "aafv_fullsoc_update with %d %d %d %d",
+				      chip->cycle_count, cfg->fullsoc, cfg->voffset,
+				      cfg->fus);
+	}
+
+	return ret;
+
+}
+
 static int max1720x_gbms_get_property(struct power_supply *psy,
 				      enum gbms_property psp,
 				      union gbms_propval *val)
@@ -2798,7 +2868,10 @@ static int max1720x_gbms_set_property(struct power_supply *psy,
 		max1720x_set_recalibration(chip, val->prop.intval);
 		break;
 	case GBMS_PROP_AAFV:
+		mutex_lock(&chip->model_lock);
 		chip->aafv = val->prop.intval;
+		rc = max1720x_aafv_update(chip);
+		mutex_unlock(&chip->model_lock);
 		break;
 	default:
 		pr_debug("%s: route to max1720x_set_property, psp:%d\n", __func__, psp);
@@ -4312,6 +4385,11 @@ static int max17x0x_init_sysfs(struct max1720x_chip *chip)
 	if (ret)
 		dev_err(dev, "Failed to create fix_cycle_count\n");
 
+	/* aafv config */
+	ret = device_create_file(dev, &dev_attr_aafv_config);
+	if (ret)
+		dev_err(dev, "Failed to create aafv_config\n");
+
 	if (chip->gauge_type == MAX_M5_GAUGE_TYPE) {
 		ret = device_create_file(dev, &dev_attr_m5_model_state);
 		if (ret)
@@ -4499,6 +4577,7 @@ static int max1720x_set_next_update(struct max1720x_chip *chip)
 	return 0;
 }
 
+/* model_lock is acquired by the caller */
 static int max1720x_model_load(struct max1720x_chip *chip)
 {
 	int ret;
@@ -4516,6 +4595,10 @@ static int max1720x_model_load(struct max1720x_chip *chip)
 		if (ret < 0)
 			dev_warn(chip->dev, "Load Model Using Default State (%d)\n",
 				ret);
+
+		/* update fullsocthr based on aafv */
+		max_m5_model_apply_aaf_fullsoc(chip->model_data,
+					       &chip->aafv_cfgs[chip->aafv_cur_idx]);
 
 		/* use the state from the DT when GMSR is invalid */
 	}
@@ -5131,6 +5214,12 @@ static int max1720x_init_chip(struct max1720x_chip *chip)
 	if (ret < 0)
 		dev_err(chip->dev, "Cannot init FG model (%d)\n", ret);
 
+	/* loading default aafv values from device tree */
+	ret = maxfg_aafv_init(chip->batt_node, "maxim,fg-aafv", chip->aafv_cfgs,
+			      &chip->aafv_config_limits);
+	if (ret < 0)
+		dev_warn(chip->dev, "Cannot load aafv config(%d)\n", ret);
+
 	/* dump capacity drift fixup configuration only when enabled */
 	if (chip->drift_data.algo_ver != MAX1720X_DA_VER_NONE) {
 		struct max1720x_drift_data *ddata = &chip->drift_data;
@@ -5206,6 +5295,9 @@ static int max1720x_init_chip(struct max1720x_chip *chip)
 		chip->reg_prop_capacity_raw = MAX1720X_REPSOC;
 	}
 
+	/* MW has its own update flow */
+	if (chip->gauge_type != MAX_M5_GAUGE_TYPE)
+		max1720x_update_cycle_count(chip);
 
 	max1720x_restore_battery_qh_capacity(chip);
 
@@ -6139,6 +6231,8 @@ static int max1720x_probe(struct i2c_client *client,
 	ret = max1720x_init_fg_capture(chip);
 	if (ret < 0)
 		dev_err(dev, "Can not configure FG learning capture(%d)\n", ret);
+
+	chip->aafv_cur_idx = 0;
 
 	INIT_DELAYED_WORK(&chip->cap_estimate.settle_timer,
 			  batt_ce_capacityfiltered_work);
