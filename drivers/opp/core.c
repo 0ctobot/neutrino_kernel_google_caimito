@@ -1130,18 +1130,11 @@ static int _set_opp_level(struct device *dev, struct opp_table *opp_table,
 		level = opp->level;
 	}
 
-	/*
-	 * This function should be a nop for devices without a PM domain. However,
-	 * dev_pm_genpd_set_performance_state() returns an error for devices without a PM domain
-	 * instead of returning immediately.
-	 */
-	if (dev->pm_domain) {
-		/* Request a new performance state through the device's PM domain. */
-		ret = dev_pm_genpd_set_performance_state(dev, level);
-		if (ret)
-			dev_err(dev, "Failed to set performance state %u (%d)\n", level,
-				ret);
-	}
+	/* Request a new performance state through the device's PM domain. */
+	ret = dev_pm_genpd_set_performance_state(dev, level);
+	if (ret)
+		dev_err(dev, "Failed to set performance state %u (%d)\n", level,
+			ret);
 
 	return ret;
 }
