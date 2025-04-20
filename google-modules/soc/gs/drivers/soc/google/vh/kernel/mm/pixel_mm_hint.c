@@ -4,6 +4,7 @@
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/oom.h>
+#include <linux/swap.h>
 
 #include "../../include/pixel_mm_hint.h"
 
@@ -16,6 +17,30 @@ static atomic_long_t mm_hint_mode = ATOMIC_INIT(0);
 static atomic_long_t min_file_cache_kb = ATOMIC_INIT(0);
 static atomic_long_t critical_oom_score = ATOMIC_INIT(OOM_SCORE_ADJ_MAX);
 static atomic_long_t critical_swappiness = ATOMIC_INIT(20);
+
+void vh_vmscan_tune_swappiness(void *data, int *swappiness)
+{
+	enum mm_hint_mode hint = get_mm_hint_mode();
+	bool file_cache_enough = is_file_cache_enough();
+
+	if (hint == MM_HINT_NONE)
+		return;
+
+	if (file_cache_enough) {
+		// speed up kswapd & direct reclaim cases
+		*swappiness = 0;
+		return;
+	}
+
+	if (!current_is_kswapd() && !file_cache_enough &&
+		is_critical_process(current)) {
+		/*
+		 * only allow critical process to reclaim further
+		 * when file cache is NOT enough for direct reclaim case.
+		 */
+		*swappiness = get_critical_swappiness();
+	}
+}
 
 static int mm_hint_enable_set(const char *val, const struct kernel_param *kp)
 {

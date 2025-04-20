@@ -10,13 +10,13 @@
 #include <linux/sched.h>
 #include <linux/sched/cputime.h>
 #include <kernel/sched/sched.h>
-#include <../../../vh/include/sched.h>
 
 #include "sched_priv.h"
 
 static char sched_lib_name[LIB_PATH_LENGTH];
 unsigned long sched_lib_mask_out_val;
 unsigned long sched_lib_mask_in_val;
+bool disable_sched_setaffinity;
 
 extern unsigned int vendor_sched_priority_task_boost_value;
 char priority_task_name[LIB_PATH_LENGTH];
@@ -24,6 +24,10 @@ DEFINE_SPINLOCK(priority_task_name_lock);
 
 char prefer_idle_task_name[LIB_PATH_LENGTH];
 DEFINE_SPINLOCK(prefer_idle_task_name_lock);
+
+char boost_at_fork_task_name[LIB_PATH_LENGTH];
+raw_spinlock_t boost_at_fork_task_name_lock;
+unsigned long vendor_sched_boost_at_fork_value = SCHED_CAPACITY_SCALE/2;
 
 static DEFINE_MUTEX(__sched_lib_name_mutex);
 
@@ -119,9 +123,19 @@ void rvh_sched_setaffinity_mod(void *data, struct task_struct *task,
 				const struct cpumask *in_mask, int *res)
 {
 	struct cpumask out_mask;
+	bool block_affinity;
 
 	if (*res != 0)
 		return;
+
+	block_affinity = disable_sched_setaffinity;
+	block_affinity |= vg[get_vendor_group(task)].disable_sched_setaffinity;
+
+	if (block_affinity && !capable(CAP_SYS_NICE)) {
+		__reset_task_affinity(task);
+		*res = -EPERM;
+		return;
+	}
 
 	if (!(sched_lib_mask_in_val && sched_lib_mask_out_val))
 		return;
@@ -214,4 +228,20 @@ int set_prefer_idle_task_name(void)
 	}
 
 	return ret;
+}
+
+bool should_boost_at_fork(struct task_struct *p)
+{
+	int group = get_vendor_group(p);
+	unsigned long irqflags;
+	bool boost = false;
+
+	raw_spin_lock_irqsave(&boost_at_fork_task_name_lock, irqflags);
+	if (strlen(boost_at_fork_task_name) &&
+	    strstr(p->parent->comm, boost_at_fork_task_name) &&
+	    (group == VG_FOREGROUND || group == VG_TOPAPP))
+		boost = true;
+	raw_spin_unlock_irqrestore(&boost_at_fork_task_name_lock, irqflags);
+
+	return boost;
 }

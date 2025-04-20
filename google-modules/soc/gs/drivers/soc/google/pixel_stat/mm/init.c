@@ -92,7 +92,11 @@ static int pixel_stat_mm_init(void)
 	if (ret)
 		return ret;
 
-	ret = register_trace_android_vh_tune_swappiness(vh_vmscan_tune_swappiness ,NULL);
+	ret = register_trace_android_rvh_vmscan_kswapd_wake(rvh_vmscan_kswapd_wake, NULL);
+	if (ret)
+		return ret;
+
+	ret = register_trace_android_rvh_vmscan_kswapd_done(rvh_vmscan_kswapd_done, NULL);
 	if (ret)
 		return ret;
 

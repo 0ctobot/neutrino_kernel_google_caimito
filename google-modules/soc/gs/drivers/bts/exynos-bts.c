@@ -172,6 +172,7 @@ static void bts_calc_bw(void)
 	btsdev->peak_bw = 0;
 	btsdev->total_bw = 0;
 
+	spin_lock(&btsdev->lock);
 	for (i = 0; i < btsdev->num_bts; i++) {
 #if !IS_ENABLED(CONFIG_SOC_ZUMA)
 		if (btsdev->peak_bw < btsdev->bts_bw[i].peak)
@@ -184,7 +185,7 @@ static void bts_calc_bw(void)
 		total_read += btsdev->bts_bw[i].read;
 		total_write += btsdev->bts_bw[i].write;
 	}
-
+	spin_unlock(&btsdev->lock);
 	btsdev->total_bw = total_read + total_write;
 	if (btsdev->peak_bw < (total_read / NUM_CHANNEL))
 		btsdev->peak_bw = (total_read / NUM_CHANNEL);

@@ -83,6 +83,10 @@ struct sugov_policy {
 	struct freq_qos_request	pmu_max_freq_req;
 	bool			under_pmu_throttle;
 	bool			relax_pmu_throttle;
+
+#if IS_ENABLED(CONFIG_PIXEL_EM)
+	struct pixel_em_profile *em_profile;
+#endif
 };
 
 struct sugov_cpu {
@@ -141,6 +145,24 @@ extern int get_ev_data(int cpu, unsigned long *inst, unsigned long *cyc,
 #endif
 
 /************************ Governor internals ***********************/
+static inline bool sugov_em_profile_changed(struct sugov_policy *sg_policy)
+{
+#if IS_ENABLED(CONFIG_PIXEL_EM)
+	struct pixel_em_profile **profile_ptr_snapshot;
+	struct pixel_em_profile *profile;
+
+	profile_ptr_snapshot = READ_ONCE(vendor_sched_pixel_em_profile);
+	profile = READ_ONCE(*profile_ptr_snapshot);
+
+	if (sg_policy->em_profile != profile) {
+		sg_policy->em_profile = profile;
+		return true;
+	}
+#endif
+
+	return false;
+}
+
 static inline unsigned int
 sugov_calc_freq_response_ms(struct sugov_policy *sg_policy)
 {
@@ -181,13 +203,25 @@ out:
 	return approximate_runtime(cap);
 }
 
-static inline void sugov_update_response_time_mult(struct sugov_policy *sg_policy)
+static inline void sugov_update_response_time_mult(struct sugov_policy *sg_policy,
+						   bool reset_defaults)
 {
 	unsigned long mult;
 	int cpu;
 
-	if (unlikely(!sg_policy->freq_response_time_ms))
-		sg_policy->freq_response_time_ms = sugov_calc_freq_response_ms(sg_policy);
+	if (reset_defaults) {
+		unsigned int new_response_time_ms = sugov_calc_freq_response_ms(sg_policy);
+
+		/*
+		 * If user has requested a value that is different than the
+		 * default leave it as-is to avoid races between setting the
+		 * value and changing the em
+		 */
+		if (sg_policy->tunables->response_time_ms == sg_policy->freq_response_time_ms)
+			sg_policy->tunables->response_time_ms = new_response_time_ms;
+
+		sg_policy->freq_response_time_ms = new_response_time_ms;
+	}
 
 	mult = sg_policy->freq_response_time_ms * SCHED_CAPACITY_SCALE;
 	mult /=	sg_policy->tunables->response_time_ms;
@@ -1038,6 +1072,9 @@ static void sugov_work(struct kthread_work *work)
 	unsigned long flags;
 	bool relax_pmu_throttle;
 
+	if (sugov_em_profile_changed(sg_policy))
+		sugov_update_response_time_mult(sg_policy, true);
+
 	/*
 	 * Hold sg_policy->update_lock shortly to handle the case where:
 	 * incase sg_policy->next_freq is read here, and then updated by
@@ -1437,18 +1474,19 @@ response_time_ms_store(struct gov_attr_set *attr_set, const char *buf, size_t co
 {
 	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
 	struct sugov_policy *sg_policy;
-	unsigned int response_time_ms;
+	int response_time_ms;
 
-	if (kstrtouint(buf, 10, &response_time_ms))
+	if (kstrtoint(buf, 10, &response_time_ms))
 		return -EINVAL;
-
-	/* XXX need special handling for high values? */
 
 	tunables->response_time_ms = response_time_ms;
 
 	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook) {
 		if (sg_policy->tunables == tunables) {
-			sugov_update_response_time_mult(sg_policy);
+			if (response_time_ms <= 0)
+				tunables->response_time_ms = sg_policy->freq_response_time_ms;
+
+			sugov_update_response_time_mult(sg_policy, sugov_em_profile_changed(sg_policy));
 			break;
 		}
 	}
@@ -1779,7 +1817,7 @@ static int sugov_init(struct cpufreq_policy *policy)
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;
 
-	sugov_update_response_time_mult(sg_policy);
+	sugov_update_response_time_mult(sg_policy, true);
 
 
 	freq_qos_add_request(&policy->constraints, &sg_policy->pmu_max_freq_req,

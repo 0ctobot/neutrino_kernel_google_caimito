@@ -257,7 +257,7 @@ static int exynos_crypto_init(struct ufs_hba *hba)
 	 * GS101 FIPS 140 module does not support HW delivered keys. Do not
 	 * register the module on GS101.
 	 */
-#if IS_ENABLED(CONFIG_SCSI_UFS_PIXEL_FIPS140) && !IS_ENABLED(CONFIG_SOC_GS101)
+#if IS_ENABLED(CONFIG_SCSI_UFS_PIXEL_FIPS140)
 	register_fips_module = true;
 #else
 	register_fips_module = false;

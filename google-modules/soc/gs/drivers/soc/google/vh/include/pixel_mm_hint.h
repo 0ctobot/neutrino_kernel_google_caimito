@@ -11,6 +11,7 @@ enum mm_hint_mode {
 };
 
 #if IS_ENABLED(CONFIG_VH_MM)
+void vh_vmscan_tune_swappiness(void *data, int *swappiness);
 enum mm_hint_mode get_mm_hint_mode(void);
 bool is_file_cache_enough(void);
 bool is_critical_process(struct task_struct *task);

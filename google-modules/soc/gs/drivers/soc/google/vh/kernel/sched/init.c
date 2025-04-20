@@ -10,6 +10,7 @@
 #include <kernel/sched/sched.h>
 #include <linux/cpufreq.h>
 #include <linux/module.h>
+#include <linux/suspend.h>
 #include <trace/hooks/binder.h>
 #include <trace/hooks/cgroup.h>
 #include <trace/hooks/sched.h>
@@ -123,6 +124,7 @@ extern void vh_set_task_comm_pixel_mod(void *data, struct task_struct *p);
 
 extern struct cpufreq_governor sched_pixel_gov;
 extern bool wait_for_init;
+extern bool in_suspend_resume;
 
 int pixel_cpu_num;
 int pixel_cluster_num;
@@ -214,6 +216,7 @@ static int init_vendor_task_data(void *data)
 		v_tsk = get_vendor_task_struct(t);
 		init_vendor_task_struct(v_tsk);
 		v_tsk->orig_prio = t->static_prio;
+		v_tsk->orig_policy = t->policy;
 		v_tsk->prev_sum_exec_runtime = t->se.prev_sum_exec_runtime;
 		put_task_struct(t);
 	}
@@ -304,6 +307,27 @@ static void init_sched_params(void)
 	vh_sched_latency_ns = sysctl_sched_latency;
 }
 
+static int vh_sched_pm_notify(struct notifier_block *nb,
+			       unsigned long mode, void *_unused)
+{
+	switch (mode) {
+	case PM_SUSPEND_PREPARE:
+		in_suspend_resume = true;
+		break;
+
+	case PM_POST_SUSPEND:
+		in_suspend_resume = false;
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
+static struct notifier_block vh_sched_pm_nb = {
+	.notifier_call = vh_sched_pm_notify,
+};
+
 static int vh_sched_init(void)
 {
 	int ret;
@@ -337,6 +361,8 @@ static int vh_sched_init(void)
 	init_vendor_group_data();
 
 	init_pixel_em();
+
+	register_pm_notifier(&vh_sched_pm_nb);
 
 	/*
 	 * We must register this first but it won't do anything until we

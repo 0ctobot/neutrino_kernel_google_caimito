@@ -90,6 +90,7 @@ struct vendor_task_struct {
 	int auto_uclamp_max_flags;	// Relative to cpu instead of absolute
 	struct uclamp_filter uclamp_filter;
 	int orig_prio;
+	int orig_policy;		/* Protected by task_rq_lock() */
 	unsigned long iowait_boost;
 	bool is_binder_task;
 
@@ -99,8 +100,11 @@ struct vendor_task_struct {
 	u64 runnable_start_ns;
 	u64 prev_sum_exec_runtime;
 	u64 delta_exec;
+	u64 last_dequeue;
 	unsigned long util_enqueued;
-	unsigned long prev_util_enqueued;
+	unsigned long util_dequeued;
+	unsigned long prev_util_dequeued;
+	unsigned long prev_util;
 	bool ignore_util_est_update;
 
 	/* sched qos attributes */
@@ -117,6 +121,7 @@ struct vendor_task_struct {
 	 * - get_and_reset_vendor_task_struct_private
 	 */
 	unsigned long private;
+
 	// ADPF scheduler hint value.
 	int adpf_adj;
 	// Definition of real_cap: the current cpu_cap that a task was actually running on.

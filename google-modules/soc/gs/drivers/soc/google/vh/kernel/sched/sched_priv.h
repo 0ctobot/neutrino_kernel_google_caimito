@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0 */
+#include <linux/sched/clock.h>
 #include "../../include/sched.h"
 #include "binder_internal.h"
 #include <asm/atomic.h>
@@ -77,12 +78,18 @@ extern unsigned int vh_sched_min_granularity_ns;
 extern unsigned int vh_sched_wakeup_granularity_ns;
 extern unsigned int vh_sched_latency_ns;
 
+extern char boost_at_fork_task_name[LIB_PATH_LENGTH];
+extern raw_spinlock_t boost_at_fork_task_name_lock;
+extern unsigned long vendor_sched_boost_at_fork_value;
+
 DECLARE_STATIC_KEY_FALSE(auto_migration_margins_enable);
 DECLARE_STATIC_KEY_FALSE(auto_dvfs_headroom_enable);
 
 
 unsigned long approximate_util_avg(unsigned long util, u64 delta);
 u64 approximate_runtime(unsigned long util);
+inline void __reset_task_affinity(struct task_struct *p);
+bool should_boost_at_fork(struct task_struct *p);
 
 #define cpu_overutilized(cap, max, cpu)	\
 		((cap) * sched_capacity_margin[cpu] > (max) << SCHED_CAPACITY_SHIFT)
@@ -201,6 +208,9 @@ struct vendor_group_property {
 	bool qos_auto_uclamp_max_enable;
 	bool qos_prefer_high_cap_enable;
 	bool qos_rampup_multiplier_enable;
+
+	bool disable_sched_setaffinity;
+	bool use_batch_policy;
 };
 
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
@@ -688,15 +698,20 @@ static inline bool get_prefer_high_cap(struct task_struct *p)
 static inline unsigned int get_rampup_multiplier(struct task_struct *p)
 {
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
+	bool rampup_qos_user_defined =
+		vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
+
+	if (!vg[vp->group].qos_rampup_multiplier_enable)
+		return vg[vp->group].rampup_multiplier;
 
 	if (get_adpf(p, true))
-		return vendor_sched_adpf_rampup_multiplier;
-
-	if (vg[vp->group].qos_rampup_multiplier_enable &&
-	    (vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT)))
-		return vp->rampup_multiplier;
+		return rampup_qos_user_defined
+			? max(vp->rampup_multiplier, vendor_sched_adpf_rampup_multiplier)
+			: vendor_sched_adpf_rampup_multiplier;
 	else
-		return vg[vp->group].rampup_multiplier;
+		return rampup_qos_user_defined
+			? vp->rampup_multiplier
+			: vg[vp->group].rampup_multiplier;
 }
 
 static inline void set_auto_prefer_high_cap(struct task_struct *p, bool val)
@@ -719,6 +734,26 @@ static inline void init_vendor_inheritance_struct(struct vendor_inheritance_stru
 	vi->preempt_wakeup = 0;
 }
 
+/*
+ * Returns true if task has privilege false otherwise.
+ */
+static inline bool check_cred(struct task_struct *p)
+{
+	const struct cred *cred, *tcred;
+	bool ret = true;
+
+	cred = current_cred();
+	tcred = get_task_cred(p);
+	if (!uid_eq(cred->euid, GLOBAL_ROOT_UID) &&
+	    !uid_eq(cred->euid, tcred->uid) &&
+	    !uid_eq(cred->euid, tcred->suid) &&
+	    !ns_capable(tcred->user_ns, CAP_SYS_NICE)) {
+		ret = false;
+	}
+	put_cred(tcred);
+	return ret;
+}
+
 static inline void init_vendor_task_struct(struct vendor_task_struct *v_tsk)
 {
 	/* Guarantee everything is not random first, just in case */
@@ -739,7 +774,8 @@ static inline void init_vendor_task_struct(struct vendor_task_struct *v_tsk)
 	v_tsk->runnable_start_ns = -1;
 	v_tsk->delta_exec = 0;
 	v_tsk->util_enqueued = 0;
-	v_tsk->prev_util_enqueued = 0;
+	v_tsk->util_dequeued = 0;
+	v_tsk->prev_util_dequeued = 0;
 	v_tsk->ignore_util_est_update = false;
 	v_tsk->rampup_multiplier = 1;
 	v_tsk->sched_qos_profile = SCHED_QOS_NONE;
@@ -1083,12 +1119,15 @@ static inline void __update_util_est_invariance(struct rq *rq,
 {
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
 	unsigned long se_enqueued, cfs_rq_enqueued, new_util_est;
+	unsigned long util = task_util(p);
 	struct cfs_rq *cfs_rq = &rq->cfs;
 	struct sched_entity *se = &p->se;
 	unsigned int rampup_multiplier;
-	u64 delta_exec;
 	int __maybe_unused group;
 	unsigned long irqflags;
+	u64 dequeue_time_ns;
+	u64 delta_exec;
+	bool do_update;
 
 	if (!static_branch_likely(&auto_dvfs_headroom_enable))
 		return;
@@ -1110,11 +1149,29 @@ static inline void __update_util_est_invariance(struct rq *rq,
 	vp->delta_exec += delta_exec;
 	vp->prev_sum_exec_runtime = se->sum_exec_runtime;
 
-	/* Is the task util increasing? */
-	if (task_util(p) < vp->util_enqueued + UTIL_EST_MARGIN)
-		return;
-
+	dequeue_time_ns = sched_clock() - vp->last_dequeue;
 	new_util_est = approximate_util_avg(vp->util_enqueued, vp->delta_exec);
+
+	/* Is the task util increasing? */
+	do_update = util > vp->util_dequeued + UTIL_EST_MARGIN;
+
+	/*
+	 * Due to invariance util can be stuck at the same value for extended
+	 * period of time. Check if this is the case and try to rampup quickly
+	 * if it is. To avoid triggering the logic against higher util values
+	 * that naturally can linger, check if new_util_est has actually grown
+	 * too.
+	 */
+	do_update |= util == vp->prev_util &&
+		dequeue_time_ns >= NSEC_PER_MSEC && new_util_est > vp->util_dequeued + UTIL_EST_MARGIN;
+
+	if (util != vp->prev_util) {
+		vp->last_dequeue = sched_clock();
+		vp->prev_util = util;
+	}
+
+	if (!do_update)
+		return;
 
 	se_enqueued = READ_ONCE(se->avg.util_est.enqueued) & ~UTIL_AVG_UNCHANGED;
 	se_enqueued = max_t(unsigned long, se->avg.util_est.ewma, se_enqueued);

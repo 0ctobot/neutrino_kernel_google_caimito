@@ -12,7 +12,10 @@
 #include <linux/module.h>
 #include <linux/string.h>
 #include <trace/hooks/mm.h>
+#include <trace/hooks/vmscan.h>
 #include <uapi/linux/sched/types.h>
+
+#include "../../include/pixel_mm_hint.h"
 
 static struct task_struct *tsk_kswapd, *tsk_kcompactd;
 
@@ -301,6 +304,10 @@ static int vh_mm_init(void)
 
 	ret = register_trace_android_vh_mm_kcompactd_cpu_online(
 		vh_kcompactd_cpu_online, NULL);
+	if (ret)
+		goto out_err;
+
+	ret = register_trace_android_vh_tune_swappiness(vh_vmscan_tune_swappiness ,NULL);
 	if (ret)
 		goto out_err;
 

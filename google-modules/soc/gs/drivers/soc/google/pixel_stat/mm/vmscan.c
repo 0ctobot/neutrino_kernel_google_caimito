@@ -6,6 +6,7 @@
  * Copyright 2021 Google LLC
  */
 
+#include "linux/vm_event_item.h"
 #include <linux/mm.h>
 #include <linux/types.h>
 #include <linux/kobject.h>
@@ -13,9 +14,11 @@
 #include <linux/sched.h>
 #include <linux/jiffies.h>
 #include <linux/pagemap.h>
-#include <linux/swap.h>
+
 #include "../../vh/include/sched.h"
-#include "../../vh/include/pixel_mm_hint.h"
+
+#define CREATE_TRACE_POINTS
+#include "pixel_mm_trace.h"
 
 #define OOM_SCORE_ADJ_NATIVE -1
 #define OOM_SCORE_ADJ_TOP 0
@@ -300,26 +303,41 @@ out:
 	return retval;
 }
 
-void vh_vmscan_tune_swappiness(void *data, int *swappiness)
+static unsigned long wake_nr_scanned;
+static unsigned long wake_nr_reclaimed;
+
+void rvh_vmscan_kswapd_wake(
+	void *data,
+	int node_id,
+	unsigned int highest_zoneidx,
+	unsigned int alloc_order)
 {
-	enum mm_hint_mode hint = get_mm_hint_mode();
-	bool file_cache_enough = is_file_cache_enough();
+	unsigned long events[NR_VM_EVENT_ITEMS];
 
-	if (hint == MM_HINT_NONE)
-		return;
+	if (!trace_pixel_mm_kswapd_wake_enabled()) return;
 
-	if (file_cache_enough) {
-		// speed up kswapd & direct reclaim cases
-		*swappiness = 0;
-		return;
-	}
+	all_vm_events(events);
+	wake_nr_scanned = events[PGSCAN_KSWAPD];
+	wake_nr_reclaimed = events[PGSTEAL_KSWAPD];
 
-	if (!current_is_kswapd() && !file_cache_enough &&
-		is_critical_process(current)) {
-		/*
-		 * only allow critical process to reclaim further
-		 * when file cache is NOT enough for direct reclaim case.
-		 */
-		*swappiness = get_critical_swappiness();
-	}
+	trace_pixel_mm_kswapd_wake(0);
+}
+
+void rvh_vmscan_kswapd_done(
+	void *data,
+	int node_id,
+	unsigned int highest_zoneidx,
+	unsigned int alloc_order,
+	unsigned int reclaim_order)
+{
+	unsigned long events[NR_VM_EVENT_ITEMS];
+	unsigned long delta_nr_scanned, delta_nr_reclaimed;
+
+	if (!trace_pixel_mm_kswapd_done_enabled()) return;
+
+	all_vm_events(events);
+	delta_nr_scanned = events[PGSCAN_KSWAPD] - wake_nr_scanned;
+	delta_nr_reclaimed = events[PGSTEAL_KSWAPD] - wake_nr_reclaimed;
+
+	trace_pixel_mm_kswapd_done(delta_nr_scanned, delta_nr_reclaimed);
 }

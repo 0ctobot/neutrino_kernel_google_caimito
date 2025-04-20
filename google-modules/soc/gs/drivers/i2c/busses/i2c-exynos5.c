@@ -225,6 +225,8 @@
 #define USI_SW_CONF_MASK	(0x7 << 0)
 #define USI_I2C_SW_CONF		BIT(2)
 
+#define HSI2C_FAST_TRIGGER_TRAILING_CNT 	0x20000
+
 static const struct of_device_id exynos5_i2c_match[] = {
 	{ .compatible = "samsung,exynos5-hsi2c" },
 	{},
@@ -632,7 +634,6 @@ static void exynos5_i2c_init(struct exynos5_i2c *i2c)
 	u32 i2c_conf = readl(i2c->regs + HSI2C_CONF);
 
 	writel(HSI2C_MASTER, i2c->regs + HSI2C_CTL);
-	writel(i2c->trailing_count, i2c->regs + HSI2C_TRAILING_CTL);
 
 	if (i2c->speed_mode == HSI2C_HIGH_SPD) {
 		writel(HSI2C_MASTER_ID(MASTER_ID(i2c->bus_id)),
@@ -749,10 +750,15 @@ static irqreturn_t exynos5_i2c_irq(int irqno, void *dev_id)
 		goto out;
 	}
 	/* Checking INT_TRANSFER_DONE */
-	if ((reg_val & HSI2C_INT_TRANSFER_DONE) &&
-	    i2c->msg_ptr >= i2c->msg->len &&
-		!(i2c->msg->flags & I2C_M_RD))
-		exynos5_i2c_stop(i2c);
+	if (reg_val & HSI2C_INT_TRANSFER_DONE) {
+		if (!(i2c->msg->flags & I2C_M_RD) && i2c->msg_ptr >= i2c->msg->len) {
+			exynos5_i2c_stop(i2c);
+		} else if (i2c->msg->flags & I2C_M_RD && i2c->msg_ptr < i2c->msg->len) {
+			/* INT_TRANSFER_DONE but Read fifo is not done yet.*/
+			/* Fast trigger interrupt for trailing RX. */
+			writel(HSI2C_FAST_TRIGGER_TRAILING_CNT, i2c->regs + HSI2C_TRAILING_CTL);
+		}
+	}
 
 out:
 	writel(reg_val, i2c->regs +  HSI2C_INT_STATUS);
@@ -788,7 +794,7 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 	}
 
 	/* (length * (bits + ack) * (s/ms) * / freq) * (tolerance) */
-	timeout_max = (i2c->msg->len * 9 * 1000 / i2c->clock_frequency) * 2;
+	timeout_max = (i2c->msg->len * 9 * 1000 / i2c->clock_frequency) * 3;
 	/* Minimum timeout is 100ms */
 	if (timeout_max < 100)
 		timeout_max = 100;
@@ -800,6 +806,7 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 	i2c_timeout = readl(i2c->regs + HSI2C_TIMEOUT);
 	i2c_timeout &= ~HSI2C_TIMEOUT_EN;
 	writel(i2c_timeout, i2c->regs + HSI2C_TIMEOUT);
+	writel(i2c->trailing_count, i2c->regs + HSI2C_TRAILING_CTL);
 
 	/*
 	 * In case of short length request it'd be better to set

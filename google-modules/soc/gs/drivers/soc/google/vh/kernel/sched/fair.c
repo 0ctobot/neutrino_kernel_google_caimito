@@ -75,6 +75,7 @@ struct vendor_group_property vg[VG_MAX];
 extern struct vendor_group_list vendor_group_list[VG_MAX];
 
 bool wait_for_init = true;
+bool in_suspend_resume;
 
 unsigned int vh_sched_max_load_balance_interval;
 unsigned int vh_sched_min_granularity_ns;
@@ -2164,8 +2165,8 @@ uclamp_tg_restrict_pixel_mod(struct task_struct *p, enum uclamp_id clamp_id)
 		value = max(value, (unsigned int)capacity_orig_of(pixel_cluster_start_cpu[0]) + 1);
 
 	/* Boost tasks during suspend/resume */
-	if (clamp_id == UCLAMP_MIN && cpuhp_tasks_frozen)
-		value = max(value, SCHED_CAPACITY_SCALE/2);
+	if (clamp_id == UCLAMP_MIN && in_suspend_resume)
+		value = max(value, SCHED_CAPACITY_SCALE/4);
 
 	// For uclamp min, if task has a valid per-task setting that is lower than or equal to its
 	// group value, increase the final uclamp value by 1. This would have effect only on
@@ -2272,6 +2273,9 @@ void initialize_vendor_group_property(void)
 		vg[i].qos_auto_uclamp_max_enable = false;
 		vg[i].qos_prefer_high_cap_enable = false;
 		vg[i].qos_rampup_multiplier_enable = false;
+
+		vg[i].disable_sched_setaffinity = false;
+		vg[i].use_batch_policy = false;
 	}
 
 #if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
@@ -2452,10 +2456,15 @@ void rvh_post_init_entity_util_avg_pixel_mod(void *data, struct sched_entity *se
 		}
 	} else {
 		struct sched_avg *sa = &se->avg;
-		sa->util_avg = 0;
-		sa->runnable_avg = 0;
-		sa->util_est.enqueued = 0 | UTIL_AVG_UNCHANGED;
-		sa->util_est.ewma = 0;
+		unsigned long init_value = 0;
+
+		if (should_boost_at_fork(task_of(se)))
+			init_value =  vendor_sched_boost_at_fork_value;
+
+		sa->util_avg = init_value >> 1;
+		sa->runnable_avg = init_value >> 1;
+		sa->util_est.enqueued = init_value | UTIL_AVG_UNCHANGED;
+		sa->util_est.ewma = init_value;
 	}
 }
 
@@ -2522,7 +2531,13 @@ void vh_dup_task_struct_pixel_mod(void *data, struct task_struct *tsk, struct ta
 	uclamp_fork_pixel_mod(tsk, orig);
 	init_vendor_task_struct(v_tsk);
 	v_tsk->group = v_orig->group;
-	v_tsk->orig_prio = orig->static_prio;
+	if (orig->sched_reset_on_fork) {
+		v_tsk->orig_prio = NICE_TO_PRIO(0);
+		v_tsk->orig_policy = SCHED_NORMAL;
+	} else {
+		v_tsk->orig_prio = orig->static_prio;
+		v_tsk->orig_policy = orig->policy;
+	}
 }
 
 void rvh_select_task_rq_fair_pixel_mod(void *data, struct task_struct *p, int prev_cpu, int sd_flag,
@@ -2613,8 +2628,12 @@ void rvh_set_user_nice_locked_pixel_mod(void *data, struct task_struct *p, long 
 
 void rvh_setscheduler_pixel_mod(void *data, struct task_struct *p)
 {
-	struct vendor_task_struct *vp;
+	struct vendor_task_struct *vp = get_vendor_task_struct(p);
+	int group = get_vendor_group(p);
 	unsigned long irqflags;
+
+	if (vg[group].use_batch_policy && fair_policy(p->policy))
+		vp->orig_policy = p->policy;
 
 	if (!vendor_sched_boost_adpf_prio)
 		return;
@@ -2622,7 +2641,6 @@ void rvh_setscheduler_pixel_mod(void *data, struct task_struct *p)
 	if (p->prio < MAX_RT_PRIO)
 		return;
 
-	vp = get_vendor_task_struct(p);
 	if (get_boost_prio(p)) {
 		raw_spin_lock_irqsave(&vp->lock, irqflags);
 		vp->orig_prio = p->static_prio;
@@ -2642,7 +2660,6 @@ static struct task_struct *detach_important_task(struct rq *src_rq, int dst_cpu)
 
 	lockdep_assert_held(&src_rq->__lock);
 
-	rcu_read_lock();
 
 	list_for_each_entry_reverse(p, &src_rq->cfs_tasks, se.group_node) {
 		bool is_ui = false, is_boost = false;
@@ -2719,7 +2736,6 @@ static struct task_struct *detach_important_task(struct rq *src_rq, int dst_cpu)
 			cpu_rq(dst_cpu)->misfit_task_load = 0;
 	}
 
-	rcu_read_unlock();
 	return p;
 }
 
@@ -2738,6 +2754,13 @@ void sched_newidle_balance_pixel_mod(void *data, struct rq *this_rq, struct rq_f
 	int this_cpu = this_rq->cpu;
 	struct vendor_rq_struct *this_vrq = get_vendor_rq_struct(this_rq);
 	struct vendor_rq_struct *src_vrq;
+
+	/*
+	 * There is a task waiting to run. No need to search for one.
+	 * Return 0; the task will be enqueued when switching to idle.
+	 */
+	if (this_rq->ttwu_pending)
+		return;
 
 	if (SCHED_WARN_ON(atomic_read(&this_vrq->num_adpf_tasks)))
 		atomic_set(&this_vrq->num_adpf_tasks, 0);
@@ -2824,6 +2847,8 @@ void sched_newidle_balance_pixel_mod(void *data, struct rq *this_rq, struct rq_f
 			continue;
 		}
 
+		rcu_read_lock();
+
 		p = detach_important_task(src_rq, this_cpu);
 
 		rq_unlock(src_rq, &src_rf);
@@ -2831,10 +2856,12 @@ void sched_newidle_balance_pixel_mod(void *data, struct rq *this_rq, struct rq_f
 		if (p) {
 			attach_one_task(this_rq, p);
 			local_irq_restore(src_rf.flags);
+			rcu_read_unlock();
 			break;
 		}
 
 		local_irq_restore(src_rf.flags);
+		rcu_read_unlock();
 	}
 
 	raw_spin_rq_lock(this_rq);
@@ -2923,9 +2950,14 @@ void rvh_enqueue_task_fair_pixel_mod(void *data, struct rq *rq, struct task_stru
 		return;
 
 	if (!task_on_rq_migrating(p)) {
+		u64 dequeue_time_ns = sched_clock() - vp->last_dequeue;
+		bool dequeued_enough = dequeue_time_ns >= NSEC_PER_MSEC;
+		bool util_reduced;
+
 		vp->prev_sum_exec_runtime = p->se.sum_exec_runtime;
-		vp->util_enqueued = task_util(p);
 		vp->ignore_util_est_update = true;
+		vp->util_enqueued = task_util(p);
+		vp->prev_util = vp->util_dequeued;
 
 		/*
 		 * If the utilization is rising, keep accounting for delta_exec
@@ -2941,7 +2973,9 @@ void rvh_enqueue_task_fair_pixel_mod(void *data, struct rq *rq, struct task_stru
 		 * util_est we're building up, so set a flag to ignore it. But
 		 * allow us to latch back to util_avg once we have settled.
 		 */
-		if (vp->util_enqueued < vp->prev_util_enqueued) {
+		util_reduced = abs(vp->util_dequeued - vp->prev_util_dequeued) <= UTIL_EST_MARGIN;
+		util_reduced |= vp->util_dequeued + UTIL_EST_MARGIN <= vp->prev_util_dequeued;
+		if (dequeued_enough && util_reduced) {
 			vp->delta_exec = 0;
 			vp->ignore_util_est_update = false;
 		}
@@ -2983,7 +3017,9 @@ void rvh_dequeue_task_fair_pixel_mod(void *data, struct rq *rq, struct task_stru
 
 	if (!task_on_rq_migrating(p)) {
 		vp->prev_sum_exec_runtime = p->se.sum_exec_runtime;
-		vp->prev_util_enqueued = vp->util_enqueued;
+		vp->prev_util_dequeued = vp->util_dequeued;
+		vp->util_dequeued = task_util(p);
+		vp->last_dequeue = sched_clock();
 	}
 
 	if (get_adpf(p, true))
