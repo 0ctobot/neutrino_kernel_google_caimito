@@ -5870,7 +5870,8 @@ dhd_del_monitor_if(dhd_info_t *dhd)
 	dev_priv = DHD_MON_DEV_PRIV(dhd->monitor_dev);
 	dev_priv->dhd = (dhd_info_t *)NULL;
 	memset(&dev_priv->stats, 0, sizeof(dev_priv->stats));
-	memset(dhd->monitor_type, 0, DHD_MAX_IFS);
+	memset(dhd->monitor_type, 0,
+	       DHD_MAX_IFS * sizeof(dhd->monitor_type[0]));
 #endif /* WL_CFG80211_MONITOR */
 
 	if (FW_SUPPORTED((&dhd->pub), monitor)) {
