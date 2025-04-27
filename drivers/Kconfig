@@ -241,4 +241,6 @@ source "drivers/hte/Kconfig"
 
 source "drivers/kernelsu/Kconfig"
 
+source "google-modules/Kconfig"
+
 endmenu
