@@ -1019,11 +1019,11 @@ void wake_up_q(struct wake_q_head *head)
 		struct task_struct *task;
 
 		task = container_of(node, struct task_struct, wake_q);
+		task->wake_q_count = head->count;
 		node = node->next;
 		/* pairs with cmpxchg_relaxed() in __wake_q_add() */
 		WRITE_ONCE(task->wake_q.next, NULL);
 		/* Task can safely be re-inserted now. */
-		task->wake_q_count = head->count;
 
 		/*
 		 * wake_up_process() executes a full barrier, which pairs with
