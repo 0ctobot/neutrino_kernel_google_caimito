@@ -810,6 +810,12 @@ static ssize_t store_scaling_governor(struct cpufreq_policy *policy,
 	if (ret != 1)
 		return -EINVAL;
 
+#if defined(CONFIG_SOC_GOOGLE) && !IS_ENABLED(CONFIG_VH_SCHED)
+	/* Use schedutil if sched_pixel is requested but not present */
+	if (!strcmp(str_governor, "sched_pixel"))
+		strcpy(str_governor, "schedutil");
+#endif
+
 	if (cpufreq_driver->setpolicy) {
 		unsigned int new_pol;
 
@@ -2628,6 +2634,9 @@ static int cpufreq_set_policy(struct cpufreq_policy *policy,
 	WRITE_ONCE(policy->min, new_data.min > policy->max ? policy->max : new_data.min);
 
 	trace_cpu_frequency_limits(policy);
+
+	arch_set_min_freq_scale(policy->related_cpus, policy->min,
+				policy->cpuinfo.max_freq);
 
 	policy->cached_target_freq = UINT_MAX;
 
