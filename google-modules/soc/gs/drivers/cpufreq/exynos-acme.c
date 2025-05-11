@@ -1009,8 +1009,9 @@ static int dm_scaler(int dm_type, void *devdata, unsigned int target_freq,
 		return -ENODEV;
 	}
 
-
-	target_index = cpufreq_frequency_table_target(policy, target_freq, relation);
+	target_index = cpufreq_frequency_table_target(policy, target_freq,
+	                                              policy->min, policy->max,
+	                                              relation);
 	target_freq = policy->freq_table[target_index].frequency;
 	ret = __exynos_cpufreq_target(policy, target_freq, false);
 
