@@ -778,7 +778,7 @@ static u32 find_cpu_freq(struct cpufreq_policy *pol, u64 khz, u32 relation)
 	int idx;
 
 	/* Find the nearest frequency in the table with the chosen relation */
-	idx = cpufreq_frequency_table_target(pol, khz, relation);
+	idx = cpufreq_frequency_table_target(pol, khz, pol->min, pol->max, relation);
 	return tbl[idx].frequency;
 }
 
@@ -1434,7 +1434,7 @@ static inline u32 find_freq_c(struct exynos_devfreq_data *data, u32 target)
 }
 
 /* This closely mimics cpufreq_table_find_index_dl() */
-static inline u32 find_index_l(struct exynos_devfreq_data *data, u32 target)
+static inline u32 exynos_find_index_l(struct exynos_devfreq_data *data, u32 target)
 {
 	u32 best = -1, i = 0;
 
@@ -1459,7 +1459,7 @@ static inline u32 find_index_l(struct exynos_devfreq_data *data, u32 target)
 
 static inline u32 find_freq_l(struct exynos_devfreq_data *data, u32 target)
 {
-	return data->tbl[find_index_l(data, target)];
+	return data->tbl[exynos_find_index_l(data, target)];
 }
 
 /* Write specified register tuples to all PPC registers */
@@ -1621,7 +1621,7 @@ static u32 mif_cpu_vote(struct pmu_stat *stat, int cpu, u32 cur, u32 *dsu_vote)
 			vote = cur;
 		} else {
 			vote = mif->tbl[cur] * MEMPERFD_DOWN_PCT / 100;
-			vote = find_index_l(mif, vote);
+			vote = exynos_find_index_l(mif, vote);
 			if (vote == cur)
 				/* Drop MIF frequency by at least one step */
 				vote++;
@@ -1719,7 +1719,7 @@ static void memperfd_work(void)
 	int cpu;
 
 	/* Get the current MIF freq, since something else could've raised it */
-	cur = find_index_l(mif, READ_ONCE(mif->cur_freq));
+	cur = exynos_find_index_l(mif, READ_ONCE(mif->cur_freq));
 
 	/* Gather fresh memory stall statistics for all updated CPUs */
 	cpus = (unsigned int)atomic_read_acquire(&stats_avail_cpus);
