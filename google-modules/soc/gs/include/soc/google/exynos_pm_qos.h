@@ -8,7 +8,6 @@
 #include <linux/plist.h>
 #include <linux/notifier.h>
 #include <linux/device.h>
-#include <linux/workqueue.h>
 
 enum {
 	EXYNOS_PM_QOS_RESERVED = 0,
@@ -43,13 +42,6 @@ enum {
 	PM_QOS_TPU_FREQ_MIN,
 	PM_QOS_TPU_FREQ_MAX,
 	EXYNOS_PM_QOS_NUM_CLASSES,
-};
-
-enum exynos_pm_qos_flags_status {
-	EXYNOS_PM_QOS_FLAGS_UNDEFINED = -1,
-	EXYNOS_PM_QOS_FLAGS_NONE,
-	EXYNOS_PM_QOS_FLAGS_SOME,
-	EXYNOS_PM_QOS_FLAGS_ALL,
 };
 
 #define EXYNOS_PM_QOS_DEFAULT_VALUE	(-1)
@@ -91,15 +83,9 @@ struct exynos_pm_asynchronous_vote {
 struct exynos_pm_qos_request {
 	struct plist_node node;
 	int exynos_pm_qos_class;
-	struct delayed_work work; /* for exynos_pm_qos_update_request_timeout */
 	const char *func;
 	unsigned int line;
 	struct exynos_pm_asynchronous_vote async_vote;
-};
-
-struct exynos_pm_qos_flags_request {
-	struct list_head node;
-	s32 flags;	/* Do not change to 64 bit */
 };
 
 enum exynos_pm_qos_type {
@@ -111,8 +97,8 @@ enum exynos_pm_qos_type {
 
 /*
  * Note: The lockless read path depends on the CPU accessing target_value
- * or effective_flags atomically.  Atomic access is only guaranteed on all CPU
- * types linux supports for 32 bit quantites
+ * atomically.  Atomic access is only guaranteed on all CPU types linux supports
+ * for 32 bit quantites
  */
 struct exynos_pm_qos_constraints {
 	struct plist_head list;
@@ -120,13 +106,8 @@ struct exynos_pm_qos_constraints {
 	s32 default_value;
 	s32 no_constraint_value;
 	enum exynos_pm_qos_type type;
-	struct blocking_notifier_head *notifiers;
+	struct srcu_notifier_head *notifiers;
 	spinlock_t lock;	/* protect plist */
-};
-
-struct exynos_pm_qos_flags {
-	struct list_head list;
-	s32 effective_flags;	/* Do not change to 64 bit */
 };
 
 /* Action requested to exynos_pm_qos_update_target */
@@ -142,9 +123,6 @@ enum exynos_pm_qos_req_action {
 
 int exynos_pm_qos_update_target(struct exynos_pm_qos_constraints *c, struct plist_node *node,
 				enum exynos_pm_qos_req_action action, int value);
-bool exynos_pm_qos_update_flags(struct exynos_pm_qos_flags *pqf,
-				struct exynos_pm_qos_flags_request *req,
-				enum exynos_pm_qos_req_action action, s32 val);
 void exynos_pm_qos_add_request_trace(const char *func, unsigned int line,
 				     struct exynos_pm_qos_request *req,
 				     int exynos_pm_qos_class,
@@ -153,8 +131,6 @@ void exynos_pm_qos_update_request(struct exynos_pm_qos_request *req,
 				  s32 new_value);
 void exynos_pm_qos_update_request_async(struct exynos_pm_qos_request *req,
 					s32 new_value);
-void exynos_pm_qos_update_request_timeout(struct exynos_pm_qos_request *req,
-					  s32 new_value, unsigned long timeout_us);
 void exynos_pm_qos_remove_request(struct exynos_pm_qos_request *req);
 
 int exynos_pm_qos_request(int exynos_pm_qos_class);

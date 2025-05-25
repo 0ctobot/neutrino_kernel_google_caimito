@@ -266,22 +266,15 @@ int gpu_dvfs_kctx_init(struct kbase_context *kctx)
 	struct kbase_device *kbdev = kctx->kbdev;
 	struct pixel_context *pc = kbdev->platform_context;
 	struct pixel_platform_data *pd = kctx->platform_data;
-	struct task_struct *task;
-	struct pid *pid;
-	kuid_t uid;
-	u8 uid_hash;
+
+	/* Get UID from current task */
+	kuid_t uid = current_cred()->uid;
+	u8 uid_hash = gpu_dvfs_hash_uid_stats(__kuid_val(uid));
+
 	unsigned long flags;
 	struct gpu_dvfs_metrics_uid_stats *entry;
 	struct gpu_dvfs_metrics_uid_stats *stats = NULL;
 	int ret = 0;
-
-	/* Get UID from task_struct */
-	pid = find_get_pid(kctx->kprcs->tgid);
-	task = get_pid_task(pid, PIDTYPE_TGID);
-	uid = task->cred->uid;
-	put_task_struct(task);
-	put_pid(pid);
-	uid_hash = gpu_dvfs_hash_uid_stats(__kuid_val(uid));
 
 	mutex_lock(&kbdev->kctx_list_lock);
 
