@@ -736,37 +736,45 @@ trace_trigger_soft_disabled(struct trace_event_file *file)
 	return __trace_trigger_soft_disabled(file);
 }
 
-#ifdef CONFIG_BPF_EVENTS
-unsigned int trace_call_bpf(struct trace_event_call *call, void *ctx);
+#if defined(CONFIG_BPF_EVENTS) && defined(CONFIG_EVENT_TRACING)
 int perf_event_attach_bpf_prog(struct perf_event *event, struct bpf_prog *prog, u64 bpf_cookie);
 void perf_event_detach_bpf_prog(struct perf_event *event);
 int perf_event_query_prog_array(struct perf_event *event, void __user *info);
-int bpf_probe_register(struct bpf_raw_event_map *btp, struct bpf_prog *prog);
-int bpf_probe_unregister(struct bpf_raw_event_map *btp, struct bpf_prog *prog);
-struct bpf_raw_event_map *bpf_get_raw_tracepoint(const char *name);
-void bpf_put_raw_tracepoint(struct bpf_raw_event_map *btp);
 int bpf_get_perf_event_info(const struct perf_event *event, u32 *prog_id,
 			    u32 *fd_type, const char **buf,
 			    u64 *probe_offset, u64 *probe_addr);
-int bpf_kprobe_multi_link_attach(const union bpf_attr *attr, struct bpf_prog *prog);
 #else
-static inline unsigned int trace_call_bpf(struct trace_event_call *call, void *ctx)
-{
-	return 1;
-}
-
 static inline int
 perf_event_attach_bpf_prog(struct perf_event *event, struct bpf_prog *prog, u64 bpf_cookie)
 {
 	return -EOPNOTSUPP;
 }
-
 static inline void perf_event_detach_bpf_prog(struct perf_event *event) { }
-
 static inline int
 perf_event_query_prog_array(struct perf_event *event, void __user *info)
 {
 	return -EOPNOTSUPP;
+}
+static inline int bpf_get_perf_event_info(const struct perf_event *event,
+					  u32 *prog_id, u32 *fd_type,
+					  const char **buf, u64 *probe_offset,
+					  u64 *probe_addr)
+{
+	return -EOPNOTSUPP;
+}
+#endif
+
+#ifdef CONFIG_BPF_EVENTS
+unsigned int trace_call_bpf(struct trace_event_call *call, void *ctx);
+int bpf_probe_register(struct bpf_raw_event_map *btp, struct bpf_prog *prog);
+int bpf_probe_unregister(struct bpf_raw_event_map *btp, struct bpf_prog *prog);
+struct bpf_raw_event_map *bpf_get_raw_tracepoint(const char *name);
+void bpf_put_raw_tracepoint(struct bpf_raw_event_map *btp);
+int bpf_kprobe_multi_link_attach(const union bpf_attr *attr, struct bpf_prog *prog);
+#else
+static inline unsigned int trace_call_bpf(struct trace_event_call *call, void *ctx)
+{
+	return 1;
 }
 static inline int bpf_probe_register(struct bpf_raw_event_map *btp, struct bpf_prog *p)
 {
@@ -782,13 +790,6 @@ static inline struct bpf_raw_event_map *bpf_get_raw_tracepoint(const char *name)
 }
 static inline void bpf_put_raw_tracepoint(struct bpf_raw_event_map *btp)
 {
-}
-static inline int bpf_get_perf_event_info(const struct perf_event *event,
-					  u32 *prog_id, u32 *fd_type,
-					  const char **buf, u64 *probe_offset,
-					  u64 *probe_addr)
-{
-	return -EOPNOTSUPP;
 }
 static inline int
 bpf_kprobe_multi_link_attach(const union bpf_attr *attr, struct bpf_prog *prog)
