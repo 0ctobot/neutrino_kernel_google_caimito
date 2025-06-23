@@ -693,14 +693,18 @@ config UPROBE_EVENTS
 	  This option is required if you plan to use perf-probe subcommand
 	  of perf tools on user space applications.
 
+endif # FTRACE
+
 config BPF_EVENTS
 	depends on BPF_SYSCALL
-	depends on (KPROBE_EVENTS || UPROBE_EVENTS) && PERF_EVENTS
+	depends on (KPROBE_EVENTS || UPROBE_EVENTS || TRACEPOINTS) && PERF_EVENTS
 	bool
 	default y
 	help
 	  This allows the user to attach BPF programs to kprobe, uprobe, and
 	  tracepoint events.
+
+if FTRACE
 
 config DYNAMIC_EVENTS
 	def_bool n
