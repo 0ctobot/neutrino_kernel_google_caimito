@@ -213,6 +213,8 @@ void s51xx_pcie_restore_state(struct pci_dev *pdev, bool boot_on,
 		enum modem_variant variant)
 {
 	struct s51xx_pcie *s51xx_pcie = pci_get_drvdata(pdev);
+	struct pci_driver *driver = pdev->driver;
+	struct modem_ctl *mc = container_of(driver, struct modem_ctl, pci_driver);
 	int ret;
 	u32 val = 0;
 
@@ -269,7 +271,7 @@ void s51xx_pcie_restore_state(struct pci_dev *pdev, bool boot_on,
 			s51xx_pcie_chk_ep_conf(pdev);
 		}
 	}
-	if (boot_on) {
+	if (mc->l1ss_disable) {
 		/* Disable L1.2 after PCIe power on when booting */
 		s51xx_pcie_l1ss_ctrl(0, s51xx_pcie->pcie_channel_num);
 	} else {

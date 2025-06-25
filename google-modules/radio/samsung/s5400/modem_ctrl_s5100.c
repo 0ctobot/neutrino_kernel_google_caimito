@@ -1839,9 +1839,6 @@ static int complete_normal_boot(struct modem_ctl *mc)
 		goto exit;
 	}
 
-	/* Enable L1.2 after CP boot */
-	s51xx_pcie_l1ss_ctrl(1, mc->pcie_ch_num);
-
 	/* Read cp_active before enabling irq */
 	mif_gpio_get_value(&mc->cp_gpio[CP_GPIO_CP2AP_CP_ACTIVE], true);
 
@@ -2548,6 +2545,11 @@ int s5100_poweron_pcie(struct modem_ctl *mc, enum link_mode mode)
 
 	if (boot_on)
 		mif_info("PCIe gen1 linkup with CP ROM succeed.\n");
+
+	if (boot_on)
+		mc->l1ss_disable = true;
+	else if (mc->phone_state == STATE_ONLINE)
+		mc->l1ss_disable = false;
 
 	mc->pcie_powered_on = true;
 

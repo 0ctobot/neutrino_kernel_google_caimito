@@ -802,7 +802,8 @@ static void tpmon_set_pci_low_power(struct tpmon_data *data)
 
 	val = tpmon_get_curr_level(data);
 	mif_info("%s (enable:%u)\n", data->name, val);
-	s51xx_pcie_l1ss_ctrl((int)val, mc->pcie_ch_num);
+	if (!mc->l1ss_disable)
+		s51xx_pcie_l1ss_ctrl((int)val, mc->pcie_ch_num);
 
 out:
 	mutex_unlock(&mc->pcie_check_lock);

@@ -9,7 +9,7 @@ EXTRA_SYMBOLS += $(O)/../private/google-modules/bms/misc/Module.symvers
 
 EXTRA_CFLAGS+="-Wno-missing-prototypes"
 
-modules modules_install clean:
+modules modules_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) W=1 \
 	$(KBUILD_OPTIONS) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 	KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" $(@)
