@@ -168,6 +168,23 @@ static void fth_touch_disconnect(struct input_handle *handle)
 	kfree(handle);
 }
 
+static void fth_touch_on_palm_detected(struct input_handle *handle) {
+	struct fth_drvdata *drvdata = handle->handler->private;
+	struct finger_detect_touch *fd_touch = &drvdata->fd_touch;
+	struct touch_event *event = NULL;
+	int slot = 0;
+
+	if (!fd_touch->config.touch_fd_enable)
+		return;
+
+	pr_info("Canceling touch events for the palm event was detected\n");
+	for (slot = 0; slot < FTH_MAX_FINGERS; slot++) {
+		event = &fd_touch->current_events[slot];
+		event->id = -1;
+		event->updated = true;
+	}
+}
+
 static void fth_touch_report_event(struct input_handle *handle,
 	unsigned int type, unsigned int code, int value)
 {
@@ -196,28 +213,34 @@ static void fth_touch_report_event(struct input_handle *handle,
 	event = &fd_touch->current_events[fd_touch->current_slot];
 	switch (code) {
 	case ABS_MT_SLOT:
+		pr_debug("ABS_MT_SLOT:%d\n", value);
 		fd_touch->current_slot = value;
 		if (!report_event)
 			event->updated = true;
 		report_event = false;
 		break;
 	case ABS_MT_TRACKING_ID:
+		pr_debug("ABS_MT_TRACKING_ID:%d\n", value);
 		event->id = value;
 		report_event = false;
 		break;
 	case ABS_MT_POSITION_X:
+		pr_debug("ABS_MT_POSITION_X:%d\n", value);
 		event->X = abs(value);
 		report_event = false;
 		break;
 	case ABS_MT_POSITION_Y:
+		pr_debug("ABS_MT_POSITION_Y:%d\n", value);
 		event->Y = abs(value);
 		report_event = false;
 		break;
 	case ABS_MT_TOUCH_MAJOR:
+		pr_debug("ABS_MT_TOUCH_MAJOR:%d\n", value);
 		event->major = value;
 		report_event = false;
 		break;
 	case ABS_MT_TOUCH_MINOR:
+		pr_debug("ABS_MT_TOUCH_MINOR:%d\n", value);
 		event->minor = value;
 		report_event = false;
 		break;
@@ -228,7 +251,15 @@ static void fth_touch_report_event(struct input_handle *handle,
 	case ABS_MT_PRESSURE:
 		report_event = false;
 		break;
+	case ABS_MT_TOOL_TYPE:
+		pr_debug("ABS_MT_TOOL_TYPE:%d\n", value);
+		if (value == MT_TOOL_PALM) {
+			fth_touch_on_palm_detected(handle);
+		}
+		report_event = false;
+		break;
 	case SYN_REPORT:
+		pr_debug("SYN_REPORT\n");
 		event->updated = true;
 		report_event = true;
 		break;
@@ -368,7 +399,11 @@ static void fth_touch_work_func(struct work_struct *work)
 					*is_finger_in = true;
 			} else {
 				if (drvdata->lptw_event_report_enabled) {
-					finger_event.state = FTH_EVENT_FINGER_MOVE;
+					pr_debug("lptw finger_event.state:%d\n",
+							finger_event.state);
+					if (finger_event.state == FTH_EVENT_FINGER_DOWN) {
+						finger_event.state = FTH_EVENT_FINGER_MOVE;
+					}
 				} else {
 					// Don't report.
 					continue;
@@ -394,9 +429,11 @@ static void fth_touch_work_func(struct work_struct *work)
 		}
 		// Report touch event to HAL and update interrupts.
 		finger_event.slot = slot;
-		finger_event.major = current_event.major;
-		finger_event.minor = current_event.minor;
-		finger_event.orientation = current_event.orientation;
+		if (current_event.id >= 0) {
+			finger_event.major = current_event.major;
+			finger_event.minor = current_event.minor;
+			finger_event.orientation = current_event.orientation;
+		}
 		finger_event.time_us = ktime_to_us(current_event.ktime_mono);
 		if (finger_event.state != FTH_EVENT_FINGER_MOVE) {
 			drvdata->current_slot_state[slot] = finger_event.state;

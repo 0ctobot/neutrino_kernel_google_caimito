@@ -7,7 +7,7 @@ EXTRA_CFLAGS	+= -I$(KERNEL_SRC)/../google-modules/gs/soc/include
 
 EXTRA_SYMBOLS	+= $(OUT_DIR)/../private/google-modules/touch/common/Module.symvers
 
-modules modules_install clean:
+modules modules_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) \
 	EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 	KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" \
