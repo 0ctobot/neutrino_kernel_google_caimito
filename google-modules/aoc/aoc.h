@@ -43,6 +43,10 @@
 #define PLAYBACK_HEAP_SIZE SZ_16K
 #define CAPTURE_HEAP_SIZE SZ_64K
 
+/* mmap pcm offload buffer size */
+#define OFFLOAD_HEAP_SIZE SZ_8M
+#define AOC_MMAP_OFFLOAD_PLAYBACK_SERVICE "audio_playback6"
+
 #define DT_PROPERTY_NOT_FOUND 0xffffffff
 
 struct aoc_service_dev;
@@ -113,9 +117,12 @@ struct aoc_prvdata {
 	struct dma_heap *sensor_heap;
 	struct dma_heap *audio_playback_heap;
 	struct dma_heap *audio_capture_heap;
+	struct dma_heap *audio_offload_heap;
+
 	phys_addr_t sensor_heap_base;
 	phys_addr_t audio_playback_heap_base;
 	phys_addr_t audio_capture_heap_base;
+	phys_addr_t audio_offload_heap_base;
 
 	int watchdog_irq;
 	struct work_struct watchdog_work;
@@ -258,6 +265,8 @@ void aoc_configure_hardware(struct aoc_prvdata *prvdata);
 void trigger_aoc_ramdump(struct aoc_prvdata *prvdata);
 
 bool aoc_create_dma_buf_heaps(struct aoc_prvdata *prvdata);
+
+bool aoc_set_dma_buf_as_ring(struct aoc_prvdata *prvdata);
 
 phys_addr_t aoc_dram_translate_to_aoc(struct aoc_prvdata *p, phys_addr_t addr);
 

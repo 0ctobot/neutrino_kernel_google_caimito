@@ -244,6 +244,12 @@ enum { CHRE_GAIN_PATH_PDM = 0, CHRE_GAIN_PATH_AEC, CHRE_GAIN_PATH_TOT };
 
 enum { AOC_CHIRP_INTERVAL = 0, AOC_CHIRP_ENABLE, AOC_CHIRP_MODE, AOC_CHIRP_GAIN };
 
+enum PCM_OPTION_INDEX {
+	PCM_OPTION_INDEX_BIT_DEPTH,   /* Sample bit depth of the stream */
+	PCM_OPTION_INDEX_FORMAT,      /* Sample format of the stream */
+	PCM_OPTION_INDEX_BITFIELD_1,  /* Custom bit fields */
+};
+
 struct aoc_chip {
 	struct snd_card *card;
 	struct snd_soc_jack jack; /* TODO: temporary use, need refactor  */
@@ -297,6 +303,7 @@ struct aoc_chip {
 	int sidetone_enable;
 	int mic_loopback_enabled;
 	int gapless_offload_enable;
+	int mmap_offload_enable;
 	int chirp_enable;
 	int chirp_interval;
 	int chirp_mode;

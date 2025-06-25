@@ -225,6 +225,42 @@ static bool has_name_matching_driver(const char *service_name)
 				driver_matches_service_by_name) != 0;
 }
 
+static struct aoc_service_dev *service_dev_by_name(struct aoc_prvdata *prv,const char *service_name)
+{
+	int services, i;
+	const char *name;
+
+	services = aoc_num_services();
+	if (services == 0)
+		return NULL;
+
+	/* All names have a valid length */
+	for (i = 0; i < services; i++) {
+		size_t name_len;
+
+		name = aoc_service_name(service_at_index(prv, i));
+
+		if (!name) {
+			dev_warn(prv->dev,
+				"failed to retrieve service name for service %d\n", i);
+			continue;
+		}
+
+		name_len = strnlen(name, AOC_SERVICE_NAME_LENGTH);
+		if (name_len == 0 || name_len == AOC_SERVICE_NAME_LENGTH) {
+			dev_warn(prv->dev,
+				"service %d has a name with invalid length\n", i);
+			continue;
+		}
+
+		if (!strncmp(name, service_name, name_len)) {
+			dev_dbg(prv->dev, "find a service %d by name %s\n", i, service_name);
+			return service_dev_at_index(prv, i);
+		}
+	}
+	return NULL;
+}
+
 static bool service_names_are_valid(struct aoc_prvdata *prv)
 {
 	int services, i, j;
@@ -1393,6 +1429,10 @@ static void aoc_did_become_online(struct work_struct *work)
 				dev_name(&prvdata->services[i]->dev), ret);
 	}
 
+	if (!IS_ENABLED(CONFIG_SOC_GS101) && !IS_ENABLED(CONFIG_SOC_GS201))
+		if ((!prvdata->audio_offload_heap_base) && (!aoc_set_dma_buf_as_ring(prvdata)))
+			dev_err(dev, "failed to set the dma-buf heap as ring buffer\n");
+
 err:
 	mutex_unlock(&aoc_service_lock);
 }
@@ -2365,6 +2405,27 @@ bool aoc_create_dma_buf_heaps(struct aoc_prvdata *prvdata)
 		return false;
 
 	return true;
+}
+
+bool aoc_set_dma_buf_as_ring(struct aoc_prvdata *prvdata)
+{
+	struct aoc_service_dev *service_dev = NULL;
+	phys_addr_t phy_ring_base = 0;
+	size_t ring_size;
+
+	service_dev = service_dev_by_name(prvdata, AOC_MMAP_OFFLOAD_PLAYBACK_SERVICE);
+	if (!service_dev) {
+		dev_err(prvdata->dev, "Failed to get the aoc service \"%s\".\n",
+			 AOC_MMAP_OFFLOAD_PLAYBACK_SERVICE);
+		return false;
+	}
+	phy_ring_base = aoc_service_ring_base_phys_addr(service_dev, AOC_DOWN, &ring_size);
+
+	prvdata->audio_offload_heap = aoc_create_dma_buf_heap(prvdata, "aaudio_offload_heap",
+								phy_ring_base, OFFLOAD_HEAP_SIZE);
+	prvdata->audio_offload_heap_base = phy_ring_base;
+
+	return IS_ERR(prvdata->audio_offload_heap);
 }
 
 /* Returns true if `base` is located within the aoc dram carveout */

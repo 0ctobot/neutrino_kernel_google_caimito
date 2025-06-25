@@ -891,6 +891,35 @@ static int audio_gapless_offload_ctl_set(struct snd_kcontrol *kcontrol,
 	return err;
 }
 
+static int audio_mmap_offload_ctl_get(struct snd_kcontrol *kcontrol,
+				      struct snd_ctl_elem_value *ucontrol)
+{
+	struct aoc_chip *chip = snd_kcontrol_chip(kcontrol);
+
+	if (mutex_lock_interruptible(&chip->audio_mutex))
+		return -EINTR;
+
+	ucontrol->value.integer.value[0] = chip->mmap_offload_enable;
+
+	mutex_unlock(&chip->audio_mutex);
+
+	return 0;
+}
+
+static int audio_mmap_offload_ctl_set(struct snd_kcontrol *kcontrol,
+				      struct snd_ctl_elem_value *ucontrol)
+{
+	struct aoc_chip *chip = snd_kcontrol_chip(kcontrol);
+
+	if (mutex_lock_interruptible(&chip->audio_mutex))
+		return -EINTR;
+
+	chip->mmap_offload_enable = ucontrol->value.integer.value[0];
+
+	mutex_unlock(&chip->audio_mutex);
+	return 0;
+}
+
 static int audio_offload_position_ctl_get(struct snd_kcontrol *kcontrol,
 					  struct snd_ctl_elem_value *ucontrol)
 {
@@ -2843,6 +2872,9 @@ static struct snd_kcontrol_new snd_aoc_ctl[] = {
 
 	SOC_SINGLE_EXT("Gapless Offload Enable", SND_SOC_NOPM, 0, 1, 0,
 		       audio_gapless_offload_ctl_get, audio_gapless_offload_ctl_set),
+
+	SOC_SINGLE_EXT("MMAP Offload Enable", SND_SOC_NOPM, 0, 1, 0,
+		       audio_mmap_offload_ctl_get, audio_mmap_offload_ctl_set),
 
 	SOC_SINGLE_EXT("2.1 Enable", SND_SOC_NOPM, 0, 1, 0, two_one_enable_get, two_one_enable_set),
 
