@@ -84,6 +84,11 @@ struct sugov_policy {
 	bool			under_pmu_throttle;
 	bool			relax_pmu_throttle;
 
+#if IS_ENABLED(CONFIG_PIXEL_EM_FREQUENCY_SCALING)
+	unsigned int		scaling_freq_min;
+	unsigned int		scaling_freq_max;
+#endif
+
 #if IS_ENABLED(CONFIG_PIXEL_EM)
 	struct pixel_em_profile *em_profile;
 #endif
@@ -145,6 +150,19 @@ extern int get_ev_data(int cpu, unsigned long *inst, unsigned long *cyc,
 #endif
 
 /************************ Governor internals ***********************/
+#if IS_ENABLED(CONFIG_PIXEL_EM_FREQUENCY_SCALING)
+void reset_scaling_freq(int cpu)
+{
+	struct sugov_cpu *sg_cpu = &per_cpu(sugov_cpu, cpu);
+
+	if (sg_cpu && sg_cpu->sg_policy) {
+		sg_cpu->sg_policy->scaling_freq_min = 0;
+		sg_cpu->sg_policy->scaling_freq_max = UINT_MAX;
+	}
+}
+EXPORT_SYMBOL_GPL(reset_scaling_freq);
+#endif
+
 static inline bool sugov_em_profile_changed(struct sugov_policy *sg_policy)
 {
 #if IS_ENABLED(CONFIG_PIXEL_EM)
@@ -152,6 +170,9 @@ static inline bool sugov_em_profile_changed(struct sugov_policy *sg_policy)
 	struct pixel_em_profile *profile;
 
 	profile_ptr_snapshot = READ_ONCE(vendor_sched_pixel_em_profile);
+	if (!profile_ptr_snapshot)
+		return false;
+
 	profile = READ_ONCE(*profile_ptr_snapshot);
 
 	if (sg_policy->em_profile != profile) {
@@ -174,6 +195,9 @@ sugov_calc_freq_response_ms(struct sugov_policy *sg_policy)
 	struct pixel_em_profile *profile;
 
 	profile_ptr_snapshot = READ_ONCE(vendor_sched_pixel_em_profile);
+	if (!profile_ptr_snapshot)
+		goto out;
+
 	profile = READ_ONCE(*profile_ptr_snapshot);
 	if (profile) {
 		struct pixel_em_cluster *cluster = profile->cpu_to_cluster[cpu];
@@ -561,6 +585,69 @@ static bool sugov_update_next_freq(struct sugov_policy *sg_policy, u64 time,
 
 	return true;
 }
+
+#if IS_ENABLED(CONFIG_PIXEL_EM_FREQUENCY_SCALING)
+static inline void get_scaling_target_and_freq(int cpu, unsigned int next_freq, int *target_cpu,
+				 unsigned int *scaling_freq, enum constraint_type *type)
+{
+#if IS_ENABLED(CONFIG_PIXEL_EM)
+	struct pixel_em_profile **profile_ptr_snapshot;
+
+	profile_ptr_snapshot = READ_ONCE(vendor_sched_pixel_em_profile);
+	if (profile_ptr_snapshot) {
+		struct pixel_em_profile *profile = READ_ONCE(*profile_ptr_snapshot);
+
+		if (profile) {
+			struct pixel_em_cluster *cluster = profile->cpu_to_cluster[cpu];
+			struct pixel_em_opp *opp;
+			int i;
+
+			if (cluster->frequency_scaling_target != -1 &&
+			    cluster->frequency_scaling_table) {
+				*target_cpu = cluster->frequency_scaling_target;
+				*type = cluster->constraint_type;
+			} else {
+				return;
+			}
+
+			for (i = 0; i < cluster->num_opps; i++) {
+				opp = &cluster->opps[i];
+				if (opp->freq >= next_freq)
+					break;
+			}
+
+			*scaling_freq = opp->scaling_freq;
+		}
+	}
+#endif
+}
+
+static inline void scale_freq(int target_cpu, unsigned int scaling_freq, enum constraint_type type)
+{
+	struct sugov_cpu *sg_cpu = &per_cpu(sugov_cpu, target_cpu);
+
+	if (unlikely(!sg_cpu || !sg_cpu->sg_policy))
+		return;
+
+	if (type == CONSTRAINT_MIN)
+		sg_cpu->sg_policy->scaling_freq_min = scaling_freq;
+	else if (type == CONSTRAINT_MAX)
+		sg_cpu->sg_policy->scaling_freq_max = scaling_freq;
+}
+
+static void scaling_freq_update(struct sugov_policy *sg_policy)
+{
+	int target_cpu = -1;
+	unsigned int scaling_freq = 0;
+	enum constraint_type type = CONSTRAINT_NONE;
+
+	get_scaling_target_and_freq(sg_policy->policy->cpu, sg_policy->next_freq, &target_cpu,
+				    &scaling_freq, &type);
+
+	if (target_cpu != -1 && scaling_freq != 0)
+		scale_freq(target_cpu, scaling_freq, type);
+}
+#endif
 
 static void sugov_deferred_update(struct sugov_policy *sg_policy)
 {
@@ -951,6 +1038,11 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 	if (!sugov_update_next_freq(sg_cpu->sg_policy, time, next_f))
 		return;
 
+#if IS_ENABLED(CONFIG_PIXEL_EM_FREQUENCY_SCALING)
+	next_f = clamp(next_f, sg_cpu->sg_policy->scaling_freq_min,
+		       sg_cpu->sg_policy->scaling_freq_max);
+#endif
+
 	/*
 	 * This code runs under rq->lock for the target CPU, so it won't run
 	 * concurrently on two different CPUs for the same target and it is not
@@ -963,6 +1055,10 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 		sugov_deferred_update(sg_cpu->sg_policy);
 		raw_spin_unlock(&sg_cpu->sg_policy->update_lock);
 	}
+
+#if IS_ENABLED(CONFIG_PIXEL_EM_FREQUENCY_SCALING)
+	scaling_freq_update(sg_cpu->sg_policy);
+#endif
 }
 #endif
 
@@ -1056,10 +1152,19 @@ sugov_update_shared(struct update_util_data *hook, u64 time, unsigned int flags)
 		if (trace_sugov_util_update_enabled())
 			trace_sugov_util_update(sg_cpu->cpu, sg_cpu->util, sg_cpu->max, flags);
 
+#if IS_ENABLED(CONFIG_PIXEL_EM_FREQUENCY_SCALING)
+		next_f = clamp(next_f, sg_cpu->sg_policy->scaling_freq_min,
+			       sg_cpu->sg_policy->scaling_freq_max);
+#endif
+
 		if (sg_cpu->sg_policy->policy->fast_switch_enabled)
 			cpufreq_driver_fast_switch(sg_cpu->sg_policy->policy, next_f);
 		else
 			sugov_deferred_update(sg_cpu->sg_policy);
+
+#if IS_ENABLED(CONFIG_PIXEL_EM_FREQUENCY_SCALING)
+		scaling_freq_update(sg_cpu->sg_policy);
+#endif
 	}
 unlock:
 	raw_spin_unlock(&sg_cpu->sg_policy->update_lock);
@@ -1166,10 +1271,12 @@ void pmu_poll_disable(void)
 
 	if (pmu_poll_enabled) {
 		pmu_poll_enabled = false;
-
-		irq_work_sync(&pmu_irq_work);
+		pmu_poll_cancelling = true;
 
 		/*
+		 * Release the lock first since irq_work_sync may sleep.
+		 * Also set pmu_poll_cancelling to true before release the lock.
+		 *
 		 * We must temporarily drop the lock to cancel the pmu_work.
 		 * pmu_poll_cancelling should block any potential attempt to
 		 * enable pmu_poll while the lock is dropped.
@@ -1177,8 +1284,10 @@ void pmu_poll_disable(void)
 		 * pmu_defer_work() should see pmu_poll_enabled === false and
 		 * continue to be blocked/NOP.
 		 */
-		pmu_poll_cancelling = true;
 		spin_unlock(&pmu_poll_enable_lock);
+
+		irq_work_sync(&pmu_irq_work);
+
 		kthread_cancel_work_sync(&pmu_work);
 
 		while (cpu < pixel_cpu_num) {
@@ -1564,12 +1673,22 @@ static ssize_t limit_frequency_show(struct gov_attr_set *attr_set, char *buf)
 static ssize_t limit_frequency_store(struct gov_attr_set *attr_set, const char *buf, size_t count)
 {
 	struct sugov_tunables *tunables = to_sugov_tunables(attr_set);
+	struct sugov_policy *sg_policy;
+	struct cpufreq_policy *policy;
+	int index;
 	unsigned int val;
 
 	if (kstrtouint(buf, 0, &val))
 		return -EINVAL;
 
-	tunables->limit_frequency = val;
+	list_for_each_entry(sg_policy, &attr_set->policy_list, tunables_hook)
+		if (sg_policy->tunables == tunables)
+			break;
+
+	policy = sg_policy->policy;
+
+	index = cpufreq_frequency_table_target(policy, val, CPUFREQ_RELATION_H);
+	tunables->limit_frequency = policy->freq_table[index].frequency;
 
 	return count;
 }
@@ -1895,6 +2014,10 @@ static int sugov_start(struct cpufreq_policy *policy)
 	sg_policy->need_freq_update		= false;
 	sg_policy->cached_raw_freq		= 0;
 	sg_policy->prev_cached_raw_freq		= 0;
+#if IS_ENABLED(CONFIG_PIXEL_EM_FREQUENCY_SCALING)
+	sg_policy->scaling_freq_min		= 0;
+	sg_policy->scaling_freq_max		= UINT_MAX;
+#endif
 
 	for_each_cpu(cpu, policy->cpus) {
 		struct sugov_cpu *sg_cpu = &per_cpu(sugov_cpu, cpu);
@@ -1942,6 +2065,12 @@ static void sugov_stop(struct cpufreq_policy *policy)
 	if (!policy->fast_switch_enabled) {
 		irq_work_sync(&sg_policy->irq_work);
 		kthread_cancel_work_sync(&sg_policy->work);
+	}
+
+	for_each_cpu(cpu, policy->cpus) {
+		struct sugov_cpu *sg_cpu = &per_cpu(sugov_cpu, cpu);
+
+		sg_cpu->sg_policy = NULL;
 	}
 }
 

@@ -37,6 +37,7 @@ unsigned int __read_mostly vendor_sched_adpf_rampup_multiplier = 1;
 struct cpumask cpu_skip_mask_rt;
 struct cpumask skip_prefer_prev_mask;
 unsigned int __read_mostly vendor_sched_priority_task_boost_value = 0;
+unsigned long __read_mostly vendor_sched_boost_at_fork_duration;
 
 static struct proc_dir_entry *vendor_sched;
 struct proc_dir_entry *group_dirs[VG_MAX];
@@ -222,7 +223,7 @@ enum vendor_procfs_type {
 			if (copy_from_user(buf, ubuf, count))	\
 				return -EFAULT;	\
 			buf[count] = '\0';	\
-			ret = update_vendor_group_attribute(buf, VTA_TASK_GROUP, __vg);   \
+			ret = update_vendor_group(buf, VTA_TASK_GROUP, __vg);   \
 			return ret ?: count;						      \
 		}									      \
 		PROC_OPS_WO(set_task_group_##__grp);		\
@@ -237,7 +238,7 @@ enum vendor_procfs_type {
 			if (copy_from_user(buf, ubuf, count))	\
 				return -EFAULT;	\
 			buf[count] = '\0';	\
-			ret = update_vendor_group_attribute(buf, VTA_PROC_GROUP, __vg);   \
+			ret = update_vendor_group(buf, VTA_PROC_GROUP, __vg);   \
 			return ret ?: count;						      \
 		}									      \
 		PROC_OPS_WO(set_proc_group_##__grp);
@@ -656,6 +657,10 @@ static int update_vendor_tunables(const char *buf, int count, int type)
 					goto fail;
 				updated_tunables = sched_per_cpu_iowait_boost_max_value;
 				break;
+			case TEO_UTIL_THRESHOLD:
+				if (val > SCHED_CAPACITY_SCALE)
+					goto fail;
+				break;
 			default:
 				goto fail;
 		}
@@ -668,78 +673,24 @@ static int update_vendor_tunables(const char *buf, int count, int type)
 
 	if (index == 1) {
 		for (index = 0; index < pixel_cpu_num; index++) {
-			updated_tunables[index] = tmp[0];
+			if (type != TEO_UTIL_THRESHOLD)
+				updated_tunables[index] = tmp[0];
+			else
+				teo_cpu_set_util_threshold(index, tmp[pixel_cpu_to_cluster[index]]);
 		}
 	} else if (index == pixel_cluster_num) {
-		for (index = pixel_cluster_start_cpu[0]; index < pixel_cluster_start_cpu[1]; index++)
-			updated_tunables[index] = tmp[0];
-
-		for (index = pixel_cluster_start_cpu[1]; index < pixel_cluster_start_cpu[2]; index++)
-			updated_tunables[index] = tmp[1];
-
-		for (index = pixel_cluster_start_cpu[2]; index < pixel_cpu_num; index++)
-			updated_tunables[index] = tmp[2];
-	} else if (index == pixel_cpu_num) {
-		memcpy(updated_tunables, tmp, sizeof(tmp));
-	} else {
-		goto fail;
-	}
-
-	kfree(str1);
-	return count;
-fail:
-	kfree(str1);
-	return -EINVAL;
-}
-
-static int update_teo_util_threshold(const char *buf, int count)
-{
-	char *tok, *str1, *str2;
-	unsigned int val, tmp[CONFIG_VH_SCHED_MAX_CPU_NR];
-	int index = 0;
-
-	str1 = kstrndup(buf, count, GFP_KERNEL);
-	str2 = str1;
-
-	if (!str2)
-		return -ENOMEM;
-
-	while (1) {
-		tok = strsep(&str2, " ");
-
-		if (tok == NULL)
-			break;
-
-		if (kstrtouint(tok, 0, &val))
-			goto fail;
-
-		if (val > SCHED_CAPACITY_SCALE)
-			goto fail;
-
-		tmp[index] = val;
-		index++;
-
-		if (index == pixel_cpu_num)
-			break;
-	}
-
-	if (index == 1) {
 		for (index = 0; index < pixel_cpu_num; index++) {
-			teo_cpu_set_util_threshold(index, tmp[0]);
+			if (type != TEO_UTIL_THRESHOLD)
+				updated_tunables[index] = tmp[pixel_cpu_to_cluster[index]];
+			else
+				teo_cpu_set_util_threshold(index, tmp[pixel_cpu_to_cluster[index]]);
 		}
-	} else if (index == pixel_cluster_num) {
-		for (index = pixel_cluster_start_cpu[0]; index < pixel_cluster_start_cpu[1]; index++)
-			teo_cpu_set_util_threshold(index, tmp[0]);
-
-		for (index = pixel_cluster_start_cpu[1]; index < pixel_cluster_start_cpu[2]; index++)
-			teo_cpu_set_util_threshold(index, tmp[1]);
-
-		for (index = pixel_cluster_start_cpu[2]; index < pixel_cpu_num; index++)
-			teo_cpu_set_util_threshold(index, tmp[2]);
 	} else if (index == pixel_cpu_num) {
-		for (index = 0; index < pixel_cpu_num; index++) {
-			teo_cpu_set_util_threshold(index, tmp[index]);
-		}
+		if (type != TEO_UTIL_THRESHOLD)
+			memcpy(updated_tunables, tmp, sizeof(tmp));
+		else
+			for (index = 0; index < pixel_cpu_num; index++)
+				teo_cpu_set_util_threshold(index, tmp[index]);
 	} else {
 		goto fail;
 	}
@@ -1038,8 +989,9 @@ static int update_prefer_fit(const char *buf, bool val)
 static int update_adpf(const char *buf, bool val)
 {
 	struct vendor_task_struct *vp;
-	unsigned long irqflags;
 	struct task_struct *p;
+	struct rq_flags rf;
+	struct rq *rq;
 	pid_t pid;
 	bool old_adpf;
 
@@ -1062,26 +1014,18 @@ static int update_adpf(const char *buf, bool val)
 	}
 
 	vp = get_vendor_task_struct(p);
-	raw_spin_lock_irqsave(&p->pi_lock, irqflags);
+	rq = task_rq_lock(p, &rf);
 
 	old_adpf = !!(vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_ADPF_BIT));
 
-	if (old_adpf != val) {
-		if (val)
-			set_bit(SCHED_QOS_ADPF_BIT, &vp->sched_qos_user_defined_flag);
-		else
-			clear_bit(SCHED_QOS_ADPF_BIT, &vp->sched_qos_user_defined_flag);
+	if (val)
+		set_bit(SCHED_QOS_ADPF_BIT, &vp->sched_qos_user_defined_flag);
+	else
+		clear_bit(SCHED_QOS_ADPF_BIT, &vp->sched_qos_user_defined_flag);
 
-		if (task_on_rq_queued(p)) {
-			if (old_adpf && !get_adpf(p, true))
-				dec_adpf_counter(p, task_rq(p));
-			else if (!old_adpf && get_adpf(p, true))
-				inc_adpf_counter(p, task_rq(p));
-		}
-	}
+	update_adpf_counter(p, old_adpf);
 
-	raw_spin_unlock_irqrestore(&p->pi_lock, irqflags);
-
+	task_rq_unlock(rq, p, &rf);
 	put_task_struct(p);
 	rcu_read_unlock();
 
@@ -1295,13 +1239,14 @@ static int update_rampup_multiplier_clear(const char *buf, int count)
 }
 
 /*
- * sched qos profiels that need to take effect immediately.
+ * sched qos profiles that need to take effect immediately.
  */
-static void update_sched_qos_profiles(struct task_struct *p, struct vendor_task_struct *vp)
+static void __update_sched_qos_profiles(struct task_struct *p, struct vendor_task_struct *vp, bool old_adpf)
 {
-	struct rq_flags rf;
-	struct rq *rq;
 	bool old, new;
+
+	/* update adpf counter */
+	update_adpf_counter(p, old_adpf);
 
 	/* boost prio */
 	old = !!(vp->prev_sched_qos_user_defined_flag & BIT(SCHED_QOS_BOOST_PRIO_BIT));
@@ -1310,21 +1255,20 @@ static void update_sched_qos_profiles(struct task_struct *p, struct vendor_task_
 	if (old != new) {
 		/* Only boost task prio when both new and group qos_boost_prio_enable are true. */
 		if (new && vg[vp->group].qos_boost_prio_enable) {
-			rq = task_rq_lock(p, &rf);
 			update_task_prio(p, vp, true);
-			task_rq_unlock(rq, p, &rf);
 		} else {
-			rq = task_rq_lock(p, &rf);
 			update_task_prio(p, vp, false);
-			task_rq_unlock(rq, p, &rf);
 		}
 	}
 }
 
-static int update_sched_qos_none(const char *buf, int count)
+static int update_sched_qos_profiles(const char *buf, enum vendor_sched_qos profile)
 {
 	struct vendor_task_struct *vp;
 	struct task_struct *p;
+	struct rq_flags rf;
+	struct rq *rq;
+	bool old_adpf;
 	pid_t pid;
 
 	if (kstrtoint(buf, 0, &pid) || pid <= 0)
@@ -1346,182 +1290,50 @@ static int update_sched_qos_none(const char *buf, int count)
 	}
 
 	vp = get_vendor_task_struct(p);
-	vp->sched_qos_profile = SCHED_QOS_NONE;
+	vp->sched_qos_profile = profile;
 	vp->prev_sched_qos_user_defined_flag = vp->sched_qos_user_defined_flag;
-	/*
-	 * Clear all bits except SCHED_QOS_RAMPUP_MULTIPLIER_BIT.
-	 */
-	vp->sched_qos_user_defined_flag &= BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
-	update_sched_qos_profiles(p, vp);
 
+	rq = task_rq_lock(p, &rf);
+
+	old_adpf = get_adpf(p, true);
+	/*
+	 Clear all bits except SCHED_QOS_RAMPUP_MULTIPLIER_BIT.
+	*/
+	vp->sched_qos_user_defined_flag &= BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
+	vp->sched_qos_user_defined_flag |= SCHED_QOS_PROFILES[vp->sched_qos_profile];
+
+	__update_sched_qos_profiles(p, vp, old_adpf);
+
+	task_rq_unlock(rq, p, &rf);
 	put_task_struct(p);
 	rcu_read_unlock();
 
 	return 0;
+}
+
+static int update_sched_qos_none(const char *buf, int count)
+{
+	return update_sched_qos_profiles(buf, SCHED_QOS_NONE);
 }
 
 static int update_sched_qos_power_efficiency(const char *buf, int count)
 {
-	struct vendor_task_struct *vp;
-	struct task_struct *p;
-	pid_t pid;
-
-	if (kstrtoint(buf, 0, &pid) || pid <= 0)
-		return -EINVAL;
-
-	rcu_read_lock();
-	p = find_task_by_vpid(pid);
-	if (!p) {
-		rcu_read_unlock();
-		return -ESRCH;
-	}
-
-	get_task_struct(p);
-
-	if (!check_cred(p)) {
-		put_task_struct(p);
-		rcu_read_unlock();
-		return -EACCES;
-	}
-
-	vp = get_vendor_task_struct(p);
-	vp->sched_qos_profile = SCHED_QOS_POWER_EFFICIENCY;
-	vp->prev_sched_qos_user_defined_flag = vp->sched_qos_user_defined_flag;
-	/*
-	 Clear all bits except SCHED_QOS_RAMPUP_MULTIPLIER_BIT.
-	*/
-	vp->sched_qos_user_defined_flag &= BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
-
-	vp->sched_qos_user_defined_flag |= SCHED_QOS_PROFILES[SCHED_QOS_POWER_EFFICIENCY];
-	update_sched_qos_profiles(p, vp);
-
-	put_task_struct(p);
-	rcu_read_unlock();
-
-	return 0;
+	return update_sched_qos_profiles(buf, SCHED_QOS_POWER_EFFICIENCY);
 }
 
 static int update_sched_qos_sensitive_standard(const char *buf, int count)
 {
-	struct vendor_task_struct *vp;
-	struct task_struct *p;
-	pid_t pid;
-
-	if (kstrtoint(buf, 0, &pid) || pid <= 0)
-		return -EINVAL;
-
-	rcu_read_lock();
-	p = find_task_by_vpid(pid);
-	if (!p) {
-		rcu_read_unlock();
-		return -ESRCH;
-	}
-
-	get_task_struct(p);
-
-	if (!check_cred(p)) {
-		put_task_struct(p);
-		rcu_read_unlock();
-		return -EACCES;
-	}
-
-	vp = get_vendor_task_struct(p);
-	vp->sched_qos_profile = SCHED_QOS_SENSITIVE_STANDARD;
-	vp->prev_sched_qos_user_defined_flag = vp->sched_qos_user_defined_flag;
-	/*
-	 Clear all bits except SCHED_QOS_RAMPUP_MULTIPLIER_BIT.
-	*/
-	vp->sched_qos_user_defined_flag &= BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
-
-	vp->sched_qos_user_defined_flag |= SCHED_QOS_PROFILES[SCHED_QOS_SENSITIVE_STANDARD];
-	update_sched_qos_profiles(p, vp);
-
-	put_task_struct(p);
-	rcu_read_unlock();
-
-	return 0;
+	return update_sched_qos_profiles(buf, SCHED_QOS_SENSITIVE_STANDARD);
 }
 
 static int update_sched_qos_sensitive_high(const char *buf, int count)
 {
-	struct vendor_task_struct *vp;
-	struct task_struct *p;
-	pid_t pid;
-
-	if (kstrtoint(buf, 0, &pid) || pid <= 0)
-		return -EINVAL;
-
-	rcu_read_lock();
-	p = find_task_by_vpid(pid);
-	if (!p) {
-		rcu_read_unlock();
-		return -ESRCH;
-	}
-
-	get_task_struct(p);
-
-	if (!check_cred(p)) {
-		put_task_struct(p);
-		rcu_read_unlock();
-		return -EACCES;
-	}
-
-	vp = get_vendor_task_struct(p);
-	vp->sched_qos_profile = SCHED_QOS_SENSITIVE_HIGH;
-	vp->prev_sched_qos_user_defined_flag = vp->sched_qos_user_defined_flag;
-	/*
-	 Clear all bits except SCHED_QOS_RAMPUP_MULTIPLIER_BIT.
-	*/
-	vp->sched_qos_user_defined_flag &= BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
-
-	vp->sched_qos_user_defined_flag |= SCHED_QOS_PROFILES[SCHED_QOS_SENSITIVE_HIGH];
-	update_sched_qos_profiles(p, vp);
-
-	put_task_struct(p);
-	rcu_read_unlock();
-
-	return 0;
+	return update_sched_qos_profiles(buf, SCHED_QOS_SENSITIVE_HIGH);
 }
 
 static int update_sched_qos_sensitive_extreme(const char *buf, int count)
 {
-	struct vendor_task_struct *vp;
-	struct task_struct *p;
-	pid_t pid;
-
-	if (kstrtoint(buf, 0, &pid) || pid <= 0)
-		return -EINVAL;
-
-	rcu_read_lock();
-	p = find_task_by_vpid(pid);
-	if (!p) {
-		rcu_read_unlock();
-		return -ESRCH;
-	}
-
-	get_task_struct(p);
-
-	if (!check_cred(p)) {
-		put_task_struct(p);
-		rcu_read_unlock();
-		return -EACCES;
-	}
-
-	vp = get_vendor_task_struct(p);
-	vp->sched_qos_profile = SCHED_QOS_SENSITIVE_EXTREME;
-	vp->prev_sched_qos_user_defined_flag = vp->sched_qos_user_defined_flag;
-	/*
-	 Clear all bits except SCHED_QOS_RAMPUP_MULTIPLIER_BIT.
-	*/
-	vp->sched_qos_user_defined_flag &= BIT(SCHED_QOS_RAMPUP_MULTIPLIER_BIT);
-
-	vp->sched_qos_user_defined_flag |= SCHED_QOS_PROFILES[SCHED_QOS_SENSITIVE_EXTREME];
-	update_sched_qos_profiles(p, vp);
-
-	put_task_struct(p);
-	rcu_read_unlock();
-
-	return 0;
+	return update_sched_qos_profiles(buf, SCHED_QOS_SENSITIVE_EXTREME);
 }
 
 static inline void migrate_boost_prio(struct task_struct *p, unsigned int old, unsigned int new)
@@ -1546,15 +1358,64 @@ static inline void migrate_boost_prio(struct task_struct *p, unsigned int old, u
 	}
 }
 
-static int update_vendor_group_attribute(const char *buf, enum vendor_group_attribute vta,
+static inline void update_vendor_group_attribute(struct task_struct *p, int new)
+{
+	struct vendor_task_struct *vp = get_vendor_task_struct(p);
+	enum uclamp_id clamp_id;
+	unsigned long irqflags;
+	struct rq_flags rf;
+	struct rq *rq;
+	bool old_adpf;
+	int old;
+
+	rq = task_rq_lock(p, &rf);
+	raw_spin_lock_irqsave(&vp->lock, irqflags);
+
+	old = vp->group;
+	old_adpf = get_adpf(p, true);
+	if (old == new || p->flags & PF_EXITING) {
+		raw_spin_unlock_irqrestore(&vp->lock, irqflags);
+		task_rq_unlock(rq, p, &rf);
+		return;
+	}
+
+	if (vp->queued_to_list == LIST_QUEUED) {
+		remove_from_vendor_group_list(&vp->node, old);
+		add_to_vendor_group_list(&vp->node, new);
+	}
+
+	vp->group = new;
+	/* check adpf counter with new group qos config and
+	 * old_adpf already included old group qos config.
+	 */
+	update_adpf_counter(p, old_adpf);
+	raw_spin_unlock_irqrestore(&vp->lock, irqflags);
+	task_rq_unlock(rq, p, &rf);
+
+	/* check affinity */
+	if (vg[new].disable_sched_setaffinity)
+		__reset_task_affinity(p);
+
+	set_batch_policy(p, old, new);
+
+	if (p->prio >= MAX_RT_PRIO) {
+		/* check prio boost */
+		migrate_boost_prio(p, old, new);
+#if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
+		/* vender group util migration */
+		migrate_vendor_group_util(p, old, new);
+#endif
+	}
+
+	for (clamp_id = 0; clamp_id < UCLAMP_CNT; clamp_id++)
+		uclamp_update_active(p, clamp_id);
+}
+
+static int update_vendor_group(const char *buf, enum vendor_group_attribute vta,
 					 unsigned int new)
 {
-	struct vendor_task_struct *vp;
 	struct task_struct *p, *t;
-	enum uclamp_id clamp_id;
 	pid_t pid;
-	unsigned long irqflags;
-	int old;
 
 	if (kstrtoint(buf, 0, &pid) || pid <= 0)
 		return -EINVAL;
@@ -1577,60 +1438,13 @@ static int update_vendor_group_attribute(const char *buf, enum vendor_group_attr
 
 	switch (vta) {
 	case VTA_TASK_GROUP:
-		vp = get_vendor_task_struct(p);
-		raw_spin_lock_irqsave(&vp->lock, irqflags);
-		old = vp->group;
-		if (old == new || p->flags & PF_EXITING) {
-			raw_spin_unlock_irqrestore(&vp->lock, irqflags);
-			break;
-		}
-		if (vp->queued_to_list == LIST_QUEUED) {
-			remove_from_vendor_group_list(&vp->node, old);
-			add_to_vendor_group_list(&vp->node, new);
-		}
-		vp->group = new;
-		raw_spin_unlock_irqrestore(&vp->lock, irqflags);
-		if (vg[new].disable_sched_setaffinity)
-			__reset_task_affinity(p);
-		set_batch_policy(p, old, new);
-		if (p->prio >= MAX_RT_PRIO) {
-			migrate_boost_prio(p, old, new);
-#if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
-			migrate_vendor_group_util(p, old, new);
-#endif
-		}
-		for (clamp_id = 0; clamp_id < UCLAMP_CNT; clamp_id++)
-			uclamp_update_active(p, clamp_id);
+		update_vendor_group_attribute(p, new);
 		break;
 	case VTA_PROC_GROUP:
 		rcu_read_lock();
 		for_each_thread(p, t) {
 			get_task_struct(t);
-			vp = get_vendor_task_struct(t);
-			raw_spin_lock_irqsave(&vp->lock, irqflags);
-			old = vp->group;
-			if (old == new || t->flags & PF_EXITING) {
-				raw_spin_unlock_irqrestore(&vp->lock, irqflags);
-				put_task_struct(t);
-				continue;
-			}
-			if (vp->queued_to_list == LIST_QUEUED) {
-				remove_from_vendor_group_list(&vp->node, old);
-				add_to_vendor_group_list(&vp->node, new);
-			}
-			vp->group = new;
-			raw_spin_unlock_irqrestore(&vp->lock, irqflags);
-			if (vg[new].disable_sched_setaffinity)
-				__reset_task_affinity(t);
-			set_batch_policy(t, old, new);
-			if (p->prio >= MAX_RT_PRIO) {
-				migrate_boost_prio(t, old, new);
-#if IS_ENABLED(CONFIG_USE_VENDOR_GROUP_UTIL)
-				migrate_vendor_group_util(t, old, new);
-#endif
-			}
-			for (clamp_id = 0; clamp_id < UCLAMP_CNT; clamp_id++)
-				uclamp_update_active(t, clamp_id);
+			update_vendor_group_attribute(t, new);
 			put_task_struct(t);
 		}
 		rcu_read_unlock();
@@ -1933,7 +1747,7 @@ static ssize_t teo_util_threshold_store(struct file *filp,
 
 	buf[count] = '\0';
 
-	return update_teo_util_threshold(buf, count);
+	return update_vendor_tunables(buf, count, TEO_UTIL_THRESHOLD);
 }
 PROC_OPS_RW(teo_util_threshold);
 
@@ -2859,6 +2673,39 @@ static ssize_t skip_inefficient_opps_store(struct file *filp,
 }
 PROC_OPS_RW(skip_inefficient_opps);
 
+static int use_em_for_freq_mapping_show(struct seq_file *m, void *v)
+{
+	seq_printf(m, "%d\n", static_branch_likely(&use_em_for_freq_mapping) ? 1 : 0);
+	return 0;
+}
+static ssize_t use_em_for_freq_mapping_store(struct file *filp,
+					     const char __user *ubuf,
+					     size_t count, loff_t *pos)
+{
+	unsigned int val;
+	char buf[MAX_PROC_SIZE];
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+
+	buf[count] = '\0';
+
+	if (kstrtouint(buf, 0, &val))
+		return -EINVAL;
+
+	if (!val) {
+		static_branch_disable(&use_em_for_freq_mapping);
+	} else {
+		static_branch_enable(&use_em_for_freq_mapping);
+	}
+
+	return count;
+}
+PROC_OPS_RW(use_em_for_freq_mapping);
+
 #if IS_ENABLED(CONFIG_RVH_SCHED_LIB)
 extern unsigned long sched_lib_mask_out_val;
 
@@ -3477,6 +3324,10 @@ ssize_t prefer_idle_task_name_store(struct file *filp, const char __user *ubuf, 
 }
 PROC_OPS_RW(prefer_idle_task_name);
 
+/*
+ * TODO(guibing): remove "is_tgid_system_ui" procfs node once the powerhal
+ * switch to use the new "check_tgid_type" procfs node.
+ */
 static ssize_t is_tgid_system_ui_store(struct file *filp,
 						const char __user *ubuf,
 						size_t count, loff_t *pos)
@@ -3522,6 +3373,65 @@ static ssize_t is_tgid_system_ui_store(struct file *filp,
 	}
 }
 PROC_OPS_WO(is_tgid_system_ui);
+
+/*
+ * Check the type of applications to which the tgid belongs.
+ * normal return values:
+ *   1 : systemui or nexuslauncher related
+ *   2 : chrome related
+ *   -ENOMSG : others
+ *
+ * It's designed intentionally not to return the number of written characters, so it could be used
+ * to check different types of the tgid tasks based on its return value. This helps reducing the
+ * number of syscalls when used frequently in user space.
+ */
+static ssize_t check_tgid_type_store(struct file *filp,
+					const char __user *ubuf,
+					size_t count, loff_t *pos)
+{
+	unsigned int val;
+	char buf[MAX_PROC_SIZE];
+	struct task_struct *p;
+	char tgid_comm[TASK_COMM_LEN] = {0};
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+
+	buf[count] = '\0';
+
+	if (kstrtouint(buf, 0, &val) || val > PID_MAX_LIMIT)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_task_by_vpid(val);
+	if (!p) {
+		rcu_read_unlock();
+		return -ESRCH;
+	}
+
+	get_task_struct(p);
+	if (!check_cred(p)) {
+		put_task_struct(p);
+		rcu_read_unlock();
+		return -EACCES;
+	}
+
+	strlcpy(tgid_comm, p->comm, TASK_COMM_LEN);
+	put_task_struct(p);
+	rcu_read_unlock();
+
+	if (strstr(tgid_comm, "systemui") || strstr(tgid_comm, "nexuslauncher")) {
+		return 1;
+	} else if (strstr(tgid_comm, "android.chrome") || strstr(tgid_comm, "ileged_process")) {
+		return 2;
+	} else {
+		return -ENOMSG;
+	}
+}
+PROC_OPS_WO(check_tgid_type);
 
 int boost_at_fork_task_name_show(struct seq_file *m, void *v)
 {
@@ -3587,6 +3497,37 @@ static ssize_t boost_at_fork_value_store(struct file *filp,
 	return count;
 }
 PROC_OPS_RW(boost_at_fork_value);
+
+static int boost_at_fork_duration_show(struct seq_file *m, void *v)
+{
+	/* Change from nanosecond to millisecond. */
+	seq_printf(m, "%lu\n", vendor_sched_boost_at_fork_duration / 1000000);
+	return 0;
+}
+static ssize_t boost_at_fork_duration_store(struct file *filp,
+					    const char __user *ubuf,
+					    size_t count, loff_t *pos)
+{
+	unsigned long val;
+	char buf[MAX_PROC_SIZE];
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+
+	buf[count] = '\0';
+
+	if (kstrtoul(buf, 0, &val))
+		return -EINVAL;
+
+	/* Change from millisecond to nanosecond. */
+	vendor_sched_boost_at_fork_duration = val * 1000000;
+
+	return count;
+}
+PROC_OPS_RW(boost_at_fork_duration);
 
 static ssize_t adpf_adjustment_store(struct file *filp,
 				  const char __user *ubuf,
@@ -3734,6 +3675,7 @@ static struct pentry entries[] = {
 	PROC_ENTRY(idle_inject_sync_trigger),
 	// pixel_em
 	PROC_ENTRY(skip_inefficient_opps),
+	PROC_ENTRY(use_em_for_freq_mapping),
 	// skip mask for RT wake up
 	PROC_ENTRY(cpu_skip_mask),
 	// skip mask for prefer prev cpu
@@ -3749,6 +3691,9 @@ static struct pentry entries[] = {
 	/* boost at fork */
 	PROC_ENTRY(boost_at_fork_task_name),
 	PROC_ENTRY(boost_at_fork_value),
+	PROC_ENTRY(boost_at_fork_duration),
+	// check the type of application to which the tgid belongs
+	PROC_ENTRY(check_tgid_type),
 };
 
 
@@ -3860,3 +3805,5 @@ int create_procfs_node(void)
 out:
 	return -ENOMEM;
 }
+
+MODULE_IMPORT_NS(IDLE_INJECT);

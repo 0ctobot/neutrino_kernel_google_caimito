@@ -190,6 +190,7 @@ struct exynos_uart_port {
 	unsigned int skip_suspend;
 	bool show_uart_logging_packets;
 	unsigned char suspending;
+	spinlock_t lock;
 };
 
 /* conversion functions */
@@ -440,6 +441,24 @@ static void change_uart_gpio(int value, struct exynos_uart_port *ourport)
 	}
 
 	spin_unlock_irqrestore(&port->lock, flags);
+}
+
+static void change_flow_control_state(int en, struct exynos_uart_port *ourport)
+{
+	/* during suspending skip control */
+	if (!ourport->suspending) {
+		if (en) {
+			if (ourport->rts_alive_control)
+				enable_auto_flow_control(ourport);
+			if (ourport->rts_control)
+				change_uart_gpio(DEFAULT_PINCTRL, ourport);
+		} else {
+			if (ourport->rts_alive_control)
+				disable_auto_flow_control(ourport);
+			if (ourport->rts_control)
+				change_uart_gpio(RTS_PINCTRL, ourport);
+		}
+	}
 }
 
 static void print_uart_mode(struct uart_port *port, struct ktermios *termios,
@@ -1282,7 +1301,7 @@ static void exynos_serial_rx_drain_fifo(struct exynos_uart_port *ourport)
 	if (ourport->uart_logging && trace_cnt) {
 		if (!IS_ERR_OR_NULL(ourport->log)) {
 			if (ourport->show_uart_logging_packets) {
-				// skip saving the BQR controller debug dump packets to logbuffer
+				/* skip saving the BQR controller debug dump packets to logbuffer */
 				if (trace_buf[0]==0x04 && trace_buf[1]==0xff
 					&& trace_buf[3]==0x58 && trace_buf[4]==0x13) {
 					ourport->show_uart_logging_packets = false;
@@ -1410,7 +1429,7 @@ out:
 
 	if (ourport->uart_logging && trace_cnt) {
 		if (!IS_ERR_OR_NULL(ourport->log)) {
-			// reset the show_uart_logging_packets flag after HCI_RESET TX packet
+			/* reset the show_uart_logging_packets flag after HCI_RESET TX packet */
 			if (trace_buf[0]==0x01 && trace_buf[1]==0x03
 				&& trace_buf[2]==0x0c && trace_buf[3]==0x00) {
 				ourport->show_uart_logging_packets = true;
@@ -2562,6 +2581,7 @@ static int exynos_serial_sicd_notifier(struct notifier_block *self,
 {
 	struct exynos_uart_port *ourport;
 	struct uart_port *port;
+	unsigned long flags;
 
 	switch (cmd) {
 	case SICD_ENTER:
@@ -2571,14 +2591,9 @@ static int exynos_serial_sicd_notifier(struct notifier_block *self,
 			if (port->state->pm_state == UART_PM_STATE_OFF)
 				continue;
 
-			if (ourport->suspending)
-				continue;
-
-			if (ourport->rts_alive_control)
-				disable_auto_flow_control(ourport);
-
-			if (ourport->rts_control)
-				change_uart_gpio(RTS_PINCTRL, ourport);
+			spin_lock_irqsave(&ourport->lock, flags);
+			change_flow_control_state(0, ourport);
+			spin_unlock_irqrestore(&ourport->lock, flags);
 		}
 
 		exynos_serial_fifo_wait();
@@ -2591,14 +2606,9 @@ static int exynos_serial_sicd_notifier(struct notifier_block *self,
 			if (port->state->pm_state == UART_PM_STATE_OFF)
 				continue;
 
-			if (ourport->suspending)
-				continue;
-
-			if (ourport->rts_alive_control)
-				enable_auto_flow_control(ourport);
-
-			if (ourport->rts_control)
-				change_uart_gpio(DEFAULT_PINCTRL, ourport);
+			spin_lock_irqsave(&ourport->lock, flags);
+			change_flow_control_state(1, ourport);
+			spin_unlock_irqrestore(&ourport->lock, flags);
 		}
 		break;
 
@@ -2905,21 +2915,21 @@ static int exynos_serial_suspend(struct device *dev)
 	struct uart_port *port = exynos_dev_to_port(dev);
 	struct exynos_uart_port *ourport = to_ourport(port);
 	unsigned int ucon;
+	unsigned long flags;
 
 	if (port) {
 		if (ourport->skip_suspend) {
 			return 0;
 		}
-		ourport->suspending = 1;
 		/*
 		 * If rts line must be protected while suspending
 		 * we change the gpio pad as output high
 		 */
-		if (ourport->rts_control)
-			change_uart_gpio(RTS_PINCTRL, ourport);
-
-		if (ourport->rts_alive_control)
-			disable_auto_flow_control(ourport);
+		spin_lock_irqsave(&ourport->lock, flags);
+		//after set flow control, set suspending
+		change_flow_control_state(0, ourport);
+		ourport->suspending = 1;
+		spin_unlock_irqrestore(&ourport->lock, flags);
 
 		usleep_range(200, 300);//delay for sfr update
 		exynos_serial_rx_fifo_wait(ourport);
@@ -2983,6 +2993,7 @@ static int exynos_serial_resume(struct device *dev)
 {
 	struct uart_port *port = exynos_dev_to_port(dev);
 	struct exynos_uart_port *ourport = to_ourport(port);
+	unsigned long flags;
 
 	if (port) {
 		if (ourport->skip_suspend) {
@@ -3010,11 +3021,11 @@ static int exynos_serial_resume(struct device *dev)
 					portaddrl(port, S3C64XX_UINTM));
 		}
 
-		if (ourport->rts_control)
-			change_uart_gpio(DEFAULT_PINCTRL, ourport);
-
-		if (ourport->rts_alive_control)
-			enable_auto_flow_control(ourport);
+		spin_lock_irqsave(&ourport->lock, flags);
+		//reset suspend flag and change flow control
+		change_flow_control_state(1, ourport);
+		ourport->suspending = 0;
+		spin_unlock_irqrestore(&ourport->lock, flags);
 
 		if (ourport->dbg_mode & UART_DBG_MODE)
 			dev_err(dev, "UART resume notification for tty framework.\n");

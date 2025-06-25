@@ -3270,11 +3270,6 @@ retry:
 
 			exynos_pcie->link_stats.link_recovery_failure_count++;
 
-			if (exynos_pcie->ip_ver >= 0x889000 &&
-			    exynos_pcie->ep_device_type == EP_BCM_WIFI) {
-				return -EPIPE;
-			}
-
 			return -EPIPE;
 		}
 	} else {

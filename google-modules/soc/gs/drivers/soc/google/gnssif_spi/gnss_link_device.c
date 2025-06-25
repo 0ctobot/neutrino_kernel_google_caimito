@@ -233,7 +233,7 @@ struct link_device *create_link_device(struct platform_device *pdev)
 	ld->spi_tx_size = DEFAULT_SPI_TX_SIZE;
 
 	ld->rx_wq = alloc_workqueue("gnss_spi_wq",
-					__WQ_LEGACY | WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
+					WQ_MEM_RECLAIM | WQ_UNBOUND, 1);
 	if (!ld->rx_wq) {
 		gif_err("alloc_workqueue() error\n");
 		goto exit;

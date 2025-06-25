@@ -311,6 +311,10 @@ static int vh_mm_init(void)
 	if (ret)
 		goto out_err;
 
+	ret = register_trace_android_vh_calculate_totalreserve_pages(vh_update_lmkd_watermark, NULL);
+	if (ret)
+		goto out_err;
+
 	return ret;
 
 out_err:

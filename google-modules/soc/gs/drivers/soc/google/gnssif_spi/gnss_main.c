@@ -10,6 +10,7 @@
 #include <linux/platform_device.h>
 #include <linux/platform_data/sscoredump.h>
 #include <linux/time.h>
+#include <linux/suspend.h>
 
 #include "gnss_prj.h"
 #include "gnss_utils.h"
@@ -120,6 +121,33 @@ parse_dt_pdata_err:
 	return ERR_PTR(-EINVAL);
 }
 
+static int gnss_pm_notifier(struct notifier_block *notifier,
+				unsigned long pm_event, void *v)
+{
+	struct gnss_ctl *gc = NULL;
+
+	gc = container_of(notifier, struct gnss_ctl, pm_notifier);
+	if (!gc) {
+		gif_err("gnss_ctl is null\n");
+		return NOTIFY_DONE;
+	}
+
+	switch (pm_event) {
+	case PM_SUSPEND_PREPARE:
+		gif_info("Suspend prepare\n");
+		gif_disable_irq_nosync(&gc->irq_gnss2ap_spi);
+		break;
+	case PM_POST_SUSPEND:
+		gif_info("Resume done\n");
+		gif_enable_irq(&gc->irq_gnss2ap_spi);
+		break;
+	default:
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
 static int gnss_remove(struct platform_device *pdev)
 {
 	struct gnss_ctl *gc = platform_get_drvdata(pdev);
@@ -148,6 +176,7 @@ static int gnss_probe(struct platform_device *pdev)
 	struct gnss_ctl *gc;
 	struct io_device *iod;
 	struct link_device *ld;
+	int ret = 0;
 
 	gif_info("Exynos GNSS interface driver probe begins\n");
 
@@ -155,6 +184,7 @@ static int gnss_probe(struct platform_device *pdev)
 
 	if (!dev->of_node) {
 		gif_err("No DT data!\n");
+		ret = -ENOMEM;
 		goto probe_fail;
 	}
 
@@ -167,12 +197,14 @@ static int gnss_probe(struct platform_device *pdev)
 	gc = create_ctl_device(pdev);
 	if (!gc) {
 		gif_err("%s: Could not create gc\n", pdata->name);
+		ret = -ENOMEM;
 		goto probe_fail;
 	}
 
 	ld = create_link_device(pdev);
 	if (!ld) {
 		gif_err("%s: Could not create ld\n", pdata->name);
+		ret = -ENOMEM;
 		goto free_gc;
 	}
 
@@ -181,10 +213,18 @@ static int gnss_probe(struct platform_device *pdev)
 	iod = create_io_device(pdev, ld, gc, pdata);
 	if (!iod) {
 		gif_err("%s: Could not create iod\n", pdata->name);
+		ret = -ENOMEM;
 		goto free_ld;
 	}
 
 	platform_set_drvdata(pdev, gc);
+
+	gc->pm_notifier.notifier_call = gnss_pm_notifier;
+	ret = register_pm_notifier(&gc->pm_notifier);
+	if (ret) {
+		gif_err("failed to register PM notifier_call\n");
+		goto free_ld;
+	}
 
 	platform_device_register(&sscd_dev);
 
@@ -205,7 +245,7 @@ free_gc:
 probe_fail:
 	gif_err("%s: xxx\n", pdata->name);
 
-	return -ENOMEM;
+	return ret;
 }
 
 static const struct of_device_id gnss_dt_match[] = {

@@ -61,6 +61,7 @@ DEFINE_STATIC_KEY_FALSE(auto_dvfs_headroom_enable);
 DEFINE_STATIC_KEY_FALSE(auto_migration_margins_enable);
 
 DEFINE_STATIC_KEY_FALSE(skip_inefficient_opps_enable);
+DEFINE_STATIC_KEY_FALSE(use_em_for_freq_mapping);
 
 #define vi_set_adpf(vi, type, value) \
     do { \
@@ -285,26 +286,27 @@ void rvh_set_cpus_allowed_by_task(void *data, const struct cpumask *cpu_valid_ma
 static void set_adpf_inheritance(struct task_struct *p, unsigned int type, int val)
 {
 	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
+	bool old_adpf = get_adpf(p, true);
 
 	lockdep_assert_held(&p->pi_lock);
 
-	if (task_on_rq_queued(p)) {
-		bool old_adpf = get_adpf(p, true);
+	vi_set_adpf(vi, type, val);
 
-		vi_set_adpf(vi, type, val);
-		if (!old_adpf && get_adpf(p, true))
-			inc_adpf_counter(p, task_rq(p));
-		else if (old_adpf && !get_adpf(p, true))
-			dec_adpf_counter(p, task_rq(p));
-	} else {
-		vi_set_adpf(vi, type, val);
-	}
+	update_adpf_counter(p, old_adpf);
 }
 
-static void set_performance_inheritance_locked(struct task_struct *p, struct task_struct *pi_task,
+static void set_performance_inheritance(struct task_struct *p, struct task_struct *pi_task,
 	unsigned int type)
 {
 	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
+	struct rq_flags rf;
+	struct rq *rq;
+
+	/* RT mutex in GKI path already held pi_lock so we only hold rq lock in vendor hook */
+	if (type == VI_RTMUTEX)
+		rq = __task_rq_lock(p, &rf);
+	else
+		rq = task_rq_lock(p, &rf);
 
 	lockdep_assert_held(&p->pi_lock);
 
@@ -351,7 +353,7 @@ static void set_performance_inheritance_locked(struct task_struct *p, struct tas
 		if (!!get_preempt_wakeup(pi_task))
 			vi_set_preempt_wakeup(vi, type, 1);
 
-		if (!!get_prefer_high_cap(pi_task) || task_cpu(pi_task) >= pixel_cluster_start_cpu[1])
+		if (__get_prefer_high_cap(pi_task) || task_cpu(pi_task) >= pixel_cluster_start_cpu[1])
 			vi_set_prefer_high_cap(vi, type, 1);
 	} else {
 		vi->uclamp[type][UCLAMP_MIN] = uclamp_none(UCLAMP_MIN);
@@ -367,16 +369,11 @@ static void set_performance_inheritance_locked(struct task_struct *p, struct tas
 
 		vi_set_prefer_high_cap(vi, type, 0);
 	}
-}
 
-static inline void set_performance_inheritance(struct task_struct *p, struct task_struct *pi_task,
-	unsigned int type)
-{
-	unsigned long irqflags;
-
-	raw_spin_lock_irqsave(&p->pi_lock, irqflags);
-	set_performance_inheritance_locked(p, pi_task, type);
-	raw_spin_unlock_irqrestore(&p->pi_lock, irqflags);
+	if (type == VI_RTMUTEX)
+		__task_rq_unlock(rq, &rf);
+	else
+		task_rq_unlock(rq, p, &rf);
 }
 
 void vh_binder_set_priority_pixel_mod(void *data, struct binder_transaction *t,
@@ -408,7 +405,7 @@ void vh_binder_proc_transaction_finish(void *data, struct binder_proc *proc,
 void rvh_rtmutex_prepare_setprio_pixel_mod(void *data, struct task_struct *p,
 	struct task_struct *pi_task)
 {
-	set_performance_inheritance_locked(p, pi_task, VI_RTMUTEX);
+	set_performance_inheritance(p, pi_task, VI_RTMUTEX);
 }
 
 void rvh_try_to_wake_up_success_pixel_mod(void *data, struct task_struct *p)

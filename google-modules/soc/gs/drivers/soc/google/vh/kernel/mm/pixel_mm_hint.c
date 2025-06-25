@@ -5,6 +5,7 @@
 #include <linux/module.h>
 #include <linux/oom.h>
 #include <linux/swap.h>
+#include <trace/events/android_vendor_lmk.h>
 
 #include "../../include/pixel_mm_hint.h"
 
@@ -17,6 +18,7 @@ static atomic_long_t mm_hint_mode = ATOMIC_INIT(0);
 static atomic_long_t min_file_cache_kb = ATOMIC_INIT(0);
 static atomic_long_t critical_oom_score = ATOMIC_INIT(OOM_SCORE_ADJ_MAX);
 static atomic_long_t critical_swappiness = ATOMIC_INIT(20);
+static atomic_t skip_lmkd_watermark_refcount = ATOMIC_INIT(0);
 
 void vh_vmscan_tune_swappiness(void *data, int *swappiness)
 {
@@ -41,6 +43,55 @@ void vh_vmscan_tune_swappiness(void *data, int *swappiness)
 		*swappiness = get_critical_swappiness();
 	}
 }
+
+void vh_update_lmkd_watermark(void *data, bool *skip)
+{
+	*skip = !!atomic_read(&skip_lmkd_watermark_refcount);
+}
+
+/*
+ * [enabled | disable]_update_lmkd_watermark_notify
+ *
+ * This pair of functions controls whether the LMKD (Low Memory Killer Daemon)
+ * watermark notification is allowed to update and must be in pair.
+ *
+ */
+void disable_update_lmkd_watermark_notify(void)
+{
+	atomic_inc(&skip_lmkd_watermark_refcount);
+}
+EXPORT_SYMBOL_GPL(disable_update_lmkd_watermark_notify);
+
+void enable_update_lmkd_watermark_notify(void)
+{
+	if (WARN_ON(atomic_read(&skip_lmkd_watermark_refcount) == 0))
+		return;
+
+	atomic_dec(&skip_lmkd_watermark_refcount);
+}
+EXPORT_SYMBOL_GPL(enable_update_lmkd_watermark_notify);
+
+/*
+ * try_to_trigger_lmkd_kill: Trigger LMKD process kill.
+ *
+ * Sends a request to LMKD to kill a process where oom_score_adj >= min_oom_score.
+ * Valid ranges: 0 <= min_oom_score < 1000, 0 <= reason < 1000.
+ *
+ * Note: This API provides a best-effort kill attempt and does not guarantee success,
+ * as LMKD (Low Memory Killer Daemon) might have already killed the process.
+ */
+int try_to_trigger_lmkd_kill(int reason, short min_oom_score_adj)
+{
+	if (reason < 0 || reason >= 1000)
+		return -EINVAL;
+
+	if (min_oom_score_adj < 0 || min_oom_score_adj > OOM_SCORE_ADJ_MAX)
+		return -EINVAL;
+
+	trace_android_trigger_vendor_lmk_kill(reason, min_oom_score_adj);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(try_to_trigger_lmkd_kill);
 
 static int mm_hint_enable_set(const char *val, const struct kernel_param *kp)
 {

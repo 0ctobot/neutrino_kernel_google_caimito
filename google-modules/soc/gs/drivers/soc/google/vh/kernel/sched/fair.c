@@ -1147,7 +1147,7 @@ static bool task_fits_capacity(struct task_struct *p, int cpu)
 	unsigned long uclamp_max = uclamp_eff_value_pixel_mod(p, UCLAMP_MAX);
 	unsigned long task_util = task_util_est(p);
 
-	if (cpu >= pixel_cluster_start_cpu[2])
+	if (cpu >= pixel_cluster_start_cpu[pixel_cluster_num - 1])
 		return true;
 
 	/*
@@ -1289,6 +1289,63 @@ static inline unsigned long get_wakeup_energy(int cpu, int opp_level)
 }
 #endif
 
+#if IS_ENABLED(CONFIG_PIXEL_EM_VOLTAGE_SCALING)
+static void energy_voltage_scaling(unsigned long *energy)
+{
+
+	unsigned long scaled_energy;
+	struct pixel_em_profile **profile_ptr_snapshot;
+	int cluster_id;
+
+	profile_ptr_snapshot = READ_ONCE(vendor_sched_pixel_em_profile);
+	if (profile_ptr_snapshot) {
+		struct pixel_em_profile *profile = READ_ONCE(*profile_ptr_snapshot);
+		if (profile) {
+			struct pixel_em_cluster *source_cluster, *target_cluster;
+			int i, j;
+			unsigned long scaling_factor;
+
+			for (cluster_id = 0; cluster_id < profile->num_clusters; cluster_id++) {
+				source_cluster = &profile->clusters[cluster_id];
+				if (source_cluster->voltage_scaling_target != -1) {
+					target_cluster = profile->cpu_to_cluster[source_cluster->
+							 voltage_scaling_target];
+
+					i = source_cluster->voltage_level;
+					j = target_cluster->voltage_level;
+
+					if (i >= source_cluster->num_opps ||
+					    j >= target_cluster->num_opps)
+						break;
+
+					/*
+					 * Need to scaling energy for target cluster if it is not 0.
+					 * The scale factor will be
+					 * (source_cluster->voltage / target_cluster->voltag)^2.
+					 */
+					if (source_cluster->scaling_factor_table &&
+					    target_cluster->energy &&
+					    (source_cluster->opps[i].voltage >
+					     target_cluster->opps[j].voltage +
+					     VOLTAGE_SCALING_THRESHOLD)) {
+
+						scaling_factor =
+							*(source_cluster->scaling_factor_table +
+							  i * target_cluster->num_opps + j);
+
+						scaled_energy = (target_cluster->energy *
+							scaling_factor) >> SCHED_CAPACITY_SHIFT;
+
+						*energy = *energy - target_cluster->energy +
+							  scaled_energy;
+					}
+				}
+			}
+		}
+	}
+}
+#endif
+
 static inline unsigned long em_cpu_energy_pixel_mod(struct em_perf_domain *pd,
 				unsigned long max_util, unsigned long sum_util, bool count_idle,
 				int dst_cpu)
@@ -1328,6 +1385,11 @@ static inline unsigned long em_cpu_energy_pixel_mod(struct em_perf_domain *pd,
 				}
 
 				energy = opp->cost * sum_util;
+
+#if IS_ENABLED(CONFIG_PIXEL_EM_VOLTAGE_SCALING)
+				cluster->voltage_level = i;
+				cluster->energy = energy;
+#endif
 
 				if (count_idle) {
 					unsigned long cur_freq = arch_scale_freq_capacity(cpu) *
@@ -1424,6 +1486,10 @@ compute_energy(struct task_struct *p, int dst_cpu, struct perf_domain *pd, unsig
 		energy += em_cpu_energy_pixel_mod(pd->em_pd, max_util, sum_util, count_idle,
 						  dst_cpu);
 	}
+
+#if IS_ENABLED(CONFIG_PIXEL_EM_VOLTAGE_SCALING)
+	energy_voltage_scaling(&energy);
+#endif
 
 	trace_sched_compute_energy(p, dst_cpu, energy);
 	return energy;
@@ -2077,10 +2143,7 @@ void rvh_cpu_overutilized_pixel_mod(void *data, int cpu, int *overutilized)
 unsigned long map_util_freq_pixel_mod(unsigned long util, unsigned long freq,
 				      unsigned long cap, int cpu)
 {
-	freq = freq * util / cap;
-
 #if IS_ENABLED(CONFIG_PIXEL_EM)
-	if (static_branch_likely(&skip_inefficient_opps_enable))
 	{
 		struct pixel_em_profile **profile_ptr_snapshot;
 		profile_ptr_snapshot = READ_ONCE(vendor_sched_pixel_em_profile);
@@ -2089,22 +2152,38 @@ unsigned long map_util_freq_pixel_mod(unsigned long util, unsigned long freq,
 			if (profile) {
 				struct pixel_em_cluster *cluster = profile->cpu_to_cluster[cpu];
 				struct pixel_em_opp *opp;
+				bool efficient = true;
 				int i;
 
-				freq = map_scaling_freq(cpu, freq);
+				if (!static_branch_likely(&use_em_for_freq_mapping)) {
+					freq = freq * util / cap;
+					freq = map_scaling_freq(cpu, freq);
+				}
 
 				for (i = 0; i < cluster->num_opps; i++) {
 					opp = &cluster->opps[i];
-					if (opp->freq >= freq && !opp->inefficient)
-						break;
+
+					if (static_branch_likely(&skip_inefficient_opps_enable))
+						efficient = !opp->inefficient;
+
+					if (static_branch_likely(&use_em_for_freq_mapping)) {
+						if (opp->capacity >= util && efficient)
+							break;
+					} else {
+						if (opp->freq >= freq && efficient)
+							break;
+					}
 				}
 
-				SCHED_WARN_ON(opp->inefficient);
+				if (static_branch_likely(&skip_inefficient_opps_enable))
+					SCHED_WARN_ON(opp->inefficient);
 
 				freq = opp->freq;
 			}
 		}
 	}
+#else
+	freq = freq * util / cap;
 #endif
 
 	return map_scaling_freq(cpu, freq);
@@ -2346,6 +2425,8 @@ void rvh_util_est_update_pixel_mod(void *data, struct cfs_rq *cfs_rq, struct tas
 	if (!static_branch_likely(&auto_dvfs_headroom_enable)) {
 		if (ue.enqueued & UTIL_AVG_UNCHANGED)
 			return;
+	} else {
+		ue.enqueued = ue.enqueued & ~UTIL_AVG_UNCHANGED;
 	}
 
 	last_enqueued_diff = ue.enqueued;
@@ -2457,9 +2538,13 @@ void rvh_post_init_entity_util_avg_pixel_mod(void *data, struct sched_entity *se
 	} else {
 		struct sched_avg *sa = &se->avg;
 		unsigned long init_value = 0;
+		struct vendor_task_struct *vp;
 
-		if (should_boost_at_fork(task_of(se)))
+		if (should_boost_at_fork(task_of(se))) {
 			init_value =  vendor_sched_boost_at_fork_value;
+			vp = get_vendor_task_struct(task_of(se));
+			vp->boost_at_fork_start_ns = sched_clock();
+		}
 
 		sa->util_avg = init_value >> 1;
 		sa->runnable_avg = init_value >> 1;
@@ -2544,13 +2629,15 @@ void rvh_select_task_rq_fair_pixel_mod(void *data, struct task_struct *p, int pr
 				       int wake_flags, int *target_cpu)
 {
 	int sync = (wake_flags & WF_SYNC) && !(current->flags & PF_EXITING);
-	bool sync_wakeup = false, prefer_prev = false;
+	bool sync_wakeup = false, prefer_prev = false, prefer_high_cap = false;
 	int cpu;
 
 	/* sync wake up */
 	cpu = smp_processor_id();
 
-	set_auto_prefer_high_cap(p, sync && cpu >= pixel_cluster_start_cpu[1]);
+	prefer_high_cap = __get_prefer_high_cap(p) || (sync && cpu >= pixel_cluster_start_cpu[1]);
+
+	set_prefer_high_cap(p, prefer_high_cap);
 
 	if (sync && cpu_rq(cpu)->nr_running == 1 && cpumask_test_cpu(cpu, p->cpus_ptr) &&
 	     task_fits_capacity(p, cpu)) {
@@ -2593,13 +2680,13 @@ out:
 	if (trace_sched_select_task_rq_fair_enabled())
 		trace_sched_select_task_rq_fair(p, task_util_est(p),
 						sync_wakeup, get_adpf(p, true), prefer_prev,
-						get_vendor_task_struct(p)->auto_prefer_high_cap,
+						prefer_high_cap,
 						get_vendor_group(p),
 						uclamp_eff_value_pixel_mod(p, UCLAMP_MIN),
 						uclamp_eff_value_pixel_mod(p, UCLAMP_MAX),
 						prev_cpu, *target_cpu);
 
-	set_auto_prefer_high_cap(p, false);
+	set_prefer_high_cap(p, false);
 }
 
 void rvh_set_user_nice_locked_pixel_mod(void *data, struct task_struct *p, long *nice)
@@ -2655,73 +2742,38 @@ void rvh_setscheduler_pixel_mod(void *data, struct task_struct *p)
 
 static struct task_struct *detach_important_task(struct rq *src_rq, int dst_cpu)
 {
-	struct task_struct *p = NULL, *best_task = NULL, *backup = NULL,
-		*backup_ui = NULL, *backup_unfit = NULL;
+	struct task_struct *p = NULL, *best_task = NULL, *backup_task = NULL;
 
 	lockdep_assert_held(&src_rq->__lock);
 
-
 	list_for_each_entry_reverse(p, &src_rq->cfs_tasks, se.group_node) {
-		bool is_ui = false, is_boost = false;
-
 		if (!cpumask_test_cpu(dst_cpu, p->cpus_ptr))
 			continue;
 
 		if (task_on_cpu(src_rq, p))
 			continue;
 
-		if (!get_prefer_idle(p))
-			continue;
-
-		if (get_adpf(p, true))
-			is_ui = true;
-		else if (uclamp_eff_value_pixel_mod(p, UCLAMP_MIN) > 0)
-			is_boost = true;
-
-		if (!is_ui && !is_boost)
-			continue;
-
 		/*
 		 * Do not pull tasks in skip mask unless it is ADPF task.
 		 */
-		if(!is_ui)
+		if (!get_adpf(p, true))
 			continue;
 
-		if (task_fits_capacity(p, dst_cpu)) {
+		if ((dst_cpu < pixel_cluster_start_cpu[1] && task_fits_capacity(p, dst_cpu)) ||
+			 dst_cpu >= pixel_cluster_start_cpu[1]) {
 			if (!task_fits_capacity(p, src_rq->cpu)) {
-				// if task is fit for new cpu but not old cpu
-				// stop if we found an ADPF UI task
-				// use it as backup if we found a boost task
-				if (is_ui) {
-					best_task = p;
-					break;
-				}
-
-				backup = p;
+				best_task = p;
+				break;
 			} else {
-				if (is_ui) {
-					backup_ui = p;
-					continue;
-				}
-
-				if (!backup)
-					backup = p;
+				backup_task = p;
 			}
-		} else {
-			// if new idle is not capable, use it as backup but not for UI task.
-			if (!is_ui)
-				backup_unfit = p;
 		}
 	}
 
 	if (best_task)
 		p = best_task;
-	else if (backup_ui)
-		p = backup_ui;
-	else if (backup)
-		p = backup;
-	else if (backup_unfit)
-		p = backup_unfit;
+	else if (backup_task)
+		p = backup_task;
 	else
 		p = NULL;
 
@@ -2730,7 +2782,7 @@ static struct task_struct *detach_important_task(struct rq *src_rq, int dst_cpu)
 		deactivate_task(src_rq, p, DEQUEUE_NOCLOCK);
 		set_task_cpu(p, dst_cpu);
 
-		if (backup_unfit)
+		if (!task_fits_capacity(p, dst_cpu))
 			cpu_rq(dst_cpu)->misfit_task_load = p->se.avg.load_avg;
 		else
 			cpu_rq(dst_cpu)->misfit_task_load = 0;
@@ -2797,6 +2849,13 @@ void sched_newidle_balance_pixel_mod(void *data, struct rq *this_rq, struct rq_f
 		src_rq = cpu_rq(cpu);
 		src_vrq = get_vendor_rq_struct(src_rq);
 
+		if (trace_clock_set_rate_enabled()) {
+			char trace_name[32] = {0};
+
+			scnprintf(trace_name, sizeof(trace_name), "lb_adpf_cpu%d", src_rq->cpu);
+			trace_clock_set_rate(trace_name, atomic_read(&src_vrq->num_adpf_tasks),
+				raw_smp_processor_id());
+		}
 		/*
 		 * Don't bother if no latency sensitive tasks on src_rq or if
 		 * there's only one.

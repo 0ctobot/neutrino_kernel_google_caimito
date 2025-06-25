@@ -16,6 +16,12 @@ struct pixel_em_opp {
   unsigned int power;
   unsigned long cost;
   bool inefficient;
+#if IS_ENABLED(CONFIG_PIXEL_EM_VOLTAGE_SCALING)
+  unsigned long voltage;
+#endif
+#if IS_ENABLED(CONFIG_PIXEL_EM_FREQUENCY_SCALING)
+  unsigned int scaling_freq;
+#endif
 };
 
 struct pixel_em_idle_opp {
@@ -23,8 +29,28 @@ struct pixel_em_idle_opp {
   unsigned int energy;
 };
 
+#if IS_ENABLED(CONFIG_PIXEL_EM_FREQUENCY_SCALING)
+  enum constraint_type {
+    CONSTRAINT_MIN,
+    CONSTRAINT_MAX,
+    CONSTRAINT_NONE
+  };
+#endif
+
 struct pixel_em_cluster {
   cpumask_t cpus;
+#if IS_ENABLED(CONFIG_PIXEL_EM_VOLTAGE_SCALING)
+  bool voltage_table;
+  int voltage_scaling_target;
+  int voltage_level;
+  unsigned long energy;
+  unsigned long *scaling_factor_table;
+#endif
+#if IS_ENABLED(CONFIG_PIXEL_EM_FREQUENCY_SCALING)
+  bool frequency_scaling_table;
+  int frequency_scaling_target;
+  enum constraint_type constraint_type;
+#endif
   int num_opps;
   union {
     struct pixel_em_opp *opps;

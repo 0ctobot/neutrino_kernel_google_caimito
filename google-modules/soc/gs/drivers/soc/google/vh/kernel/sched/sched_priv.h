@@ -16,6 +16,7 @@
 #define LIST_QUEUED         0xa5a55a5a
 #define LIST_NOT_QUEUED     0x5a5aa5a5
 #define LIB_PATH_LENGTH 512
+
 /*
  * For cpu running normal tasks, its uclamp.min will be 0 and uclamp.max will be 1024,
  * and the sum will be 1024. We use this as index that cpu is not running important tasks.
@@ -44,6 +45,10 @@
 #define SCHED_QOS_PREFER_IDLE_BIT	5
 #define SCHED_QOS_PREFER_FIT_BIT	6
 #define SCHED_QOS_BOOST_PRIO_BIT	7
+
+#if IS_ENABLED(CONFIG_PIXEL_EM_VOLTAGE_SCALING)
+#define VOLTAGE_SCALING_THRESHOLD	10
+#endif
 
 /* Iterate thr' all leaf cfs_rq's on a runqueue */
 #define for_each_leaf_cfs_rq_safe(rq, cfs_rq, pos)			\
@@ -81,6 +86,7 @@ extern unsigned int vh_sched_latency_ns;
 extern char boost_at_fork_task_name[LIB_PATH_LENGTH];
 extern raw_spinlock_t boost_at_fork_task_name_lock;
 extern unsigned long vendor_sched_boost_at_fork_value;
+extern unsigned long vendor_sched_boost_at_fork_duration;
 
 DECLARE_STATIC_KEY_FALSE(auto_migration_margins_enable);
 DECLARE_STATIC_KEY_FALSE(auto_dvfs_headroom_enable);
@@ -274,6 +280,7 @@ enum VENDOR_TUNABLE_TYPE {
 	SCHED_AUTO_UCLAMP_MAX,
 	SCHED_DVFS_HEADROOM,
 	SCHED_IOWAIT_BOOST_MAX,
+	TEO_UTIL_THRESHOLD,
 	THERMAL_CAP_MARGIN,
 };
 
@@ -297,6 +304,7 @@ DECLARE_STATIC_KEY_FALSE(tapered_dvfs_headroom_enable);
 DECLARE_STATIC_KEY_FALSE(enqueue_dequeue_ready);
 
 DECLARE_STATIC_KEY_FALSE(skip_inefficient_opps_enable);
+DECLARE_STATIC_KEY_FALSE(use_em_for_freq_mapping);
 
 /*
  * Any governor that relies on util signal to drive DVFS, must populate these
@@ -364,6 +372,32 @@ extern inline void uclamp_rq_inc_id(struct rq *rq, struct task_struct *p,
 				    enum uclamp_id clamp_id);
 extern inline void uclamp_rq_dec_id(struct rq *rq, struct task_struct *p,
 				    enum uclamp_id clamp_id);
+
+static inline void
+uclamp_update_active_locked(struct task_struct *p, enum uclamp_id clamp_id)
+{
+	struct rq *rq = task_rq(p);
+
+	lockdep_assert_held(&p->pi_lock);
+	lockdep_assert_rq_held(rq);
+
+	if (!uclamp_is_used())
+		return;
+
+	/*
+	 * Setting the clamp bucket is serialized by task_rq_lock().
+	 * If the task is not yet RUNNABLE and its task_struct is not
+	 * affecting a valid clamp bucket, the next time it's enqueued,
+	 * it will already see the updated clamp bucket value.
+	 */
+	if (p->uclamp[clamp_id].active) {
+		uclamp_rq_dec_id(rq, p, clamp_id);
+		uclamp_rq_inc_id(rq, p, clamp_id);
+
+		if (clamp_id == UCLAMP_MAX && rq->uclamp_flags & UCLAMP_FLAG_IDLE)
+			rq->uclamp_flags &= ~UCLAMP_FLAG_IDLE;
+	}
+}
 
 static inline void
 uclamp_update_active(struct task_struct *p, enum uclamp_id clamp_id)
@@ -628,6 +662,15 @@ static inline bool get_prefer_idle(struct task_struct *p)
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
 	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
 
+	/* Let task prefer idle if it is in the duration of boost at fork. */
+	if (unlikely(vp->boost_at_fork_start_ns)) {
+		if (vp->boost_at_fork_start_ns + vendor_sched_boost_at_fork_duration >=
+		    sched_clock())
+			return true;
+
+		vp->boost_at_fork_start_ns = 0;
+	}
+
 	// Always perfer idle for tasks with prefer_idle set explicitly.
 	// In auto_prefer_idle case, only allow high prio tasks of the prefer_idle group,
 	// or high prio task with wake_q_count value greater than 0 in top-app.
@@ -685,16 +728,6 @@ static inline bool get_power_efficiency(struct task_struct *p)
 	return vp->sched_qos_profile == SCHED_QOS_POWER_EFFICIENCY;
 }
 
-static inline bool get_prefer_high_cap(struct task_struct *p)
-{
-	struct vendor_task_struct *vp = get_vendor_task_struct(p);
-	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
-
-	return vg[vp->group].prefer_high_cap || vp->auto_prefer_high_cap ||
-	       ((vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_PREFER_HIGH_CAP_BIT) ||
-		vi->prefer_high_cap) && vg[vp->group].qos_prefer_high_cap_enable);
-}
-
 static inline unsigned int get_rampup_multiplier(struct task_struct *p)
 {
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
@@ -714,9 +747,24 @@ static inline unsigned int get_rampup_multiplier(struct task_struct *p)
 			: vg[vp->group].rampup_multiplier;
 }
 
-static inline void set_auto_prefer_high_cap(struct task_struct *p, bool val)
+static inline void set_prefer_high_cap(struct task_struct *p, bool val)
 {
-	get_vendor_task_struct(p)->auto_prefer_high_cap = val;
+	get_vendor_task_struct(p)->prefer_high_cap = val;
+}
+
+static inline bool __get_prefer_high_cap(struct task_struct *p)
+{
+	struct vendor_task_struct *vp = get_vendor_task_struct(p);
+	struct vendor_inheritance_struct *vi = get_vendor_inheritance_struct(p);
+
+	return ((vp->sched_qos_user_defined_flag & BIT(SCHED_QOS_PREFER_HIGH_CAP_BIT) ||
+		vi->prefer_high_cap) && vg[vp->group].qos_prefer_high_cap_enable) ||
+		vg[vp->group].prefer_high_cap;
+}
+
+static inline bool get_prefer_high_cap(struct task_struct *p)
+{
+	return get_vendor_task_struct(p)->prefer_high_cap;
 }
 
 static inline void init_vendor_inheritance_struct(struct vendor_inheritance_struct *vi)
@@ -765,7 +813,7 @@ static inline void init_vendor_task_struct(struct vendor_task_struct *v_tsk)
 	v_tsk->direct_reclaim_ts = 0;
 	INIT_LIST_HEAD(&v_tsk->node);
 	v_tsk->queued_to_list = LIST_NOT_QUEUED;
-	v_tsk->auto_prefer_high_cap = false;
+	v_tsk->prefer_high_cap = false;
 	v_tsk->auto_uclamp_max_flags = 0;
 	v_tsk->uclamp_filter.uclamp_min_ignored = 0;
 	v_tsk->uclamp_filter.uclamp_max_ignored = 0;
@@ -786,6 +834,7 @@ static inline void init_vendor_task_struct(struct vendor_task_struct *v_tsk)
 	v_tsk->real_cap_avg = 0;
 	v_tsk->real_cap_update_ns = 0;
 	v_tsk->real_cap_total_ns = 0;
+	v_tsk->boost_at_fork_start_ns = 0;
 }
 
 extern u64 sched_slice(struct cfs_rq *cfs_rq, struct sched_entity *se);
@@ -1069,6 +1118,15 @@ static inline void inc_adpf_counter(struct task_struct *p, struct rq *rq)
 	 * Tell the scheduler that this tasks really wants to run next
 	 */
 	set_next_buddy(&p->se);
+
+	if (trace_clock_set_rate_enabled()) {
+		char trace_name[32] = {0};
+		struct vendor_rq_struct *vrq = get_vendor_rq_struct(task_rq(p));
+
+		scnprintf(trace_name, sizeof(trace_name), "adpf_cpu%d", task_rq(p)->cpu);
+		trace_clock_set_rate(trace_name, atomic_read(&vrq->num_adpf_tasks),
+			raw_smp_processor_id());
+	}
 }
 
 static inline void dec_adpf_counter(struct task_struct *p, struct rq *rq)
@@ -1087,6 +1145,27 @@ static inline void dec_adpf_counter(struct task_struct *p, struct rq *rq)
 	 * Make sure to never go below 0.
 	 */
 	atomic_dec_if_positive(&vrq->num_adpf_tasks);
+
+	if (trace_clock_set_rate_enabled()) {
+		char trace_name[32] = {0};
+		struct vendor_rq_struct *vrq = get_vendor_rq_struct(task_rq(p));
+
+		scnprintf(trace_name, sizeof(trace_name), "adpf_cpu%d", task_rq(p)->cpu);
+		trace_clock_set_rate(trace_name, atomic_read(&vrq->num_adpf_tasks),
+			raw_smp_processor_id());
+	}
+}
+
+static inline void update_adpf_counter(struct task_struct *p, bool old_adpf)
+{
+	lockdep_assert_rq_held(task_rq(p));
+
+	if (task_on_rq_queued(p)) {
+		if (old_adpf && !get_adpf(p, true))
+			dec_adpf_counter(p, task_rq(p));
+		else if (!old_adpf && get_adpf(p, true))
+			inc_adpf_counter(p, task_rq(p));
+	}
 }
 
 extern int vendor_sched_ug_bg_auto_prio;

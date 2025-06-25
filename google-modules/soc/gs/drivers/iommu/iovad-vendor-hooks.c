@@ -10,6 +10,33 @@
 #include <linux/of_platform.h>
 #include <trace/hooks/iommu.h>
 
+union iovad_vendor_hooks {
+	struct  {
+		bool enable_best_fit  : 1;
+		bool enable_max_align : 1;
+		u32  max_align_shift  : 4;
+		u32  rsvd : 26;
+	};
+	u64 val;
+};
+
+static_assert(sizeof(union iovad_vendor_hooks) == 8);
+
+static void iommu_limit_align_shift(void *unused, struct iova_domain *iovad, unsigned long size,
+				    unsigned long *shift)
+{
+	unsigned long max_align_shift;
+	union iovad_vendor_hooks iovad_hooks;
+
+	iovad_hooks.val = iovad->android_vendor_data1;
+	// if not set "iommu-max-align-shift", keep *shift untouched and return
+	if (!iovad_hooks.enable_max_align)
+		return;
+
+	max_align_shift = iovad_hooks.max_align_shift + PAGE_SHIFT - iova_shift(iovad);
+	*shift = min_t(unsigned long, max_align_shift, *shift);
+}
+
 static struct iova *__to_iova(struct rb_node *node)
 {
 	return rb_entry(node, struct iova, node);
@@ -110,10 +137,13 @@ static void iommu_alloc_insert_iova(void *unused, struct iova_domain *iovad, uns
 				    unsigned long limit_pfn, struct iova *new_iova,
 				    bool size_aligned, int *ret)
 {
+	union iovad_vendor_hooks iovad_hooks;
+
 	if (!iovad || !ret)
 		return;
 
-	if (iovad->android_vendor_data1 == 0) {
+	iovad_hooks.val = iovad->android_vendor_data1;
+	if (!iovad_hooks.enable_best_fit) {
 		// use default
 		*ret = 1;
 		return;
@@ -124,23 +154,35 @@ static void iommu_alloc_insert_iova(void *unused, struct iova_domain *iovad, uns
 
 static void iommu_iovad_init_alloc_algo(void *unused, struct device *dev, struct iova_domain *iovad)
 {
+	union iovad_vendor_hooks iovad_hooks = { .val = 0 };
+	u32 shift = 0;
+
 	if (of_property_read_bool(dev->of_node, "iommu-best-fit-algo") ||
 	    of_property_read_bool(dev->of_node, "lwis,iommu-best-fit-algo")) {
-		iovad->android_vendor_data1 = 1;
-		dev_info(dev, "using IOVA best fit algorithm.");
+		iovad_hooks.enable_best_fit = true;
+		dev_info(dev, "using IOVA best fit algorithm.\n");
 	}
+
+	if (of_property_read_u32(dev->of_node, "iommu-max-align-shift", &shift) == 0) {
+		iovad_hooks.enable_max_align = true;
+		iovad_hooks.max_align_shift = shift;
+		dev_info(dev, "IOVA max alignment shift %u\n", iovad_hooks.max_align_shift);
+	}
+
+	iovad->android_vendor_data1 = iovad_hooks.val;
 }
 
-static int __init iovad_best_fit_algo_init(void)
+static int __init iovad_vendor_hooks_init(void)
 {
+	register_trace_android_rvh_iommu_limit_align_shift(iommu_limit_align_shift, NULL);
 	register_trace_android_rvh_iommu_alloc_insert_iova(iommu_alloc_insert_iova, NULL);
 	register_trace_android_rvh_iommu_iovad_init_alloc_algo(iommu_iovad_init_alloc_algo, NULL);
 
 	return 0;
 }
 
-module_init(iovad_best_fit_algo_init);
+module_init(iovad_vendor_hooks_init);
 MODULE_SOFTDEP("post: samsung_iommu_v9");
 MODULE_SOFTDEP("post: samsung_iommu");
-MODULE_DESCRIPTION("Google Pixel Best Fit IOVA Module");
+MODULE_DESCRIPTION("Google Pixel IOVA Vendor Hooks Module");
 MODULE_LICENSE("GPL");

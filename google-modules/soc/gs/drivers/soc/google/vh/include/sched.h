@@ -86,7 +86,7 @@ struct vendor_task_struct {
 	unsigned long direct_reclaim_ts;
 	struct list_head node;
 	int queued_to_list;
-	bool auto_prefer_high_cap;
+	bool prefer_high_cap;
 	int auto_uclamp_max_flags;	// Relative to cpu instead of absolute
 	struct uclamp_filter uclamp_filter;
 	int orig_prio;
@@ -130,6 +130,9 @@ struct vendor_task_struct {
 	u64 real_cap_total_ns;
 	// Last updated timestamp of real_cap calculation.
 	u64 real_cap_update_ns;
+
+	/* For boost at fork */
+	u64 boost_at_fork_start_ns;
 };
 
 ANDROID_VENDOR_CHECK_SIZE_ALIGN(u64 android_vendor_data1[64], struct vendor_task_struct t);

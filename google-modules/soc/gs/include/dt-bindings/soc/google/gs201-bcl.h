@@ -122,6 +122,7 @@
 #define PPMCTL_MASK (0xFF)
 #define OCP_WARN_MASK (0x1F)
 #define SMPL_WARN_MASK (0xE0)
+#define SMPL_WARN_LBDT_MASK (0x07)
 #define ACTIVE_HIGH (0x1)
 #define ACTIVE_LOW (0x0)
 #define PMU_ALIVE_CPU0_STATES (0x1C88)

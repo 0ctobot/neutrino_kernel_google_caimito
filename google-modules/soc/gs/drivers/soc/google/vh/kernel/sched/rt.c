@@ -70,7 +70,7 @@ static inline void rt_task_fits_capacity(struct task_struct *p, int cpu,
 
 	*fits = util_fits_cpu(util, uclamp_min, uclamp_max, cpu);
 	*fits_original = capacity_orig_of(cpu) >= clamp(util, uclamp_min, uclamp_max) ||
-			 cpu >= pixel_cluster_start_cpu[2];
+			 cpu >= pixel_cluster_start_cpu[pixel_cluster_num - 1];
 }
 
 static inline bool
@@ -390,7 +390,7 @@ void rvh_select_task_rq_rt_pixel_mod(void *data, struct task_struct *p, int prev
 	int target = -1;
 	bool sync = !!(wake_flags & WF_SYNC);
 	int this_cpu;
-	bool sync_wakeup = false;
+	bool sync_wakeup = false, prefer_high_cap = false;
 	struct cpumask backup_mask;
 	int i;
 	bool fits;
@@ -422,7 +422,9 @@ void rvh_select_task_rq_rt_pixel_mod(void *data, struct task_struct *p, int prev
 		}
 	}
 
-	set_auto_prefer_high_cap(p, sync && this_cpu >= pixel_cluster_start_cpu[1]);
+	prefer_high_cap = __get_prefer_high_cap(p) || (sync && this_cpu >= pixel_cluster_start_cpu[1]);
+
+	set_prefer_high_cap(p, prefer_high_cap);
 
 	target = find_lowest_rq(p, &backup_mask);
 
@@ -454,7 +456,7 @@ out_unlock:
 out:
 	trace_sched_select_task_rq_rt(p, task_util(p), prev_cpu, target, *new_cpu, sync_wakeup);
 
-	set_auto_prefer_high_cap(p, false);
+	set_prefer_high_cap(p, false);
 
 	return;
 }

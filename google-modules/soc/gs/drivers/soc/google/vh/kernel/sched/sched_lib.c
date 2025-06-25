@@ -26,7 +26,7 @@ char prefer_idle_task_name[LIB_PATH_LENGTH];
 DEFINE_SPINLOCK(prefer_idle_task_name_lock);
 
 char boost_at_fork_task_name[LIB_PATH_LENGTH];
-raw_spinlock_t boost_at_fork_task_name_lock;
+DEFINE_RAW_SPINLOCK(boost_at_fork_task_name_lock);
 unsigned long vendor_sched_boost_at_fork_value = SCHED_CAPACITY_SCALE/2;
 
 static DEFINE_MUTEX(__sched_lib_name_mutex);

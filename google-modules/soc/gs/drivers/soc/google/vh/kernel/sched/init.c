@@ -258,7 +258,7 @@ static int init_pixel_cpu(void)
 		goto out_no_pixel_cluster_cpu_num;
 
 	pixel_cluster_enabled = kmalloc_array(pixel_cluster_num, sizeof(int), GFP_KERNEL);
-	if (!pixel_cluster_cpu_num)
+	if (!pixel_cluster_enabled)
 		goto out_no_pixel_cluster_enabled;
 
 	pixel_cpd_exit_latency = kcalloc(pixel_cluster_num, sizeof(int), GFP_KERNEL);

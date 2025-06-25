@@ -3712,11 +3712,6 @@ retry:
 
 			exynos_elbi_write(exynos_pcie, 0x0, PCIE_APP_XFER_PENDING);
 
-			if (exynos_pcie->ip_ver >= 0x889000 &&
-			    exynos_pcie->ep_device_type == EP_BCM_WIFI) {
-				return -EPIPE;
-			}
-
 			return -EPIPE;
 		}
 	} else {

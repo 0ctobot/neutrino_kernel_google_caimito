@@ -22,6 +22,20 @@ config PIXEL_EM
 	help
 	  Support Pixel Energy Model.
 
+config PIXEL_EM_VOLTAGE_SCALING
+	tristate "Enable Pixel energy model with voltage scaling"
+	depends on PIXEL_EM
+	default n
+	help
+	  Support Pixel energy model with voltage scaling.
+
+config PIXEL_EM_FREQUENCY_SCALING
+	tristate "Enable Pixel energy model with frequency scaling"
+	depends on PIXEL_EM
+	default n
+	help
+	  Support Pixel energy model with frequency scaling.
+
 config PIXEL_METRICS
         tristate "Enable PIXEL METRICS driver"
         depends on VH_KERNEL

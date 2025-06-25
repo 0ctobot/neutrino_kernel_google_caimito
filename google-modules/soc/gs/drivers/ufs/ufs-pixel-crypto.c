@@ -82,54 +82,57 @@ struct pixel_ufs_prdt_entry {
 };
 
 /*
- * Block new UFS requests from being issued, and wait for any outstanding UFS
- * requests to complete.   Modified from ufshcd_clock_scaling_prepare().
- * Must be paired with ufshcd_put_exclusive_access().
+ * Determine the number of pending commands by counting the bits in the SCSI
+ * device budget maps.
  */
-static void ufshcd_get_exclusive_access(struct ufs_hba *hba)
+static u32 ufshcd_pending_cmds(struct ufs_hba *hba)
 {
-	#define DOORBELL_CLR_WARN_US		(5 * 1000 * 1000) /* 5 secs */
-	#define	DEFAULT_IO_TIMEOUT		(msecs_to_jiffies(20))
-	u32 tm_doorbell;
-	u32 tr_doorbell;
-	ktime_t start;
-	unsigned long flags;
+	struct scsi_device *sdev;
+	u32 pending = 0;
 
-	if (atomic_inc_return(&hba->scsi_block_reqs_cnt) == 1)
-		scsi_block_requests(hba->host);
+	shost_for_each_device(sdev, hba->host)
+		pending += sbitmap_weight(&sdev->budget_map);
 
-	down_write(&hba->clk_scaling_lock);
-
-	ufshcd_hold(hba, false);
-	spin_lock_irqsave(hba->host->host_lock, flags);
-	start = ktime_get();
-	do {
-		tm_doorbell = ufshcd_readl(hba, REG_UTP_TASK_REQ_DOOR_BELL);
-		tr_doorbell = ufshcd_readl(hba, REG_UTP_TRANSFER_REQ_DOOR_BELL);
-		if (!tm_doorbell && !tr_doorbell)
-			break;
-
-		spin_unlock_irqrestore(hba->host->host_lock, flags);
-		io_schedule_timeout(DEFAULT_IO_TIMEOUT);
-		if (ktime_to_us(ktime_sub(ktime_get(), start)) >
-					DOORBELL_CLR_WARN_US) {
-			start = ktime_get();
-			dev_err(hba->dev,
-				"%s: warning: waiting too much for doorbell to clear (tm=0x%x, tr=0x%x)\n",
-				__func__, tm_doorbell, tr_doorbell);
-		}
-		spin_lock_irqsave(hba->host->host_lock, flags);
-	} while (tm_doorbell || tr_doorbell);
-
-	spin_unlock_irqrestore(hba->host->host_lock, flags);
-	ufshcd_release(hba);
+	return pending;
 }
 
-static void ufshcd_put_exclusive_access(struct ufs_hba *hba)
+/*
+ * Block new UFS requests from being issued, and wait for any outstanding UFS
+ * requests to complete. Must be paired with ufshcd_resume_io().
+ */
+static void ufshcd_block_io(struct ufs_hba *hba)
 {
-	up_write(&hba->clk_scaling_lock);
-	if (atomic_dec_and_test(&hba->scsi_block_reqs_cnt))
-		scsi_unblock_requests(hba->host);
+	ktime_t deadline = ktime_add_ms(ktime_get(), 5 * 1000);
+	struct scsi_device *sdev;
+
+	/*
+	 * If ufshcd_block_io() is called before the tag set has been
+	 * initialized then we know that no I/O is ongoing.
+	 */
+	if (!hba->host->tag_set.tags)
+		return;
+
+	shost_for_each_device(sdev, hba->host)
+		blk_mq_quiesce_queue(sdev->request_queue);
+
+	while (ufshcd_pending_cmds(hba)) {
+		if (ktime_after(ktime_get(), deadline)) {
+			dev_err(hba->dev, "%s waited too long\n", __func__);
+			return;
+		}
+		io_schedule_timeout(msecs_to_jiffies(20));
+	}
+}
+
+static void ufshcd_resume_io(struct ufs_hba *hba)
+{
+	struct scsi_device *sdev;
+
+	if (!hba->host->tag_set.tags)
+		return;
+
+	shost_for_each_device(sdev, hba->host)
+		blk_mq_unquiesce_queue(sdev->request_queue);
 }
 
 static int pixel_ufs_keyslot_program(struct blk_crypto_profile *profile,
@@ -149,13 +152,13 @@ static int pixel_ufs_keyslot_program(struct blk_crypto_profile *profile,
 	 * This hardware doesn't allow any encrypted I/O at all while a keyslot
 	 * is being modified.
 	 */
-	ufshcd_get_exclusive_access(hba);
+	ufshcd_block_io(hba);
 
 	err = gsa_kdn_program_key(ufs->gsa_dev, slot, key->raw, key->size);
 	if (err)
 		dev_err(ufs->dev, "kdn: failed to program key; err=%d\n", err);
 
-	ufshcd_put_exclusive_access(hba);
+	ufshcd_resume_io(hba);
 
 	return err;
 }
@@ -175,13 +178,13 @@ static int pixel_ufs_keyslot_evict(struct blk_crypto_profile *profile,
 	 * This hardware doesn't allow any encrypted I/O at all while a keyslot
 	 * is being modified.
 	 */
-	ufshcd_get_exclusive_access(hba);
+	ufshcd_block_io(hba);
 
 	err = gsa_kdn_program_key(ufs->gsa_dev, slot, NULL, 0);
 	if (err)
 		dev_err(ufs->dev, "kdn: failed to evict key; err=%d\n", err);
 
-	ufshcd_put_exclusive_access(hba);
+	ufshcd_resume_io(hba);
 
 	return err;
 }

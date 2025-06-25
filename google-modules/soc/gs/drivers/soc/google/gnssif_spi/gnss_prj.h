@@ -67,6 +67,7 @@ struct gnss_ctl {
 	atomic_t wait_rdy;
 	atomic_t tx_in_progress;
 	atomic_t rx_in_progress;
+	struct notifier_block pm_notifier;
 };
 
 struct gnss_ctl *create_ctl_device(struct platform_device *pdev);
