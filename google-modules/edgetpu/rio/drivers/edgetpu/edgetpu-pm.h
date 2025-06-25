@@ -15,8 +15,6 @@
 
 #include "edgetpu-internal.h"
 
-#define EDGETPU_OFF_STATE 0
-
 /* Power management data for an EdgeTPU device. */
 struct edgetpu_pm {
 	/* Pointer to GCIP layer PM data. */
@@ -25,7 +23,6 @@ struct edgetpu_pm {
 	struct mutex policy_lock;
 	u32 curr_policy;
 	struct mutex state_lock;
-	u64 requested_state;
 	/*
 	 * Min/Max frequencies, in kHz, requested via debugfs.
 	 * Protected by `freq_limits_lock`.

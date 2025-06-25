@@ -13,7 +13,7 @@
 #include "edgetpu-internal.h"
 
 /* The version of metric TPU KD is using currently. */
-#define EDGETPU_USAGE_METRIC_VERSION GCIP_USAGE_STATS_V2
+#define EDGETPU_USAGE_METRIC_VERSION GCIP_USAGE_STATS_V3
 
 struct edgetpu_usage_stats {
 	struct edgetpu_dev *etdev;

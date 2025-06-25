@@ -25,6 +25,9 @@
 /* Mailbox index for in-kernel virtual inference interface, if enabled */
 #define IKV_MAILBOX_INDEX 1
 
+/* Mailbox index for Inter-IP Fence signaling mailbox, if enabled */
+#define IIF_MAILBOX_INDEX 2
+
 /* Size of CSRs start from cmd_queue_csr_base can be mmap-ed to userspace. */
 #define USERSPACE_CSR_SIZE 0x1000ul
 
@@ -64,6 +67,7 @@ struct edgetpu_mailbox {
 	union {
 		struct edgetpu_kci *etkci;
 		struct edgetpu_ikv *etikv;
+		struct edgetpu_iif *etiif;
 		struct edgetpu_device_group *group;
 	} internal;
 };
@@ -155,6 +159,7 @@ struct edgetpu_mailbox_manager {
 	struct edgetpu_handshake open_devices;
 	struct edgetpu_handshake enabled_pasids;
 	bool use_ikv;
+	bool use_iif;
 };
 
 /* the structure to configure a mailbox manager */
@@ -167,6 +172,13 @@ struct edgetpu_mailbox_manager_desc {
 	get_csr_base_t get_cmd_queue_csr_base;
 	get_csr_base_t get_resp_queue_csr_base;
 	bool use_ikv;
+	/*
+	 * Whether or not a mailbox is reserved for IIF signaling.
+	 * This feature is only supported when using in-kernel VII, and therefore no mailboxes can
+	 * be mapped to user-space. If @use_ikv is false, @use_iif will always be overridden to be
+	 * false as well.
+	 */
+	bool use_iif;
 };
 
 /* Mailbox CSRs. The order and size are exactly the same as RTL defined. */
@@ -248,11 +260,29 @@ void edgetpu_mailbox_remove_all(struct edgetpu_mailbox_manager *mgr, bool hwacce
 /* set cmd/resp_queue's address and size */
 int edgetpu_mailbox_set_queue(struct edgetpu_mailbox *mailbox, enum gcip_mailbox_queue_type type,
 			      u64 addr, u32 size);
+/* set cmd/resp_queue's registers to reflect that it is not being used. */
+void edgetpu_mailbox_set_queue_as_unused(struct edgetpu_mailbox *mailbox,
+					 enum gcip_mailbox_queue_type type);
 void edgetpu_mailbox_set_priority(struct edgetpu_mailbox *mailbox,
 				  u32 priority);
 
 /* Reset mailbox queues, clear out any commands/responses left from before. */
 void edgetpu_mailbox_reset(struct edgetpu_mailbox *mailbox);
+
+/*
+ * Clears any stale doorbell requests at the mailbox level
+ */
+void edgetpu_mailbox_clear_doorbells(struct edgetpu_mailbox *mailbox);
+
+/*
+ * Enables the doorbell interrupts at the mailbox level
+ */
+void edgetpu_mailbox_enable_doorbells(struct edgetpu_mailbox *mailbox);
+
+/*
+ * Disables the doorbell interrupts at the mailbox level
+ */
+void edgetpu_mailbox_disable_doorbells(struct edgetpu_mailbox *mailbox);
 
 /*
  * Clears any stale doorbell requests and enables the doorbell interrupts
@@ -274,6 +304,9 @@ void edgetpu_mailbox_inc_resp_queue_head(struct edgetpu_mailbox *mailbox,
 
 /* requests the mailbox for in-kernel VII */
 struct edgetpu_mailbox *edgetpu_mailbox_ikv(struct edgetpu_mailbox_manager *mgr);
+
+/* requests the mailbox for Inter-IP Fence signaling to the TPU */
+struct edgetpu_mailbox *edgetpu_mailbox_iif(struct edgetpu_mailbox_manager *mgr);
 
 /* utility functions for user-space VII */
 

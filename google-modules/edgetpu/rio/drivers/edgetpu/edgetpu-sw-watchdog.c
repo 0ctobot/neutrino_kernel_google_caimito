@@ -77,6 +77,7 @@ void edgetpu_watchdog_bite(struct edgetpu_dev *etdev)
 	 * worker may already be active.
 	 */
 	cancel_delayed_work(&etdev->etdev_sw_wdt->dwork);
+	/* No need to check return value as we only need to bite once. */
 	schedule_work(&etdev->etdev_sw_wdt->et_action_work.work);
 }
 
@@ -99,6 +100,7 @@ static void sw_wdt_work(struct work_struct *work)
 		etdev_dbg(etdev, "sw-watchdog ping resp:%d\n", ret);
 	if (ret == -ETIMEDOUT) {
 		etdev_err(etdev, "sw-watchdog response timed out\n");
+		/* No need to check return value as we only need to bite once. */
 		schedule_work(&etdev_sw_wdt->et_action_work.work);
 	} else {
 		/* reschedule to next beat. */

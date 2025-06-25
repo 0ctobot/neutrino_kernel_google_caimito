@@ -461,7 +461,7 @@ struct gcip_thermal *gcip_thermal_create(const struct gcip_thermal_args *args)
 int gcip_thermal_suspend_device(struct gcip_thermal *thermal)
 {
 	int ret = 0;
-	bool got_pm = false;
+	bool got_pm;
 
 	if (IS_ERR_OR_NULL(thermal))
 		return 0;
@@ -487,7 +487,7 @@ int gcip_thermal_suspend_device(struct gcip_thermal *thermal)
 int gcip_thermal_resume_device(struct gcip_thermal *thermal)
 {
 	int ret = 0;
-	bool got_pm = false;
+	bool got_pm;
 
 	if (IS_ERR_OR_NULL(thermal))
 		return 0;

@@ -2,7 +2,7 @@
 /*
  * Interface of managing the usage stats of IPs.
  *
- * Copyright (C) 2023 Google LLC
+ * Copyright (C) 2023-2025 Google LLC
  */
 
 #include <linux/device.h>
@@ -62,18 +62,19 @@ static ssize_t gcip_usage_stats_user_defined_store(struct device *dev,
 /* Following functions are related to `CORE_USAGE` metrics. */
 
 /*
- * Returns the core usage entry of @uid and @core_id from @ustats->core_usage_htable hash table.
+ * Returns the core usage entry of @uid and @subcomponent_id from @ustats->core_usage_htable hash
+ * table.
  * Caller must hold @ustats->usage_stats_lock.
  */
 static struct gcip_usage_stats_core_usage_uid_entry *
-gcip_usage_stats_find_core_usage_entry_locked(int32_t uid, uint8_t core_id,
+gcip_usage_stats_find_core_usage_entry_locked(int32_t uid, uint8_t subcomponent_id,
 					      struct gcip_usage_stats *ustats)
 {
 	struct gcip_usage_stats_core_usage_uid_entry *uid_entry;
 
 	lockdep_assert_held(&ustats->usage_stats_lock);
 
-	hash_for_each_possible (ustats->core_usage_htable[core_id], uid_entry, node, uid) {
+	hash_for_each_possible(ustats->core_usage_htable[subcomponent_id], uid_entry, node, uid) {
 		if (uid_entry->uid == uid)
 			return uid_entry;
 	}
@@ -143,7 +144,7 @@ static unsigned int gcip_usage_stats_find_dvfs_freq_index(struct gcip_usage_stat
 }
 
 /*
- * Updates the entry of @uid in the core usage hash table of @core_id.
+ * Updates the entry of @uid in the core usage hash table of @core_id/@subcomponent_id.
  * If there is no entry for @uid, it will create one and insert it into the table.
  *
  * Called when the FW sent `CORE_USAGE` metrics.
@@ -154,37 +155,47 @@ static void gcip_usage_stats_update_core_usage(struct gcip_usage_stats *ustats,
 {
 	struct gcip_usage_stats_core_usage_uid_entry *uid_entry;
 	unsigned int state = gcip_usage_stats_find_dvfs_freq_index(ustats, new->operating_point);
-	uint8_t core_id = 0;
+	uint8_t subcomponent_id = 0;
 
 	if (fw_metric_version >= GCIP_USAGE_STATS_V2)
-		core_id = new->core_id;
+		subcomponent_id = new->core_id;
 
-	if (core_id >= ustats->subcomponents) {
+	if (subcomponent_id >= ustats->subcomponents) {
 		dev_warn_once(ustats->dev,
 			      "FW sent an invalid core_id for the core usage update, core_id=%u",
-			      core_id);
+			      subcomponent_id);
+		return;
+	}
+
+	if (fw_metric_version >= GCIP_USAGE_STATS_V3)
+		if (new->subcomponent_id)
+			subcomponent_id = new->subcomponent_id;
+
+	if (subcomponent_id >= ustats->subcomponents) {
+		dev_warn_once(ustats->dev,
+			      "FW sent an invalid subcomponent_id=%u for the core usage update",
+			      subcomponent_id);
 		return;
 	}
 
 	mutex_lock(&ustats->usage_stats_lock);
 
 	/* Finds the uid from @ustats->core_usage_htable first. */
-	uid_entry = gcip_usage_stats_find_core_usage_entry_locked(new->uid, core_id, ustats);
+	uid_entry = gcip_usage_stats_find_core_usage_entry_locked(new->uid, subcomponent_id,
+								  ustats);
 	if (uid_entry) {
 		uid_entry->time_in_state[state] += new->control_core_duration;
 		mutex_unlock(&ustats->usage_stats_lock);
 		return;
 	}
 
-	dev_dbg(ustats->dev, "FW sent a new uid for the core usage update, uid=%d, core_id=%u",
-		new->uid, core_id);
+	dev_dbg(ustats->dev,
+		"FW sent a new uid for the core usage update, uid=%d, subcomponent_id=%u",
+		new->uid, subcomponent_id);
 
 	/* Allocates an entry for this uid. */
 	uid_entry = devm_kzalloc(ustats->dev, sizeof(*uid_entry), GFP_KERNEL);
 	if (!uid_entry) {
-		dev_err(ustats->dev,
-			"Failed to allocate an entry of core usage hash table, uid=%d, core_id=%u",
-			new->uid, core_id);
 		mutex_unlock(&ustats->usage_stats_lock);
 		return;
 	}
@@ -193,14 +204,14 @@ static void gcip_usage_stats_update_core_usage(struct gcip_usage_stats *ustats,
 	uid_entry->time_in_state[state] += new->control_core_duration;
 
 	/* Adds @uid_entry to the @ustats->core_usage_htable. */
-	hash_add(ustats->core_usage_htable[core_id], &uid_entry->node, new->uid);
+	hash_add(ustats->core_usage_htable[subcomponent_id], &uid_entry->node, new->uid);
 
 	mutex_unlock(&ustats->usage_stats_lock);
 }
 
-/* Releases all entries in the core usage hash table of @core_id. */
+/* Releases all entries in the core usage hash table of @subcomponent_id. */
 static void gcip_usage_stats_free_core_usage_core_entries_locked(struct gcip_usage_stats *ustats,
-								 uint8_t core_id)
+								 uint8_t subcomponent_id)
 {
 	unsigned int bkt;
 	struct gcip_usage_stats_core_usage_uid_entry *uid_entry;
@@ -208,7 +219,7 @@ static void gcip_usage_stats_free_core_usage_core_entries_locked(struct gcip_usa
 
 	lockdep_assert_held(&ustats->usage_stats_lock);
 
-	hash_for_each_safe (ustats->core_usage_htable[core_id], bkt, tmp, uid_entry, node) {
+	hash_for_each_safe(ustats->core_usage_htable[subcomponent_id], bkt, tmp, uid_entry, node) {
 		hash_del(&uid_entry->node);
 		devm_kfree(ustats->dev, uid_entry);
 	}
@@ -244,9 +255,18 @@ static ssize_t gcip_usage_stats_core_usage_show(struct device *dev,
 	struct gcip_usage_stats_core_usage_uid_entry *uid_entry;
 	int i, dvfs_freqs_num;
 	unsigned int bkt;
+	uint start_subcomponent, end_subcomponent, subcomponent_id;
 	ssize_t written = 0;
 
 	ustats->ops->update_usage_kci(ustats->data);
+
+	if (attr->subcomponent == GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS) {
+		start_subcomponent = 0;
+		end_subcomponent = ustats->subcomponents - 1;
+	} else {
+		start_subcomponent = attr->subcomponent;
+		end_subcomponent = attr->subcomponent;
+	}
 
 	mutex_lock(&ustats->dvfs_freqs_lock);
 
@@ -256,14 +276,18 @@ static ssize_t gcip_usage_stats_core_usage_show(struct device *dev,
 	mutex_unlock(&ustats->dvfs_freqs_lock);
 	mutex_lock(&ustats->usage_stats_lock);
 
-	hash_for_each (ustats->core_usage_htable[attr->subcomponent], bkt, uid_entry, node) {
-		written += scnprintf(buf + written, PAGE_SIZE - written, "%d", uid_entry->uid);
+	for (subcomponent_id = start_subcomponent; subcomponent_id <= end_subcomponent;
+	     subcomponent_id++) {
+		hash_for_each(ustats->core_usage_htable[subcomponent_id], bkt, uid_entry, node) {
+			written += scnprintf(buf + written, PAGE_SIZE - written, "%d",
+					     uid_entry->uid);
 
-		for (i = 0; i < dvfs_freqs_num; i++)
-			written += scnprintf(buf + written, PAGE_SIZE - written, " %lld",
-					     uid_entry->time_in_state[i]);
+			for (i = 0; i < dvfs_freqs_num; i++)
+				written += scnprintf(buf + written, PAGE_SIZE - written, " %lld",
+						     uid_entry->time_in_state[i]);
 
-		written += scnprintf(buf + written, PAGE_SIZE - written, "\n");
+			written += scnprintf(buf + written, PAGE_SIZE - written, "\n");
+		}
 	}
 
 	mutex_unlock(&ustats->usage_stats_lock);
@@ -284,9 +308,13 @@ static ssize_t gcip_usage_stats_core_usage_store(struct device *dev,
 		container_of(dev_attr, struct gcip_usage_stats_attr, dev_attr);
 	struct gcip_usage_stats *ustats = attr->ustats;
 
-	mutex_lock(&ustats->usage_stats_lock);
-	gcip_usage_stats_free_core_usage_core_entries_locked(ustats, attr->subcomponent);
-	mutex_unlock(&ustats->usage_stats_lock);
+	if (attr->subcomponent == GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS) {
+		gcip_usage_stats_free_core_usage_all_entries(ustats);
+	} else {
+		mutex_lock(&ustats->usage_stats_lock);
+		gcip_usage_stats_free_core_usage_core_entries_locked(ustats, attr->subcomponent);
+		mutex_unlock(&ustats->usage_stats_lock);
+	}
 
 	return count;
 }
@@ -304,6 +332,8 @@ gcip_usage_stats_update_component_utilization(struct gcip_usage_stats *ustats,
 					      struct gcip_usage_stats_component_utilization *new,
 					      uint16_t fw_metric_version)
 {
+	uint8_t subcomponent_id = 0;
+
 	if (new->component < 0 ||
 	    new->component >= GCIP_USAGE_STATS_COMPONENT_UTILIZATION_NUM_TYPES) {
 		dev_warn_once(ustats->dev, "FW sent an invalid component utilization type, type=%d",
@@ -311,6 +341,16 @@ gcip_usage_stats_update_component_utilization(struct gcip_usage_stats *ustats,
 		return;
 	}
 
+	if (fw_metric_version >= GCIP_USAGE_STATS_V3)
+		subcomponent_id = new->subcomponent_id;
+
+	if (subcomponent_id >= ustats->subcomponents) {
+		dev_warn_once(
+			ustats->dev,
+			"FW sent an invalid subcomponent_id value, subcomponent_id=%u",
+			subcomponent_id);
+		return;
+	}
 	if (new->utilization < 0 || new->utilization > 100) {
 		dev_warn_once(ustats->dev,
 			      "FW sent an invalid component utilization value, type=%d, value=%d",
@@ -319,7 +359,7 @@ gcip_usage_stats_update_component_utilization(struct gcip_usage_stats *ustats,
 	}
 
 	mutex_lock(&ustats->usage_stats_lock);
-	ustats->component_utilization[new->component] = new->utilization;
+	ustats->component_utilization[subcomponent_id][new->component] = new->utilization;
 	mutex_unlock(&ustats->usage_stats_lock);
 }
 
@@ -330,6 +370,10 @@ gcip_usage_stats_update_component_utilization(struct gcip_usage_stats *ustats,
  * register the `gcip_usage_stats_user_defined_store` function as the store function if the kernel
  * driver enables the write permission.
  *
+ * If the @attr->subcomponent is `GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS`, print the counters
+ * of all subcomponents in one array with whitespace separation, otherwise, print the counter of the
+ * specific subcomponent.
+ *
  * Called when the runtime reads the device attribute.
  */
 static ssize_t gcip_usage_stats_component_utilization_show(struct device *dev,
@@ -339,18 +383,28 @@ static ssize_t gcip_usage_stats_component_utilization_show(struct device *dev,
 	struct gcip_usage_stats_attr *attr =
 		container_of(dev_attr, struct gcip_usage_stats_attr, dev_attr);
 	struct gcip_usage_stats *ustats = attr->ustats;
-	int32_t val;
+	int i;
+	ssize_t written = 0;
 
 	ustats->ops->update_usage_kci(ustats->data);
 
 	mutex_lock(&ustats->usage_stats_lock);
 
-	val = ustats->component_utilization[attr->type];
-	ustats->component_utilization[attr->type] = 0;
+	if (attr->subcomponent == GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS) {
+		for (i = 0; i < ustats->subcomponents - 1; i++) {
+			written += sysfs_emit_at(buf, written, "%d ",
+						 ustats->component_utilization[i][attr->type]);
+			ustats->component_utilization[i][attr->type] = 0;
+		}
+	} else {
+		i = attr->subcomponent;
+	}
+	written += sysfs_emit_at(buf, written, "%d\n",
+				 ustats->component_utilization[i][attr->type]);
+	ustats->component_utilization[i][attr->type] = 0;
 
 	mutex_unlock(&ustats->usage_stats_lock);
-
-	return scnprintf(buf, PAGE_SIZE, "%d\n", val);
+	return written;
 }
 
 /* Following functions are related to `COUNTER` metrics. */
@@ -756,21 +810,12 @@ static void *gcip_usage_stats_parse_header(struct gcip_usage_stats *ustats, void
 					   uint16_t *fw_metric_version)
 {
 	struct gcip_usage_stats_header *header = buf;
-	struct gcip_usage_stats_header_v1 *header_v1 = buf;
 
-	if (ustats->version <= GCIP_USAGE_STATS_V1) {
-		*num_metrics = header_v1->num_metrics;
-		*metric_size = header_v1->metric_size;
-		*fw_metric_version = GCIP_USAGE_STATS_V1;
-		buf += sizeof(*header_v1);
-	} else {
-		*num_metrics = header->num_metrics;
-		*metric_size = header->metric_size;
-		*fw_metric_version = header->version;
-		buf += sizeof(*header);
-	}
+	*num_metrics = header->num_metrics;
+	*metric_size = header->metric_size;
+	*fw_metric_version = header->version;
 
-	return buf;
+	return header + 1;
 }
 
 /*
@@ -782,14 +827,6 @@ static int gcip_usage_stats_fill_attr(struct gcip_usage_stats *ustats,
 				      const store_t store)
 {
 	struct device_attribute *dev_attr = &attr->dev_attr;
-
-	/*
-	 * CORE_USAGE metric doesn't support showing stats for all subcomponents in one device
-	 * attribute. Because its printing format is complicated.
-	 */
-	if (attr->metric == GCIP_USAGE_STATS_METRIC_TYPE_CORE_USAGE &&
-	    attr->subcomponent == GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS)
-		return -EINVAL;
 
 	/*
 	 * For metrics which store stats per subcomponent, we have to check whether the caller set
@@ -849,7 +886,6 @@ static int gcip_usage_stats_alloc_attrs(struct gcip_usage_stats *ustats,
 	if (!ustats->attrs)
 		return -ENOMEM;
 
-	/* TODO: fill @ustats->attrs according to the metrics. */
 	for (i = 0; i < args->num_attrs; i++) {
 		attr = args->attrs[i];
 
@@ -936,11 +972,19 @@ static int gcip_usage_stats_alloc_stats(struct gcip_usage_stats *ustats)
 	if (!ustats->max_watermark)
 		goto err_free_counter;
 
+	ustats->component_utilization =
+		devm_kcalloc(ustats->dev, ustats->subcomponents,
+			     sizeof(*ustats->component_utilization), GFP_KERNEL);
+	if (!ustats->component_utilization)
+		goto err_free_max_watermark;
+
 	for (i = 0; i < ustats->subcomponents; i++)
 		hash_init(ustats->core_usage_htable[i]);
 
 	return 0;
 
+err_free_max_watermark:
+	devm_kfree(ustats->dev, ustats->max_watermark);
 err_free_counter:
 	devm_kfree(ustats->dev, ustats->counter);
 err_free_core_usage_htable:
@@ -953,6 +997,7 @@ static void gcip_usage_stats_free_stats(struct gcip_usage_stats *ustats)
 {
 	devm_kfree(ustats->dev, ustats->max_watermark);
 	devm_kfree(ustats->dev, ustats->counter);
+	devm_kfree(ustats->dev, ustats->component_utilization);
 	devm_kfree(ustats->dev, ustats->core_usage_htable);
 }
 
@@ -1009,7 +1054,7 @@ int gcip_usage_stats_init(struct gcip_usage_stats *ustats, const struct gcip_usa
 {
 	int ret;
 
-	if (args->version < GCIP_USAGE_STATS_V1 || args->version > GCIP_USAGE_STATS_V2)
+	if (args->version <= GCIP_USAGE_STATS_V1 || args->version > GCIP_USAGE_STATS_V3)
 		return -EINVAL;
 
 	if (!args->dev)
@@ -1083,11 +1128,8 @@ void gcip_usage_stats_process_buffer(struct gcip_usage_stats *ustats, void *buf)
 					       &fw_metric_version);
 
 	/* Firmware sent metrics which cannot be parsed. */
-	if (fw_metric_version == GCIP_USAGE_STATS_V1 &&
-	    metric_size != GCIP_USAGE_STATS_METRIC_SIZE_V1) {
-		dev_err_once(ustats->dev,
-			     "FW sent V1 metrics with invalid size (expected=%d, actual=%u)",
-			     GCIP_USAGE_STATS_METRIC_SIZE_V1, metric_size);
+	if (fw_metric_version == GCIP_USAGE_STATS_V1) {
+		dev_err_once(ustats->dev, "FW sent obsolete V1 metrics");
 		return;
 	}
 

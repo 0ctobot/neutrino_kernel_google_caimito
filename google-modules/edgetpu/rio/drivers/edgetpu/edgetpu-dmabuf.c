@@ -171,7 +171,7 @@ int edgetpu_unmap_dmabuf(struct edgetpu_device_group *group, tpu_addr_t tpu_addr
 	if (!map) {
 		edgetpu_mapping_unlock(mappings);
 		etdev_err(group->etdev, "unmap group=%u tpu_addr=%pad not found",
-			  group->workload_id, &tpu_addr);
+			  group->group_id, &tpu_addr);
 		return -EINVAL;
 	}
 	edgetpu_mapping_unlink(mappings, map);
@@ -306,7 +306,7 @@ int edgetpu_sync_fence_debugfs_show(struct seq_file *s, void *unused)
 		struct edgetpu_dma_fence *etfence = to_etfence(gfence);
 
 		gcip_dma_fence_show(gfence, s);
-		seq_printf(s, " group=%u\n", etfence->group->workload_id);
+		seq_printf(s, " group=%u\n", etfence->group->group_id);
 	}
 	GCIP_DMA_FENCE_LIST_UNLOCK(etdev->gfence_mgr, flags);
 

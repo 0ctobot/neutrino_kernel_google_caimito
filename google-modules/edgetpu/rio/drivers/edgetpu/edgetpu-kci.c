@@ -168,20 +168,20 @@ static void edgetpu_reverse_kci_handle_response(struct gcip_kci *kci,
 
 	switch (resp->code) {
 	case GCIP_RKCI_CLIENT_FATAL_ERROR_NOTIFY:
-		edgetpu_handle_client_fatal_error_notify(etdev, resp->retval);
+		edgetpu_handle_client_fatal_error_notify(etdev, resp->rkci_value2);
+		break;
+	case GCIP_RKCI_CLIENT_INACTIVITY_TIMEOUT:
+		edgetpu_handle_client_inactivity_timeout(etdev, resp->rkci_value2);
 		break;
 	case GCIP_RKCI_FIRMWARE_CRASH:
-		edgetpu_handle_firmware_crash(etdev, (enum gcip_fw_crash_type)resp->retval);
+		edgetpu_handle_firmware_crash(etdev, (enum gcip_fw_crash_type)resp->rkci_value2);
 		break;
 	case GCIP_RKCI_JOB_LOCKUP:
-		edgetpu_handle_job_lockup(etdev, resp->retval);
+		edgetpu_handle_job_lockup(etdev, resp->rkci_value2);
 		break;
 #if EDGETPU_HAS_FW_DEBUG
 	case GCIP_RKCI_DEBUG_ASYNC_RESP:
-		edgetpu_fw_debug_resp_ready(etdev, resp->retval);
-		break;
-	case GCIP_RKCI_DEBUG_INIT_REQ:
-		edgetpu_fw_debug_init_req(etdev);
+		edgetpu_fw_debug_resp_ready(etdev, resp->rkci_value1, resp->rkci_value2);
 		break;
 #endif
 	default:
@@ -390,7 +390,7 @@ static int edgetpu_kci_send_cmd_with_data(struct edgetpu_kci *etkci,
 	return ret;
 }
 
-int edgetpu_kci_map_log_buffer(struct gcip_telemetry_kci_args *args)
+int edgetpu_kci_map_log_buffer(const struct gcip_telemetry_kci_args *args)
 {
 	struct gcip_kci_command_element cmd = {
 		.code = GCIP_KCI_CODE_MAP_LOG_BUFFER,
@@ -403,7 +403,7 @@ int edgetpu_kci_map_log_buffer(struct gcip_telemetry_kci_args *args)
 	return gcip_kci_send_cmd(args->kci, &cmd);
 }
 
-int edgetpu_kci_map_trace_buffer(struct gcip_telemetry_kci_args *args)
+int edgetpu_kci_map_trace_buffer(const struct gcip_telemetry_kci_args *args)
 {
 	struct gcip_kci_command_element cmd = {
 		.code = GCIP_KCI_CODE_MAP_TRACE_BUFFER,
@@ -743,6 +743,10 @@ int edgetpu_kci_set_device_properties(struct edgetpu_kci *etkci, struct edgetpu_
 	};
 	int ret = 0;
 
+	/* set_device_properties not enabled in production b/405471390 */
+	if (!IS_ENABLED(CONFIG_EDGETPU_TEST))
+		return -EIO;
+
 	mutex_lock(&dev_prop->lock);
 	if (!dev_prop->initialized)
 		goto out;
@@ -794,6 +798,19 @@ int edgetpu_kci_fault_injection(struct gcip_fault_inject *injection)
 					      sizeof(injection->opaque));
 }
 
+int edgetpu_kci_bcl_mitigation(struct edgetpu_kci *etkci,
+			       struct edgetpu_kci_bcl_mitigation_config *config)
+{
+	struct gcip_kci_command_element cmd = {
+		.code = GCIP_KCI_CODE_BCL_MITIGATION,
+		.dma = {
+			.flags = 0x0,
+		},
+	};
+
+	return edgetpu_kci_send_cmd_with_data(etkci, &cmd, config, sizeof(*config));
+}
+
 #if EDGETPU_HAS_FW_DEBUG
 int edgetpu_kci_fw_debug_cmd(struct edgetpu_dev *etdev, dma_addr_t daddr, size_t count)
 {
@@ -807,7 +824,7 @@ int edgetpu_kci_fw_debug_cmd(struct edgetpu_dev *etdev, dma_addr_t daddr, size_t
 	cmd.dma.size = count;
 	ret = gcip_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
 	if (ret == GCIP_KCI_ERROR_OK)
-		edgetpu_fw_debug_resp_ready(etdev, resp.retval);
+		edgetpu_fw_debug_resp_ready(etdev, 0, resp.retval);
 	return ret;
 }
 

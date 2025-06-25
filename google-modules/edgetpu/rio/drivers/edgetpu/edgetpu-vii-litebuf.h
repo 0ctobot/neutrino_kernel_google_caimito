@@ -24,6 +24,8 @@ enum edgetpu_vii_litebuf_command_type {
 	EDGETPU_VII_LITEBUF_RUNTIME_COMMAND = 0,
 	/* A RuntimeCommand Litebuf linked in a separate buffer. */
 	EDGETPU_VII_LITEBUF_LARGE_RUNTIME_COMMAND = 1,
+	/* A signal IIF command. */
+	EDGETPU_VII_LITEBUF_SIGNAL_FENCE_COMMAND = 2,
 };
 
 struct edgetpu_vii_litebuf_large_runtime_command {
@@ -40,6 +42,11 @@ struct edgetpu_vii_litebuf_large_runtime_command {
 	u32 size_bytes;
 };
 
+struct edgetpu_vii_litebuf_signal_fence_command {
+	/* ID of the fence being signaled. */
+	u32 fence_id;
+};
+
 /* Command sent via VII mailbox. */
 struct edgetpu_vii_litebuf_command {
 	/*
@@ -53,6 +60,7 @@ struct edgetpu_vii_litebuf_command {
 	union {
 		u8 runtime_command[VII_CMD_PAYLOAD_SIZE_BYTES];
 		struct edgetpu_vii_litebuf_large_runtime_command large_runtime_command;
+		struct edgetpu_vii_litebuf_signal_fence_command signal_fence_command;
 		u8 max_payload_size[VII_CMD_PAYLOAD_SIZE_BYTES];
 	};
 	u8 reserved_0[16];

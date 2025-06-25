@@ -2,7 +2,7 @@
 /*
  * Defines chipset dependent configuration.
  *
- * Copyright (C) 2019 Google, Inc.
+ * Copyright (C) 2019-2025 Google LLC
  */
 
 #ifndef __EDGETPU_CONFIG_H__
@@ -38,6 +38,10 @@
 #define EDGETPU_HAS_GSA 1
 #endif
 
+#ifndef EDGETPU_ALLOW_NONSECURE_FW
+#define EDGETPU_ALLOW_NONSECURE_FW 0
+#endif
+
 #ifndef EDGETPU_FEATURE_ALWAYS_ON
 #define EDGETPU_FEATURE_ALWAYS_ON 0
 #endif
@@ -52,6 +56,14 @@
 
 #ifndef EDGETPU_REPORT_PAGE_FAULT_ERRORS
 #define EDGETPU_REPORT_PAGE_FAULT_ERRORS 0
+#endif
+
+#ifndef EDGETPU_USE_IIF_MAILBOX
+#define EDGETPU_USE_IIF_MAILBOX 0
+#endif
+
+#ifndef EDGETPU_NUM_VII_CREDITS_PER_CLIENT
+#define EDGETPU_NUM_VII_CREDITS_PER_CLIENT 8
 #endif
 
 #endif /* __EDGETPU_CONFIG_H__ */

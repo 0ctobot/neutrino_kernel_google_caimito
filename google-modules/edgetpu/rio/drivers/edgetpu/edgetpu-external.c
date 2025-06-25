@@ -16,6 +16,7 @@
 
 #include "edgetpu-config.h"
 #include "edgetpu-device-group.h"
+#include "edgetpu-iif.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-mailbox.h"
 #include "edgetpu-mobile-platform.h"
@@ -323,10 +324,10 @@ static int edgetpu_external_get_iif_manager(struct device *edgetpu_dev,
 	struct platform_device *pdev = to_platform_device(edgetpu_dev);
 	struct edgetpu_dev *etdev = platform_get_drvdata(pdev);
 
-	if (!etdev->iif_mgr)
+	if (!etdev->etiif->iif_mgr)
 		return -ENODEV;
 
-	*iif_manager_ptr = iif_manager_get(etdev->iif_mgr);
+	*iif_manager_ptr = iif_manager_get(etdev->etiif->iif_mgr);
 
 	return 0;
 }

@@ -2,8 +2,9 @@
 /*
  * Edge TPU kernel-userspace interface definitions.
  *
- * Copyright (C) 2019 Google, Inc.
+ * Copyright (C) 2019-2025 Google LLC
  */
+
 #ifndef __EDGETPU_H__
 #define __EDGETPU_H__
 
@@ -26,6 +27,12 @@
 #define EDGETPU_MMAP_TRACE2_BUFFER_OFFSET 0x2000000
 #define EDGETPU_MMAP_LOG3_BUFFER_OFFSET 0x2100000
 #define EDGETPU_MMAP_TRACE3_BUFFER_OFFSET 0x2200000
+
+/* Temporary for runtime not converted to above */
+#define EDGETPU_MMAP_DIVE_LOG_BUFFER_OFFSET 0x1F00000
+#define EDGETPU_MMAP_DIVE_TRACE_BUFFER_OFFSET 0x2000000
+#define EDGETPU_MMAP_DIVE_LOG1_BUFFER_OFFSET 0x2100000
+#define EDGETPU_MMAP_DIVE_TRACE1_BUFFER_OFFSET 0x2200000
 
 /* EdgeTPU map flag macros */
 
@@ -580,6 +587,8 @@ struct edgetpu_ext_mailbox_ioctl {
 #define EDGETPU_ERROR_RUNTIME_TIMEOUT	0x20
 /* Context-specific crash that caused only the given client to abort */
 #define EDGETPU_ERROR_CLIENT_CONTEXT_CRASH 0x40
+/* Inactive client (holding TPU wakelock) timeout */
+#define EDGETPU_ERROR_CLIENT_INACTIVITY_TIMEOUT 0x80
 
 /*
  * Return fatal errors raised for the client's device group, as a bitmask of
@@ -588,6 +597,17 @@ struct edgetpu_ext_mailbox_ioctl {
  */
 #define EDGETPU_GET_FATAL_ERRORS \
 	_IOR(EDGETPU_IOCTL_BASE, 32, __u32)
+
+/* Flags for EDGETPU_ACQUIRE_WAKELOCK_FLAGS. */
+
+/* Allow system suspend with wakelock held. */
+#define EDGETPU_ACQUIRE_WAKELOCK_FLAG_SUSPEND	BIT(0)
+
+/*
+ * Acquire the control cluster/firmware wakelock for this client, passing EDGETPU_WAKELOCK_FLAGS
+ * to customize behavior.
+ */
+#define EDGETPU_ACQUIRE_WAKELOCK_FLAGS	_IOR(EDGETPU_IOCTL_BASE, 33, __u32)
 
 /* The size of device properties pre-agreed with firmware */
 #define EDGETPU_DEV_PROP_SIZE 256
@@ -602,15 +622,6 @@ struct edgetpu_set_device_properties_ioctl {
 /* Registers device properties which will be passed down to firmware on boot. */
 #define EDGETPU_SET_DEVICE_PROPERTIES                                                              \
 	_IOW(EDGETPU_IOCTL_BASE, 34, struct edgetpu_set_device_properties_ioctl)
-
-/*
- * The max number of outstanding VII commands a client is allowed to have.
- *
- * Credits are consumed when a command is enqueued and refunded when the response arrives at the
- * Kernel level or times out. If a client attempts to send a command when out of credits,
- * EDGETPU_VII_COMMAND will fail, returning -EBUSY.
- */
-#define EDGETPU_NUM_VII_CREDITS 8
 
 /* Structure describing buffer for use by a VII command. */
 struct edgetpu_vii_dma_descriptor {
@@ -781,6 +792,10 @@ struct edgetpu_vii_litebuf_command_ioctl {
 	 * Sequence number.
 	 * When this command's response is returned by EDGETPU_VII_LITEBUF_RESPONSE, the response's
 	 * `seq` field will match whatever value is passed here.
+	 *
+	 * This field is a __u64 for compatibility reasons, but the value must fit inside of a
+	 * __u32. Values wider than a __u32 will cause EDGETPU_VII_LITEBUF_COMMAND to return an
+	 * error.
 	 */
 	__u64 seq;
 	/*
@@ -841,5 +856,23 @@ struct edgetpu_vii_litebuf_response_ioctl {
  */
 #define EDGETPU_VII_LITEBUF_RESPONSE \
 	_IOWR(EDGETPU_IOCTL_BASE, 38, struct edgetpu_vii_litebuf_response_ioctl)
+
+/*
+ * The max number of outstanding VII commands a client is allowed to have.
+ *
+ * Credits are consumed when a command is enqueued and refunded when the response arrives at the
+ * Kernel level or times out. If a client attempts to send a command when out of credits,
+ * EDGETPU_VII_COMMAND will fail, returning -EBUSY.
+ */
+#define EDGETPU_GET_VII_CREDITS_PER_CLIENT _IOR(EDGETPU_IOCTL_BASE, 39, __u64)
+
+/*
+ * DEPRECATED
+ *
+ * This constant, with the minimum value among all platforms, is present only for backwards
+ * compatibility. The EDGETPU_GET_VII_CREDITS_PER_CLIENT ioctl should be called instead to determine
+ * the maximum number of credits available on the device a client is running on.
+ */
+#define EDGETPU_NUM_VII_CREDITS 8
 
 #endif /* __EDGETPU_H__ */

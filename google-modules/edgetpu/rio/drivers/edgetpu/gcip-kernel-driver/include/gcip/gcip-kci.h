@@ -45,17 +45,16 @@ struct gcip_kci_command_element {
 struct gcip_kci_response_element {
 	u64 seq;
 	u16 code;
+	/* RKCI may provide response-type-specific data in this field (not used in KCI). */
+	u16 rkci_value1;
 	/*
-	 * Firmware can set some data according to the type of the response.
-	 * TODO(b/279386960): as we don't manage the status of responses using this field anymore,
-	 *                    rename this field to more reasonable name.
+	 * KCI field retval may return a value depending on the command type.
+	 * Firmware calls this field value2 for RKCI.
 	 */
-	u16 status;
-	/*
-	 * Return value is used by some KCI command responses.
-	 * For reverse KCI commands this is set as value2.
-	 */
-	u32 retval;
+	union {
+		u32 rkci_value2;
+		u32 retval;
+	};
 } __packed;
 
 /*
@@ -69,15 +68,13 @@ enum gcip_kci_code {
 	GCIP_KCI_CODE_JOIN_GROUP = 3,
 	GCIP_KCI_CODE_LEAVE_GROUP = 4,
 	GCIP_KCI_CODE_MAP_TRACE_BUFFER = 5,
+	GCIP_KCI_CODE_BCL_MITIGATION = 6,
 	GCIP_KCI_CODE_SHUTDOWN = 7,
 	GCIP_KCI_CODE_GET_DEBUG_DUMP = 8,
 	GCIP_KCI_CODE_OPEN_DEVICE = 9,
 	GCIP_KCI_CODE_CLOSE_DEVICE = 10,
 	GCIP_KCI_CODE_EXCHANGE_INFO = 11,
-	/* TODO(b/271372136): remove v1 when v1 firmware no longer in use. */
-	GCIP_KCI_CODE_GET_USAGE_V1 = 12,
-	/* Backward compatible define, also update when v1 firmware no longer in use. */
-	GCIP_KCI_CODE_GET_USAGE = 12,
+	/* 12 still defined as GET_USAGE in firmware but no longer used by drivers */
 	GCIP_KCI_CODE_NOTIFY_THROTTLING = 13,
 	GCIP_KCI_CODE_BLOCK_BUS_SPEED_CONTROL = 14,
 	GCIP_KCI_CODE_ALLOCATE_VMBOX = 15,
@@ -96,8 +93,6 @@ enum gcip_kci_code {
 
 	GCIP_KCI_CODE_RKCI_ACK = 256,
 };
-/* TODO(308903519) Remove once clients have adopted the new name. */
-#define GCIP_KCI_CODE_SET_POWER_LIMITS GCIP_KCI_CODE_SET_FREQ_LIMITS
 
 /*
  * Definition of reverse KCI request code ranges.
@@ -118,7 +113,7 @@ enum gcip_reverse_kci_code {
 	GCIP_RKCI_FIRMWARE_CRASH = GCIP_RKCI_GENERIC_CODE_FIRST + 0,
 	GCIP_RKCI_JOB_LOCKUP = GCIP_RKCI_GENERIC_CODE_FIRST + 1,
 	GCIP_RKCI_DEBUG_ASYNC_RESP = GCIP_RKCI_GENERIC_CODE_FIRST + 2,
-	GCIP_RKCI_DEBUG_INIT_REQ = GCIP_RKCI_GENERIC_CODE_FIRST + 3,
+	GCIP_RKCI_CLIENT_INACTIVITY_TIMEOUT = GCIP_RKCI_GENERIC_CODE_FIRST + 3,
 	GCIP_RKCI_GENERIC_CODE_LAST = 0xFFFF,
 };
 
@@ -268,8 +263,6 @@ struct gcip_kci {
 	unsigned long resp_queue_lock_flags;
 	/* Queue for waiting for the response doorbell to be rung. */
 	wait_queue_head_t resp_doorbell_waitq;
-	/* Protects wait_list. */
-	spinlock_t wait_list_lock;
 	/* Worker of consuming responses. */
 	struct work_struct work;
 	/* Handler for reverse (firmware -> kernel) requests. */

@@ -203,6 +203,12 @@ static void __iomem *reg_base_of_prop(struct device *dev, const char *prop, size
 	return addr;
 }
 
+int edgetpu_soc_check_supplier_devices(struct device *dev)
+{
+	/* gsx01 platforms have no supplier devices */
+	return 0;
+}
+
 int edgetpu_soc_early_init(struct edgetpu_dev *etdev)
 {
 	struct platform_device *pdev = to_platform_device(etdev->dev);
@@ -425,10 +431,10 @@ void edgetpu_soc_handle_reverse_kci(struct edgetpu_dev *etdev,
 	switch (resp->code) {
 	case RKCI_CODE_PM_QOS_BTS:
 		/* FW indicates to ignore the request by setting them to undefined values. */
-		if (resp->retval != (typeof(resp->retval))~0ull)
-			gsx01_set_pm_qos(etdev, resp->retval);
-		if (resp->status != (typeof(resp->status))~0ull)
-			gsx01_set_bts(etdev, resp->status);
+		if (resp->rkci_value2 != (typeof(resp->rkci_value2))~0ull)
+			gsx01_set_pm_qos(etdev, resp->rkci_value2);
+		if (resp->rkci_value1 != (typeof(resp->rkci_value1))~0ull)
+			gsx01_set_bts(etdev, resp->rkci_value1);
 		ret = edgetpu_kci_resp_rkci_ack(etdev, resp);
 		if (ret)
 			etdev_err(etdev, "failed to send rkci resp for %llu (%d)", resp->seq, ret);

@@ -113,6 +113,18 @@ struct edgetpu_kci_release_vmbox_detail {
 	u8 reserved[60];
 };
 
+/* BCL mitigation config shared definition with firmware. */
+#define BCL_MITIGATION_CONFIG_VERSION 0
+struct edgetpu_kci_bcl_mitigation_config {
+	u32 version;			/* BCL_MITIGATION_CONFIG_VERSION */
+	/* Value 0xdeadfeed for any of the following means the value is not set here. */
+	u32 mitigation_response_en;
+	u32 mitigation_response_type;
+	u32 mitigation_response_hyst;
+	u32 div_2_ratio;
+	u32 div_4_ratio;
+};
+
 /*
  * Initializes a KCI object.
  *
@@ -174,14 +186,14 @@ struct gcip_telemetry_kci_args;
  *
  * Returns the code of response, or a negative errno on error.
  */
-int edgetpu_kci_map_log_buffer(struct gcip_telemetry_kci_args *args);
+int edgetpu_kci_map_log_buffer(const struct gcip_telemetry_kci_args *args);
 
 /*
  * Sends the "Map Trace Buffer" command and waits for remote response.
  *
  * Returns the code of response, or a negative errno on error.
  */
-int edgetpu_kci_map_trace_buffer(struct gcip_telemetry_kci_args *args);
+int edgetpu_kci_map_trace_buffer(const struct gcip_telemetry_kci_args *args);
 
 /* debugfs mappings dump */
 void edgetpu_kci_mappings_show(struct edgetpu_dev *etdev, struct seq_file *s);
@@ -263,6 +275,7 @@ int edgetpu_kci_thermal_control(struct edgetpu_dev *etdev, bool enable);
  */
 int edgetpu_kci_set_device_properties(struct edgetpu_kci *etkci,
 				      struct edgetpu_dev_prop *device_prop);
+
 /*
  * Sends min/max frequency limits for firmware to enforce when handling client power requests.
  *
@@ -309,6 +322,15 @@ static inline void edgetpu_kci_update_usage_async(struct edgetpu_kci *etkci)
 int edgetpu_kci_fault_injection(struct gcip_fault_inject *injection);
 
 /**
+ * Send BCL mitigation config via KCI to firmware.
+ * @config: BCL mitigation CSR values.
+ *
+ * Return: 0 if the command is sent successfully.
+ */
+int edgetpu_kci_bcl_mitigation(struct edgetpu_kci *etkci,
+			       struct edgetpu_kci_bcl_mitigation_config *config);
+
+/**
  * edgetpu_kci_fw_debug_cmd() - Send firmware debug service command data.
  * @daddr: device address within etdev->fw_debug_mem.sgt of command data.
  * @count: number of bytes of command data to send.
@@ -322,7 +344,7 @@ int edgetpu_kci_fw_debug_cmd(struct edgetpu_dev *etdev, dma_addr_t daddr, size_t
 int edgetpu_kci_fw_debug_reset(struct edgetpu_dev *etdev);
 
 /**
- * edgetpu_kci_fw_send_debug_init() - respond to firmware debug service init request
+ * edgetpu_kci_fw_send_debug_init() - send firmware debug service init to firmware
  * @daddr: device address of the debug memory start
  * @count: size of debug memory area
  */

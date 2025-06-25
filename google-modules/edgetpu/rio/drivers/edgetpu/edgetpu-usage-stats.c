@@ -28,6 +28,7 @@ static ssize_t tpu_usage_show(struct device *dev, struct gcip_usage_stats_attr *
 {
 	struct edgetpu_dev *etdev = dev_get_drvdata(dev);
 	struct gcip_usage_stats *ustats = &etdev->usage_stats->ustats;
+	int subcomponent_id;
 	int i;
 	int ret = 0;
 	unsigned int bkt;
@@ -53,14 +54,17 @@ static ssize_t tpu_usage_show(struct device *dev, struct gcip_usage_stats_attr *
 
 	mutex_lock(&ustats->usage_stats_lock);
 
-	hash_for_each (ustats->core_usage_htable[attr->subcomponent], bkt, uid_entry, node) {
-		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%d:", uid_entry->uid);
+	/* attr->subcomponent must be GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS */
+	for (subcomponent_id = 0; subcomponent_id < ustats->subcomponents; subcomponent_id++) {
+		hash_for_each(ustats->core_usage_htable[subcomponent_id], bkt, uid_entry, node) {
+			ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%d:", uid_entry->uid);
 
-		for (i = 0; i < etdev->num_active_states; i++)
-			ret += scnprintf(buf + ret, PAGE_SIZE - ret, " %lld",
-					 uid_entry->time_in_state[i]);
+			for (i = 0; i < etdev->num_active_states; i++)
+				ret += scnprintf(buf + ret, PAGE_SIZE - ret, " %lld",
+						 uid_entry->time_in_state[i]);
 
-		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
+			ret += scnprintf(buf + ret, PAGE_SIZE - ret, "\n");
+		}
 	}
 
 	mutex_unlock(&ustats->usage_stats_lock);
@@ -69,8 +73,9 @@ static ssize_t tpu_usage_show(struct device *dev, struct gcip_usage_stats_attr *
 }
 
 /* Core usage. */
-static GCIP_USAGE_STATS_ATTR_RW(GCIP_USAGE_STATS_METRIC_TYPE_CORE_USAGE, 0, 0, tpu_usage,
-				tpu_usage_show, NULL);
+static GCIP_USAGE_STATS_ATTR_RW(GCIP_USAGE_STATS_METRIC_TYPE_CORE_USAGE, 0,
+				GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS, tpu_usage, tpu_usage_show,
+				NULL);
 
 /* Component utilization. */
 static GCIP_USAGE_STATS_ATTR_RO(GCIP_USAGE_STATS_METRIC_TYPE_COMPONENT_UTILIZATION,
@@ -78,7 +83,8 @@ static GCIP_USAGE_STATS_ATTR_RO(GCIP_USAGE_STATS_METRIC_TYPE_COMPONENT_UTILIZATI
 				NULL);
 
 static GCIP_USAGE_STATS_ATTR_RO(GCIP_USAGE_STATS_METRIC_TYPE_COMPONENT_UTILIZATION,
-				GCIP_USAGE_STATS_COMPONENT_UTILIZATION_CORES, 0, tpu_utilization,
+				GCIP_USAGE_STATS_COMPONENT_UTILIZATION_CORES,
+				GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS, tpu_utilization,
 				NULL);
 
 /* Counter. */

@@ -19,13 +19,6 @@
 #define EDGETPU_TELEMETRY_LOG_BUFFER_SIZE (16 * 4096)
 #define EDGETPU_TELEMETRY_TRACE_BUFFER_SIZE (64 * 4096)
 
-struct edgetpu_telemetry_ctx {
-	struct gcip_telemetry log;
-	struct edgetpu_coherent_mem log_mem;
-	struct gcip_telemetry trace;
-	struct edgetpu_coherent_mem trace_mem;
-};
-
 /*
  * Allocates resources needed for @etdev->telemetry.
  *
@@ -65,9 +58,5 @@ void edgetpu_telemetry_mappings_show(struct edgetpu_dev *etdev,
 /* Map telemetry buffer into user space. */
 int edgetpu_mmap_telemetry_buffer(struct edgetpu_dev *etdev, enum gcip_telemetry_type type,
 				  struct vm_area_struct *vma, int core_id);
-void edgetpu_telemetry_inc_mmap_count(struct edgetpu_dev *etdev, enum gcip_telemetry_type type,
-				      int core_id);
-void edgetpu_telemetry_dec_mmap_count(struct edgetpu_dev *etdev, enum gcip_telemetry_type type,
-				      int core_id);
 
 #endif /* __EDGETPU_TELEMETRY_H__ */

@@ -15,6 +15,7 @@
 #include "edgetpu-ikv-mailbox-ops.h"
 #include "edgetpu-iremap-pool.h"
 #include "edgetpu-mailbox.h"
+#include "edgetpu-pm.h"
 #include "edgetpu-vii-litebuf.h"
 #include "edgetpu-vii-packet.h"
 #include "edgetpu.h"
@@ -125,6 +126,9 @@ int edgetpu_ikv_init(struct edgetpu_mailbox_manager *mgr, struct edgetpu_ikv *et
 		goto err_mailbox_remove;
 	}
 
+	edgetpu_mailbox_disable_doorbells(mbx_hardware);
+	edgetpu_mailbox_clear_doorbells(mbx_hardware);
+
 	ret = edgetpu_ikv_alloc_queue(etikv, GCIP_MAILBOX_CMD_QUEUE);
 	if (ret)
 		goto err_mailbox_remove;
@@ -142,7 +146,6 @@ int edgetpu_ikv_init(struct edgetpu_mailbox_manager *mgr, struct edgetpu_ikv *et
 		goto err_free_resp_queue;
 
 	init_waitqueue_head(&etikv->pending_commands);
-	spin_lock_init(&etikv->wait_list_lock);
 
 	edgetpu_mailbox_enable(mbx_hardware);
 
@@ -175,6 +178,9 @@ int edgetpu_ikv_reinit(struct edgetpu_ikv *etikv)
 	 */
 	if (!etikv->enabled)
 		return 0;
+
+	edgetpu_mailbox_disable_doorbells(mbx_hardware);
+	edgetpu_mailbox_clear_doorbells(mbx_hardware);
 
 	ret = edgetpu_mailbox_set_queue(mbx_hardware, GCIP_MAILBOX_CMD_QUEUE,
 					cmd_queue_mem->dma_addr, QUEUE_SIZE);
@@ -237,8 +243,13 @@ static int do_send_cmd(struct send_cmd_args *args) {
 	struct edgetpu_ikv_response *ikv_resp = args->ikv_resp;
 	struct gcip_mailbox_resp_awaiter *awaiter;
 	int ret = 0;
+	gcip_mailbox_cmd_flags_t flags = GCIP_MAILBOX_CMD_FLAGS_SKIP_ASSIGN_SEQ;
 
-	awaiter = gcip_mailbox_put_cmd(etikv->mbx_protocol, cmd, ikv_resp->resp, ikv_resp);
+	if (etikv->etdev->vii_format == EDGETPU_VII_FORMAT_LITEBUF)
+		flags |= GCIP_MAILBOX_CMD_FLAGS_NO_TIMEOUT;
+
+	awaiter = gcip_mailbox_put_cmd_flags(etikv->mbx_protocol, cmd, ikv_resp->resp, ikv_resp,
+					     flags);
 	if (IS_ERR(awaiter))
 		ret = PTR_ERR(awaiter);
 
@@ -277,8 +288,6 @@ static int send_cmd_thread_fn(void *data)
 	if (kthread_should_stop()) {
 		/* The command will never be sent at this point so its response must be released. */
 		kfree(args->err_resp_awaiter);
-		gcip_fence_array_signal(args->ikv_resp->out_fence_array, -ECANCELED);
-		gcip_fence_array_waited(args->ikv_resp->in_fence_array, IIF_IP_TPU);
 		gcip_fence_array_put(args->ikv_resp->out_fence_array);
 		gcip_fence_array_put(args->ikv_resp->in_fence_array);
 		edgetpu_ikv_additional_info_free(args->ikv_resp->etikv->etdev,
@@ -333,6 +342,19 @@ err_send_error_resp:
 	 * freed when the response itself is released.
 	 */
 	build_awaiter_for_error_resp(args->etikv, args->err_resp_awaiter, args->ikv_resp);
+
+	/*
+	 * Notify the IIF driver that the signaler of the out_fence_array was "submitted" so that
+	 * any IIF out-fences can be signaled when processing the error response.
+	 */
+	ret = gcip_fence_array_submit_waiter_and_signaler(
+		args->ikv_resp->in_fence_array, args->ikv_resp->out_fence_array, IIF_IP_TPU);
+	if (ret)
+		etdev_err(
+			args->etikv->etdev,
+			"Failed to submit signaler with errored in-fence for client_id=%u (ret=%d)",
+			edgetpu_vii_command_get_client_id(args->etikv->etdev, args->cmd), ret);
+
 	edgetpu_ikv_process_response(args->ikv_resp, &resp_code, &resp_data, fence_status, false);
 
 out_untrack:
@@ -355,6 +377,7 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
 			 struct edgetpu_device_group *group_to_notify,
 			 struct gcip_fence_array *in_fence_array,
 			 struct gcip_fence_array *out_fence_array,
+			 struct iif_fence *iif_dma_fence,
 			 struct edgetpu_ikv_additional_info *additional_info,
 			 void (*release_callback)(void *), void *release_data)
 {
@@ -435,46 +458,22 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
 	ikv_resp->group_to_notify = group_to_notify;
 	ikv_resp->in_fence_array = gcip_fence_array_get(in_fence_array);
 	ikv_resp->out_fence_array = gcip_fence_array_get(out_fence_array);
+	ikv_resp->iif_dma_fence = iif_dma_fence;
 	ikv_resp->release_callback = release_callback;
 	ikv_resp->release_data = release_data;
+	edgetpu_vii_response_set_client_id(etikv->etdev, ikv_resp->resp,
+					   edgetpu_vii_command_get_client_id(etikv->etdev, cmd));
 
 	args->etikv = etikv;
 	args->ikv_resp = ikv_resp;
 	args->fence = in_fence;
 	memcpy(args->cmd, cmd, edgetpu_vii_command_packet_size(etikv->etdev));
 
-	/*
-	 * This function call is meaningful only for IIFs in the arrays.
-	 *
-	 * Submitting a waiter means that there is a request sent to the firmware which is waiting
-	 * on the fence to be unblocked. Internally, it increments the number of outstanding waiters
-	 * of the fence. Once the fence is unblocked and the request is processed, the number will
-	 * be decremented back. Its purpose is to track whether it is possible to retire the fence.
-	 *
-	 * Submitting a signaler means that a request has been sent to the firmware which will
-	 * signal the fence once it is processed. To avoid a deadlock, we doesn't allow submitting
-	 * waiter commands earlier than signaler commands. The total number of expected signalers
-	 * is decided when the fence is created and this function will decrement the number of
-	 * remaining signalers to be submitted. If that number is non-zero, IIF will reject
-	 * submitting waiter commands to the fence.
-	 *
-	 * After this function call, despite the command not actually being submitted to the
-	 * firmware with a certain error, the driver will error the out-fences out and the error
-	 * will be propagated to the waiters.
-	 */
-	ret = gcip_fence_array_submit_waiter_and_signaler(in_fence_array, out_fence_array,
-							  IIF_IP_TPU);
-	if (ret) {
-		etdev_err(etikv->etdev, "Failed to submit waiter or signaler to fences, ret=%d",
-			  ret);
-		goto err_put_out_fence_array;
-	}
-
 	/* Send the command immediately if there's no fence to wait on. */
 	if (!in_fence || dma_fence_get_status(in_fence) == 1) {
 		ret = do_send_cmd(args);
 		if (ret)
-			goto err_signal_waited_fences;
+			goto err_put_out_fence_array;
 		/* If the command was successfully sent, args is no longer needed. */
 		if (in_fence)
 			dma_fence_put(in_fence);
@@ -495,7 +494,7 @@ int edgetpu_ikv_send_cmd(struct edgetpu_ikv *etikv, void *cmd, struct list_head 
 	args->err_resp_awaiter = kzalloc(sizeof(*args->err_resp_awaiter), GFP_KERNEL);
 	if (!args->err_resp_awaiter) {
 		ret = -ENOMEM;
-		goto err_signal_waited_fences;
+		goto err_put_out_fence_array;
 	}
 
 	fence_status = in_fence ? dma_fence_get_status(in_fence) : 0;
@@ -539,10 +538,6 @@ err_stop_thread:
 	kthread_stop(wait_task);
 err_free_awaiter:
 	kfree(args->err_resp_awaiter);
-err_signal_waited_fences:
-	gcip_fence_array_iif_set_propagate_unblock(out_fence_array);
-	gcip_fence_array_signal(out_fence_array, ret);
-	gcip_fence_array_waited(in_fence_array, IIF_IP_TPU);
 err_put_out_fence_array:
 	gcip_fence_array_put(out_fence_array);
 	gcip_fence_array_put(in_fence_array);
@@ -572,6 +567,7 @@ void edgetpu_ikv_cancel(struct edgetpu_device_group *group, int reason)
 	unsigned long flags;
 	u16 resp_code = VII_RESPONSE_CODE_KERNEL_CANCELED;
 	u64 resp_data = reason;
+	LIST_HEAD(pending_ikv_resps);
 
 	/*
 	 * By setting @cur->processed to true, the responses will be prevented to be processed by
@@ -584,6 +580,8 @@ void edgetpu_ikv_cancel(struct edgetpu_device_group *group, int reason)
 		cur->processed = true;
 	}
 
+	list_replace_init(&group->pending_ikv_resps, &pending_ikv_resps);
+
 	spin_unlock_irqrestore(&group->ikv_resp_lock, flags);
 
 	/*
@@ -593,7 +591,7 @@ void edgetpu_ikv_cancel(struct edgetpu_device_group *group, int reason)
 	 * by the race condition, but they will directly return without doing anything because of
 	 * the logic above.
 	 *
-	 * In other words, neither ARRIVED nor TIEMDOUT responses will be pushed to the dest_queue
+	 * In other words, neither ARRIVED nor TIMEDOUT responses will be pushed to the dest_queue
 	 * of @group and one refcount of @cur->awaiter held by the driver won't be released until we
 	 * push CANCELED responses and the runtime consumes them. (i.e., there will be no UAF bug.)
 	 *
@@ -607,8 +605,56 @@ void edgetpu_ikv_cancel(struct edgetpu_device_group *group, int reason)
 	 * Another potential race condition that processing TIMEDOUT commands as CANCELED should be
 	 * fine.
 	 */
-	list_for_each_entry_safe(cur, nxt, &group->pending_ikv_resps, list_entry) {
+	list_for_each_entry_safe(cur, nxt, &pending_ikv_resps, list_entry) {
 		gcip_mailbox_cancel_awaiter(cur->awaiter);
 		edgetpu_ikv_process_response(cur, &resp_code, &resp_data, -ECANCELED, true);
 	}
+}
+
+void edgetpu_ikv_send_iif_unblock_notification(struct edgetpu_ikv *etikv, int fence_id)
+{
+	struct edgetpu_dev *etdev = etikv->etdev;
+	struct edgetpu_vii_litebuf_command cmd;
+	int ret;
+
+	/*
+	 * Theoretically, the meaning of this function call is that MCU is waiting on some fences
+	 * to proceed waiter commands so that the block should be already powered on. However,
+	 * according to the design of IIF, if signaler IP is crashed, there is a possibility of race
+	 * condition that the MCU has processed the commands before this notification which means
+	 * the block would be already powered down. To prevent any kernel panic can be caused by it,
+	 * acquire the wakelock if the block is powered on. Otherwise, just give up notifying MCU of
+	 * the fence unblock.
+	 */
+	ret = edgetpu_pm_get_if_powered(etikv->etdev, false);
+	if (ret) {
+		etdev_warn(etikv->etdev,
+			   "Unable to send IIF unblock notification due to the block being off");
+		return;
+	}
+
+	/*
+	 * TODO(b/356665521): Even though this function holds pm, a race condition can happen while
+	 * checking the VII format because holding pm doesn't protect @etdev->vii_format. However,
+	 * we may not need to consider that as we are going to decide the VII format at the complie
+	 * time and the race condition can happen only if the user is loading the firmware by race.
+	 * If we switch to the complie-time format decision, we can replace this if-branch with a
+	 * #if macro.
+	 */
+	if (etdev->vii_format == EDGETPU_VII_FORMAT_LITEBUF) {
+		cmd.signal_fence_command.fence_id = fence_id;
+		cmd.type = EDGETPU_VII_LITEBUF_SIGNAL_FENCE_COMMAND;
+
+		ret = gcip_mailbox_send_cmd(etikv->mbx_protocol, &cmd, NULL, 0);
+		if (ret)
+			etdev_warn(etikv->etdev,
+				   "Failed to propagate the fence unblock, id=%d, error=%d",
+				   fence_id, ret);
+	} else {
+		etdev_warn_ratelimited(
+			etikv->etdev,
+			"The firmware doesn't support propagating IIF unblock notification");
+	}
+
+	edgetpu_pm_put(etikv->etdev);
 }

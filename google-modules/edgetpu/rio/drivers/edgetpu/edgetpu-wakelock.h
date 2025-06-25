@@ -44,6 +44,8 @@ struct edgetpu_wakelock {
 	 * "release".
 	 */
 	uint req_count;
+	/* This client's wakelock has been marked "suspendable", allowing system suspend. */
+	bool suspendable;
 	/*
 	 * Events counter.
 	 * release() would fail if one of the slots is not zero.
@@ -129,6 +131,7 @@ edgetpu_wakelock_count_locked(struct edgetpu_wakelock *wakelock)
 
 /*
  * Acquires the wakelock, increases @wakelock->req_count by one.
+ * @flags: Bitmask of EDGETPU_ACQUIRE_WAKELOCK_FLAG_* flags, such as to allow suspend.
  *
  * This function should be surrounded by edgetpu_wakelock_lock() and
  * edgetpu_wakelock_unlock().
@@ -136,7 +139,8 @@ edgetpu_wakelock_count_locked(struct edgetpu_wakelock *wakelock)
  * Returns the value of request counter *before* being increased.
  * Returns -EOVERFLOW if the request counter would overflow after increment.
  */
-int edgetpu_wakelock_acquire(struct edgetpu_wakelock *wakelock);
+int edgetpu_wakelock_acquire(struct edgetpu_wakelock *wakelock, u32 flags);
+
 /*
  * Requests to release the wakelock, decreases @wakelock->req_count by one on
  * success.

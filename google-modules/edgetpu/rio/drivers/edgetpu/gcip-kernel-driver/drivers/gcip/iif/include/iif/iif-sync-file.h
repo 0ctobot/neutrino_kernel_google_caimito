@@ -13,6 +13,7 @@
 #define __IIF_IIF_SYNC_FILE_H__
 
 #include <linux/file.h>
+#include <linux/types.h>
 #include <linux/wait.h>
 
 #include <iif/iif-fence.h>
@@ -35,6 +36,8 @@ struct iif_sync_file {
 	 *  [1:31]  - Reserved.
 	 */
 	unsigned long flags;
+	/* The last timeline when the sync file was notified while polling. */
+	u64 last_poll_timeline;
 };
 
 /* Opens a file which will be exported to the userspace to sync with @fence. */

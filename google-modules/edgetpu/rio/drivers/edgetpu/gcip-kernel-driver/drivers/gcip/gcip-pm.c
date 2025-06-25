@@ -5,6 +5,7 @@
  * Copyright (C) 2023 Google LLC
  */
 
+#include <linux/atomic.h>
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
@@ -57,7 +58,8 @@ static void gcip_pm_async_put_work(struct work_struct *work)
 {
 	struct gcip_pm *pm = container_of(work, struct gcip_pm, put_async_work);
 
-	gcip_pm_put(pm);
+	while (atomic_dec_if_positive(&pm->put_async_count) >= 0)
+		gcip_pm_put(pm);
 }
 
 struct gcip_pm *gcip_pm_create(const struct gcip_pm_args *args)
@@ -82,6 +84,7 @@ struct gcip_pm *gcip_pm_create(const struct gcip_pm_args *args)
 	mutex_init(&pm->lock);
 	INIT_DELAYED_WORK(&pm->power_down_work, gcip_pm_async_power_down_work);
 	INIT_WORK(&pm->put_async_work, gcip_pm_async_put_work);
+	atomic_set(&pm->put_async_count, 0);
 
 	if (pm->after_create) {
 		ret = pm->after_create(pm->data);
@@ -199,30 +202,14 @@ unlock:
 
 void gcip_pm_put_async(struct gcip_pm *pm)
 {
-	bool ret;
-
-	if (!pm)
-		return;
-
-	mutex_lock(&pm->lock);
-
-	ret = schedule_work(&pm->put_async_work);
-	if (ret)
-		goto unlock;
-
-	/* work already exist in workqueue, just decrement the pm->count. */
-	if (unlikely(pm->count < 2)) {
-		/*
-		 * gcip_pm_put is concluded to be scheduled, pm count can only
-		 * be decremented down to value 1.
-		 */
-		dev_warn(pm->dev, "Unbalanced pm count: %d", pm->count);
-		goto unlock;
-	}
-	--pm->count;
-
-unlock:
-	mutex_unlock(&pm->lock);
+	atomic_inc(&pm->put_async_count);
+	schedule_work(&pm->put_async_work);
+	/*
+	 * We do not need to check the return value of schedule_work because if the value is:
+	 *   true - A new put_async_work is pushed into the queue and wait for being processed.
+	 *   false - The put_async_work is already in the queue but not processed yet.
+	 * Either way the put_async_count will be correctly read in the gcip_pm_async_put_work().
+	 */
 }
 
 void gcip_pm_flush_put_work(struct gcip_pm *pm)

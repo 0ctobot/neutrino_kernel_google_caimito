@@ -310,12 +310,13 @@ int gcip_fence_array_add(struct gcip_fence_array *fence_array, struct gcip_fence
 	if (same_type && fence_array->size && fence_array->fences[0]->type != fence->type)
 		same_type = false;
 
-	fences = kcalloc(fence_array->size + 1, sizeof(*fences), GFP_KERNEL);
+	fences = krealloc_array(fence_array->fences, fence_array->size + 1, sizeof(*fences),
+				GFP_KERNEL);
 	if (!fences)
 		return -ENOMEM;
 
-	memcpy(fences, fence_array->fences, sizeof(*fences) * fence_array->size);
-	kfree(fence_array->fences);
+	if (!fence_array->size)
+		fence_array->type = fence->type;
 
 	fences[fence_array->size] = gcip_fence_get(fence);
 	fence_array->fences = fences;

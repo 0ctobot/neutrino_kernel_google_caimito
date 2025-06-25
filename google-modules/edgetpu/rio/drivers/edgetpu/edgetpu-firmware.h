@@ -21,41 +21,7 @@
 
 #define EDGETPU_FW_HEADER_SIZE SZ_4K
 
-struct edgetpu_image_sub_header_common {
-	int Magic;
-	int Generation;
-	int RollbackInfo;
-	int Length;
-	char Flags[16];
-};
-
-struct edgetpu_image_sub_header_gen1 {
-	char BodyHash[32];
-	char ChipId[32];
-	char AuthConfig[256];
-	struct gcip_image_config ImageConfig;
-};
-
-struct edgetpu_image_sub_header_gen2 {
-	char BodyHash[64];
-	char ChipId[32];
-	char AuthConfig[256];
-	struct gcip_image_config ImageConfig;
-};
-
-struct edgetpu_image_header {
-	char sig[512];
-	char pub[512];
-	struct {
-		struct edgetpu_image_sub_header_common common;
-		union {
-			struct edgetpu_image_sub_header_gen1 gen1;
-			struct edgetpu_image_sub_header_gen2 gen2;
-		};
-	};
-};
-
-/* Value of Magic field above: 'TPUF' as a 32-bit LE int */
+/* Value of magic field above: 'TPUF' as a 32-bit LE int */
 #define EDGETPU_FW_MAGIC	0x46555054
 
 /*

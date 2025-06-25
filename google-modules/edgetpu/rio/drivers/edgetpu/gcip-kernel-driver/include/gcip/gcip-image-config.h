@@ -205,7 +205,7 @@ int gcip_image_config_parser_init(struct gcip_image_config_parser *parser,
  * gcip_image_config_ops.map. On error no new mapping specified in @config is added.
  */
 int gcip_image_config_parse(struct gcip_image_config_parser *parser,
-			    struct gcip_image_config *config);
+			    const struct gcip_image_config *config);
 
 /*
  * Clears the mappings specified in the last image config.
@@ -218,7 +218,7 @@ void gcip_image_config_clear(struct gcip_image_config_parser *parser);
 /*
  * Returns whether the privilege level specified by @config is non-secure.
  */
-static inline bool gcip_image_config_is_ns(struct gcip_image_config *config)
+static inline bool gcip_image_config_is_ns(const struct gcip_image_config *config)
 {
 	return config->privilege_level == GCIP_FW_PRIV_LEVEL_NS;
 }
@@ -226,13 +226,13 @@ static inline bool gcip_image_config_is_ns(struct gcip_image_config *config)
 /*
  * Returns whether the privilege level specified by @config is secure.
  */
-static inline bool gcip_image_config_is_secure(struct gcip_image_config *config)
+static inline bool gcip_image_config_is_secure(const struct gcip_image_config *config)
 {
 	return config->privilege_level != GCIP_FW_PRIV_LEVEL_NS;
 }
 
 static inline bool
-gcip_image_config_get_telemetry_buffer_config(struct gcip_image_config *config,
+gcip_image_config_get_telemetry_buffer_config(const struct gcip_image_config *config,
 					      struct gcip_telemetry_buffer_config *telemetry_config)
 {
 	if (!config->telemetry_buffer_config)

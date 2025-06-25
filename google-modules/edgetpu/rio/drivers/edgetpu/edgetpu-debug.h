@@ -21,12 +21,6 @@ struct edgetpu_dev;
 #define FW_DEBUG_BUFFER_IOVA	0x18000000
 #define FW_DEBUG_BUFFER_SIZE	(13 * SZ_1M)
 
-/* FW-requested debug init requests are processed in a worker. */
-struct edgetpu_fw_debug_init_req_work {
-	struct work_struct work;
-	struct edgetpu_dev *etdev;
-};
-
 /* Firmware debug service command/response memory. */
 struct edgetpu_fw_debug_mem {
 	/* Scatter-gather table for the non-contiguous buffer. */
@@ -39,10 +33,10 @@ struct edgetpu_fw_debug_mem {
 	struct completion rd_data_ready;
 	/* Length of firmware buffer data ready for reading or writing. */
 	size_t data_len;
+	/* Byte offset of start of data in firmware buffer for reading. */
+	u16 offset;
 	/* If true FW responded to last cmd saying response packet will be async via RKCI. */
 	bool async_resp_pending;
-	/* For FW-requested debug init requests handled in a worker. */
-	struct edgetpu_fw_debug_init_req_work debug_init_req_work;
 };
 
 #define DEBUG_DUMP_HOST_CONTRACT_VERSION 3
@@ -110,14 +104,15 @@ struct mobile_sscd_info {
 	void *dev; /* SSCD platform device */
 };
 
+/* Re-send debug init to newly booted fw if debug memory is allocated. */
+void edgetpu_fw_debug_resetup(struct edgetpu_dev *etdev);
+
 /*
  * Handle FW response data available. Data has been written to debug_mem by firmware.
+ * @data_offset is the byte offset of the start of the data.
  * @data_len is the number of bytes of data written.
  */
-void edgetpu_fw_debug_resp_ready(struct edgetpu_dev *etdev, u32 data_len);
-
-/* Handle a debug init request from firmware. */
-void edgetpu_fw_debug_init_req(struct edgetpu_dev *etdev);
+void edgetpu_fw_debug_resp_ready(struct edgetpu_dev *etdev, u16 data_offset, u32 data_len);
 
 /* Generate a debug dump for reason @dump_reason. */
 void edgetpu_debug_dump(struct edgetpu_dev *etdev, u64 dump_reason);

@@ -97,14 +97,22 @@ static void gcip_kci_inc_resp_queue_head(struct gcip_mailbox *mailbox, u32 inc)
 static int gcip_kci_acquire_resp_queue_lock(struct gcip_mailbox *mailbox, bool try, bool *atomic)
 {
 	struct gcip_kci *kci = gcip_mailbox_get_data(mailbox);
+	unsigned long flags;
+	int ret;
 
 	*atomic = true;
 
-	if (try)
-		return spin_trylock_irqsave(&kci->resp_queue_lock, kci->resp_queue_lock_flags);
+	if (try) {
+		ret = spin_trylock_irqsave(&kci->resp_queue_lock, flags);
+	} else {
+		spin_lock_irqsave(&kci->resp_queue_lock, flags);
+		ret = 1;
+	}
 
-	spin_lock_irqsave(&kci->resp_queue_lock, kci->resp_queue_lock_flags);
-	return 1;
+	if (ret)
+		kci->resp_queue_lock_flags = flags;
+
+	return ret;
 }
 
 static void gcip_kci_release_resp_queue_lock(struct gcip_mailbox *mailbox)
@@ -126,28 +134,6 @@ static void gcip_kci_set_resp_elem_seq(struct gcip_mailbox *mailbox, void *resp,
 	struct gcip_kci_response_element *elem = resp;
 
 	elem->seq = seq;
-}
-
-static void gcip_kci_acquire_wait_list_lock(struct gcip_mailbox *mailbox, bool irqsave,
-					    unsigned long *flags)
-{
-	struct gcip_kci *kci = gcip_mailbox_get_data(mailbox);
-
-	if (irqsave)
-		spin_lock_irqsave(&kci->wait_list_lock, *flags);
-	else
-		spin_lock(&kci->wait_list_lock);
-}
-
-static void gcip_kci_release_wait_list_lock(struct gcip_mailbox *mailbox, bool irqrestore,
-					    unsigned long flags)
-{
-	struct gcip_kci *kci = gcip_mailbox_get_data(mailbox);
-
-	if (irqrestore)
-		spin_unlock_irqrestore(&kci->wait_list_lock, flags);
-	else
-		spin_unlock(&kci->wait_list_lock);
 }
 
 static int gcip_kci_wait_for_cmd_queue_not_full(struct gcip_mailbox *mailbox)
@@ -204,7 +190,12 @@ static int gcip_reverse_kci_add_resp(struct gcip_kci *kci,
 	tail = READ_ONCE(rkci->tail);
 	if (CIRC_SPACE(head, tail, rkci->buffer_size) >= 1) {
 		rkci->buffer[head] = *resp;
+		/* queue data needs to be updated before bump queue pointer */
 		smp_store_release(&rkci->head, (head + 1) & (rkci->buffer_size - 1));
+		/*
+		 * The handler work would consume all responses in buffer, no need to check
+		 * whether a pending work exists.
+		 */
 		schedule_work(&rkci->work);
 	} else {
 		ret = -ENOSPC;
@@ -263,8 +254,6 @@ static const struct gcip_mailbox_ops gcip_mailbox_ops = {
 	.release_resp_queue_lock = gcip_kci_release_resp_queue_lock,
 	.get_resp_elem_seq = gcip_kci_get_resp_elem_seq,
 	.set_resp_elem_seq = gcip_kci_set_resp_elem_seq,
-	.acquire_wait_list_lock = gcip_kci_acquire_wait_list_lock,
-	.release_wait_list_lock = gcip_kci_release_wait_list_lock,
 	.wait_for_cmd_queue_not_full = gcip_kci_wait_for_cmd_queue_not_full,
 	.after_enqueue_cmd = gcip_kci_after_enqueue_cmd,
 	.after_fetch_resps = gcip_kci_after_fetch_resps,
@@ -339,6 +328,7 @@ void gcip_kci_handle_irq(struct gcip_kci *kci)
 	 */
 	gcip_mailbox_consume_one_response(&kci->mailbox, &resp);
 
+	/* The work would consume all responses, no need to check whether a pending work exists. */
 	schedule_work(&kci->work);
 }
 
@@ -351,6 +341,7 @@ static void gcip_kci_update_usage_work(struct work_struct *work)
 
 void gcip_kci_update_usage_async(struct gcip_kci *kci)
 {
+	/* We only need at most one work, no need to check whether a pending work exists.*/
 	schedule_work(&kci->usage_work);
 }
 
@@ -375,6 +366,7 @@ static int gcip_reverse_kci_remove_resp(struct gcip_reverse_kci *rkci,
 		*resp = rkci->buffer[tail];
 		tail = (tail + 1) & (rkci->buffer_size - 1);
 		ret = 1;
+		/* queue data needs to be updated before bump queue pointer */
 		smp_store_release(&rkci->tail, tail);
 	}
 	spin_unlock(&rkci->consumer_lock);
@@ -488,7 +480,6 @@ int gcip_kci_init(struct gcip_kci *kci, const struct gcip_kci_args *args)
 
 	mutex_init(&kci->cmd_queue_lock);
 	spin_lock_init(&kci->resp_queue_lock);
-	spin_lock_init(&kci->wait_list_lock);
 	init_waitqueue_head(&kci->resp_doorbell_waitq);
 	INIT_WORK(&kci->work, gcip_kci_consume_responses_work);
 	INIT_WORK(&kci->usage_work, gcip_kci_update_usage_work);

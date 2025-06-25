@@ -15,6 +15,7 @@
 #include <linux/slab.h>
 
 #include "edgetpu-device-group.h"
+#include "edgetpu-iif.h"
 #include "edgetpu-ikv.h"
 #include "edgetpu-iremap-pool.h"
 #include "edgetpu-kci.h"
@@ -181,6 +182,35 @@ int edgetpu_mailbox_set_queue(struct edgetpu_mailbox *mailbox, enum gcip_mailbox
 	return 0;
 }
 
+/*
+ * Sets address and size of queue to reflect that it is unused.
+ *
+ * Clears the registers of a mailbox to indicate that this mailbox does not make use of the
+ * corresponding @type of queue.
+ */
+void edgetpu_mailbox_set_queue_as_unused(struct edgetpu_mailbox *mailbox,
+					 enum gcip_mailbox_queue_type type)
+{
+	switch (type) {
+	case GCIP_MAILBOX_CMD_QUEUE:
+		EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, cmd_queue_address_low, 0);
+		EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, cmd_queue_address_high, 0);
+		EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, cmd_queue_size, 0);
+		mailbox->cmd_queue_size = 0;
+		edgetpu_mailbox_set_cmd_queue_tail(mailbox, 0);
+		EDGETPU_MAILBOX_CMD_QUEUE_WRITE(mailbox, head, 0);
+		break;
+	case GCIP_MAILBOX_RESP_QUEUE:
+		EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, resp_queue_address_low, 0);
+		EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, resp_queue_address_high, 0);
+		EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, resp_queue_size, 0);
+		mailbox->resp_queue_size = 0;
+		edgetpu_mailbox_set_resp_queue_head(mailbox, 0);
+		EDGETPU_MAILBOX_RESP_QUEUE_WRITE(mailbox, tail, 0);
+		break;
+	}
+}
+
 /* Reset mailbox queues, clear out any commands/responses left from before. */
 void edgetpu_mailbox_reset(struct edgetpu_mailbox *mailbox)
 {
@@ -261,8 +291,21 @@ struct edgetpu_mailbox *edgetpu_mailbox_ikv(struct edgetpu_mailbox_manager *mgr)
 {
 	if (mgr && mgr->use_ikv)
 		return dedicated_mailbox(mgr, IKV_MAILBOX_INDEX);
-	else
-		return NULL;
+
+	return NULL;
+}
+
+/*
+ * Every mailbox manager can allocate one mailbox for IIF signalling to use.
+ * Previously allocated IIF mailbox is returned if it hasn't been removed via
+ * edgetpu_mailbox_remove().
+ */
+struct edgetpu_mailbox *edgetpu_mailbox_iif(struct edgetpu_mailbox_manager *mgr)
+{
+	if (mgr && mgr->use_iif)
+		return dedicated_mailbox(mgr, IIF_MAILBOX_INDEX);
+
+	return NULL;
 }
 
 /*
@@ -478,9 +521,16 @@ edgetpu_mailbox_create_mgr(struct edgetpu_dev *etdev,
 	struct edgetpu_mailbox_manager *mgr;
 	uint total = 0;
 	bool use_ikv = desc->use_ikv;
+	bool use_iif = desc->use_iif;
+
+	if (use_iif && !use_ikv) {
+		etdev_warn(etdev, "Unable to use IIF mailbox if not using in-kernel VII");
+		use_iif = false;
+	}
 
 	total += 1; /* KCI mailbox */
 	total += use_ikv ? 1 : 0;
+	total += use_iif ? 1 : 0;
 	total += desc->num_vii_mailbox;
 	total += desc->num_ext_mailbox;
 	if (total > desc->num_mailbox)
@@ -491,8 +541,18 @@ edgetpu_mailbox_create_mgr(struct edgetpu_dev *etdev,
 
 	mgr->etdev = etdev;
 	mgr->num_mailbox = desc->num_mailbox;
-	/* index 0 is reserved for KCI; index 1 for in-kernel VII, if enabled */
-	mgr->vii_index_from = use_ikv ? IKV_MAILBOX_INDEX + 1 : KERNEL_MAILBOX_INDEX + 1;
+	/*
+	 * Reserved mailboxes:
+	 * - index 0 is always reserved for KCI
+	 * - index 1 is reserved for in-kernel VII, if enabled
+	 * - index 2 is reserved for IIF signaling, if it AND in-kernel VII are enabled
+	 */
+	if (use_iif)
+		mgr->vii_index_from = IIF_MAILBOX_INDEX + 1;
+	else if (use_ikv)
+		mgr->vii_index_from = IKV_MAILBOX_INDEX + 1;
+	else
+		mgr->vii_index_from = KERNEL_MAILBOX_INDEX + 1;
 	mgr->vii_index_to = mgr->vii_index_from +
 		(desc->num_use_vii_mailbox ? desc->num_use_vii_mailbox :
 		 desc->num_vii_mailbox);
@@ -503,6 +563,7 @@ edgetpu_mailbox_create_mgr(struct edgetpu_dev *etdev,
 	mgr->get_cmd_queue_csr_base = desc->get_cmd_queue_csr_base;
 	mgr->get_resp_queue_csr_base = desc->get_resp_queue_csr_base;
 	mgr->use_ikv = use_ikv;
+	mgr->use_iif = use_iif;
 
 	mgr->mailboxes = devm_kcalloc(etdev->dev, mgr->num_mailbox,
 				      sizeof(*mgr->mailboxes), GFP_KERNEL);
@@ -519,8 +580,6 @@ edgetpu_mailbox_create_mgr(struct edgetpu_dev *etdev,
 void edgetpu_mailbox_remove_all(struct edgetpu_mailbox_manager *mgr, bool hwaccessok)
 {
 	uint i;
-	struct edgetpu_mailbox *kci_mailbox = NULL;
-	struct edgetpu_mailbox *ikv_mailbox = NULL;
 	unsigned long flags;
 
 	if (IS_ERR_OR_NULL(mgr))
@@ -533,38 +592,38 @@ void edgetpu_mailbox_remove_all(struct edgetpu_mailbox_manager *mgr, bool hwacce
 			/* Leave mailbox CSRs alone if not known powered up. */
 			if (hwaccessok)
 				edgetpu_mailbox_disable(mailbox);
-			/* KCI needs special handling */
-			if (i == KERNEL_MAILBOX_INDEX)
-				kci_mailbox = mailbox;
-			else if (mgr->use_ikv && i == IKV_MAILBOX_INDEX)
-				ikv_mailbox = mailbox;
-			else
-				kfree(mailbox);
+			kfree(mailbox);
 			mgr->mailboxes[i] = NULL;
 		}
 	}
 	write_unlock_irqrestore(&mgr->mailboxes_lock, flags);
-
-	/* Cancel KCI worker outside the lock, then free KCI mailbox. */
-	if (kci_mailbox) {
-		edgetpu_kci_release(mgr->etdev, kci_mailbox->internal.etkci);
-		kfree(kci_mailbox);
-	}
-
-	if (ikv_mailbox) {
-		edgetpu_ikv_release(mgr->etdev, ikv_mailbox->internal.etikv);
-		kfree(ikv_mailbox);
-	}
 }
 
-void edgetpu_mailbox_init_doorbells(struct edgetpu_mailbox *mailbox)
+void edgetpu_mailbox_clear_doorbells(struct edgetpu_mailbox *mailbox)
 {
 	/* Clear any stale doorbells requested */
 	EDGETPU_MAILBOX_RESP_QUEUE_WRITE(mailbox, doorbell_clear, 1);
 	EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, cmd_queue_doorbell_clear, 1);
+}
+
+void edgetpu_mailbox_disable_doorbells(struct edgetpu_mailbox *mailbox)
+{
+	/* Disable the command and response doorbell interrupts */
+	EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, cmd_queue_doorbell_enable, 0);
+	EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, resp_queue_doorbell_enable, 0);
+}
+
+void edgetpu_mailbox_enable_doorbells(struct edgetpu_mailbox *mailbox)
+{
 	/* Enable the command and response doorbell interrupts */
 	EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, cmd_queue_doorbell_enable, 1);
 	EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, resp_queue_doorbell_enable, 1);
+}
+
+void edgetpu_mailbox_init_doorbells(struct edgetpu_mailbox *mailbox)
+{
+	edgetpu_mailbox_clear_doorbells(mailbox);
+	edgetpu_mailbox_enable_doorbells(mailbox);
 }
 
 void edgetpu_mailbox_reset_mailboxes(struct edgetpu_mailbox_manager *mgr)
@@ -605,8 +664,8 @@ void edgetpu_mailbox_reinit_vii(struct edgetpu_device_group *group)
 	resp_queue_size = convert_runtime_queue_size_to_fw(
 		attr->resp_queue_size, attr->sizeof_resp);
 
-	etdev_dbg(group->etdev, "Restoring vii. workload_id=%u mbox_id=%u\n",
-		  group->workload_id, mailbox->mailbox_id);
+	etdev_dbg(group->etdev, "Restoring vii. group_id=%u mbox_id=%u\n",
+		  group->group_id, mailbox->mailbox_id);
 
 	etdev_dbg(group->etdev, "Priority: %d\n", attr->priority);
 	etdev_dbg(group->etdev, "Tail doorbell %s",

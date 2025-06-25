@@ -18,6 +18,7 @@
 #include <linux/types.h>
 
 #include <gcip/gcip-fence-array.h>
+#include <iif/iif-fence.h>
 
 #include "edgetpu-ikv-additional-info.h"
 #include "edgetpu-internal.h"
@@ -68,7 +69,8 @@ struct edgetpu_device_group {
 	 * when ref_count becomes zero.
 	 */
 	refcount_t ref_count;
-	uint workload_id;
+	/* Group ID number for info/debugging purposes. */
+	uint group_id;
 	struct edgetpu_dev *etdev;	/* the device opened by the leader */
 	/*
 	 * Whether mailbox attaching and detaching have effects on this group.
@@ -228,7 +230,7 @@ static inline uint edgetpu_group_get_fatal_errors_locked(struct edgetpu_device_g
 static inline int edgetpu_group_errno(struct edgetpu_device_group *group)
 {
 	if (edgetpu_device_group_is_errored(group)) {
-		etdev_err(group->etdev, "group %u error status 0x%x\n", group->workload_id,
+		etdev_err(group->etdev, "group %u error status 0x%x\n", group->group_id,
 			  edgetpu_group_get_fatal_errors_locked(group));
 		return -ECANCELED;
 	}
@@ -337,6 +339,7 @@ void edgetpu_group_mappings_show(struct edgetpu_device_group *group,
 int edgetpu_device_group_send_vii_command(struct edgetpu_device_group *group, void *cmd,
 					  struct gcip_fence_array *in_fence_array,
 					  struct gcip_fence_array *out_fence_array,
+					  struct iif_fence *iif_dma_fence,
 					  struct edgetpu_ikv_additional_info *additional_info,
 					  void (*release_callback)(void *), void *release_data);
 

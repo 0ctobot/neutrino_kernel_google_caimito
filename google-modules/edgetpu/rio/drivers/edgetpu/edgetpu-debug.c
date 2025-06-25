@@ -20,7 +20,6 @@
 #include <linux/rbtree.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include <linux/workqueue.h>
 
 #include <gcip/gcip-alloc-helper.h>
 
@@ -57,10 +56,11 @@ static DEFINE_MUTEX(edgetpu_debug_regs_lock);
 
 #if EDGETPU_HAS_FW_DEBUG
 /* Handle FW response data available. */
-void edgetpu_fw_debug_resp_ready(struct edgetpu_dev *etdev, u32 data_len)
+void edgetpu_fw_debug_resp_ready(struct edgetpu_dev *etdev, u16 offset, u32 data_len)
 {
-	if (data_len > FW_DEBUG_BUFFER_SIZE)
-		data_len = FW_DEBUG_BUFFER_SIZE;
+	if (offset + data_len > FW_DEBUG_BUFFER_SIZE)
+		data_len = FW_DEBUG_BUFFER_SIZE - offset;
+	etdev->fw_debug_mem.offset = offset;
 	etdev->fw_debug_mem.data_len = data_len;
 	dma_sync_sgtable_for_cpu(etdev->dev, etdev->fw_debug_mem.sgt, DMA_BIDIRECTIONAL);
 	etdev->fw_debug_mem.async_resp_pending = false;
@@ -80,10 +80,12 @@ static ssize_t fw_debug_read(struct file *file, char __user *buf, size_t count, 
 		return -EINTR;
 	if (etdev->fw_debug_mem.data_len - *ppos < count)
 		count = etdev->fw_debug_mem.data_len - *ppos;
-	if (copy_to_user(buf, etdev->fw_debug_mem.vaddr + *ppos, count))
+	if (copy_to_user(buf, etdev->fw_debug_mem.vaddr + etdev->fw_debug_mem.offset + *ppos,
+			 count))
 		return -EFAULT;
 	*ppos += count;
 	if (*ppos >= etdev->fw_debug_mem.data_len) {
+		etdev->fw_debug_mem.offset = 0;
 		etdev->fw_debug_mem.data_len = 0;
 		reinit_completion(&etdev->fw_debug_mem.rd_data_ready);
 		etdev->fw_debug_mem.resp_data_ready = false;
@@ -112,6 +114,8 @@ static ssize_t fw_debug_write(struct file *file, const char __user *buf, size_t 
 		etdev->fw_debug_mem.resp_data_ready = false;
 	}
 
+	/* Written data from host always start at offset 0. */
+	etdev->fw_debug_mem.offset = 0;
 	if (etdev->fw_debug_mem.data_len + count > FW_DEBUG_BUFFER_SIZE)
 		count = FW_DEBUG_BUFFER_SIZE - etdev->fw_debug_mem.data_len;
 	if (count) {
@@ -175,6 +179,7 @@ static int fw_debug_alloc_mem(struct edgetpu_dev *etdev)
 		return ret;
 	}
 
+	edgetpu_kci_fw_send_debug_init(etdev, FW_DEBUG_BUFFER_IOVA, FW_DEBUG_BUFFER_SIZE);
 	return 0;
 }
 
@@ -186,14 +191,13 @@ static int fw_debug_open(struct inode *inode, struct file *file)
 
 	file->private_data = etdev;
 
-	ret = fw_debug_alloc_mem(etdev);
-	if (ret)
-		return ret;
-
 	ret = edgetpu_pm_get(etdev);
-	if (ret)
+	if (ret) {
 		etdev_err_ratelimited(etdev, "fw debug error powering TPU: %d", ret);
+		return ret;
+	}
 
+	ret = fw_debug_alloc_mem(etdev);
 	return ret;
 }
 
@@ -205,29 +209,11 @@ static const struct file_operations fops_fw_debug = {
 	.release = fw_debug_release,
 };
 
-static void fw_debug_init_req_worker(struct work_struct *work)
+/* Re-send debug init to fw if debug memory is allocated. */
+void edgetpu_fw_debug_resetup(struct edgetpu_dev *etdev)
 {
-	struct edgetpu_fw_debug_init_req_work *init_req_work =
-		container_of(work, struct edgetpu_fw_debug_init_req_work, work);
-	struct edgetpu_dev *etdev = init_req_work->etdev;
-	int ret;
-
-	ret = fw_debug_alloc_mem(etdev);
-	if (!ret)
-		/* Keep power on, just in case no client keeps a wakelock across this sequence. */
-		ret = edgetpu_pm_get_if_powered(etdev, true);
-	if (ret) {
-		etdev_warn_ratelimited(etdev, "debug init failed (%d)", ret);
-		return;
-	}
-
-	edgetpu_kci_fw_send_debug_init(etdev, FW_DEBUG_BUFFER_IOVA, FW_DEBUG_BUFFER_SIZE);
-	edgetpu_pm_put(etdev);
-}
-
-void edgetpu_fw_debug_init_req(struct edgetpu_dev *etdev)
-{
-	schedule_work(&etdev->fw_debug_mem.debug_init_req_work.work);
+	if (etdev->fw_debug_mem.sgt)
+		edgetpu_kci_fw_send_debug_init(etdev, FW_DEBUG_BUFFER_IOVA, FW_DEBUG_BUFFER_SIZE);
 }
 
 /* Init firmware debug interface. */
@@ -235,8 +221,6 @@ static void edgetpu_fw_debug_init(struct edgetpu_dev *etdev)
 {
 	debugfs_create_file("fw_debug", 0660, etdev->d_entry, etdev, &fops_fw_debug);
 	init_completion(&etdev->fw_debug_mem.rd_data_ready);
-	INIT_WORK(&etdev->fw_debug_mem.debug_init_req_work.work, fw_debug_init_req_worker);
-	etdev->fw_debug_mem.debug_init_req_work.etdev = etdev;
 }
 
 /* De-init firmware debug interface. */
@@ -253,6 +237,10 @@ static void edgetpu_fw_debug_exit(struct edgetpu_dev *etdev)
 }
 
 #else /* EDGETPU_HAS_FW_DEBUG */
+void edgetpu_fw_debug_resetup(struct edgetpu_dev *etdev)
+{
+}
+
 static void edgetpu_fw_debug_init(struct edgetpu_dev *etdev)
 {
 }
@@ -543,9 +531,9 @@ static int mobile_sscd_generate_dump(struct edgetpu_dev *etdev)
 
 	/* Populate sscd segments */
 	for (i = 0; i < etdev->num_cores; i++) {
-		struct edgetpu_coherent_mem *log_mem = &etdev->telemetry[i].log_mem;
+		struct gcip_telemetry_memory *log_mem = &etdev->telemetry[i].log_mem;
 		struct sscd_segment seg = {
-			.addr = log_mem->vaddr,
+			.addr = log_mem->virt_addr,
 			.size = log_mem->size,
 		};
 

@@ -15,6 +15,9 @@
 
 /* SoC-specific calls for the following functions. */
 
+/* Probe-time check to ensure supplier device drivers have probed first. */
+int edgetpu_soc_check_supplier_devices(struct device *dev);
+
 /* Probe-time early stage init, before power on. */
 int edgetpu_soc_early_init(struct edgetpu_dev *etdev);
 

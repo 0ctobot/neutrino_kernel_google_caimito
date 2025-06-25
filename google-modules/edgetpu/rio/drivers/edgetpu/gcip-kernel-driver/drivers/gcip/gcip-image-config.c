@@ -16,7 +16,7 @@
  * Return true for a secure config mapping that is not shared.  The host IP driver doesn't need to
  * process such mappings.
  */
-static bool skip_secure_mapping(struct gcip_image_config *config, u32 map_flags)
+static bool skip_secure_mapping(const struct gcip_image_config *config, u32 map_flags)
 {
 	return gcip_image_config_is_secure(config) && !GCIP_IMAGE_CONFIG_MAP_SHARED(map_flags);
 }
@@ -33,7 +33,7 @@ static dma_addr_t virt_address_to_dma(u32 virt_address)
 }
 
 static int setup_iommu_mappings(struct gcip_image_config_parser *parser,
-				struct gcip_image_config *config)
+				const struct gcip_image_config *config)
 {
 	int i, ret;
 	dma_addr_t daddr;
@@ -87,7 +87,7 @@ err:
 }
 
 static void clear_iommu_mappings(struct gcip_image_config_parser *parser,
-				 struct gcip_image_config *config)
+				 const struct gcip_image_config *config)
 {
 	dma_addr_t daddr;
 	size_t size;
@@ -108,7 +108,7 @@ static void clear_iommu_mappings(struct gcip_image_config_parser *parser,
 }
 
 static int setup_ns_iommu_mappings(struct gcip_image_config_parser *parser,
-				   struct gcip_image_config *config)
+				   const struct gcip_image_config *config)
 {
 	dma_addr_t daddr;
 	size_t size;
@@ -147,7 +147,7 @@ err:
 }
 
 static void clear_ns_iommu_mappings(struct gcip_image_config_parser *parser,
-				    struct gcip_image_config *config)
+				    const struct gcip_image_config *config)
 {
 	dma_addr_t daddr;
 	size_t size;
@@ -163,7 +163,7 @@ static void clear_ns_iommu_mappings(struct gcip_image_config_parser *parser,
 }
 
 static int map_image_config(struct gcip_image_config_parser *parser,
-			    struct gcip_image_config *config)
+			    const struct gcip_image_config *config)
 {
 	int ret = setup_ns_iommu_mappings(parser, config);
 
@@ -176,7 +176,7 @@ static int map_image_config(struct gcip_image_config_parser *parser,
 }
 
 static void unmap_image_config(struct gcip_image_config_parser *parser,
-			       struct gcip_image_config *config)
+			       const struct gcip_image_config *config)
 {
 	clear_iommu_mappings(parser, config);
 	clear_ns_iommu_mappings(parser, config);
@@ -199,7 +199,7 @@ int gcip_image_config_parser_init(struct gcip_image_config_parser *parser,
 }
 
 int gcip_image_config_parse(struct gcip_image_config_parser *parser,
-			    struct gcip_image_config *config)
+			    const struct gcip_image_config *config)
 {
 	int ret;
 

@@ -29,6 +29,7 @@ GCIP_DIR=gcip-kernel-driver/drivers/gcip
 edgetpu-objs	:= edgetpu-async.o \
 		   edgetpu-dmabuf.o \
 		   edgetpu-firmware-util.o \
+		   edgetpu-iif.o \
 		   edgetpu-ikv-additional-info.o \
 		   edgetpu-ikv-mailbox-ops.o \
 		   edgetpu-ikv.o \

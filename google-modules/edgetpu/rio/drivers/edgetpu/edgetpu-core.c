@@ -27,6 +27,7 @@
 #include "edgetpu-config.h"
 #include "edgetpu-debug.h"
 #include "edgetpu-device-group.h"
+#include "edgetpu-iif.h"
 #include "edgetpu-ikv.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-kci.h"
@@ -218,32 +219,14 @@ static void edgetpu_vma_private_put(struct edgetpu_vma_private *pvt)
 static void edgetpu_vma_open(struct vm_area_struct *vma)
 {
 	struct edgetpu_vma_private *pvt = vma->vm_private_data;
-	enum edgetpu_wakelock_event evt;
-	struct edgetpu_client *client;
-	struct edgetpu_dev *etdev;
+	struct edgetpu_client *client = pvt->client;
 	enum edgetpu_vma_type type = VMA_TYPE(pvt->flag);
+	enum edgetpu_wakelock_event evt = vma_type_to_wakelock_event(type);
 
 	edgetpu_vma_private_get(pvt);
-	client = pvt->client;
-	etdev = client->etdev;
 
-	evt = vma_type_to_wakelock_event(type);
 	if (evt != EDGETPU_WAKELOCK_EVENT_END)
 		edgetpu_wakelock_inc_event(&client->wakelock, evt);
-
-	/* handle telemetry types */
-	switch (type) {
-	case VMA_LOG:
-		edgetpu_telemetry_inc_mmap_count(etdev, GCIP_TELEMETRY_LOG,
-						 VMA_DATA_GET(pvt->flag));
-		break;
-	case VMA_TRACE:
-		edgetpu_telemetry_inc_mmap_count(etdev, GCIP_TELEMETRY_TRACE,
-						 VMA_DATA_GET(pvt->flag));
-		break;
-	default:
-		break;
-	}
 }
 
 /* Records previously mmapped addresses were unmapped. */
@@ -253,24 +236,9 @@ static void edgetpu_vma_close(struct vm_area_struct *vma)
 	struct edgetpu_client *client = pvt->client;
 	enum edgetpu_vma_type type = VMA_TYPE(pvt->flag);
 	enum edgetpu_wakelock_event evt = vma_type_to_wakelock_event(type);
-	struct edgetpu_dev *etdev = client->etdev;
 
 	if (evt != EDGETPU_WAKELOCK_EVENT_END)
 		edgetpu_wakelock_dec_event(&client->wakelock, evt);
-
-	/* handle telemetry types */
-	switch (type) {
-	case VMA_LOG:
-		edgetpu_telemetry_dec_mmap_count(etdev, GCIP_TELEMETRY_LOG,
-						 VMA_DATA_GET(pvt->flag));
-		break;
-	case VMA_TRACE:
-		edgetpu_telemetry_dec_mmap_count(etdev, GCIP_TELEMETRY_TRACE,
-						 VMA_DATA_GET(pvt->flag));
-		break;
-	default:
-		break;
-	}
 
 	edgetpu_vma_private_put(pvt);
 }
@@ -300,10 +268,20 @@ int edgetpu_mmap(struct edgetpu_client *client, struct vm_area_struct *vma)
 		  vma->vm_pgoff);
 
 	flag = mmap_vma_flag(vma->vm_pgoff);
+
 	type = VMA_TYPE(flag);
 	if (type == VMA_INVALID)
 		return -EINVAL;
-	if (client->etdev->mailbox_manager->use_ikv && type != VMA_LOG && type != VMA_TRACE) {
+
+	if (type == VMA_LOG)
+		return edgetpu_mmap_telemetry_buffer(client->etdev, GCIP_TELEMETRY_TYPE_LOG, vma,
+						     VMA_DATA_GET(flag));
+
+	if (type == VMA_TRACE)
+		return edgetpu_mmap_telemetry_buffer(client->etdev, GCIP_TELEMETRY_TYPE_TRACE, vma,
+						     VMA_DATA_GET(flag));
+
+	if (client->etdev->mailbox_manager->use_ikv) {
 		etdev_err(client->etdev, "Invalid mmap pgoff (%#lX) for IKV\n", vma->vm_pgoff);
 		return -EINVAL;
 	}
@@ -326,18 +304,6 @@ int edgetpu_mmap(struct edgetpu_client *client, struct vm_area_struct *vma)
 		} else {
 			ret = -EAGAIN;
 		}
-		goto out_set_op;
-	}
-
-	/* Allow mapping log and telemetry buffers without a group */
-	if (type == VMA_LOG) {
-		ret = edgetpu_mmap_telemetry_buffer(client->etdev, GCIP_TELEMETRY_LOG, vma,
-						    VMA_DATA_GET(flag));
-		goto out_set_op;
-	}
-	if (type == VMA_TRACE) {
-		ret = edgetpu_mmap_telemetry_buffer(client->etdev, GCIP_TELEMETRY_TRACE, vma,
-						    VMA_DATA_GET(flag));
 		goto out_set_op;
 	}
 
@@ -479,7 +445,11 @@ int edgetpu_device_add(struct edgetpu_dev *etdev,
 	etdev->vcid_pool = (1u << EDGETPU_NUM_VCIDS) - 1;
 	mutex_init(&etdev->state_lock);
 	etdev->state = ETDEV_STATE_NOFW;
-	mutex_init(&etdev->device_prop.lock);
+
+	/* set_device_properties not enabled in production b/405471390 */
+	if (IS_ENABLED(CONFIG_EDGETPU_TEST))
+		mutex_init(&etdev->device_prop.lock);
+
 	ret = edgetpu_soc_early_init(etdev);
 	if (ret)
 		return ret;
@@ -506,6 +476,12 @@ int edgetpu_device_add(struct edgetpu_dev *etdev,
 		mailbox_manager_desc.num_vii_mailbox--;
 		mailbox_manager_desc.num_use_vii_mailbox = 0;
 	}
+
+	mailbox_manager_desc.use_iif = mailbox_manager_desc.use_ikv && EDGETPU_USE_IIF_MAILBOX;
+	if (!mailbox_manager_desc.use_ikv && EDGETPU_USE_IIF_MAILBOX)
+		etdev_warn(etdev, "Unable to use IIF mailbox when not using IKV");
+	if (mailbox_manager_desc.use_iif)
+		mailbox_manager_desc.num_vii_mailbox--;
 
 	etdev->mailbox_manager =
 		edgetpu_mailbox_create_mgr(etdev, &mailbox_manager_desc);
@@ -544,6 +520,12 @@ int edgetpu_device_add(struct edgetpu_dev *etdev,
 		goto remove_usage_stats;
 	}
 
+	etdev->etiif = devm_kzalloc(etdev->dev, sizeof(*etdev->etiif), GFP_KERNEL);
+	if (!etdev->etiif) {
+		ret = -ENOMEM;
+		goto remove_usage_stats;
+	}
+
 	ret = edgetpu_telemetry_init(etdev);
 	if (ret)
 		goto remove_usage_stats;
@@ -557,7 +539,13 @@ int edgetpu_device_add(struct edgetpu_dev *etdev,
 	ret = edgetpu_ikv_init(etdev->mailbox_manager, etdev->etikv);
 	if (ret) {
 		etdev_err(etdev, "edgetpu_ikv_init returns %d\n", ret);
-		goto out_telemetry_exit;
+		goto err_kci_release;
+	}
+
+	ret = edgetpu_iif_init(etdev->mailbox_manager, etdev->etiif);
+	if (ret) {
+		etdev_err(etdev, "edgetpu_iif_init returns %d\n", ret);
+		goto err_ikv_release;
 	}
 
 	edgetpu_debug_init(etdev);
@@ -571,6 +559,10 @@ int edgetpu_device_add(struct edgetpu_dev *etdev,
 	dma_set_max_seg_size(etdev->dev, UINT_MAX);
 	return 0;
 
+err_ikv_release:
+	edgetpu_ikv_release(etdev, etdev->etikv);
+err_kci_release:
+	edgetpu_kci_release(etdev, etdev->etkci);
 out_telemetry_exit:
 	edgetpu_telemetry_exit(etdev);
 remove_usage_stats:
@@ -593,6 +585,9 @@ void edgetpu_device_remove(struct edgetpu_dev *etdev)
 	ret = edgetpu_pm_get(etdev);
 	edgetpu_firmware_tracing_destroy(etdev->fw_tracing);
 	edgetpu_debug_exit(etdev);
+	edgetpu_iif_release(etdev->etiif);
+	edgetpu_ikv_release(etdev, etdev->etikv);
+	edgetpu_kci_release(etdev, etdev->etkci);
 	/* If not known powered up don't try to set mailbox CSRs to disabled state. */
 	edgetpu_mailbox_remove_all(etdev->mailbox_manager, !ret);
 	edgetpu_telemetry_exit(etdev);
@@ -698,10 +693,10 @@ void edgetpu_client_remove(struct edgetpu_client *client)
 	/* Clean up all the per die event fds registered by the client */
 	if (client->perdie_events &
 	    1 << perdie_event_id_to_num(EDGETPU_PERDIE_EVENT_LOGS_AVAILABLE))
-		edgetpu_telemetry_unset_event(etdev, GCIP_TELEMETRY_LOG);
+		edgetpu_telemetry_unset_event(etdev, GCIP_TELEMETRY_TYPE_LOG);
 	if (client->perdie_events &
 	    1 << perdie_event_id_to_num(EDGETPU_PERDIE_EVENT_TRACES_AVAILABLE))
-		edgetpu_telemetry_unset_event(etdev, GCIP_TELEMETRY_TRACE);
+		edgetpu_telemetry_unset_event(etdev, GCIP_TELEMETRY_TYPE_TRACE);
 
 	edgetpu_client_put(client);
 

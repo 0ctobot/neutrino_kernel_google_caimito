@@ -50,15 +50,6 @@
  */
 #define GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS -1
 
-/*
- * Size of the metric v1 in bytes.
- *
- * We decided to use 20 bytes for the V1 metrics. However, from V2, we increased the size of it to
- * 24 bytes which is the same as `sizeof(struct gcip_usage_stats_metric)` to collect more stats
- * information. To verify whether the firmware sent valid V1 size metrics, keep it as a macro.
- */
-#define GCIP_USAGE_STATS_METRIC_SIZE_V1 20
-
 /* Max number of frequencies to support. */
 #define GCIP_USAGE_STATS_MAX_DVFS_FREQ_NUM 25
 
@@ -76,16 +67,14 @@ typedef ssize_t (*gcip_usage_stats_store_t)(struct device *dev, struct gcip_usag
  * can be accessed according to the versions.
  */
 enum gcip_usage_stats_version {
-	/*
-	 * In V1, the headers must have the format of the `struct gcip_usage_stats_header_v1` and
-	 * the size of metrics must be GCIP_USAGE_STATS_METRIC_SIZE_V1.
-	 */
+	/* V1 no longer in use. */
 	GCIP_USAGE_STATS_V1 = 1,
 	/*
-	 * In V2, the headers must have the format of the `struct gcip_usage_stats_header` and
+	 * In V2-V3, the headers must have the format of the `struct gcip_usage_stats_header` and
 	 * the size of metrics must be `sizeof(struct gcip_usage_stats_metric)`.
 	 */
 	GCIP_USAGE_STATS_V2 = 2,
+	GCIP_USAGE_STATS_V3 = 3,
 	/* Version of metrics must be lower than this. */
 	GCIP_USAGE_STATS_VERSION_UPPER_BOUND,
 };
@@ -128,8 +117,14 @@ struct gcip_usage_stats_core_usage {
 	 * all times.  For DSP the value will be either 0, 1, or 2.
 	 */
 	uint8_t core_id;
+
+	/* Following fields must not be accessed in version 1 or 2. */
+
+	/* The id of the reporting subcomponent. Optional. For TPU this is cluster ID. */
+	uint8_t subcomponent_id;
+
 	/* Reserved. */
-	uint8_t reserved[3];
+	uint8_t reserved[2];
 } __packed;
 
 /*
@@ -172,10 +167,13 @@ struct gcip_usage_stats_component_utilization {
 	 */
 	int32_t utilization;
 
-	/* Following fields must not be accessed in version 1. */
+	/* Following fields must not be accessed in version 1 or 2. */
+
+	/* The id of the reporting subcomponent. Optional. For TPU this is cluster ID. */
+	uint8_t subcomponent_id;
 
 	/* Reserved. */
-	uint32_t reserved[2];
+	uint8_t reserved[7];
 } __packed;
 
 /*
@@ -388,17 +386,6 @@ struct gcip_usage_stats_dvfs_frequency_info {
 } __packed;
 
 /*
- * Header struct in the v1 metric buffer.
- * Keep this structure for the compatibility.
- */
-struct gcip_usage_stats_header_v1 {
-	/* Number of metrics being reported. */
-	uint32_t num_metrics;
-	/* Size of each metric struct. */
-	uint32_t metric_size;
-};
-
-/*
  * Header struct in the metric buffer.
  * Must be kept in sync with firmware `struct UsageTrackerHeader`.
  */
@@ -487,8 +474,14 @@ struct gcip_usage_stats {
 	 * I.e., (@subcomponents (rows) * BIT(GCIP_USAGE_STATS_UID_HASH_BITS) (cols)) 2d array.
 	 */
 	struct hlist_head (*core_usage_htable)[BIT(GCIP_USAGE_STATS_UID_HASH_BITS)];
-	/* Component utilization. */
-	int32_t component_utilization[GCIP_USAGE_STATS_COMPONENT_UTILIZATION_NUM_TYPES];
+	/*
+	 * Component (such as entire IP or specific compute block) utilization (per subcomponent,
+	 * such as compute cluster).
+	 * Declare it as a pointer to an array because we have to dynamically allocate multiple
+	 * rows with the fixed column size.
+	 * I.e., (@subcomponents (rows) * GCIP_USAGE_STATS_COMPONENT_UTILIZATION_NUM_TYPES (cols))
+	 */
+	int32_t (*component_utilization)[GCIP_USAGE_STATS_COMPONENT_UTILIZATION_NUM_TYPES];
 	/*
 	 * Counter (per subcomponents).
 	 * Declare it as a pointer to an array because we have to dynamically allocate multiple
@@ -548,7 +541,7 @@ struct gcip_usage_stats_attr {
 	 */
 	unsigned int type;
 	/*
-	 * The 0-based index of subcomponent. (Ignored in V1 metrics.)
+	 * The 0-based index of subcomponent.
 	 *
 	 * One can specify the subcomponent to be read if there are multiple subcomponents.
 	 *
