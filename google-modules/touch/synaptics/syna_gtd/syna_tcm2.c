@@ -962,7 +962,7 @@ static int syna_get_mutual_sensor_data(void *private_data, struct gti_sensor_dat
 	syna_tcm_set_dynamic_config(tcm->tcm_dev, DC_DISABLE_DOZE, 1, RESP_IN_ATTN);
 
 	tcm->raw_data_report_code = report_code;
-	syna_tcm_enable_report(tcm->tcm_dev, tcm->raw_data_report_code, true);
+	syna_tcm_enable_report(tcm->tcm_dev, tcm->raw_data_report_code, true, RESP_IN_ATTN);
 
 	if (wait_for_completion_timeout(&tcm->raw_data_completion, msecs_to_jiffies(500)) == 0) {
 		LOGE("Wait for sensor data %#x timeout.", cmd->type);
@@ -983,7 +983,7 @@ static int syna_get_mutual_sensor_data(void *private_data, struct gti_sensor_dat
 	cmd->size = rows * cols * sizeof(u16);
 exit:
 	syna_tcm_set_dynamic_config(tcm->tcm_dev, DC_DISABLE_DOZE, 0, RESP_IN_ATTN);
-	syna_tcm_enable_report(tcm->tcm_dev, tcm->raw_data_report_code, false);
+	syna_tcm_enable_report(tcm->tcm_dev, tcm->raw_data_report_code, false, RESP_IN_ATTN);
 
 	return ret;
 }
@@ -1026,7 +1026,7 @@ static int syna_get_self_sensor_data(void *private_data, struct gti_sensor_data_
 	syna_tcm_set_dynamic_config(tcm->tcm_dev, DC_DISABLE_DOZE, 1, RESP_IN_ATTN);
 
 	tcm->raw_data_report_code = report_code;
-	syna_tcm_enable_report(tcm->tcm_dev, tcm->raw_data_report_code, true);
+	syna_tcm_enable_report(tcm->tcm_dev, tcm->raw_data_report_code, true, RESP_IN_ATTN);
 
 	if (wait_for_completion_timeout(&tcm->raw_data_completion, msecs_to_jiffies(500)) == 0) {
 		LOGE("Wait for sensor data %#x timeout.", cmd->type);
@@ -1046,7 +1046,7 @@ static int syna_get_self_sensor_data(void *private_data, struct gti_sensor_data_
 	cmd->size = (rows + cols) * sizeof(u16);
 exit:
 	syna_tcm_set_dynamic_config(tcm->tcm_dev, DC_DISABLE_DOZE, 0, RESP_IN_ATTN);
-	syna_tcm_enable_report(tcm->tcm_dev, tcm->raw_data_report_code, false);
+	syna_tcm_enable_report(tcm->tcm_dev, tcm->raw_data_report_code, false, RESP_IN_ATTN);
 
 	return ret;
 }

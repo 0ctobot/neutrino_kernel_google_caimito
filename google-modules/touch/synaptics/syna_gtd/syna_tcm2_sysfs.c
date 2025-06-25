@@ -884,7 +884,7 @@ static ssize_t syna_sysfs_get_raw_data_show(struct kobject *kobj,
 exit:
 	retval = count;
 	syna_tcm_set_dynamic_config(tcm->tcm_dev, DC_DISABLE_DOZE, 0, RESP_IN_ATTN);
-	syna_tcm_enable_report(tcm_dev, tcm->raw_data_report_code, false);
+	syna_tcm_enable_report(tcm_dev, tcm->raw_data_report_code, false, RESP_IN_ATTN);
 	return retval;
 }
 
@@ -940,7 +940,7 @@ static ssize_t syna_sysfs_get_raw_data_store(struct kobject *kobj,
 	syna_tcm_set_dynamic_config(tcm->tcm_dev, DC_DISABLE_DOZE, 1, RESP_IN_ATTN);
 
 	tcm->raw_data_report_code = report_code;
-	syna_tcm_enable_report(tcm->tcm_dev, report_code, true);
+	syna_tcm_enable_report(tcm->tcm_dev, report_code, true, RESP_IN_ATTN);
 	reinit_completion(&tcm->raw_data_completion);
 
 exit:

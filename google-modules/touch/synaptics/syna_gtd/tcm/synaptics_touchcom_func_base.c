@@ -670,15 +670,18 @@ exit:
  * specific TouchComm report.
  *
  * @param
- *    [ in] tcm_dev:     the device handle
- *    [ in] report_code: the requested report code being generated
- *    [ in] en:          '1' for enabling; '0' for disabling
+ *    [ in] tcm_dev:      the device handle
+ *    [ in] report_code:  the requested report code being generated
+ *    [ in] en:           '1' for enabling; '0' for disabling
+ *    [ in] resp_reading:  method to read in the response
+ *                         a positive value presents the ms time delay for polling;
+ *                         or, set '0' or 'RESP_IN_ATTN' for ATTN driven
  *
  * @return
  *    on success, 0 or positive value; otherwise, negative value on error.
  */
-int syna_tcm_enable_report(struct tcm_dev *tcm_dev,
-		unsigned char report_code, bool en)
+int syna_tcm_enable_report(struct tcm_dev *tcm_dev, unsigned char report_code,
+	bool en, unsigned int resp_reading)
 {
 	int retval = 0;
 	unsigned char resp_code;
@@ -703,7 +706,7 @@ int syna_tcm_enable_report(struct tcm_dev *tcm_dev,
 			1,
 			1,
 			&resp_code,
-			tcm_dev->msg_data.default_resp_reading);
+			resp_reading);
 	if (retval < 0) {
 		LOGE("Fail to send command 0x%02x to %s 0x%02x report\n",
 			command, (en)?"enable":"disable", report_code);

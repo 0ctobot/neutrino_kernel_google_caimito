@@ -1941,7 +1941,7 @@ static int syna_testing_pt_tag_moisture(struct syna_tcm *tcm, struct tcm_buffer 
 
 	syna_tcm_set_dynamic_config(tcm->tcm_dev, DC_DISABLE_DOZE, 1, RESP_IN_POLLING);
 
-	retval = syna_tcm_enable_report(tcm->tcm_dev, 30, true);
+	retval = syna_tcm_enable_report(tcm->tcm_dev, 30, true, RESP_IN_POLLING);
 	if (retval < 0) {
 		LOGE("Fail to enable RID30\n");
 		result = false;
@@ -1967,7 +1967,7 @@ static int syna_testing_pt_tag_moisture(struct syna_tcm *tcm, struct tcm_buffer 
 		goto exit;
 	}
 
-	retval = syna_tcm_enable_report(tcm->tcm_dev, 30, false);
+	retval = syna_tcm_enable_report(tcm->tcm_dev, 30, false, RESP_IN_POLLING);
 	if (retval < 0) {
 		LOGE("Fail to disable RID30\n");
 		result = false;
@@ -2107,10 +2107,10 @@ static ssize_t syna_testing_test_setup_store(struct kobject *kobj,
 
 	if (test_setup) {
 		retval = syna_tcm_enable_report(tcm->tcm_dev,
-			REPORT_FW_STATUS, false);
+			REPORT_FW_STATUS, false, RESP_IN_POLLING);
 	} else {
 		retval = syna_tcm_enable_report(tcm->tcm_dev,
-			REPORT_FW_STATUS, true);
+			REPORT_FW_STATUS, true, RESP_IN_POLLING);
 	}
 
 	if (retval < 0) {

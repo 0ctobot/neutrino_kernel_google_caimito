@@ -1861,8 +1861,8 @@ static int syna_cdev_ioctl_send_message(struct syna_tcm *tcm,
 		return -EINVAL;
 	}
 
-	if (*msg_size == 0) {
-		LOGE("Invalid message length, msg size: 0\n");
+	if ((*msg_size > PAGE_SIZE) || (*msg_size > buf_size) || (*msg_size == 0)) {
+		LOGE("Invalid size of message, *msg_size=%d, buf_size=%d\n", *msg_size, buf_size);
 		return -EINVAL;
 	}
 
@@ -2092,13 +2092,13 @@ static int syna_cdev_ioctl_store_pid(struct syna_tcm *tcm,
 		return -ENXIO;
 	}
 
-	if (buf_size < 4) {
-		LOGE("Invalid sync data size, buf_size:%d\n", buf_size);
+	if ((buf_size < 4) || (buf_size > PAGE_SIZE)) {
+		LOGE("Invalid buf_size %d\n", buf_size);
 		return -EINVAL;
 	}
 
 	if (data_size < 4) {
-		LOGE("Invalid data_size\n");
+		LOGE("Invalid data_size %d\n", data_size);
 		return -EINVAL;
 	}
 
@@ -2471,6 +2471,12 @@ static int syna_cdev_ioctls(struct inode *inp, struct file *filp,
 	if (retval) {
 		LOGE("Fail to copy ioctl_data from user space, size:%d\n",
 			retval);
+		retval = -EBADE;
+		goto exit;
+	}
+
+	if (ioc_data.buf_size > PAGE_SIZE) {
+		LOGE("Invalid buffer size\n");
 		retval = -EBADE;
 		goto exit;
 	}

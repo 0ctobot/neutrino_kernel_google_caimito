@@ -754,7 +754,7 @@ static int syna_cdev_ioctl_send_message(struct syna_tcm *tcm,
 	int retval = 0;
 	struct tcm_dev *tcm_dev = tcm->tcm_dev;
 	unsigned int offset;
-	unsigned int size;
+	unsigned int size = buf_size;
 	unsigned char *data_ptr = NULL;
 	unsigned char resp_code = 0;
 	unsigned int length_in_header = 0;
@@ -779,21 +779,20 @@ static int syna_cdev_ioctl_send_message(struct syna_tcm *tcm,
 		return -EINVAL;
 	}
 
-	if (*msg_size < 3) {
-		LOGE("Invalid size of message %d, the min length is three\n",
-			*msg_size);
+	if ((*msg_size > PAGE_SIZE) || (*msg_size > buf_size) || (*msg_size < 3)) {
+		LOGE("Invalid size of message, *msg_size=%d, buf_size=%d\n", *msg_size, buf_size);
 		return -EINVAL;
 	}
 
 	caller = &g_cdev_data.buffer;
 	syna_tcm_buf_lock(caller);
 
-	size = (g_cdev_data.extra_bytes > 0) ?
-		(buf_size + g_cdev_data.extra_bytes) : buf_size;
+	if (g_cdev_data.extra_bytes > 0)
+		size += g_cdev_data.extra_bytes;
+
 	retval = syna_tcm_buf_alloc(caller, size);
 	if (retval < 0) {
-		LOGE("Fail to allocate memory for caller buf, size: %d\n",
-			buf_size);
+		LOGE("Fail to allocate memory for caller buf, size: %d\n", buf_size);
 		goto exit;
 	}
 
@@ -1057,13 +1056,13 @@ static int syna_cdev_ioctl_store_pid(struct syna_tcm *tcm,
 		return -ENXIO;
 	}
 
-	if (buf_size < 4) {
-		LOGE("Invalid sync data size, buf_size:%d\n", buf_size);
+	if ((buf_size < 4) || (buf_size > PAGE_SIZE)) {
+		LOGE("Invalid buf_size %d\n", buf_size);
 		return -EINVAL;
 	}
 
 	if (data_size < 4) {
-		LOGE("Invalid data_size\n");
+		LOGE("Invalid data_size %d\n", data_size);
 		return -EINVAL;
 	}
 
@@ -1634,6 +1633,12 @@ static int syna_cdev_ioctls(struct inode *inp, struct file *filp,
 	if (retval) {
 		LOGE("Fail to copy ioctl_data from user space, size:%d\n",
 			retval);
+		retval = -EBADE;
+		goto exit;
+	}
+
+	if (ioc_data.buf_size > PAGE_SIZE) {
+		LOGE("Invalid buffer size\n");
 		retval = -EBADE;
 		goto exit;
 	}

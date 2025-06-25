@@ -190,8 +190,8 @@ int syna_tcm_reset(struct tcm_dev *tcm_dev);
  * @return
  *    on success, 0 or positive value; otherwise, negative value on error.
  */
-int syna_tcm_enable_report(struct tcm_dev *tcm_dev,
-		unsigned char report_code, bool en);
+int syna_tcm_enable_report(struct tcm_dev *tcm_dev, unsigned char report_code,
+		bool en, unsigned int resp_reading);
 
 /*
  * syna_tcm_switch_fw_mode()
