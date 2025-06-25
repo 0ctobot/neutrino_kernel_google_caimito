@@ -192,3 +192,10 @@ Contact:	"Carlos Rodriguez" <cjeremyrod@google.com>
 Description:
 		Used to count the number of FEC/DSC unsupported monitors the device was plugged into.
 		If either FEC and DSC are not supported this count will increase.
+
+What:		/sys/devices/platform/110f0000.drmdp/drm-displayport/hdcp_negotiation
+Date:		January 2025
+KernelVersion:	6.1
+Contact:	"Weizhung Ding" <weizhungding@google.com>
+Description:
+		HWC uses this interface to trigger HDCP negotiation.

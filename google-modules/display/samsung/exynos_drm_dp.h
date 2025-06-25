@@ -139,6 +139,7 @@ enum dp_state_for_hdcp22 {
 	DP_CONNECT,
 	DP_PHYSICAL_DISCONNECT,
 	DP_SHUTDOWN,
+	DP_CP_DESIRED,
 };
 
 enum link_training_status {
@@ -238,6 +239,7 @@ struct dp_device {
 	struct dentry *dp_crc_values_debugfs_file;
 
 	bool hdcp_and_audio_enabled;
+	bool hdcp_desired;
 
 	bool restart_pending;
 

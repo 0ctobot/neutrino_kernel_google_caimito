@@ -214,11 +214,8 @@ void gs_panel_set_binned_lp_helper(struct gs_panel *ctx, const u16 brightness)
 	is_lp_state = is_backlight_lp_state(bl);
 	mutex_unlock(&ctx->bl_state_lock); /*TODO(b/267170999): BL*/
 
-	mutex_lock(&ctx->lp_state_lock); /*TODO(b/267170999): LP*/
-
 	if (is_lp_state && ctx->current_binned_lp &&
 	    binned_lp->bl_threshold == ctx->current_binned_lp->bl_threshold) {
-		mutex_unlock(&ctx->lp_state_lock); /*TODO(b/267170999): LP*/
 		return;
 	}
 
@@ -227,8 +224,6 @@ void gs_panel_set_binned_lp_helper(struct gs_panel *ctx, const u16 brightness)
 
 	ctx->current_binned_lp = binned_lp;
 	dev_dbg(ctx->dev, "enter lp_%s\n", ctx->current_binned_lp->name);
-
-	mutex_unlock(&ctx->lp_state_lock); /*TODO(b/267170999): LP*/
 
 	panel_state = !binned_lp->bl_threshold ? GPANEL_STATE_BLANK : GPANEL_STATE_LP;
 	gs_panel_set_backlight_state(ctx, panel_state);

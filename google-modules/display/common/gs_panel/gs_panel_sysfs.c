@@ -1281,6 +1281,35 @@ static ssize_t state_show(struct device *dev, struct device_attribute *attr, cha
 	return rc;
 }
 
+static ssize_t lp_state_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct backlight_device *bl = to_backlight_device(dev);
+	struct gs_panel *ctx = bl_get_data(bl);
+	const struct gs_panel_mode *pmode;
+
+	mutex_lock(&ctx->mode_lock);
+	pmode = ctx->current_mode;
+	mutex_unlock(&ctx->mode_lock);
+
+	if (!pmode) {
+		dev_warn(ctx->dev, "unable to get LP state from pmode\n");
+		return -EPERM;
+	}
+
+	if (!pmode->gs_mode.is_lp_mode) {
+		dev_warn(ctx->dev, "panel is not in LP mode\n");
+		return sysfs_emit(buf, "Not in LP mode\n");
+	}
+
+	if (!ctx->current_binned_lp) {
+		dev_warn(ctx->dev, "unable to get LP state from binned_lp\n");
+		return -EPERM;
+	}
+
+	return sysfs_emit(buf, "%s\n", ctx->current_binned_lp->name);
+}
+
+
 static ssize_t acl_mode_store(struct device *dev,
 				struct device_attribute *attr,
 				const char *buf, size_t count)
@@ -1514,6 +1543,7 @@ static DEVICE_ATTR_RW(dimming_on);
 static DEVICE_ATTR_RW(local_hbm_mode);
 static DEVICE_ATTR_RW(local_hbm_max_timeout);
 static DEVICE_ATTR_RO(state);
+static DEVICE_ATTR_RO(lp_state);
 static DEVICE_ATTR_RW(acl_mode);
 static DEVICE_ATTR_RW(ssc_en);
 static DEVICE_ATTR_RW(als_table);
@@ -1526,6 +1556,7 @@ static struct attribute *bl_device_attrs[] = { &dev_attr_hbm_mode.attr,
 					       &dev_attr_local_hbm_max_timeout.attr,
 					       &dev_attr_acl_mode.attr,
 					       &dev_attr_state.attr,
+					       &dev_attr_lp_state.attr,
 					       &dev_attr_ssc_en.attr,
 					       &dev_attr_als_table.attr,
 					       &dev_attr_dim_brightness.attr,

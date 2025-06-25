@@ -1868,7 +1868,6 @@ int gs_dsi_panel_common_init(struct mipi_dsi_device *dsi, struct gs_panel *ctx)
 	/*TODO(b/267170999): all*/
 	mutex_init(&ctx->mode_lock);
 	mutex_init(&ctx->bl_state_lock);
-	mutex_init(&ctx->lp_state_lock);
 
 	/* Initialize panel */
 	drm_panel_init(&ctx->base, dev, ctx->desc->panel_func, DRM_MODE_CONNECTOR_DSI);

@@ -1517,6 +1517,7 @@ struct exynos_dqe *exynos_dqe_register(struct decon_device *decon)
 	enum dqe_version dqe_version;
 	int i;
 	char dqe_name[MAX_DQE_NAME_SIZE] = "dqe";
+	const char *dqe_name_heap;
 
 	i = of_property_match_string(np, "reg-names", "dqe");
 	if (i < 0) {
@@ -1562,7 +1563,10 @@ struct exynos_dqe *exynos_dqe_register(struct decon_device *decon)
 	INIT_LIST_HEAD(&dqe->state.hist_pending_events_list);
 
 	scnprintf(dqe_name, MAX_DQE_NAME_SIZE, "dqe%u", decon->id);
-	dqe->dqe_class = class_create(THIS_MODULE, dqe_name);
+	dqe_name_heap = kstrdup(dqe_name, GFP_KERNEL);
+	if (!dqe_name_heap)
+		return NULL;
+	dqe->dqe_class = class_create(THIS_MODULE, dqe_name_heap);
 	if (IS_ERR(dqe->dqe_class)) {
 		pr_err("failed to create dqe class\n");
 		return NULL;

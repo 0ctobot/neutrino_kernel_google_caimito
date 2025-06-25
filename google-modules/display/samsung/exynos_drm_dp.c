@@ -1725,6 +1725,7 @@ static void dp_off_by_hpd_plug(struct dp_device *dp)
 			}
 
 			dp->hdcp_and_audio_enabled = false;
+			dp->hdcp_desired = false;
 
 			/* Wait Audio is stopped if Audio is working. */
 			if (dp_get_audio_state(dp) != DP_AUDIO_DISABLE) {
@@ -3114,6 +3115,21 @@ static ssize_t usbc_cable_disconnect_store(struct device *dev, struct device_att
 }
 static DEVICE_ATTR_WO(usbc_cable_disconnect);
 
+static ssize_t hdcp_negotiation_store(struct device *dev, struct device_attribute *attr,
+					   const char *buf, size_t size)
+{
+	struct dp_device *dp = dev_get_drvdata(dev);
+
+	if (dp->state == DP_STATE_RUN && !dp->hdcp_desired) {
+		dp_info(dp, "trigger hdcp negotiation\n");
+		hdcp_dplink_connect_state(DP_CP_DESIRED);
+		dp->hdcp_desired = true;
+	}
+
+	return size;
+}
+static DEVICE_ATTR_WO(hdcp_negotiation);
+
 static struct attribute *dp_attrs[] = { &dev_attr_orientation.attr,
 					&dev_attr_pin_assignment.attr,
 					&dev_attr_hpd.attr,
@@ -3121,6 +3137,7 @@ static struct attribute *dp_attrs[] = { &dev_attr_orientation.attr,
 					&dev_attr_link_status.attr,
 					&dev_attr_irq_hpd.attr,
 					&dev_attr_usbc_cable_disconnect.attr,
+					&dev_attr_hdcp_negotiation.attr,
 					NULL };
 
 static const struct attribute_group dp_group = {

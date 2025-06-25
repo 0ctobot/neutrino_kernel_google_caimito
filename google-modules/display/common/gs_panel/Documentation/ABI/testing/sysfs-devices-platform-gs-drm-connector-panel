@@ -283,3 +283,11 @@ Description:
   Could assist connector targeting appropriate DCS timing during idle scenarios with
   expected present information.
   The unit is nanosecond.
+
+What: /sys/class/drm/card0/device/primary-panel/backlight/panel0-backlight/lp_state
+Date: April 2025
+KernelVersion: 6.1
+Contact: "Chris Lu" <luchris@google.com>
+Description:
+  Userspace client uses this to read backlight LP state which indicates different brightness
+  levels in LP mode.

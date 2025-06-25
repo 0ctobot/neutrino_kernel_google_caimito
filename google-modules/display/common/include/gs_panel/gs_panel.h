@@ -1258,7 +1258,6 @@ struct gs_panel {
 	struct backlight_device *bl;
 	struct mutex mode_lock;
 	struct mutex bl_state_lock;
-	struct mutex lp_state_lock;
 	const struct gs_binned_lp *current_binned_lp;
 	struct drm_property_blob *lp_mode_blob;
 	char panel_id[PANEL_ID_MAX];

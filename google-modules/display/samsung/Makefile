@@ -14,7 +14,7 @@ EXTRA_SYMBOLS  += $(OUT_DIR)/../private/google-modules/bms/misc/Module.symvers
 EXTRA_SYMBOLS  += $(OUT_DIR)/../private/google-modules/hdcp/samsung/Module.symvers
 EXTRA_SYMBOLS += $(OUT_DIR)/../private/google-modules/display/common/gs_drm/Module.symvers
 
-modules modules_install headers_install clean:
+modules modules_install headers_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) W=1 \
 	$(KBUILD_OPTIONS) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" $(@)
 
