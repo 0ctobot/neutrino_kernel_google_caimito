@@ -178,14 +178,9 @@ static irqreturn_t ntirous_timesync_isr(int irq, void *data)
 	struct nitrous_bt_lpm *lpm = data;
 	ktime_t timestamp;
 	dev_dbg(lpm->dev, "Timesync IRQ: %u\n", gpiod_get_value(lpm->gpio_timesync));
-	if (unlikely(lpm->rfkill_blocked)) {
-		dev_err(lpm->dev, "Unexpected Timesync IRQ\n");
-		return IRQ_HANDLED;
-	}
-
 	timestamp = ktime_get_boottime();
 	kfifo_in(&lpm->timestamp_queue, &timestamp, sizeof(ktime_t));
-	logbuffer_log(lpm->log, "Timesync: %lld\n", ktime_to_us(timestamp));
+	logbuffer_log(lpm->log, "Timesync: %lld", ktime_to_us(timestamp));
 	return IRQ_HANDLED;
 }
 
@@ -400,17 +395,35 @@ static void nitrous_lpm_remove_proc_entries(struct nitrous_bt_lpm *lpm)
 		remove_proc_entry("btwake", sleep_dir);
 		remove_proc_entry("sleep", bluetooth_dir);
 	}
-
-	if (lpm->timesync_state) {
+	if (lpm->wakelock_ctrl) {
 		remove_proc_entry("wakelock_ctrl", bluetooth_dir);
 	}
-	remove_proc_entry("timesync", bluetooth_dir);
+	if (lpm->timesync_state) {
+		remove_proc_entry("timesync", bluetooth_dir);
+	}
 	remove_proc_entry("bluetooth", 0);
 	if (lpm->proc) {
 		devm_kfree(lpm->dev, lpm->proc);
 		lpm->proc = NULL;
 	}
 }
+
+static void toggle_timesync(struct nitrous_bt_lpm *lpm) {
+	int rc;
+
+	if (lpm->timesync_state == TIMESYNC_NOT_SUPPORTED)
+		return;
+	rc = devm_request_irq(lpm->dev, lpm->irq_timesync, ntirous_timesync_isr,
+			IRQF_TRIGGER_RISING, "bt_timesync", lpm);
+	if (unlikely(rc)) {
+		lpm->timesync_state = TIMESYNC_SUPPORTED;
+		dev_logbuffer_logk(lpm->dev, lpm->log, LOGLEVEL_ERR, "Unable to request IRQ for bt_timesync GPIO");
+	} else {
+		lpm->timesync_state = TIMESYNC_ENABLED;
+		logbuffer_log(lpm->log, "Rquest IRQ for bt_timesync GPIO successful");
+	}
+}
+
 
 static int nitrous_lpm_init(struct nitrous_bt_lpm *lpm)
 {
@@ -523,6 +536,7 @@ static int nitrous_lpm_init(struct nitrous_bt_lpm *lpm)
 			rc = -ENOMEM;
 			goto fail;
 		}
+		toggle_timesync(lpm);
 	}
 
 	return 0;
@@ -542,28 +556,6 @@ static void nitrous_lpm_cleanup(struct nitrous_bt_lpm *lpm)
 	}
 
 	nitrous_lpm_remove_proc_entries(lpm);
-}
-
-static void toggle_timesync(struct nitrous_bt_lpm *lpm, bool enable) {
-	int rc;
-
-	if (!lpm || lpm->timesync_state == TIMESYNC_NOT_SUPPORTED)
-		return;
-	if (enable) {
-		rc = devm_request_irq(lpm->dev, lpm->irq_timesync, ntirous_timesync_isr,
-				IRQF_TRIGGER_RISING, "bt_timesync", lpm);
-		if (unlikely(rc)) {
-			lpm->timesync_state = TIMESYNC_SUPPORTED;
-			dev_err(lpm->dev, "Unable to request IRQ for bt_timesync GPIO\n");
-			logbuffer_log(lpm->log, "Unable to request IRQ for bt_timesync GPIO");
-		} else {
-			lpm->timesync_state = TIMESYNC_ENABLED;
-		}
-	} else {
-		if (lpm->timesync_state != TIMESYNC_ENABLED)
-			return;
-		devm_free_irq(lpm->dev, lpm->irq_timesync, lpm);
-	}
 }
 
 /*
@@ -649,8 +641,6 @@ static int nitrous_rfkill_set_power(void *data, bool blocked)
 		exynos_update_ip_idle_status(lpm->idle_bt_rx_ip_index, STATUS_IDLE);
 	}
 	lpm->rfkill_blocked = blocked;
-
-	toggle_timesync(lpm, !blocked);
 
 	/* wait for device to power cycle and come out of reset */
 	usleep_range(10000, 20000);
