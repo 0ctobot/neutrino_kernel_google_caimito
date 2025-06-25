@@ -95,6 +95,9 @@
 				/* phandle used for shutdown calls to s5910 clk-buffer*/
 				google,clk-buffer = <&s5910>;
 
+				/* enable pcie dyanmic speed change */
+				use-dynamic-link-spd;
+
 				/* phandle used for CP pmic warm reset sequence */
 				google,cp-pmic-spmi = <&pmic>;
 
