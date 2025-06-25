@@ -179,6 +179,12 @@ enum IFPMIC {
 	MAX77779
 };
 
+enum PMIC_SIG_PARAM {
+	SIG_LEVEL,
+	SIG_REL_TIME,
+	SIG_DEGLITCH_TIME,
+};
+
 struct irq_duration_stats {
 	atomic_t lt_5ms_count;
 	atomic_t bt_5ms_10ms_count;
@@ -270,6 +276,7 @@ struct bcl_core_conf {
 	unsigned int con_heavy;
 	unsigned int con_light;
 	unsigned int clkdivstep;
+	unsigned int clkdivstep_last;
 	unsigned int vdroop_flt;
 	unsigned int clk_stats;
 	unsigned int clk_out;
@@ -378,7 +385,9 @@ struct bcl_device {
 	struct delayed_work rd_last_curr_work;
 
 	bool batt_psy_initialized;
-	bool enabled;
+	bool initialized;
+	bool sw_mitigation_enabled;
+	bool hw_mitigation_enabled;
 
 	unsigned int main_offsrc1;
 	unsigned int main_offsrc2;
@@ -514,7 +523,8 @@ void google_bcl_qos_update(struct bcl_zone *zone, bool throttle);
 int google_bcl_setup_qos(struct bcl_device *bcl_dev);
 void google_bcl_remove_qos(struct bcl_device *bcl_dev);
 void google_init_debugfs(struct bcl_device *bcl_dev);
-int uvlo_reg_read(struct device *dev, enum IFPMIC ifpmic, int triggered, unsigned int *val);
+int uvlo_reg_read(struct device *dev, enum IFPMIC ifpmic, int triggered, unsigned int *val,
+					enum PMIC_SIG_PARAM pmic_sig_param);
 int batoilo_reg_read(struct device *dev, enum IFPMIC ifpmic, int oilo, unsigned int *val);
 int max77759_get_irq(struct bcl_device *bcl_dev, u8 *irq_val);
 int max77759_clr_irq(struct bcl_device *bcl_dev, int idx);

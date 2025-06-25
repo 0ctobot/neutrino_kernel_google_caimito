@@ -13,7 +13,6 @@
 #include <soc/google/modem_notifier.h>
 #include "bcl.h"
 
-#if IS_ENABLED(CONFIG_SOC_ZUMA)
 static enum BCL_BATT_IRQ id_to_ind(int id)
 {
 	switch (id) {
@@ -27,9 +26,7 @@ static enum BCL_BATT_IRQ id_to_ind(int id)
 	}
 	return MAX_BCL_BATT_IRQ;
 }
-#endif
 
-#if IS_ENABLED(CONFIG_SOC_ZUMA)
 static void bin_incr_ifpmic(struct bcl_device *bcl_dev, enum BCL_BATT_IRQ batt,
 				enum CONCURRENT_PWRWARN_IRQ pwrwarn, ktime_t end_time)
 {
@@ -89,15 +86,15 @@ end_bin_incr_ifpmic:
 
 	bcl_dev->ifpmic_irq_bins[batt][pwrwarn].start_time = 0;
 }
-#endif
 
 void update_irq_end_times(struct bcl_device *bcl_dev, int id)
 {
-#if IS_ENABLED(CONFIG_SOC_ZUMA)
 	ktime_t end_time;
 	int irq_ind = -1;
 	int i;
 	bool pwrwarn_irq_triggered;
+	bool is_rffe_channel_valid = bcl_dev->rffe_channel >= 0 &&
+				     bcl_dev->rffe_channel < METER_CHANNEL_MAX;
 
 	irq_ind = id_to_ind(id);
 	if (irq_ind == MAX_BCL_BATT_IRQ)
@@ -111,17 +108,23 @@ void update_irq_end_times(struct bcl_device *bcl_dev, int id)
 			break;
 		case MMWAVE_BCL_BIN:
 			pwrwarn_irq_triggered =
-				bcl_dev->sub_pwr_warn_triggered[bcl_dev->rffe_channel];
+				is_rffe_channel_valid ?
+					bcl_dev->sub_pwr_warn_triggered
+						[bcl_dev->rffe_channel] :
+					false;
 			break;
 		case RFFE_BCL_BIN:
 			pwrwarn_irq_triggered =
-				bcl_dev->main_pwr_warn_triggered[bcl_dev->rffe_channel];
+				is_rffe_channel_valid ?
+					bcl_dev->main_pwr_warn_triggered
+						[bcl_dev->rffe_channel] :
+					false;
 			break;
 		}
 		if (pwrwarn_irq_triggered)
 			bin_incr_ifpmic(bcl_dev, irq_ind, i, end_time);
 	}
-#endif
+
 }
 
 /*
@@ -130,11 +133,12 @@ void update_irq_end_times(struct bcl_device *bcl_dev, int id)
  */
 void update_irq_start_times(struct bcl_device *bcl_dev, int id)
 {
-#if IS_ENABLED(CONFIG_SOC_ZUMA)
 	ktime_t start_time;
 
 	/* Check if it is a input IRQ */
 	enum BCL_BATT_IRQ irq_ind = id_to_ind(id);
+	bool is_rffe_channel_valid = bcl_dev->rffe_channel >= 0 &&
+				     bcl_dev->rffe_channel < METER_CHANNEL_MAX;
 
 	if (irq_ind == MAX_BCL_BATT_IRQ)
 		return;
@@ -144,11 +148,14 @@ void update_irq_start_times(struct bcl_device *bcl_dev, int id)
 
 	start_time = ktime_get();
 	bcl_dev->ifpmic_irq_bins[irq_ind][NONE_BCL_BIN].start_time = start_time;
+
+	if (!is_rffe_channel_valid) {
+		return;
+	}
 	if (bcl_dev->sub_pwr_warn_triggered[bcl_dev->rffe_channel])
 		bcl_dev->ifpmic_irq_bins[irq_ind][MMWAVE_BCL_BIN].start_time = start_time;
 	if (bcl_dev->main_pwr_warn_triggered[bcl_dev->rffe_channel])
 		bcl_dev->ifpmic_irq_bins[irq_ind][RFFE_BCL_BIN].start_time = start_time;
-#endif
 }
 
 void pwrwarn_update_start_time(struct bcl_device *bcl_dev,
@@ -156,7 +163,6 @@ void pwrwarn_update_start_time(struct bcl_device *bcl_dev,
 					bool *pwr_warn_triggered,
 					enum CONCURRENT_PWRWARN_IRQ bin_ind)
 {
-#if IS_ENABLED(CONFIG_SOC_ZUMA)
 	ktime_t start_time;
 	int i;
 	bool is_rf = bcl_dev->rffe_channel == id;
@@ -172,13 +178,11 @@ void pwrwarn_update_start_time(struct bcl_device *bcl_dev,
 		}
 	}
 	bins[id].start_time = start_time;
-#endif
 }
 
 void pwrwarn_update_end_time(struct bcl_device *bcl_dev, int id, struct irq_duration_stats *bins,
 				enum CONCURRENT_PWRWARN_IRQ bin_ind)
 {
-#if IS_ENABLED(CONFIG_SOC_ZUMA)
 	ktime_t end_time;
 	ktime_t time_delta;
 	int i;
@@ -201,11 +205,9 @@ void pwrwarn_update_end_time(struct bcl_device *bcl_dev, int id, struct irq_dura
 	else
 		atomic_inc(&(bins[id].gt_10ms_count));
 	bins[id].start_time = 0;
-#endif
 }
 
 void trace_bcl_zone_stats(struct bcl_zone *zone, int value) {
-#if IS_ENABLED(CONFIG_SOC_ZUMA)
 	int idx = zone->idx;
 
 	if (!trace_clock_set_rate_enabled())
@@ -221,5 +223,4 @@ void trace_bcl_zone_stats(struct bcl_zone *zone, int value) {
 		trace_clock_set_rate("BCL_ZONE_BATOILO2", value, raw_smp_processor_id());
 	else if (idx == SMPL_WARN)
 		trace_clock_set_rate("BCL_ZONE_SMPL_WARN", value, raw_smp_processor_id());
-#endif
 }

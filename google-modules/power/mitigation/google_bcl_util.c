@@ -83,7 +83,7 @@ static int bcl_dev_cpu_notifier(struct notifier_block *nfb, unsigned long action
 	if (!bcl_dev)
 		return -ENODEV;
 
-	if (!bcl_dev->enabled)
+	if (!bcl_dev->initialized)
 		return -ENODEV;
 
 	if (cpu < bcl_dev->cpu1_cluster)

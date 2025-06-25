@@ -211,7 +211,7 @@ static irqreturn_t latched_irq_handler(int irq, void *data)
 
 	idx = zone->idx;
 	bcl_dev = zone->parent;
-	if (!smp_load_acquire(&bcl_dev->enabled)) {
+	if (!smp_load_acquire(&bcl_dev->sw_mitigation_enabled)) {
 		if (zone->irq_type == IF_PMIC)
 			bcl_cb_clr_irq(bcl_dev, idx);
 		return IRQ_HANDLED;
@@ -326,7 +326,7 @@ static int google_bcl_read_soc(struct bcl_device *bcl_dev, int *val)
 
 	if (IS_ERR_OR_NULL(bcl_dev) || IS_ERR_OR_NULL(bcl_dev->device))
 		return 0;
-	if (!smp_load_acquire(&bcl_dev->enabled))
+	if (!smp_load_acquire(&bcl_dev->initialized))
 		return 0;
 	if (!bcl_dev->batt_psy)
 		bcl_dev->batt_psy = google_get_power_supply(bcl_dev, PSY_NAME);
@@ -505,7 +505,7 @@ static int google_init_ratio(struct bcl_device *data, enum SUBSYSTEM_SOURCE idx)
 	if (IS_ERR_OR_NULL(data->device))
 		return -EIO;
 
-	if (!smp_load_acquire(&data->enabled))
+	if (!smp_load_acquire(&data->initialized))
 		return -EINVAL;
 
 	if (!bcl_is_subsystem_on(data, subsystem_pmu[idx]))
@@ -564,7 +564,7 @@ unsigned int google_get_db(struct bcl_device *data, enum MPMM_SOURCE index)
 
 	if (IS_ERR_OR_NULL(data))
 		return -ENOMEM;
-	if (!smp_load_acquire(&data->enabled))
+	if (!smp_load_acquire(&data->initialized))
 		return -EINVAL;
 	if (!data->sysreg_cpucl0) {
 		dev_err(data->device, "Error in sysreg_cpucl0\n");
@@ -594,7 +594,7 @@ int google_set_db(struct bcl_device *data, unsigned int value, enum MPMM_SOURCE 
 
 	if (IS_ERR_OR_NULL(data))
 		return -ENOMEM;
-	if (!smp_load_acquire(&data->enabled))
+	if (!smp_load_acquire(&data->initialized))
 		return -EINVAL;
 	if (!data->sysreg_cpucl0) {
 		dev_err(data->device, "Error in sysreg_cpucl0\n");
@@ -710,7 +710,7 @@ static irqreturn_t vdroop_irq_thread_fn(int irq, void *data)
 	if (IS_ERR_OR_NULL(bcl_dev))
 		return IRQ_HANDLED;
 	bcl_cb_clr_irq(bcl_dev, BATOILO);
-	if (!smp_load_acquire(&bcl_dev->enabled))
+	if (!smp_load_acquire(&bcl_dev->sw_mitigation_enabled))
 		return IRQ_HANDLED;
 
 	/* This is only BATOILO */
@@ -892,7 +892,7 @@ static irqreturn_t sub_pwr_warn_irq_handler(int irq, void *data)
 	struct bcl_device *bcl_dev = data;
 	int i;
 
-	if (!smp_load_acquire(&bcl_dev->enabled))
+	if (!smp_load_acquire(&bcl_dev->sw_mitigation_enabled))
 		return IRQ_HANDLED;
 
 	for (i = 0; i < METER_CHANNEL_MAX; i++) {
@@ -922,7 +922,7 @@ static irqreturn_t main_pwr_warn_irq_handler(int irq, void *data)
 	struct bcl_device *bcl_dev = data;
 	int i;
 
-	if (!smp_load_acquire(&bcl_dev->enabled))
+	if (!smp_load_acquire(&bcl_dev->sw_mitigation_enabled))
 		return IRQ_HANDLED;
 
 	for (i = 0; i < METER_CHANNEL_MAX; i++) {
@@ -1282,8 +1282,8 @@ static int intf_pmic_init(struct bcl_device *bcl_dev)
 	batoilo2_lvl = BO_STEP * lvl + bcl_dev->batt_irq_conf1.batoilo_lower_limit;
 	batoilo_reg_read(bcl_dev->intf_pmic_dev, bcl_dev->ifpmic, BATOILO1, &lvl);
 	batoilo_lvl = BO_STEP * lvl + bcl_dev->batt_irq_conf1.batoilo_lower_limit;
-	uvlo_reg_read(bcl_dev->intf_pmic_dev, bcl_dev->ifpmic, UVLO1, &uvlo1_lvl);
-	uvlo_reg_read(bcl_dev->intf_pmic_dev, bcl_dev->ifpmic, UVLO2, &uvlo2_lvl);
+	uvlo_reg_read(bcl_dev->intf_pmic_dev, bcl_dev->ifpmic, UVLO1, &uvlo1_lvl, SIG_LEVEL);
+	uvlo_reg_read(bcl_dev->intf_pmic_dev, bcl_dev->ifpmic, UVLO2, &uvlo2_lvl, SIG_LEVEL);
 
 	if (bcl_dev->ifpmic == MAX77759) {
 		ret = google_bcl_register_zone(bcl_dev, UVLO1, "vdroop1", bcl_dev->vdroop1_pin,
@@ -2419,7 +2419,10 @@ static int google_bcl_probe(struct platform_device *pdev)
 	google_bcl_clk_div(bcl_dev);
 	google_bcl_parse_irq_config(bcl_dev);
 
-	smp_store_release(&bcl_dev->enabled, true);
+	smp_store_release(&bcl_dev->sw_mitigation_enabled, true);
+	smp_store_release(&bcl_dev->hw_mitigation_enabled, true);
+	smp_store_release(&bcl_dev->initialized, true);
+
 	dev_info(bcl_dev->device, "BCL done\n");
 
 	return 0;

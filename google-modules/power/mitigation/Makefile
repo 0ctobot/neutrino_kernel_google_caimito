@@ -31,6 +31,6 @@ endif
 KBUILD_OPTIONS += CONFIG_GOOGLE_BCL=m
 include $(KERNEL_SRC)/../private/google-modules/soc/gs/Makefile.include
 
-modules modules_install clean:
+modules modules_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) \
 	$(KBUILD_OPTIONS) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" $(@)

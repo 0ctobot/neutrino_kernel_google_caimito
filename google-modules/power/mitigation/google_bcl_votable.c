@@ -52,7 +52,7 @@ static int google_bcl_wlc_votable_callback(struct gvotable_election *el,
 	int ret;
 	u8 wlc_tx_enable = (long)value ? WLC_ENABLED_TX : WLC_DISABLED_TX;
 
-	if (!smp_load_acquire(&bcl_dev->enabled))
+	if (!smp_load_acquire(&bcl_dev->initialized))
 		return -EINVAL;
 #if IS_ENABLED(CONFIG_SOC_ZUMAPRO)
 	ret = max77779_adjust_batoilo_lvl(bcl_dev, wlc_tx_enable,
@@ -80,7 +80,7 @@ static int google_bcl_usb_votable_callback(struct gvotable_election *el,
 	u8 usb_enable = (long)value ? USB_PLUGGED: USB_UNPLUGGED;
 	union power_supply_propval prop = { };
 
-	if (!smp_load_acquire(&bcl_dev->enabled))
+	if (!smp_load_acquire(&bcl_dev->initialized))
 		return -EINVAL;
 	if (bcl_dev->usb_otg_conf && bcl_dev->otg_psy)
 		err = power_supply_get_property(bcl_dev->otg_psy,

@@ -91,6 +91,27 @@ static ssize_t safe_emit_bcl_time(char* buf, struct bcl_zone * zone) {
 		return sysfs_emit(buf, "%lld\n", zone->bcl_stats._time);
 }
 
+static void irq_safe_config(struct bcl_zone *zone, bool disabled)
+{
+	if (smp_load_acquire(&zone->disabled) == disabled)
+		return;
+
+	smp_store_release(&zone->disabled, disabled);
+
+	if (disabled)
+		disable_irq_nosync(zone->bcl_irq);
+	else
+		enable_irq(zone->bcl_irq);
+}
+
+static void irq_safe_config_extended(struct bcl_zone *zone, bool disabled,
+				     bool sw_mitigation_enabled)
+{
+	if (!sw_mitigation_enabled)
+		return;
+	irq_safe_config(zone, disabled);
+}
+
 static ssize_t batoilo_count_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
@@ -636,16 +657,19 @@ static ssize_t big_db_settings_show(struct device *dev, struct device_attribute 
 
 static DEVICE_ATTR_RW(big_db_settings);
 
-static ssize_t enable_mitigation_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t enable_hw_mitigation_show(struct device *dev,
+					 struct device_attribute *attr,
+					 char *buf)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
 	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
 
-	return sysfs_emit(buf, "%d\n", READ_ONCE(bcl_dev->enabled));
+	return sysfs_emit(buf, "%d\n", READ_ONCE(bcl_dev->hw_mitigation_enabled));
 }
 
-static ssize_t enable_mitigation_store(struct device *dev, struct device_attribute *attr,
-				       const char *buf, size_t size)
+static ssize_t enable_hw_mitigation_store(struct device *dev,
+					  struct device_attribute *attr,
+					  const char *buf, size_t size)
 {
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
 	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
@@ -657,50 +681,93 @@ static ssize_t enable_mitigation_store(struct device *dev, struct device_attribu
 	if (ret)
 		return ret;
 
-	if (smp_load_acquire(&bcl_dev->enabled) == value)
+	if (smp_load_acquire(&bcl_dev->hw_mitigation_enabled) == value)
 		return size;
 
 	/* Kernel filesystem serializes sysfs store callbacks */
-	smp_store_release(&bcl_dev->enabled, value);
+	smp_store_release(&bcl_dev->hw_mitigation_enabled, value);
 	if (value) {
-		bcl_dev->core_conf[SUBSYSTEM_TPU].clkdivstep |= 0x1;
-		bcl_dev->core_conf[SUBSYSTEM_GPU].clkdivstep |= 0x1;
-		bcl_dev->core_conf[SUBSYSTEM_AUR].clkdivstep |= 0x1;
-
-		for (i = SUBSYSTEM_CPU0; i <= SUBSYSTEM_CPU2; i++) {
-			ret = cpu_buff_read(bcl_dev, i, CPU_BUFF_CLKDIVSTEP, &reg);
-			if (ret < 0)
-				return ret;
-
-			ret = cpu_buff_write(bcl_dev, i, CPU_BUFF_CLKDIVSTEP, reg | 0x1);
-			if (ret < 0)
-				return ret;
+		for (i = SUBSYSTEM_CPU0; i < SUBSYSTEM_SOURCE_MAX; i++) {
+			if (i <= SUBSYSTEM_CPU2) {
+				ret = cpu_buff_write(bcl_dev, i, CPU_BUFF_CLKDIVSTEP,
+						bcl_dev->core_conf[i].clkdivstep_last | 0x1);
+				if (ret < 0) {
+					return ret;
+				}
+			} else {
+				bcl_dev->core_conf[i].clkdivstep =
+					bcl_dev->core_conf[i].clkdivstep_last;
+			}
 		}
-		for (i = 0; i < TRIGGERED_SOURCE_MAX; i++)
-			if (bcl_dev->zone[i] && i != BATOILO)
-				enable_irq(bcl_dev->zone[i]->bcl_irq);
 	} else {
-		bcl_dev->core_conf[SUBSYSTEM_TPU].clkdivstep &= ~(1 << 0);
-		bcl_dev->core_conf[SUBSYSTEM_GPU].clkdivstep &= ~(1 << 0);
-		bcl_dev->core_conf[SUBSYSTEM_AUR].clkdivstep &= ~(1 << 0);
-
-		for (i = SUBSYSTEM_CPU0; i <= SUBSYSTEM_CPU2; i++) {
-			ret = cpu_buff_read(bcl_dev, i, CPU_BUFF_CLKDIVSTEP, &reg);
-			if (ret < 0)
-				return ret;
-
-			ret = cpu_buff_write(bcl_dev, i, CPU_BUFF_CLKDIVSTEP, reg & ~(1 << 0));
-			if (ret < 0)
-				return ret;
+		for (i = SUBSYSTEM_CPU0; i < SUBSYSTEM_SOURCE_MAX; i++) {
+			if (i <= SUBSYSTEM_CPU2) {
+				ret = cpu_buff_read(bcl_dev, i, CPU_BUFF_CLKDIVSTEP, &reg);
+				if (ret < 0) {
+					return ret;
+				}
+				bcl_dev->core_conf[i].clkdivstep_last = reg;
+				ret = cpu_buff_write(bcl_dev, i,
+						     CPU_BUFF_CLKDIVSTEP,
+						     reg & ~(1 << 0));
+				if (ret < 0) {
+					return ret;
+				}
+			} else {
+				bcl_dev->core_conf[i].clkdivstep_last =
+					bcl_dev->core_conf[i].clkdivstep;
+				bcl_dev->core_conf[i].clkdivstep &= ~(1 << 0);
+			}
 		}
-		for (i = 0; i < TRIGGERED_SOURCE_MAX; i++)
-			if (bcl_dev->zone[i] && i != BATOILO)
-				disable_irq(bcl_dev->zone[i]->bcl_irq);
 	}
 	return size;
 }
 
-static DEVICE_ATTR_RW(enable_mitigation);
+static DEVICE_ATTR_RW(enable_hw_mitigation);
+
+static ssize_t enable_sw_mitigation_show(struct device *dev,
+					 struct device_attribute *attr,
+					 char *buf)
+{
+	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+
+	return sysfs_emit(buf, "%d\n", READ_ONCE(bcl_dev->sw_mitigation_enabled));
+}
+
+static ssize_t enable_sw_mitigation_store(struct device *dev,
+					  struct device_attribute *attr,
+					  const char *buf, size_t size)
+{
+	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+	bool value;
+	int ret, i;
+
+	ret = kstrtobool(buf, &value);
+	if (ret)
+		return ret;
+
+	if (smp_load_acquire(&bcl_dev->sw_mitigation_enabled) == value)
+		return size;
+
+	/* Kernel filesystem serializes sysfs store callbacks */
+	smp_store_release(&bcl_dev->sw_mitigation_enabled, value);
+	if (value) {
+		for (i = 0; i < TRIGGERED_SOURCE_MAX; i++)
+			if (bcl_dev->zone[i] && i != BATOILO)
+				irq_safe_config(bcl_dev->zone[i],
+						false /* disabled */);
+	} else {
+		for (i = 0; i < TRIGGERED_SOURCE_MAX; i++)
+			if (bcl_dev->zone[i] && i != BATOILO)
+				irq_safe_config(bcl_dev->zone[i],
+						true /* disabled */);
+	}
+	return size;
+}
+
+static DEVICE_ATTR_RW(enable_sw_mitigation);
 
 static ssize_t enable_rffe_mitigation_show(struct device *dev, struct device_attribute *attr,
 					char *buf)
@@ -911,7 +978,7 @@ static ssize_t ready_show(struct device *dev, struct device_attribute *attr, cha
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
 	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
 
-	return sysfs_emit(buf, "%d\n", READ_ONCE(bcl_dev->enabled));
+	return sysfs_emit(buf, "%d\n", READ_ONCE(bcl_dev->initialized));
 }
 static DEVICE_ATTR_RO(ready);
 
@@ -927,7 +994,8 @@ static DEVICE_ATTR_RO(ifpmic);
 static struct attribute *instr_attrs[] = {
 	&dev_attr_mid_db_settings.attr,
 	&dev_attr_big_db_settings.attr,
-	&dev_attr_enable_mitigation.attr,
+	&dev_attr_enable_sw_mitigation.attr,
+	&dev_attr_enable_hw_mitigation.attr,
 	&dev_attr_enable_rffe_mitigation.attr,
 	&dev_attr_main_offsrc1.attr,
 	&dev_attr_main_offsrc2.attr,
@@ -958,7 +1026,34 @@ static const struct attribute_group instr_group = {
 	.name = "instruction",
 };
 
-int uvlo_reg_read(struct device *dev, enum IFPMIC ifpmic, int triggered, unsigned int *val)
+static int get_uvlo_reg(enum IFPMIC ifpmic, int triggered,
+			enum PMIC_SIG_PARAM pmic_sig_param)
+{
+	if (ifpmic == MAX77779) {
+		if (pmic_sig_param == SIG_LEVEL) {
+			return (triggered == UVLO1) ?
+				       MAX77779_SYS_UVLO1_CNFG_0 :
+				       MAX77779_SYS_UVLO2_CNFG_0;
+		} else {
+			/* SIG_DEGLITCH_TIME and SIG_REL_TIME are the same cnfg. */
+			return (triggered == UVLO1) ?
+				       MAX77779_SYS_UVLO1_CNFG_1 :
+				       MAX77779_SYS_UVLO2_CNFG_1;
+		}
+	} else {
+		if (pmic_sig_param == SIG_DEGLITCH_TIME) {
+			/* UVLO1, UVLO2 are in the same cnfg */
+			return MAX77759_CHG_CNFG_17;
+		} else {
+			/* SIG_LEVEL and SIG_REL_TIME are the same cnfg */
+			return (triggered == UVLO1) ? MAX77759_CHG_CNFG_15 :
+						      MAX77759_CHG_CNFG_16;
+		}
+	}
+}
+
+int uvlo_reg_read(struct device *dev, enum IFPMIC ifpmic, int triggered,
+		  unsigned int *val, enum PMIC_SIG_PARAM pmic_sig_param)
 {
 	int ret;
 	uint8_t reg, regval;
@@ -967,57 +1062,131 @@ int uvlo_reg_read(struct device *dev, enum IFPMIC ifpmic, int triggered, unsigne
 		return -ENODEV;
 
 	if (ifpmic == MAX77779) {
-		reg = (triggered == UVLO1) ? MAX77779_SYS_UVLO1_CNFG_0 : MAX77779_SYS_UVLO2_CNFG_0;
+		reg = get_uvlo_reg(ifpmic, triggered, pmic_sig_param);
 		ret = max77779_external_chg_reg_read(dev, reg, &regval);
 		if (ret < 0)
 			return -EINVAL;
-		if (triggered == UVLO1)
-			*val = _max77779_sys_uvlo1_cnfg_0_sys_uvlo1_get(regval);
-		else
-			*val = _max77779_sys_uvlo2_cnfg_0_sys_uvlo2_get(regval);
+		if (triggered == UVLO1) {
+			if (pmic_sig_param == SIG_LEVEL) {
+				*val = _max77779_sys_uvlo1_cnfg_0_sys_uvlo1_get(
+					regval);
+			} else if (pmic_sig_param == SIG_REL_TIME) {
+				*val = _max77779_sys_uvlo1_cnfg_1_sys_uvlo1_rel_get(
+					regval);
+			} else if (pmic_sig_param == SIG_DEGLITCH_TIME) {
+				*val = _max77779_sys_uvlo1_cnfg_1_sys_uvlo1_det_get(
+					regval);
+			}
+
+		} else {
+			if (pmic_sig_param == SIG_LEVEL) {
+				*val = _max77779_sys_uvlo2_cnfg_0_sys_uvlo2_get(
+					regval);
+			} else if (pmic_sig_param == SIG_REL_TIME) {
+				*val = _max77779_sys_uvlo2_cnfg_1_sys_uvlo2_rel_get(
+					regval);
+			} else if (pmic_sig_param == SIG_DEGLITCH_TIME) {
+				*val = _max77779_sys_uvlo2_cnfg_1_sys_uvlo2_det_get(
+					regval);
+			}
+		}
 	} else {
-		reg = (triggered == UVLO1) ? MAX77759_CHG_CNFG_15 : MAX77759_CHG_CNFG_16;
+		reg = get_uvlo_reg(ifpmic, triggered, pmic_sig_param);
 		ret = max77759_external_reg_read(dev, reg, &regval);
 		if (ret < 0)
 			return -EINVAL;
-		if (triggered == UVLO1)
-			*val = _chg_cnfg_15_sys_uvlo1_get(regval);
-		else
-			*val = _chg_cnfg_16_sys_uvlo2_get(regval);
+		if (triggered == UVLO1) {
+			if (pmic_sig_param == SIG_LEVEL) {
+				*val = _chg_cnfg_15_sys_uvlo1_get(regval);
+			} else if (pmic_sig_param == SIG_REL_TIME) {
+				*val = _chg_cnfg_15_sys_uvlo1_rel_get(regval);
+			} else if (pmic_sig_param == SIG_DEGLITCH_TIME) {
+				*val = _chg_cnfg_17_sys_uvlo1_det_get(regval);
+			}
+		} else {
+			if (pmic_sig_param == SIG_LEVEL) {
+				*val = _chg_cnfg_16_sys_uvlo2_get(regval);
+			} else if (pmic_sig_param == SIG_REL_TIME) {
+				*val = _chg_cnfg_16_sys_uvlo2_rel_get(regval);
+			} else if (pmic_sig_param == SIG_DEGLITCH_TIME) {
+				*val = _chg_cnfg_17_sys_uvlo2_det_get(regval);
+			}
+		}
 	}
 	return ret;
 }
 
-static int uvlo_reg_write(struct device *dev, uint8_t val,
-			  enum IFPMIC ifpmic, int triggered)
+static int uvlo_reg_write(struct device *dev, uint8_t val, enum IFPMIC ifpmic,
+			  int triggered, enum PMIC_SIG_PARAM pmic_sig_param)
 {
 	int ret;
 	uint8_t reg, regval;
 
-	if (!dev)
-		return -ENODEV;
-
 	if (ifpmic == MAX77779) {
-		reg = (triggered == UVLO1) ? MAX77779_SYS_UVLO1_CNFG_0 : MAX77779_SYS_UVLO2_CNFG_0;
+		reg = get_uvlo_reg(ifpmic, triggered, pmic_sig_param);
 		ret = max77779_external_chg_reg_read(dev, reg, &regval);
 		if (ret < 0)
 			return -EINVAL;
-		if (triggered == UVLO1)
-			regval = _max77779_sys_uvlo1_cnfg_0_sys_uvlo1_set(regval, val);
-		else
-			regval = _max77779_sys_uvlo2_cnfg_0_sys_uvlo2_set(regval, val);
+		if (triggered == UVLO1) {
+			if (pmic_sig_param == SIG_LEVEL) {
+				regval =
+					_max77779_sys_uvlo1_cnfg_0_sys_uvlo1_set(
+						regval, val);
+			} else if (pmic_sig_param == SIG_REL_TIME) {
+				regval =
+					_max77779_sys_uvlo1_cnfg_1_sys_uvlo1_rel_set(
+						regval, val);
+			} else if (pmic_sig_param == SIG_DEGLITCH_TIME) {
+				regval =
+					_max77779_sys_uvlo1_cnfg_1_sys_uvlo1_det_set(
+						regval, val);
+			}
+		} else {
+			if (pmic_sig_param == SIG_LEVEL) {
+				regval =
+					_max77779_sys_uvlo2_cnfg_0_sys_uvlo2_set(
+						regval, val);
+			} else if (pmic_sig_param == SIG_REL_TIME) {
+				regval =
+					_max77779_sys_uvlo2_cnfg_1_sys_uvlo2_rel_set(
+						regval, val);
+			} else if (pmic_sig_param == SIG_DEGLITCH_TIME) {
+				regval =
+					_max77779_sys_uvlo2_cnfg_1_sys_uvlo2_det_set(
+						regval, val);
+			}
+		}
 		ret = max77779_external_chg_reg_write(dev, reg, regval);
 		if (ret < 0)
 			return -EINVAL;
 	} else {
-		reg = (triggered == UVLO1) ? MAX77759_CHG_CNFG_15 : MAX77759_CHG_CNFG_16;
+		reg = get_uvlo_reg(ifpmic, triggered, pmic_sig_param);
 		ret = max77759_external_reg_read(dev, reg, &regval);
 		if (ret < 0)
 			return -EINVAL;
-		if (triggered == UVLO1)
-			regval = _chg_cnfg_15_sys_uvlo1_set(regval, val);
-		else
-			regval = _chg_cnfg_16_sys_uvlo2_set(regval, val);
+		if (triggered == UVLO1) {
+			if (pmic_sig_param == SIG_LEVEL) {
+				regval =
+					_chg_cnfg_15_sys_uvlo1_set(regval, val);
+			} else if (pmic_sig_param == SIG_REL_TIME) {
+				regval = _chg_cnfg_15_sys_uvlo1_rel_set(regval,
+									val);
+			} else if (pmic_sig_param == SIG_DEGLITCH_TIME) {
+				regval = _chg_cnfg_17_sys_uvlo1_det_set(regval,
+									val);
+			}
+		} else {
+			if (pmic_sig_param == SIG_LEVEL) {
+				regval =
+					_chg_cnfg_16_sys_uvlo2_set(regval, val);
+			} else if (pmic_sig_param == SIG_REL_TIME) {
+				regval = _chg_cnfg_16_sys_uvlo2_rel_set(regval,
+									val);
+			} else if (pmic_sig_param == SIG_DEGLITCH_TIME) {
+				regval = _chg_cnfg_17_sys_uvlo2_det_set(regval,
+									val);
+			}
+		}
 		ret = max77759_external_reg_write(dev, reg, regval);
 		if (ret < 0)
 			return -EINVAL;
@@ -1037,7 +1206,8 @@ static ssize_t uvlo1_lvl_show(struct device *dev, struct device_attribute *attr,
 		return -EIO;
 	if (!bcl_dev->intf_pmic_dev)
 		return -EBUSY;
-	uvlo_reg_read(bcl_dev->intf_pmic_dev, bcl_dev->ifpmic, UVLO1, &uvlo1_lvl);
+	uvlo_reg_read(bcl_dev->intf_pmic_dev, bcl_dev->ifpmic, UVLO1,
+		      &uvlo1_lvl, SIG_LEVEL);
 	bcl_dev->zone[UVLO1]->bcl_lvl = VD_BATTERY_VOLTAGE - VD_STEP * uvlo1_lvl +
 			VD_LOWER_LIMIT - THERMAL_HYST_LEVEL;
 	return sysfs_emit(buf, "%dmV\n", VD_STEP * uvlo1_lvl + VD_LOWER_LIMIT);
@@ -1051,6 +1221,7 @@ static ssize_t uvlo1_lvl_store(struct device *dev,
 	unsigned int value;
 	uint8_t lvl;
 	int ret;
+	const bool sw_mit_en = smp_load_acquire(&bcl_dev->sw_mitigation_enabled);
 
 	ret = kstrtou32(buf, 10, &value);
 	if (ret)
@@ -1068,9 +1239,12 @@ static ssize_t uvlo1_lvl_store(struct device *dev,
 	if (!bcl_dev->intf_pmic_dev)
 		return -EIO;
 	lvl = (value - VD_LOWER_LIMIT) / VD_STEP;
-	disable_irq(bcl_dev->zone[UVLO1]->bcl_irq);
-	ret = uvlo_reg_write(bcl_dev->intf_pmic_dev, lvl, bcl_dev->ifpmic, UVLO1);
-	enable_irq(bcl_dev->zone[UVLO1]->bcl_irq);
+	irq_safe_config_extended(bcl_dev->zone[UVLO1], true /* disabled */,
+				 sw_mit_en);
+	ret = uvlo_reg_write(bcl_dev->intf_pmic_dev, lvl, bcl_dev->ifpmic,
+			     UVLO1, SIG_LEVEL);
+	irq_safe_config_extended(bcl_dev->zone[UVLO1], false /* disabled */,
+				 sw_mit_en);
 	if (ret)
 		return ret;
 	bcl_dev->zone[UVLO1]->bcl_lvl = VD_BATTERY_VOLTAGE - value - THERMAL_HYST_LEVEL;
@@ -1096,7 +1270,8 @@ static ssize_t uvlo2_lvl_show(struct device *dev, struct device_attribute *attr,
 		return sysfs_emit(buf, "disabled\n");
 	if (!bcl_dev->intf_pmic_dev)
 		return -EBUSY;
-	uvlo_reg_read(bcl_dev->intf_pmic_dev, bcl_dev->ifpmic, UVLO2, &uvlo2_lvl);
+	uvlo_reg_read(bcl_dev->intf_pmic_dev, bcl_dev->ifpmic, UVLO2,
+		      &uvlo2_lvl, SIG_LEVEL);
 	bcl_dev->zone[UVLO1]->bcl_lvl = VD_BATTERY_VOLTAGE - VD_STEP * uvlo2_lvl +
 			VD_LOWER_LIMIT - THERMAL_HYST_LEVEL;
 	return sysfs_emit(buf, "%dmV\n", VD_STEP * uvlo2_lvl + VD_LOWER_LIMIT);
@@ -1110,6 +1285,7 @@ static ssize_t uvlo2_lvl_store(struct device *dev,
 	unsigned int value;
 	uint8_t lvl;
 	int ret;
+	const bool sw_mit_en = smp_load_acquire(&bcl_dev->sw_mitigation_enabled);
 
 	ret = kstrtou32(buf, 10, &value);
 	if (ret)
@@ -1129,9 +1305,12 @@ static ssize_t uvlo2_lvl_store(struct device *dev,
 	if (!bcl_dev->intf_pmic_dev)
 		return -EIO;
 	lvl = (value - VD_LOWER_LIMIT) / VD_STEP;
-	disable_irq(bcl_dev->zone[UVLO2]->bcl_irq);
-	ret = uvlo_reg_write(bcl_dev->intf_pmic_dev, lvl, bcl_dev->ifpmic, UVLO2);
-	enable_irq(bcl_dev->zone[UVLO2]->bcl_irq);
+	irq_safe_config_extended(bcl_dev->zone[UVLO2], true /* disabled */,
+				 sw_mit_en);
+	ret = uvlo_reg_write(bcl_dev->intf_pmic_dev, lvl, bcl_dev->ifpmic,
+			     UVLO2, SIG_LEVEL);
+	irq_safe_config_extended(bcl_dev->zone[UVLO2], false /* disabled */,
+				 sw_mit_en);
 	if (ret)
 		return ret;
 	bcl_dev->zone[UVLO2]->bcl_lvl = VD_BATTERY_VOLTAGE - value - THERMAL_HYST_LEVEL;
@@ -1344,6 +1523,7 @@ static ssize_t smpl_lvl_store(struct device *dev,
 	unsigned int val;
 	u8 value;
 	int ret;
+	const bool sw_mit_en = smp_load_acquire(&bcl_dev->sw_mitigation_enabled);
 
 	ret = kstrtou32(buf, 10, &val);
 	if (ret)
@@ -1364,12 +1544,14 @@ static ssize_t smpl_lvl_store(struct device *dev,
 		dev_err(bcl_dev->device, "S2MPG1415 read 0x%x failed.", SMPL_WARN_CTRL);
 		return -EBUSY;
 	}
-	disable_irq(bcl_dev->zone[SMPL_WARN]->bcl_irq);
+	irq_safe_config_extended(bcl_dev->zone[SMPL_WARN], true /* disabled */,
+				 sw_mit_en);
 	value &= ~SMPL_WARN_MASK;
 	value |= ((val - SMPL_LOWER_LIMIT) / 100) << SMPL_WARN_SHIFT;
 	if (pmic_write(CORE_PMIC_MAIN, bcl_dev, SMPL_WARN_CTRL, value)) {
 		dev_err(bcl_dev->device, "i2c write error setting smpl_warn\n");
-		enable_irq(bcl_dev->zone[SMPL_WARN]->bcl_irq);
+		irq_safe_config_extended(bcl_dev->zone[SMPL_WARN],
+					 false /* disabled */, sw_mit_en);
 		return ret;
 	}
 	bcl_dev->zone[SMPL_WARN]->bcl_lvl = SMPL_BATTERY_VOLTAGE - val - THERMAL_HYST_LEVEL;
@@ -1378,7 +1560,8 @@ static ssize_t smpl_lvl_store(struct device *dev,
 		bcl_dev->zone[SMPL_WARN]->tz->trips[0].temperature = SMPL_BATTERY_VOLTAGE - val;
 		thermal_zone_device_update(bcl_dev->zone[SMPL_WARN]->tz, THERMAL_EVENT_UNSPECIFIED);
 	}
-	enable_irq(bcl_dev->zone[SMPL_WARN]->bcl_irq);
+	irq_safe_config_extended(bcl_dev->zone[SMPL_WARN], false /* disabled */,
+				 sw_mit_en);
 
 	return size;
 
@@ -1409,6 +1592,7 @@ static int set_ocp_lvl(struct bcl_device *bcl_dev, u64 val, u8 addr, u8 pmic, u8
 {
 	u8 value;
 	int ret;
+	const bool sw_mit_en = smp_load_acquire(&bcl_dev->sw_mitigation_enabled);
 
 	if (!bcl_dev)
 		return -EIO;
@@ -1423,7 +1607,8 @@ static int set_ocp_lvl(struct bcl_device *bcl_dev, u64 val, u8 addr, u8 pmic, u8
 		dev_err(bcl_dev->device, "S2MPG1415 read 0x%x failed.", addr);
 		return -EBUSY;
 	}
-	disable_irq(bcl_dev->zone[id]->bcl_irq);
+	irq_safe_config_extended(bcl_dev->zone[id], true /* disabled */,
+				 sw_mit_en);
 	value &= ~(OCP_WARN_MASK) << OCP_WARN_LVL_SHIFT;
 	value |= ((ulimit - val) / step) << OCP_WARN_LVL_SHIFT;
 	ret = pmic_write(pmic, bcl_dev, addr, value);
@@ -1433,7 +1618,8 @@ static int set_ocp_lvl(struct bcl_device *bcl_dev, u64 val, u8 addr, u8 pmic, u8
 		bcl_dev->zone[id]->tz->trips[0].temperature = val;
 		thermal_zone_device_update(bcl_dev->zone[id]->tz, THERMAL_EVENT_UNSPECIFIED);
 	}
-	enable_irq(bcl_dev->zone[id]->bcl_irq);
+	irq_safe_config_extended(bcl_dev->zone[id], false /* disabled */,
+				 sw_mit_en);
 
 	return ret;
 }
@@ -1720,6 +1906,249 @@ static struct attribute *triggered_lvl_attrs[] = {
 static const struct attribute_group triggered_lvl_group = {
 	.attrs = triggered_lvl_attrs,
 	.name = "triggered_lvl",
+};
+
+static ssize_t uvlo_rel_read(struct device *dev, struct device_attribute *attr,
+			     char *buf, unsigned int uvlo_id)
+{
+	struct platform_device *pdev =
+		container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+	unsigned int uvlo_rel;
+
+	if (!bcl_dev->zone[uvlo_id])
+		return -EINVAL;
+	if (!bcl_dev->intf_pmic_dev)
+		return -EBUSY;
+
+	uvlo_reg_read(bcl_dev->intf_pmic_dev, bcl_dev->ifpmic, uvlo_id,
+		      &uvlo_rel, SIG_REL_TIME);
+
+	return sysfs_emit(buf, "%#x\n", uvlo_rel);
+}
+
+static ssize_t uvlo_rel_write(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t size,
+			      unsigned int uvlo_id)
+{
+	struct platform_device *pdev =
+		container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+	unsigned int value;
+	int ret;
+
+	ret = kstrtou32(buf, 10, &value);
+	if (ret)
+		return ret;
+	if ((value & ~0x3) != 0x0) {
+		/* valid bit count is 2 */
+		dev_err(bcl_dev->device,
+			"UVLO REL %d outside of range 0b00 - 0b11.", value);
+		return -EINVAL;
+	}
+	if (!bcl_dev->zone[uvlo_id])
+		return -EINVAL;
+	if (!bcl_dev->intf_pmic_dev)
+		return -EIO;
+
+	ret = uvlo_reg_write(bcl_dev->intf_pmic_dev, value, bcl_dev->ifpmic,
+			     uvlo_id, SIG_REL_TIME);
+	if (ret)
+		return ret;
+
+	return size;
+}
+
+static ssize_t uvlo1_rel_show(struct device *dev, struct device_attribute *attr,
+			      char *buf)
+{
+	return uvlo_rel_read(dev, attr, buf, UVLO1);
+}
+
+static ssize_t uvlo1_rel_store(struct device *dev,
+			       struct device_attribute *attr, const char *buf,
+			       size_t size)
+{
+	return uvlo_rel_write(dev, attr, buf, size, UVLO1);
+}
+
+static DEVICE_ATTR_RW(uvlo1_rel);
+
+static ssize_t uvlo2_rel_show(struct device *dev, struct device_attribute *attr,
+			      char *buf)
+{
+	return uvlo_rel_read(dev, attr, buf, UVLO2);
+}
+
+static ssize_t uvlo2_rel_store(struct device *dev,
+			       struct device_attribute *attr, const char *buf,
+			       size_t size)
+{
+	return uvlo_rel_write(dev, attr, buf, size, UVLO2);
+}
+
+static DEVICE_ATTR_RW(uvlo2_rel);
+
+static ssize_t uvlo_det_read(struct device *dev, struct device_attribute *attr,
+			     char *buf, unsigned int uvlo_id)
+{
+	struct platform_device *pdev =
+		container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+	unsigned int uvlo_det;
+
+	if (!bcl_dev->zone[uvlo_id])
+		return -EINVAL;
+	if (!bcl_dev->intf_pmic_dev)
+		return -EBUSY;
+
+	uvlo_reg_read(bcl_dev->intf_pmic_dev, bcl_dev->ifpmic, uvlo_id,
+		      &uvlo_det, SIG_DEGLITCH_TIME);
+
+	return sysfs_emit(buf, "%#x\n", uvlo_det);
+}
+
+static struct attribute *triggered_rel_attrs[] = {
+	&dev_attr_uvlo1_rel.attr,
+	&dev_attr_uvlo2_rel.attr,
+	NULL,
+};
+
+static const struct attribute_group triggered_rel_group = {
+	.attrs = triggered_rel_attrs,
+	.name = "triggered_rel",
+};
+
+static ssize_t uvlo_det_write(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t size,
+			      unsigned int uvlo_id)
+{
+	struct platform_device *pdev =
+		container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+	unsigned int value;
+	int ret;
+
+	ret = kstrtou32(buf, 10, &value);
+	if (ret)
+		return ret;
+	if ((value & ~0x1) != 0x0) {
+		/* valid bit count is 1 */
+		dev_err(bcl_dev->device,
+			"UVLO REL %d outside of range 0b00 - 0b01.", value);
+		return -EINVAL;
+	}
+	if (!bcl_dev->zone[uvlo_id])
+		return -EINVAL;
+	if (!bcl_dev->intf_pmic_dev)
+		return -EIO;
+
+	ret = uvlo_reg_write(bcl_dev->intf_pmic_dev, value, bcl_dev->ifpmic,
+			     uvlo_id, SIG_DEGLITCH_TIME);
+	if (ret)
+		return ret;
+
+	return size;
+}
+
+static ssize_t uvlo1_det_show(struct device *dev, struct device_attribute *attr,
+			      char *buf)
+{
+	return uvlo_det_read(dev, attr, buf, UVLO1);
+}
+
+static ssize_t uvlo1_det_store(struct device *dev,
+			       struct device_attribute *attr, const char *buf,
+			       size_t size)
+{
+	return uvlo_det_write(dev, attr, buf, size, UVLO1);
+}
+
+static DEVICE_ATTR_RW(uvlo1_det);
+
+static ssize_t uvlo2_det_show(struct device *dev, struct device_attribute *attr,
+			      char *buf)
+{
+	return uvlo_det_read(dev, attr, buf, UVLO2);
+}
+
+static ssize_t uvlo2_det_store(struct device *dev,
+			       struct device_attribute *attr, const char *buf,
+			       size_t size)
+{
+	return uvlo_det_write(dev, attr, buf, size, UVLO2);
+}
+
+static DEVICE_ATTR_RW(uvlo2_det);
+
+static ssize_t smpl_det_show(struct device *dev, struct device_attribute *attr,
+			     char *buf)
+{
+	struct platform_device *pdev =
+		container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+	u8 smpl_warn_det = 0;
+
+	if (!bcl_dev->main_pmic_i2c) {
+		return -EBUSY;
+	}
+	pmic_read(CORE_PMIC_MAIN, bcl_dev, SMPL_WARN_CTRL, &smpl_warn_det);
+	smpl_warn_det &= SMPL_WARN_LBDT_MASK;
+
+	return sysfs_emit(buf, "%#x\n", smpl_warn_det);
+}
+
+static ssize_t smpl_det_store(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t size)
+{
+	struct platform_device *pdev =
+		container_of(dev, struct platform_device, dev);
+	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
+	unsigned int val;
+	u8 value;
+	int ret;
+
+	ret = kstrtou32(buf, 10, &val);
+	if (ret)
+		return ret;
+	if ((val & ~SMPL_WARN_LBDT_MASK) != 0x0) {
+		dev_err(bcl_dev->device,
+			"SMPL_WARN DET 0x%d outside of range. 0b000 to 0b111",
+			val);
+		return -EINVAL;
+	}
+	if (!bcl_dev->main_pmic_i2c) {
+		dev_err(bcl_dev->device, "MAIN I2C not found\n");
+		return -EIO;
+	}
+	if (pmic_read(CORE_PMIC_MAIN, bcl_dev, SMPL_WARN_CTRL, &value)) {
+		dev_err(bcl_dev->device, "S2MPG1415 read %#x failed.",
+			SMPL_WARN_CTRL);
+		return -EBUSY;
+	}
+
+	value &= ~SMPL_WARN_LBDT_MASK;
+	value |= val;
+	if (pmic_write(CORE_PMIC_MAIN, bcl_dev, SMPL_WARN_CTRL, value)) {
+		dev_err(bcl_dev->device, "i2c write error setting smpl_warn\n");
+		return -EINVAL;
+	}
+
+	return size;
+}
+
+static DEVICE_ATTR_RW(smpl_det);
+
+static struct attribute *triggered_det_attrs[] = {
+	&dev_attr_uvlo1_det.attr,
+	&dev_attr_uvlo2_det.attr,
+	&dev_attr_smpl_det.attr,
+	NULL,
+};
+
+static const struct attribute_group triggered_det_group = {
+	.attrs = triggered_det_attrs,
+	.name = "triggered_det",
 };
 
 static ssize_t bat_ktimer_show(struct device *dev,
@@ -3392,10 +3821,6 @@ static ssize_t less_than_5ms_count_show(struct device *dev, struct device_attrib
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
 	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
 
-#if IS_ENABLED(CONFIG_REGULATOR_S2MPG12) || IS_ENABLED(CONFIG_REGULATOR_S2MPG10)
-	return -ENODEV;
-#endif
-
 	for (batt_idx = 0; batt_idx < MAX_BCL_BATT_IRQ; batt_idx++) {
 		for (pwrwarn_idx = 0; pwrwarn_idx < MAX_CONCURRENT_PWRWARN_IRQ; pwrwarn_idx++) {
 			irq_count = atomic_read(&bcl_dev->ifpmic_irq_bins[batt_idx][pwrwarn_idx]
@@ -3435,10 +3860,6 @@ static ssize_t between_5ms_to_10ms_count_show(struct device *dev, struct device_
 	ssize_t count = 0;
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
 	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
-
-#if IS_ENABLED(CONFIG_REGULATOR_S2MPG12) || IS_ENABLED(CONFIG_REGULATOR_S2MPG10)
-	return -ENODEV;
-#endif
 
 	for (batt_idx = 0; batt_idx < MAX_BCL_BATT_IRQ; batt_idx++) {
 		for (pwrwarn_idx = 0; pwrwarn_idx < MAX_CONCURRENT_PWRWARN_IRQ; pwrwarn_idx++) {
@@ -3482,10 +3903,6 @@ static ssize_t greater_than_10ms_count_show(struct device *dev, struct device_at
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
 	struct bcl_device *bcl_dev = platform_get_drvdata(pdev);
 
-#if IS_ENABLED(CONFIG_REGULATOR_S2MPG12) || IS_ENABLED(CONFIG_REGULATOR_S2MPG10)
-	return -ENODEV;
-#endif
-
 	for (batt_idx = 0; batt_idx < MAX_BCL_BATT_IRQ; batt_idx++) {
 		for (pwrwarn_idx = 0; pwrwarn_idx < MAX_CONCURRENT_PWRWARN_IRQ; pwrwarn_idx++) {
 			irq_count = atomic_read(&bcl_dev->ifpmic_irq_bins[batt_idx][pwrwarn_idx]
@@ -3527,13 +3944,7 @@ static struct attribute *irq_dur_cnt_attrs[] = {
 
 static ssize_t disabled_store(struct bcl_zone *zone, bool disabled, size_t size)
 {
-	if (disabled && !zone->disabled) {
-		zone->disabled = true;
-		disable_irq(zone->bcl_irq);
-	} else if (!disabled && zone->disabled) {
-		zone->disabled = false;
-		enable_irq(zone->bcl_irq);
-	}
+	irq_safe_config(zone, disabled);
 	return size;
 }
 
@@ -4328,10 +4739,11 @@ const struct attribute_group mitigation_group = {
 	.name = "mitigation",
 };
 
-
 const struct attribute_group *mitigation_mw_groups[] = {
 	&instr_group,
 	&triggered_lvl_group,
+	&triggered_rel_group,
+	&triggered_det_group,
 	&clock_div_group,
 	&clock_ratio_group,
 	&clock_stats_group,
@@ -4354,6 +4766,8 @@ const struct attribute_group *mitigation_mw_groups[] = {
 const struct attribute_group *mitigation_sq_groups[] = {
 	&instr_group,
 	&triggered_lvl_group,
+	&triggered_rel_group,
+	&triggered_det_group,
 	&clock_div_group,
 	&clock_ratio_group,
 	&clock_stats_group,

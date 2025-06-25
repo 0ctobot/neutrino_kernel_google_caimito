@@ -53,6 +53,20 @@ Description:
 		soft_ocp_gpu_lvl.
 		The reported value is the readback of the corresponding threshold.
 
+What:		/sys/devices/virtual/pmic/mitigation/triggered_rel/<SUBSYSTEM>
+Date:		Mar, 2025
+Contact:	"Jasmine Cha" <chajasmine@google.com>
+Description:
+		SUBSYSTEM can be selected from uvlo1_rel, uvlo2_rel.
+		The reported value is the readback of the corresponding threshold.
+
+What:		/sys/devices/virtual/pmic/mitigation/triggered_det/<SUBSYSTEM>
+Date:		Mar, 2025
+Contact:	"Jasmine Cha" <chajasmine@google.com>
+Description:
+		SUBSYSTEM can be selected from uvlo1_det, uvlo2_det, smpl_det.
+		The reported value is the readback of the corresponding threshold.
+
 What:		/sys/devices/virtual/pmic/mitigation/clock_div/<SUBSYSTEM>
 Date:		May, 2023
 Contact:	"George Lee" <geolee@google.com>

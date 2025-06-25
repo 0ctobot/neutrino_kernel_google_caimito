@@ -121,7 +121,7 @@ void google_bcl_qos_update(struct bcl_zone *zone, bool throttle)
 
 	add_qos_request(bcl_dev, zone);
 
-	if (smp_load_acquire(&bcl_dev->enabled))
+	if (smp_load_acquire(&bcl_dev->sw_mitigation_enabled))
 		schedule_delayed_work(&bcl_dev->qos_work, 0);
 	trace_bcl_irq_trigger(zone->idx, zone->throttle, cpu0_freq, cpu1_freq, cpu2_freq,
 			      tpu_freq, gpu_freq, zone->bcl_stats.voltage,
