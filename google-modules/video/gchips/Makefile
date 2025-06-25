@@ -18,7 +18,7 @@ include $(KERNEL_SRC)/../private/google-modules/soc/gs/Makefile.include
 EXTRA_CFLAGS += -I$(KERNEL_SRC)/../private/google-modules/video/gchips/include
 EXTRA_CFLAGS += -DENABLE_SLC=1
 
-modules modules_install headers_install clean:
+modules modules_install headers_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) \
 	$(KBUILD_OPTIONS) \
 	EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
