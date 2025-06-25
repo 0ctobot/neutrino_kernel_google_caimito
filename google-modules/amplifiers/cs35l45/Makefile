@@ -22,6 +22,6 @@ KBUILD_OPTIONS += CONFIG_SND_SOC_CS35L45=m \
 		  CONFIG_SND_SOC_CS35L45_WM_ADSP=m \
 		  CONFIG_CS35L45_CS_DSP=m \
 
-modules modules_install clean:
+modules modules_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) W=1 \
 	$(KBUILD_OPTIONS) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" $(@)

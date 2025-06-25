@@ -5,6 +5,6 @@ M ?= $(shell pwd)
 
 KBUILD_OPTIONS += CONFIG_INPUT_DRV2624_HAPTICS=m
 
-modules modules_install clean:
+modules modules_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(KBUILD_OPTIONS) W=1 $(@)
 

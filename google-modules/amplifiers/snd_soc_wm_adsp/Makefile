@@ -9,5 +9,5 @@ M ?= $(shell pwd)
 
 KBUILD_OPTIONS += CONFIG_SND_SOC_WM_ADSP=m
 
-modules modules_install clean:
+modules modules_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(KBUILD_OPTIONS) W=1 $(@)

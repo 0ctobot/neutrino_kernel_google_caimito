@@ -60,6 +60,6 @@ KBUILD_OPTIONS += CONFIG_SND_SOC_TAS256X=m \
 #		  CONFIG_TISA_DEBUGFS_INTF=m \
 #		  CONFIG_TISA_BIN_INTF=m \
 
-modules modules_install clean:
+modules modules_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(KBUILD_OPTIONS) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" W=1 $(@)
 
