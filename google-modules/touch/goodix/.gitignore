@@ -1,8 +1,0 @@
-/.vscode
-*.a
-*.ko
-*.o
-*.cmd
-*.builtin
-*.order
-*.mod.*
