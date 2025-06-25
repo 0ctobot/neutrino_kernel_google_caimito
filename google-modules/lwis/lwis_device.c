@@ -261,7 +261,7 @@ static int lwis_release(struct inode *node, struct file *fp)
 	/* Release the allocator and its cache */
 	lwis_allocator_release(lwis_dev);
 
-	mutex_lock(&lwis_dev->client_lock);
+	mutex_lock(&lwis_dev->interclient_lock);
 	release_client(lwis_client);
 	/* Release power if client closed without power down called */
 	if (is_client_enabled && lwis_dev->enabled > 0) {
@@ -295,7 +295,7 @@ static int lwis_release(struct inode *node, struct file *fp)
 		/* Release device event states if no more client is using */
 		lwis_device_event_states_clear_locked(lwis_dev);
 	}
-	mutex_unlock(&lwis_dev->client_lock);
+	mutex_unlock(&lwis_dev->interclient_lock);
 
 	/* Call device type specific close routines. */
 	if (lwis_dev->enabled == 0) {
@@ -1051,7 +1051,7 @@ static int power_up_by_default(struct lwis_device *lwis_dev)
 
 /*
  * Power up a LWIS device, should be called when lwis_dev->enabled is 0
- * lwis_dev->client_lock should be held before this function.
+ * lwis_dev->interclient_lock should be held before this function.
  */
 int lwis_dev_power_up_locked(struct lwis_device *lwis_dev)
 {
@@ -1238,7 +1238,7 @@ static int power_down_by_default(struct lwis_device *lwis_dev)
 
 /*
  * Power down a LWIS device, should be called when lwis_dev->enabled become 0
- * lwis_dev->client_lock should be held before this function.
+ * lwis_dev->interclient_lock should be held before this function.
  */
 int lwis_dev_power_down_locked(struct lwis_device *lwis_dev)
 {
@@ -1495,7 +1495,7 @@ int lwis_base_probe(struct lwis_device *lwis_dev)
 	lwis_dev->clock_family = CLOCK_FAMILY_INVALID;
 
 	/* Initialize client mutex */
-	mutex_init(&lwis_dev->client_lock);
+	mutex_init(&lwis_dev->interclient_lock);
 
 	/* Initialize an empty list of clients */
 	INIT_LIST_HEAD(&lwis_dev->clients);

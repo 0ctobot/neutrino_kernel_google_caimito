@@ -917,7 +917,9 @@ static int device_event_emit_impl(struct lwis_device *lwis_dev, int64_t event_id
 			} else {
 				event->event_info.payload_buffer = NULL;
 			}
+			spin_unlock_irqrestore(&lwis_dev->lock, flags);
 			ret = client_event_push_back(lwis_client, event);
+			spin_lock_irqsave(&lwis_dev->lock, flags);
 			if (ret) {
 				lwis_dev_err_ratelimited(
 					lwis_dev->dev,

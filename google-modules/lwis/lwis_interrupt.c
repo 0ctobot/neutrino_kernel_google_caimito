@@ -68,6 +68,9 @@ struct lwis_interrupt_list *lwis_interrupt_list_alloc(struct lwis_device *lwis_d
 	list->count = count;
 	list->lwis_dev = lwis_dev;
 
+	for (int i = 0; i < count; i++)
+		spin_lock_init(&list->irq[i].lock);
+
 	return list;
 }
 

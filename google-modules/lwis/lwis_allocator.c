@@ -150,18 +150,18 @@ int lwis_allocator_init(struct lwis_device *lwis_dev)
 	if (lwis_dev == NULL)
 		return -EINVAL;
 
-	mutex_lock(&lwis_dev->client_lock);
+	mutex_lock(&lwis_dev->interclient_lock);
 
 	if (lwis_dev->block_mgr != NULL) {
 		block_mgr = lwis_dev->block_mgr;
 		block_mgr->ref_count++;
-		mutex_unlock(&lwis_dev->client_lock);
+		mutex_unlock(&lwis_dev->interclient_lock);
 		return 0;
 	}
 
 	block_mgr = kzalloc(sizeof(struct lwis_allocator_block_mgr), GFP_KERNEL);
 	if (block_mgr == NULL) {
-		mutex_unlock(&lwis_dev->client_lock);
+		mutex_unlock(&lwis_dev->interclient_lock);
 		return -ENOMEM;
 	}
 
@@ -183,7 +183,7 @@ int lwis_allocator_init(struct lwis_device *lwis_dev)
 	block_mgr->ref_count = 1;
 
 	lwis_dev->block_mgr = block_mgr;
-	mutex_unlock(&lwis_dev->client_lock);
+	mutex_unlock(&lwis_dev->interclient_lock);
 	return 0;
 }
 
@@ -195,18 +195,18 @@ void lwis_allocator_release(struct lwis_device *lwis_dev)
 	if (lwis_dev == NULL)
 		return;
 
-	mutex_lock(&lwis_dev->client_lock);
+	mutex_lock(&lwis_dev->interclient_lock);
 
 	block_mgr = lwis_dev->block_mgr;
 	if (block_mgr == NULL) {
 		dev_err(lwis_dev->dev, "block_mgr is NULL\n");
-		mutex_unlock(&lwis_dev->client_lock);
+		mutex_unlock(&lwis_dev->interclient_lock);
 		return;
 	}
 
 	block_mgr->ref_count--;
 	if (block_mgr->ref_count > 0) {
-		mutex_unlock(&lwis_dev->client_lock);
+		mutex_unlock(&lwis_dev->interclient_lock);
 		return;
 	}
 
@@ -223,7 +223,7 @@ void lwis_allocator_release(struct lwis_device *lwis_dev)
 	kfree(block_mgr);
 	lwis_dev->block_mgr = NULL;
 	spin_unlock_irqrestore(&lwis_dev->allocator_lock, flags);
-	mutex_unlock(&lwis_dev->client_lock);
+	mutex_unlock(&lwis_dev->interclient_lock);
 }
 
 void *lwis_allocator_allocate(struct lwis_device *lwis_dev, size_t size, gfp_t gfp_flags)

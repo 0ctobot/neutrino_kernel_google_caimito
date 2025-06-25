@@ -214,7 +214,7 @@ struct lwis_device {
 	/* Mark if the client called device suspend */
 	bool is_suspended;
 	/* Mutex used to synchronize access between clients */
-	struct mutex client_lock;
+	struct mutex interclient_lock;
 	/* Spinlock used to synchronize access to the device struct */
 	spinlock_t lock;
 	/* List of clients opened for this device */
@@ -372,13 +372,13 @@ bool lwis_i2c_dev_is_in_use(struct lwis_device *lwis_dev);
 
 /*
  * Power up a LWIS device, should be called when lwis_dev->enabled is 0
- * lwis_dev->client_lock should be held before this function.
+ * lwis_dev->interclient_lock should be held before this function.
  */
 int lwis_dev_power_up_locked(struct lwis_device *lwis_dev);
 
 /*
  * Power down a LWIS device, should be called when lwis_dev->enabled become 0
- * lwis_dev->client_lock should be held before this function.
+ * lwis_dev->interclient_lock should be held before this function.
  */
 int lwis_dev_power_down_locked(struct lwis_device *lwis_dev);
 

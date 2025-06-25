@@ -12,8 +12,17 @@
 #include "lwis_device.h"
 
 /*
- * lwis_io_buffer_write:
- * write the byte to the buffer.
+ * Map the PDMA buffer
+ */
+int lwis_io_buffer_map(struct lwis_device *lwis_dev, struct lwis_io_entry *entry);
+
+/*
+ * Map the PDMA buffer
+ */
+void lwis_io_buffer_unmap(struct lwis_io_entry *entry);
+
+/*
+ * Write the byte to the buffer.
  */
 int lwis_io_buffer_write(struct lwis_device *lwis_dev, struct lwis_io_entry *entry);
 

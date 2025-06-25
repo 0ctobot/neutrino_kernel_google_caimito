@@ -65,6 +65,8 @@ struct lwis_transaction {
 	uint8_t *starting_read_buf;
 	/* The timestamp of the transaction trigger event */
 	int64_t triggered_event_timestamp;
+	/* The timestamp when the transaction is allowed to be executed */
+	int64_t delayed_execution_timestamp;
 };
 
 /*

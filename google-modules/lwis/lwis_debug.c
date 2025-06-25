@@ -277,6 +277,7 @@ static int generate_buffer_info(struct lwis_device *lwis_dev, char *buffer, size
 {
 	struct lwis_client *client;
 	int idx = 0;
+	unsigned long flags;
 	int count;
 
 	if (lwis_dev == NULL) {
@@ -291,9 +292,11 @@ static int generate_buffer_info(struct lwis_device *lwis_dev, char *buffer, size
 
 	count = scnprintf(buffer, buffer_size, "=== LWIS BUFFER INFO: %s ===\n", lwis_dev->name);
 	list_for_each_entry(client, &lwis_dev->clients, node) {
+		spin_lock_irqsave(&lwis_dev->lock, flags);
 		count += scnprintf(buffer + count, buffer_size - count, "Client %d:\n", idx);
 		count += list_allocated_buffers(client, buffer + count, buffer_size - count);
 		count += list_enrolled_buffers(client, buffer + count, buffer_size - count);
+		spin_unlock_irqrestore(&lwis_dev->lock, flags);
 		++idx;
 	}
 

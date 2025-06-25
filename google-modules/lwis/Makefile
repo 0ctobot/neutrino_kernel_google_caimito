@@ -13,6 +13,6 @@ ifeq ($(CONFIG_GCOV_KERNEL),y)
     EXTRA_CFLAGS += -DGCOV_PROFILE=1
 endif
 
-modules modules_install clean:
+modules modules_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) W=1 \
 	$(KBUILD_OPTIONS) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" $(@)

@@ -36,6 +36,9 @@
 /* Triggered event to actual execution of transaction threshold */
 #define TRIGGRED_EVENT_EXECUTION_THRESHOLD_MS 5
 
+/* Allow 20us range in usleep */
+#define USLEEP_RANGE_DELTA 20
+
 bool lwis_transaction_debug;
 module_param(lwis_transaction_debug, bool, 0644);
 
@@ -149,23 +152,8 @@ void lwis_transaction_free(struct lwis_device *lwis_dev, struct lwis_transaction
 		    transaction->info.io_entries[i].type == LWIS_IO_ENTRY_WRITE_BATCH_V2) {
 			lwis_allocator_free(lwis_dev, transaction->info.io_entries[i].rw_batch.buf);
 			transaction->info.io_entries[i].rw_batch.buf = NULL;
-		} else if (transaction->info.io_entries[i].type == LWIS_IO_ENTRY_WRITE_TO_BUFFER) {
-			struct dma_buf *buf =
-				transaction->info.io_entries[i].write_to_buffer.buffer->dma_buf;
-			if (IS_ERR(buf)) {
-				dev_err(lwis_dev->dev,
-					"Failed finish PDMA buffer IO because buffer has error.");
-			}
-			/* Unmap the DMA buffer from kernel space */
-			dma_buf_vunmap(
-				buf,
-				transaction->info.io_entries[i].write_to_buffer.buffer->io_sys_map);
-			kfree(transaction->info.io_entries[i].write_to_buffer.buffer->io_sys_map);
-			kfree(transaction->info.io_entries[i].write_to_buffer.bytes);
-			dma_buf_end_cpu_access(buf, DMA_BIDIRECTIONAL);
-			dma_buf_put(buf);
-			kfree(transaction->info.io_entries[i].write_to_buffer.buffer);
-		}
+		} else if (transaction->info.io_entries[i].type == LWIS_IO_ENTRY_WRITE_TO_BUFFER)
+			lwis_io_buffer_unmap(&transaction->info.io_entries[i]);
 	}
 	lwis_allocator_free(lwis_dev, transaction->info.io_entries);
 
@@ -194,6 +182,7 @@ static int process_transaction(struct lwis_client *client, struct lwis_transacti
 	int64_t process_duration_ns = -1;
 	int64_t process_timestamp = -1;
 	int64_t triggered_duration_ns = -1;
+	int64_t delayed_execution_remaining_us = -1;
 	int64_t output_event = LWIS_EVENT_ID_NONE;
 	unsigned long flags;
 
@@ -223,6 +212,16 @@ static int process_transaction(struct lwis_client *client, struct lwis_transacti
 	start_idx = total_entries - remaining_entries;
 	end_idx = start_idx + current_run_entries;
 	remaining_entries = remaining_entries - current_run_entries;
+	delayed_execution_remaining_us =
+		(transaction->delayed_execution_timestamp - ktime_to_ns(lwis_get_time())) / 1000;
+
+	/*
+	 * If there is still time remaining before this transaction can be executed, sleep for the
+	 * remaining duration.
+	 */
+	if (delayed_execution_remaining_us > 0)
+		usleep_range(delayed_execution_remaining_us,
+			     delayed_execution_remaining_us + USLEEP_RANGE_DELTA);
 
 	if (lwis_transaction_debug)
 		process_timestamp = ktime_to_ns(lwis_get_time());
@@ -1047,7 +1046,13 @@ static int queue_transaction_locked(struct lwis_client *client,
 		}
 		list_add_tail(&transaction->event_list_node, &event_list->list);
 	}
-	info->submission_timestamp_ns = ktime_to_ns(ktime_get());
+	info->submission_timestamp_ns = ktime_to_ns(lwis_get_time());
+
+	/* Set the trigger delay if one has been specified */
+	if (info->minimum_trigger_delay_ns > 0) {
+		transaction->delayed_execution_timestamp =
+			info->submission_timestamp_ns + info->minimum_trigger_delay_ns;
+	}
 	return 0;
 }
 
