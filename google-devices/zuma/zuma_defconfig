@@ -65,7 +65,7 @@ CONFIG_KEYBOARD_S2MPG14=m
 # private/google-modules/soc/gs/drivers/iommu/Kconfig
 CONFIG_SAMSUNG_IOMMU_V9=m
 CONFIG_EXYNOS_PCIE_IOMMU=m
-CONFIG_IOVAD_BEST_FIT_ALGO=m
+CONFIG_IOVAD_VENDOR_HOOKS=m
 
 # private/google-modules/soc/gs/drivers/media/platform/Kconfig
 CONFIG_VIDEO_EXYNOS_MFC=m

@@ -826,6 +826,7 @@
 			<&sysmmu_ispfe_s2>;
 		samsung,iommu-group = <&iommu_group_isp>;
 		lwis,iommu-best-fit-algo;
+		iommu-max-align-shift = <8>;
 
 		/* Thread priority */
 		transaction-thread-priority = <99>;

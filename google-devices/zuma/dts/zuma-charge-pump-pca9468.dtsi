@@ -27,4 +27,6 @@ pca9468_dc: pca9468@57 {
 	google,usb-port-tz-name = "usbc-therm-adc";
 
 	pca9468,google_cpm = <&google_cpm>;
+
+	pca9468,ta-max-cur-mult = <2>; /* has cap div */
 };

@@ -25,6 +25,7 @@
 		       0x0 0x15360000 0x1000
 		       0x0 0x15280000 0x1000
 		       0x0 0x152A0000 0x1000
+		       0x0 0x152C0000 0x1000
 		       /* CMU AUR */
 		       0x0 0x20A00000 0x1000
 		       /* SSMTs */
@@ -32,12 +33,13 @@
 		       0x0 0x20AE0000 0x10000>;
 		reg-names = "aur",
 			    "mailbox0", "mailbox1", "mailbox2", "mailbox3", "mailbox4",
-			    "cmu", "ssmt_idma", "ssmt_inst_data";
+			    "iif_mailbox", "cmu", "ssmt_idma", "ssmt_inst_data";
 		interrupts = <GIC_SPI IRQ_MAILBOX_AURCORE02AP_ALIVE IRQ_TYPE_LEVEL_HIGH 0
 			      GIC_SPI IRQ_MAILBOX_AURCORE12AP_ALIVE IRQ_TYPE_LEVEL_HIGH 0
 			      GIC_SPI IRQ_MAILBOX_AURCORE22AP_ALIVE IRQ_TYPE_LEVEL_HIGH 0
 			      GIC_SPI IRQ_MAILBOX_AURMCUNS02AP_ALIVE IRQ_TYPE_LEVEL_HIGH 0
 			      GIC_SPI IRQ_MAILBOX_AURMCUNS12AP_ALIVE IRQ_TYPE_LEVEL_HIGH 0
+			      GIC_SPI IRQ_MAILBOX_AURMCUNS22AP_ALIVE IRQ_TYPE_LEVEL_HIGH 0
                               GIC_SPI IRQ_AUR_WDOG_AP_IRQ_AUR IRQ_TYPE_LEVEL_HIGH 0>;
 		tpu-device = <&edgetpu>;
 		gxp-tpu-mbx-offset = <0x0 0x50000>;

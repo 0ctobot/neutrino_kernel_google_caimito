@@ -84,7 +84,7 @@ extra/private/google-modules/soc/gs/drivers/regulator/slg51002-regulator.ko
 extra/private/google-modules/soc/gs/drivers/tty/serial/exynos_tty.ko
 extra/private/google-modules/soc/gs/drivers/iommu/samsung-iommu-group.ko
 extra/private/google-modules/soc/gs/drivers/iommu/samsung-secure-iova.ko
-extra/private/google-modules/soc/gs/drivers/iommu/iovad-best-fit-algo.ko
+extra/private/google-modules/soc/gs/drivers/iommu/iovad-vendor-hooks.ko
 extra/private/google-modules/soc/gs/drivers/iommu/samsung_iommu_v9.ko
 extra/private/google-modules/soc/gs/drivers/iommu/exynos-pcie-iommu.ko
 extra/private/google-modules/soc/gs/drivers/gpu/exynos/g2d/g2d.ko
