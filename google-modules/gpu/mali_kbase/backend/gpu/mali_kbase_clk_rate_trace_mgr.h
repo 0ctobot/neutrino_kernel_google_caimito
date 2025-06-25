@@ -95,7 +95,8 @@ kbase_clk_rate_trace_manager_subscribe_no_lock(struct kbase_clk_rate_trace_manag
 					       struct kbase_clk_rate_listener *listener)
 {
 	lockdep_assert_held(&clk_rtm->lock);
-	list_add(&listener->node, &clk_rtm->listeners);
+	if (list_empty(&listener->node))
+		list_add(&listener->node, &clk_rtm->listeners);
 }
 
 /**
@@ -128,7 +129,7 @@ kbase_clk_rate_trace_manager_unsubscribe(struct kbase_clk_rate_trace_manager *cl
 	unsigned long flags;
 
 	spin_lock_irqsave(&clk_rtm->lock, flags);
-	list_del(&listener->node);
+	list_del_init(&listener->node);
 	spin_unlock_irqrestore(&clk_rtm->lock, flags);
 }
 

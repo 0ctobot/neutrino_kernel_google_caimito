@@ -182,7 +182,6 @@ static bool pixel_gpu_itmon_search_context(struct pixel_context *pc,
 	return false;
 }
 
-#if MALI_USE_CSF
 /**
  * pixel_gpu_itmon_search_csffw() - Search the CSF MCU page table.
  *
@@ -208,7 +207,6 @@ static bool pixel_gpu_itmon_search_csffw(struct pixel_context *pc)
 
 	return false;
 }
-#endif /* MALI_USE_CSF */
 
 /**
  * pixel_gpu_itmon_worker() - ITMON fault worker.
@@ -233,9 +231,7 @@ static void pixel_gpu_itmon_worker(struct work_struct *data)
 		"tables...\n", pc->itmon.pa);
 
 	/* Search the CSF MCU page table first */
-#if MALI_USE_CSF
 	found |= pixel_gpu_itmon_search_csffw(pc);
-#endif
 
 	mutex_lock(&kbdev->kctx_list_lock);
 

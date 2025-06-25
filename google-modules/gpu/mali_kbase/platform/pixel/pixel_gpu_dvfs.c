@@ -318,32 +318,6 @@ static void gpu_dvfs_clockdown_worker(struct work_struct *data)
 }
 
 /**
- * gpu_dvfs_set_level_locks_from_util() - Updates level locks based on GPU util.
- *
- * @kbdev:      The &struct kbase_device for the GPU.
- * @util_stats: The current GPU utilization statistics.
- *
- * This function updates level locks depending on the current utlization on the GPU. Currently it is
- * used to detect OpenCL content and set the &GPU_DVFS_LEVEL_LOCK_COMPUTE level lock accordingly.
- */
-static inline void gpu_dvfs_set_level_locks_from_util(struct kbase_device *kbdev,
-	struct gpu_dvfs_utlization *util_stats)
-{
-#if !MALI_USE_CSF
-	struct pixel_context *pc = kbdev->platform_context;
-	bool cl_lock_set = (pc->dvfs.level_locks[GPU_DVFS_LEVEL_LOCK_COMPUTE].level_min != -1 ||
-		pc->dvfs.level_locks[GPU_DVFS_LEVEL_LOCK_COMPUTE].level_max != -1);
-
-	/* If we detect compute-only work is running on the GPU, we enforce a minimum frequency */
-	if (unlikely(util_stats->util_cl > 0 && !cl_lock_set))
-		gpu_dvfs_update_level_lock(kbdev, GPU_DVFS_LEVEL_LOCK_COMPUTE,
-			pc->dvfs.level_scaling_compute_min, -1);
-	else if (util_stats->util_cl == 0 && cl_lock_set)
-		gpu_dvfs_reset_level_lock(kbdev, GPU_DVFS_LEVEL_LOCK_COMPUTE);
-#endif /* !MALI_USE_CSF */
-}
-
-/**
  * gpu_dvfs_select_level() - The main DVFS entry point for the Pixel GPU integration.
  *
  * @kbdev: The &struct kbase_device for the GPU.
@@ -365,14 +339,7 @@ void gpu_dvfs_select_level(struct kbase_device *kbdev)
 
 	if (pc->dvfs.updates_enabled && gpu_pm_get_power_state(kbdev)) {
 		util_stats.util = atomic_read(&pc->dvfs.util);
-#if MALI_USE_CSF
 		util_stats.mcu_util = atomic_read(&pc->dvfs.mcu_util);
-#else
-		util_stats.util_gl = atomic_read(&pc->dvfs.util_gl);
-		util_stats.util_cl = atomic_read(&pc->dvfs.util_cl);
-#endif
-
-		gpu_dvfs_set_level_locks_from_util(kbdev, &util_stats);
 
 		pc->dvfs.level_target = gpu_dvfs_governor_get_next_level(kbdev,	&util_stats);
 
@@ -459,7 +426,6 @@ static void gpu_dvfs_control_worker(struct work_struct *data)
 	mutex_unlock(&pc->dvfs.lock);
 }
 
-#if MALI_USE_CSF
 /**
  * kbase_platform_dvfs_event() - Callback from Mali driver to report updated utilization metrics.
  *
@@ -517,41 +483,6 @@ int kbase_platform_dvfs_event_mcu(struct kbase_device *kbdev, u32 utilisation,
 	return 1;
 }
 
-#else /* MALI_USE_CSF */
-/**
- * kbase_platform_dvfs_event() - Callback from Mali driver to report updated utilization metrics.
- *
- * @kbdev:         The &struct kbase_device for the GPU.
- * @utilisation:   The calculated utilization as measured by the core Mali driver's metrics system.
- * @util_gl_share: The calculated GL share of utilization.
- * @util_cl_share: The calculated CL share of utilization per core group.
- *
- * This is the function that bridges the core Mali driver and the Pixel integration code. As this is
- * made in interrupt context, it is swiftly handed off to a work_queue for further processing.
- *
- * Context: Interrupt context.
- *
- * Return: Returns 1 to signal success as specified in mali_kbase_pm_internal.h.
- */
-int kbase_platform_dvfs_event(struct kbase_device *kbdev, u32 utilisation,
-	u32 util_gl_share, u32 util_cl_share[2])
-{
-	struct pixel_context *pc = kbdev->platform_context;
-	int proc = raw_smp_processor_id();
-
-	/* TODO (b/187175695): Report this data via a custom ftrace event instead */
-	trace_clock_set_rate("gpu_util", utilisation, proc);
-	trace_clock_set_rate("gpu_util_gl", util_gl_share, proc);
-	trace_clock_set_rate("gpu_util_cl", util_cl_share[0] + util_cl_share[1], proc);
-
-	atomic_set(&pc->dvfs.util, utilisation);
-	atomic_set(&pc->dvfs.util_gl, util_gl_share);
-	atomic_set(&pc->dvfs.util_cl, util_cl_share[0] + util_cl_share[1]);
-	queue_work(pc->dvfs.control_wq, &pc->dvfs.control_work);
-
-	return 1;
-}
-#endif
 
 /* Initialization code */
 
@@ -729,7 +660,6 @@ static int validate_and_parse_dvfs_table(struct kbase_device *kbdev, int dvfs_ta
 		gpu_dvfs_table[i].qos.cpu0_min = of_data_int_array[idx + 7];
 		gpu_dvfs_table[i].qos.cpu1_min = of_data_int_array[idx + 8];
 		gpu_dvfs_table[i].qos.cpu2_max = of_data_int_array[idx + 9];
-#if MALI_USE_CSF
 		if (dvfs_table_col_num >= 12) {
 			gpu_dvfs_table[i].mcu_util_min = of_data_int_array[idx + 10];
 			gpu_dvfs_table[i].mcu_util_max = of_data_int_array[idx + 11];
@@ -738,7 +668,6 @@ static int validate_and_parse_dvfs_table(struct kbase_device *kbdev, int dvfs_ta
 			gpu_dvfs_table[i].mcu_util_min = 0;
 			gpu_dvfs_table[i].mcu_util_max = 100;
 		}
-#endif
 
 		/* Handle case where CPU cluster 2 has no limit set */
 		if (!gpu_dvfs_table[i].qos.cpu2_max)
@@ -816,7 +745,6 @@ static int gpu_dvfs_update_asv_table(struct kbase_device *kbdev)
 	return dvfs_table_row_num;
 }
 
-#if MALI_USE_CSF
 static void gpu_dvfs_initialize_capacity_headroom(struct kbase_device *kbdev)
 {
 	struct device_node *np = kbdev->dev->of_node;
@@ -844,7 +772,6 @@ static void gpu_dvfs_initialize_capacity_headroom(struct kbase_device *kbdev)
 		pc->dvfs.capacity_history_depth = ARRAY_SIZE(pc->dvfs.capacity_history);
 	}
 }
-#endif
 
 /**
  * gpu_dvfs_set_initial_level() - Set the initial GPU clocks
@@ -933,9 +860,7 @@ static int google_bcl_callback(struct notifier_block *nb, unsigned long max_clk,
 int gpu_dvfs_init(struct kbase_device *kbdev)
 {
 	int i, ret = 0;
-#if MALI_USE_CSF
 	u32 of_data_int_array[2];
-#endif /* MALI_USE_CSF*/
 	struct pixel_context *pc = kbdev->platform_context;
 	struct device_node *np = kbdev->dev->of_node;
 
@@ -984,7 +909,6 @@ int gpu_dvfs_init(struct kbase_device *kbdev)
 		ret = -EINVAL;
 		goto done;
 	}
-#if MALI_USE_CSF
 	/* Set up DVFS perf tuning variables */
 	if (of_property_read_u32_array(np, "mcu_protm_scale", of_data_int_array,
 				       2)) {
@@ -1005,7 +929,6 @@ int gpu_dvfs_init(struct kbase_device *kbdev)
 		pc->dvfs.tunable.mcu_down_util_scale_num = of_data_int_array[0];
 		pc->dvfs.tunable.mcu_down_util_scale_den = of_data_int_array[1];
 	}
-#endif /* MALI_USE_CSF*/
 
 	/* Setup dvfs step up value */
 	if (of_property_read_u32(np, "gpu_dvfs_step_up_val", &pc->dvfs.step_up_val)) {
@@ -1023,9 +946,7 @@ int gpu_dvfs_init(struct kbase_device *kbdev)
 	atomic_set(&pc->dvfs.util, 0);
 	atomic_set(&pc->dvfs.mcu_util, 0);
 
-#if MALI_USE_CSF
 	gpu_dvfs_initialize_capacity_headroom(kbdev);
-#endif /* MALI_USE_CSF */
 
 	/* Initialize DVFS governors */
 	ret = gpu_dvfs_governor_init(kbdev);

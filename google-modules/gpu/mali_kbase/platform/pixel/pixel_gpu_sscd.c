@@ -573,7 +573,7 @@ static int segments_init(struct kbase_device *kbdev, struct sscd_segment* segmen
 	}
 
 	segments[CONTEXTS].size = sizeof(struct pixel_context_snapshot) +
-		MAX_SUPPORTED_CSGS * sizeof(struct pixel_context_snapshot_entry);
+		BASEP_QUEUE_GROUP_MAX * sizeof(struct pixel_context_snapshot_entry);
 	segments[CONTEXTS].addr = kzalloc(segments[CONTEXTS].size, GFP_KERNEL);
 	if (segments[CONTEXTS].addr == NULL) {
 		segments[CONTEXTS].size = 0;

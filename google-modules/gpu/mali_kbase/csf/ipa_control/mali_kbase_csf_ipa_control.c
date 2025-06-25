@@ -307,6 +307,7 @@ void kbase_ipa_control_init(struct kbase_device *kbdev)
 			alloc_workqueue("ipa_ctrl_wq", WQ_HIGHPRI | WQ_UNBOUND, 1);
 		if (listener_data->clk_chg_wq) {
 			INIT_WORK(&listener_data->clk_chg_work, kbase_ipa_ctrl_rate_change_worker);
+			INIT_LIST_HEAD(&listener_data->listener.node);
 			listener_data->listener.notify = kbase_ipa_control_rate_change_notify;
 			listener_data->kbdev = kbdev;
 			ipa_ctrl->rtm_listener_data = listener_data;
@@ -897,7 +898,6 @@ void kbase_ipa_control_handle_gpu_reset_post(struct kbase_device *kbdev)
 }
 KBASE_EXPORT_TEST_API(kbase_ipa_control_handle_gpu_reset_post);
 
-#ifdef KBASE_PM_RUNTIME
 void kbase_ipa_control_handle_gpu_sleep_enter(struct kbase_device *kbdev)
 {
 	lockdep_assert_held(&kbdev->hwaccess_lock);
@@ -931,7 +931,6 @@ void kbase_ipa_control_handle_gpu_sleep_exit(struct kbase_device *kbdev)
 	}
 }
 KBASE_EXPORT_TEST_API(kbase_ipa_control_handle_gpu_sleep_exit);
-#endif
 
 #if MALI_UNIT_TEST
 void kbase_ipa_control_rate_change_notify_test(struct kbase_device *kbdev, u32 clk_index,

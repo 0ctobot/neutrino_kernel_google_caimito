@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2010-2024 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2025 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -83,18 +83,17 @@ enum tl_msg_id_obj {
 	KBASE_TL_ATTRIB_ATOM_PRIORITY,
 	KBASE_TL_ATTRIB_ATOM_STATE,
 	KBASE_TL_ATTRIB_ATOM_PRIORITIZED,
-	KBASE_TL_ATTRIB_ATOM_JIT,
+	KBASE_JD_AS_INFO,
 	KBASE_TL_KBASE_NEW_DEVICE,
 	KBASE_TL_KBASE_GPUCMDQUEUE_KICK,
 	KBASE_TL_KBASE_DEVICE_PROGRAM_CSG,
 	KBASE_TL_KBASE_DEVICE_DEPROGRAM_CSG,
+	KBASE_TL_KBASE_DEVICE_PROTM_ENTER_CSG,
 	KBASE_TL_KBASE_DEVICE_HALTING_CSG,
 	KBASE_TL_KBASE_DEVICE_SUSPEND_CSG,
 	KBASE_TL_KBASE_DEVICE_CSG_IDLE,
 	KBASE_TL_KBASE_NEW_CTX,
 	KBASE_TL_KBASE_DEL_CTX,
-	KBASE_TL_KBASE_CTX_ASSIGN_AS,
-	KBASE_TL_KBASE_CTX_UNASSIGN_AS,
 	KBASE_TL_KBASE_NEW_KCPUQUEUE,
 	KBASE_TL_KBASE_DEL_KCPUQUEUE,
 	KBASE_TL_KBASE_KCPUQUEUE_ENQUEUE_FENCE_SIGNAL,
@@ -141,11 +140,9 @@ enum tl_msg_id_obj {
 	KBASE_TL_KBASE_KCPUQUEUE_EXECUTE_ERROR_BARRIER,
 	KBASE_TL_KBASE_KCPUQUEUE_EXECUTE_GROUP_SUSPEND_START,
 	KBASE_TL_KBASE_KCPUQUEUE_EXECUTE_GROUP_SUSPEND_END,
-	KBASE_TL_KBASE_CSFFW_FW_RELOADING,
-	KBASE_TL_KBASE_CSFFW_FW_ENABLING,
-	KBASE_TL_KBASE_CSFFW_FW_REQUEST_SLEEP,
-	KBASE_TL_KBASE_CSFFW_FW_REQUEST_WAKEUP,
-	KBASE_TL_KBASE_CSFFW_FW_REQUEST_HALT,
+	KBASE_TL_KBASE_DEVICE_L2_CORE_STATE,
+	KBASE_TL_KBASE_DEVICE_MCU_STATE,
+	KBASE_TL_KBASE_DEVICE_SHADER_CORE_STATE,
 	KBASE_TL_KBASE_CSFFW_FW_DISABLING,
 	KBASE_TL_KBASE_CSFFW_FW_OFF,
 	KBASE_TL_KBASE_CSFFW_TLSTREAM_OVERFLOW,
@@ -357,10 +354,10 @@ enum tl_msg_id_obj {
 		"atom caused priority change", \
 		"@p", \
 		"atom") \
-	TRACEPOINT_DESC(KBASE_TL_ATTRIB_ATOM_JIT, \
-		"jit done for atom", \
-		"@pLLILILLL", \
-		"atom,edit_addr,new_addr,jit_flags,mem_flags,j_id,com_pgs,extent,va_pgs") \
+	TRACEPOINT_DESC(KBASE_JD_AS_INFO, \
+		"address space attributes", \
+		"@ILLL", \
+		"as_nr,transtab,memattr,transcfg") \
 	TRACEPOINT_DESC(KBASE_TL_KBASE_NEW_DEVICE, \
 		"New KBase Device", \
 		"@IIIIIIII", \
@@ -375,6 +372,10 @@ enum tl_msg_id_obj {
 		"kbase_device_id,kernel_ctx_id,gpu_cmdq_grp_handle,kbase_device_csg_slot_index,kbase_device_csg_slot_resuming") \
 	TRACEPOINT_DESC(KBASE_TL_KBASE_DEVICE_DEPROGRAM_CSG, \
 		"CSG is deprogrammed from a slot", \
+		"@II", \
+		"kbase_device_id,kbase_device_csg_slot_index") \
+	TRACEPOINT_DESC(KBASE_TL_KBASE_DEVICE_PROTM_ENTER_CSG, \
+		"CSG slot is entering protected mode", \
 		"@II", \
 		"kbase_device_id,kbase_device_csg_slot_index") \
 	TRACEPOINT_DESC(KBASE_TL_KBASE_DEVICE_HALTING_CSG, \
@@ -395,14 +396,6 @@ enum tl_msg_id_obj {
 		"kernel_ctx_id,kbase_device_id") \
 	TRACEPOINT_DESC(KBASE_TL_KBASE_DEL_CTX, \
 		"Delete KBase Context", \
-		"@I", \
-		"kernel_ctx_id") \
-	TRACEPOINT_DESC(KBASE_TL_KBASE_CTX_ASSIGN_AS, \
-		"Address Space is assigned to a KBase context", \
-		"@II", \
-		"kernel_ctx_id,kbase_device_as_index") \
-	TRACEPOINT_DESC(KBASE_TL_KBASE_CTX_UNASSIGN_AS, \
-		"Address Space is unassigned from a KBase context", \
 		"@I", \
 		"kernel_ctx_id") \
 	TRACEPOINT_DESC(KBASE_TL_KBASE_NEW_KCPUQUEUE, \
@@ -589,26 +582,18 @@ enum tl_msg_id_obj {
 		"KCPU Queue ends a group suspend", \
 		"@pI", \
 		"kcpu_queue,execute_error") \
-	TRACEPOINT_DESC(KBASE_TL_KBASE_CSFFW_FW_RELOADING, \
-		"CSF FW is being reloaded", \
-		"@L", \
-		"csffw_cycle") \
-	TRACEPOINT_DESC(KBASE_TL_KBASE_CSFFW_FW_ENABLING, \
-		"CSF FW is being enabled", \
-		"@L", \
-		"csffw_cycle") \
-	TRACEPOINT_DESC(KBASE_TL_KBASE_CSFFW_FW_REQUEST_SLEEP, \
-		"CSF FW sleep is requested", \
-		"@L", \
-		"csffw_cycle") \
-	TRACEPOINT_DESC(KBASE_TL_KBASE_CSFFW_FW_REQUEST_WAKEUP, \
-		"CSF FW wake up is requested", \
-		"@L", \
-		"csffw_cycle") \
-	TRACEPOINT_DESC(KBASE_TL_KBASE_CSFFW_FW_REQUEST_HALT, \
-		"CSF FW halt is requested", \
-		"@L", \
-		"csffw_cycle") \
+	TRACEPOINT_DESC(KBASE_TL_KBASE_DEVICE_L2_CORE_STATE, \
+		"KBase device updates L2 Core state", \
+		"@IL", \
+		"kbase_device_id,new_state") \
+	TRACEPOINT_DESC(KBASE_TL_KBASE_DEVICE_MCU_STATE, \
+		"KBase device updates MCU state", \
+		"@IL", \
+		"kbase_device_id,new_state") \
+	TRACEPOINT_DESC(KBASE_TL_KBASE_DEVICE_SHADER_CORE_STATE, \
+		"KBase device updates Shader Core state", \
+		"@IL", \
+		"kbase_device_id,new_state") \
 	TRACEPOINT_DESC(KBASE_TL_KBASE_CSFFW_FW_DISABLING, \
 		"CSF FW is being disabled", \
 		"@L", \
@@ -2058,30 +2043,20 @@ void __kbase_tlstream_tl_attrib_atom_prioritized(
 	kbase_tlstream_msgbuf_release(stream, acq_flags);
 }
 
-void __kbase_tlstream_tl_attrib_atom_jit(
+void __kbase_tlstream_jd_as_info(
 	struct kbase_tlstream *stream,
-	const void *atom,
-	u64 edit_addr,
-	u64 new_addr,
-	u32 jit_flags,
-	u64 mem_flags,
-	u32 j_id,
-	u64 com_pgs,
-	u64 extent,
-	u64 va_pgs
+	u32 as_nr,
+	u64 transtab,
+	u64 memattr,
+	u64 transcfg
 )
 {
-	const u32 msg_id = KBASE_TL_ATTRIB_ATOM_JIT;
+	const u32 msg_id = KBASE_JD_AS_INFO;
 	const size_t msg_size = sizeof(msg_id) + sizeof(u64)
-		+ sizeof(atom)
-		+ sizeof(edit_addr)
-		+ sizeof(new_addr)
-		+ sizeof(jit_flags)
-		+ sizeof(mem_flags)
-		+ sizeof(j_id)
-		+ sizeof(com_pgs)
-		+ sizeof(extent)
-		+ sizeof(va_pgs)
+		+ sizeof(as_nr)
+		+ sizeof(transtab)
+		+ sizeof(memattr)
+		+ sizeof(transcfg)
 		;
 	char *buffer;
 	unsigned long acq_flags;
@@ -2092,23 +2067,13 @@ void __kbase_tlstream_tl_attrib_atom_jit(
 	pos = kbasep_serialize_bytes(buffer, pos, &msg_id, sizeof(msg_id));
 	pos = kbasep_serialize_timestamp(buffer, pos);
 	pos = kbasep_serialize_bytes(buffer,
-		pos, &atom, sizeof(atom));
+		pos, &as_nr, sizeof(as_nr));
 	pos = kbasep_serialize_bytes(buffer,
-		pos, &edit_addr, sizeof(edit_addr));
+		pos, &transtab, sizeof(transtab));
 	pos = kbasep_serialize_bytes(buffer,
-		pos, &new_addr, sizeof(new_addr));
+		pos, &memattr, sizeof(memattr));
 	pos = kbasep_serialize_bytes(buffer,
-		pos, &jit_flags, sizeof(jit_flags));
-	pos = kbasep_serialize_bytes(buffer,
-		pos, &mem_flags, sizeof(mem_flags));
-	pos = kbasep_serialize_bytes(buffer,
-		pos, &j_id, sizeof(j_id));
-	pos = kbasep_serialize_bytes(buffer,
-		pos, &com_pgs, sizeof(com_pgs));
-	pos = kbasep_serialize_bytes(buffer,
-		pos, &extent, sizeof(extent));
-	pos = kbasep_serialize_bytes(buffer,
-		pos, &va_pgs, sizeof(va_pgs));
+		pos, &transcfg, sizeof(transcfg));
 
 	kbase_tlstream_msgbuf_release(stream, acq_flags);
 }
@@ -2257,6 +2222,33 @@ void __kbase_tlstream_tl_kbase_device_deprogram_csg(
 	kbase_tlstream_msgbuf_release(stream, acq_flags);
 }
 
+void __kbase_tlstream_tl_kbase_device_protm_enter_csg(
+	struct kbase_tlstream *stream,
+	u32 kbase_device_id,
+	u32 kbase_device_csg_slot_index
+)
+{
+	const u32 msg_id = KBASE_TL_KBASE_DEVICE_PROTM_ENTER_CSG;
+	const size_t msg_size = sizeof(msg_id) + sizeof(u64)
+		+ sizeof(kbase_device_id)
+		+ sizeof(kbase_device_csg_slot_index)
+		;
+	char *buffer;
+	unsigned long acq_flags;
+	size_t pos = 0;
+
+	buffer = kbase_tlstream_msgbuf_acquire(stream, msg_size, &acq_flags);
+
+	pos = kbasep_serialize_bytes(buffer, pos, &msg_id, sizeof(msg_id));
+	pos = kbasep_serialize_timestamp(buffer, pos);
+	pos = kbasep_serialize_bytes(buffer,
+		pos, &kbase_device_id, sizeof(kbase_device_id));
+	pos = kbasep_serialize_bytes(buffer,
+		pos, &kbase_device_csg_slot_index, sizeof(kbase_device_csg_slot_index));
+
+	kbase_tlstream_msgbuf_release(stream, acq_flags);
+}
+
 void __kbase_tlstream_tl_kbase_device_halting_csg(
 	struct kbase_tlstream *stream,
 	u32 kbase_device_id,
@@ -2375,56 +2367,6 @@ void __kbase_tlstream_tl_kbase_del_ctx(
 )
 {
 	const u32 msg_id = KBASE_TL_KBASE_DEL_CTX;
-	const size_t msg_size = sizeof(msg_id) + sizeof(u64)
-		+ sizeof(kernel_ctx_id)
-		;
-	char *buffer;
-	unsigned long acq_flags;
-	size_t pos = 0;
-
-	buffer = kbase_tlstream_msgbuf_acquire(stream, msg_size, &acq_flags);
-
-	pos = kbasep_serialize_bytes(buffer, pos, &msg_id, sizeof(msg_id));
-	pos = kbasep_serialize_timestamp(buffer, pos);
-	pos = kbasep_serialize_bytes(buffer,
-		pos, &kernel_ctx_id, sizeof(kernel_ctx_id));
-
-	kbase_tlstream_msgbuf_release(stream, acq_flags);
-}
-
-void __kbase_tlstream_tl_kbase_ctx_assign_as(
-	struct kbase_tlstream *stream,
-	u32 kernel_ctx_id,
-	u32 kbase_device_as_index
-)
-{
-	const u32 msg_id = KBASE_TL_KBASE_CTX_ASSIGN_AS;
-	const size_t msg_size = sizeof(msg_id) + sizeof(u64)
-		+ sizeof(kernel_ctx_id)
-		+ sizeof(kbase_device_as_index)
-		;
-	char *buffer;
-	unsigned long acq_flags;
-	size_t pos = 0;
-
-	buffer = kbase_tlstream_msgbuf_acquire(stream, msg_size, &acq_flags);
-
-	pos = kbasep_serialize_bytes(buffer, pos, &msg_id, sizeof(msg_id));
-	pos = kbasep_serialize_timestamp(buffer, pos);
-	pos = kbasep_serialize_bytes(buffer,
-		pos, &kernel_ctx_id, sizeof(kernel_ctx_id));
-	pos = kbasep_serialize_bytes(buffer,
-		pos, &kbase_device_as_index, sizeof(kbase_device_as_index));
-
-	kbase_tlstream_msgbuf_release(stream, acq_flags);
-}
-
-void __kbase_tlstream_tl_kbase_ctx_unassign_as(
-	struct kbase_tlstream *stream,
-	u32 kernel_ctx_id
-)
-{
-	const u32 msg_id = KBASE_TL_KBASE_CTX_UNASSIGN_AS;
 	const size_t msg_size = sizeof(msg_id) + sizeof(u64)
 		+ sizeof(kernel_ctx_id)
 		;
@@ -3692,14 +3634,16 @@ void __kbase_tlstream_tl_kbase_kcpuqueue_execute_group_suspend_end(
 	kbase_tlstream_msgbuf_release(stream, acq_flags);
 }
 
-void __kbase_tlstream_tl_kbase_csffw_fw_reloading(
+void __kbase_tlstream_tl_kbase_device_l2_core_state(
 	struct kbase_tlstream *stream,
-	u64 csffw_cycle
+	u32 kbase_device_id,
+	u64 new_state
 )
 {
-	const u32 msg_id = KBASE_TL_KBASE_CSFFW_FW_RELOADING;
+	const u32 msg_id = KBASE_TL_KBASE_DEVICE_L2_CORE_STATE;
 	const size_t msg_size = sizeof(msg_id) + sizeof(u64)
-		+ sizeof(csffw_cycle)
+		+ sizeof(kbase_device_id)
+		+ sizeof(new_state)
 		;
 	char *buffer;
 	unsigned long acq_flags;
@@ -3710,19 +3654,23 @@ void __kbase_tlstream_tl_kbase_csffw_fw_reloading(
 	pos = kbasep_serialize_bytes(buffer, pos, &msg_id, sizeof(msg_id));
 	pos = kbasep_serialize_timestamp(buffer, pos);
 	pos = kbasep_serialize_bytes(buffer,
-		pos, &csffw_cycle, sizeof(csffw_cycle));
+		pos, &kbase_device_id, sizeof(kbase_device_id));
+	pos = kbasep_serialize_bytes(buffer,
+		pos, &new_state, sizeof(new_state));
 
 	kbase_tlstream_msgbuf_release(stream, acq_flags);
 }
 
-void __kbase_tlstream_tl_kbase_csffw_fw_enabling(
+void __kbase_tlstream_tl_kbase_device_mcu_state(
 	struct kbase_tlstream *stream,
-	u64 csffw_cycle
+	u32 kbase_device_id,
+	u64 new_state
 )
 {
-	const u32 msg_id = KBASE_TL_KBASE_CSFFW_FW_ENABLING;
+	const u32 msg_id = KBASE_TL_KBASE_DEVICE_MCU_STATE;
 	const size_t msg_size = sizeof(msg_id) + sizeof(u64)
-		+ sizeof(csffw_cycle)
+		+ sizeof(kbase_device_id)
+		+ sizeof(new_state)
 		;
 	char *buffer;
 	unsigned long acq_flags;
@@ -3733,19 +3681,23 @@ void __kbase_tlstream_tl_kbase_csffw_fw_enabling(
 	pos = kbasep_serialize_bytes(buffer, pos, &msg_id, sizeof(msg_id));
 	pos = kbasep_serialize_timestamp(buffer, pos);
 	pos = kbasep_serialize_bytes(buffer,
-		pos, &csffw_cycle, sizeof(csffw_cycle));
+		pos, &kbase_device_id, sizeof(kbase_device_id));
+	pos = kbasep_serialize_bytes(buffer,
+		pos, &new_state, sizeof(new_state));
 
 	kbase_tlstream_msgbuf_release(stream, acq_flags);
 }
 
-void __kbase_tlstream_tl_kbase_csffw_fw_request_sleep(
+void __kbase_tlstream_tl_kbase_device_shader_core_state(
 	struct kbase_tlstream *stream,
-	u64 csffw_cycle
+	u32 kbase_device_id,
+	u64 new_state
 )
 {
-	const u32 msg_id = KBASE_TL_KBASE_CSFFW_FW_REQUEST_SLEEP;
+	const u32 msg_id = KBASE_TL_KBASE_DEVICE_SHADER_CORE_STATE;
 	const size_t msg_size = sizeof(msg_id) + sizeof(u64)
-		+ sizeof(csffw_cycle)
+		+ sizeof(kbase_device_id)
+		+ sizeof(new_state)
 		;
 	char *buffer;
 	unsigned long acq_flags;
@@ -3756,53 +3708,9 @@ void __kbase_tlstream_tl_kbase_csffw_fw_request_sleep(
 	pos = kbasep_serialize_bytes(buffer, pos, &msg_id, sizeof(msg_id));
 	pos = kbasep_serialize_timestamp(buffer, pos);
 	pos = kbasep_serialize_bytes(buffer,
-		pos, &csffw_cycle, sizeof(csffw_cycle));
-
-	kbase_tlstream_msgbuf_release(stream, acq_flags);
-}
-
-void __kbase_tlstream_tl_kbase_csffw_fw_request_wakeup(
-	struct kbase_tlstream *stream,
-	u64 csffw_cycle
-)
-{
-	const u32 msg_id = KBASE_TL_KBASE_CSFFW_FW_REQUEST_WAKEUP;
-	const size_t msg_size = sizeof(msg_id) + sizeof(u64)
-		+ sizeof(csffw_cycle)
-		;
-	char *buffer;
-	unsigned long acq_flags;
-	size_t pos = 0;
-
-	buffer = kbase_tlstream_msgbuf_acquire(stream, msg_size, &acq_flags);
-
-	pos = kbasep_serialize_bytes(buffer, pos, &msg_id, sizeof(msg_id));
-	pos = kbasep_serialize_timestamp(buffer, pos);
+		pos, &kbase_device_id, sizeof(kbase_device_id));
 	pos = kbasep_serialize_bytes(buffer,
-		pos, &csffw_cycle, sizeof(csffw_cycle));
-
-	kbase_tlstream_msgbuf_release(stream, acq_flags);
-}
-
-void __kbase_tlstream_tl_kbase_csffw_fw_request_halt(
-	struct kbase_tlstream *stream,
-	u64 csffw_cycle
-)
-{
-	const u32 msg_id = KBASE_TL_KBASE_CSFFW_FW_REQUEST_HALT;
-	const size_t msg_size = sizeof(msg_id) + sizeof(u64)
-		+ sizeof(csffw_cycle)
-		;
-	char *buffer;
-	unsigned long acq_flags;
-	size_t pos = 0;
-
-	buffer = kbase_tlstream_msgbuf_acquire(stream, msg_size, &acq_flags);
-
-	pos = kbasep_serialize_bytes(buffer, pos, &msg_id, sizeof(msg_id));
-	pos = kbasep_serialize_timestamp(buffer, pos);
-	pos = kbasep_serialize_bytes(buffer,
-		pos, &csffw_cycle, sizeof(csffw_cycle));
+		pos, &new_state, sizeof(new_state));
 
 	kbase_tlstream_msgbuf_release(stream, acq_flags);
 }

@@ -53,29 +53,6 @@ struct kbase_device;
 int kbase_pm_init(struct kbase_device *kbdev);
 
 /**
- * kbase_pm_powerup - Power up GPU after all modules have been initialized
- *                    and interrupt handlers installed.
- *
- * @kbdev:     The kbase device structure for the device (must be a valid pointer)
- * @flags:     Flags to pass on to kbase_pm_init_hw
- *
- * Return: 0 if powerup was successful.
- */
-int kbase_pm_powerup(struct kbase_device *kbdev, unsigned int flags);
-
-/**
- * kbase_pm_halt - Halt the power management framework.
- *
- * @kbdev: The kbase device structure for the device (must be a valid pointer)
- *
- * Should ensure that no new interrupts are generated,
- * but allow any currently running interrupt handlers to complete successfully.
- * The GPU is forced off by the time this function returns, regardless of
- * whether or not the active power policy asks for the GPU to be powered off.
- */
-void kbase_pm_halt(struct kbase_device *kbdev);
-
-/**
  * kbase_pm_term - Terminate the power management framework.
  *
  * @kbdev:     The kbase device structure for the device (must be a valid pointer)
@@ -291,26 +268,6 @@ int kbase_pm_apc_init(struct kbase_device *kbdev);
  */
 void kbase_pm_apc_term(struct kbase_device *kbdev);
 
-#if !MALI_USE_CSF
-/**
- * kbase_pm_apc_request - Handle APC power on request
- * @kbdev: The kbase device structure for the device (must be a valid pointer)
- * @dur_usec: Requested duration for GPU to stay awake in microseconds
- *
- * Instructs the APC mechanism to start powering on the GPU and requests to keep
- * it powered on for at least &dur_usec microseconds.
- *
- * Note that the APC mechanism will limit the power on duration requests made
- * via &dur_usec to &KBASE_APC_MAX_DUR_USEC. The GPU may remain powered on
- * for longer than &dur_usec if there are outstanding tasks remaining for it to
- * process.
- *
- * Duration requests smaller than &KBASE_APC_MIN_DUR_USEC will are not supported
- * and will result in no APC work being queued.
- */
-void kbase_pm_apc_request(struct kbase_device *kbdev, u32 dur_usec);
-#endif
-
 /**
  * Print debug message indicating power state of GPU
  * @kbdev: The kbase device structure for the device (must be a valid pointer)
@@ -320,5 +277,18 @@ void kbase_pm_apc_request(struct kbase_device *kbdev, u32 dur_usec);
  * Takes and releases kbdev->hwaccess_lock on CSF GPUs.
  */
 void kbase_gpu_timeout_debug_message(struct kbase_device *kbdev, const char *timeout_msg);
+
+/**
+ * kbase_pm_handle_gpu_poweroff_wait_work - Work item for
+ *                                          gpu_poweroff_wait_work.
+ *
+ * @kbdev: The kbase device structure for the device (must be a valid pointer)
+ *
+ * This function synchronises the GPU power state with that of the PM state
+ * machine to either power on -or off- the GPU as required.
+ * It is normally executed as part of the gpu_poweroff_wait_work work item, but
+ * could also be called directly in kbase_csf_scheduler_kthread().
+ */
+void kbase_pm_handle_gpu_poweroff_wait_work(struct kbase_device *kbdev);
 
 #endif /* _KBASE_PM_H_ */

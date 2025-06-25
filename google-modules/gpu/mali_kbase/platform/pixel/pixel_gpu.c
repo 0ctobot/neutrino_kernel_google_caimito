@@ -21,9 +21,7 @@
 #ifdef CONFIG_MALI_PIXEL_GPU_SECURE_RENDERING
 #include <device/mali_kbase_device_internal.h>
 #endif /* CONFIG_MALI_PIXEL_GPU_SECURE_RENDERING */
-#if MALI_USE_CSF
 #include <csf/mali_kbase_csf_firmware_cfg.h>
-#endif
 
 /* We need this include due to the removal from mali_kbase.h */
 #include <mali_kbase_hwaccess_pm.h>
@@ -131,11 +129,9 @@ struct protected_mode_ops pixel_protected_ops = {
 static int gpu_fw_cfg_init(struct kbase_device *kbdev) {
 	int ec = 0;
 
-#if MALI_USE_CSF
 	if (gpu_sscd_fw_log_init(kbdev, 0)) {
 		dev_warn(kbdev->dev, "pixel: failed to enable FW log");
 	}
-#endif
 
 	return ec;
 }
@@ -320,9 +316,26 @@ static void gpu_pixel_term(struct kbase_device *kbdev)
 	kfree(pc);
 }
 
+/**
+ * gpu_pixel_late_init() - Verifies final state of features after init.
+ *
+ * @kbdev: The &struct kbase_device for the GPU.
+ */
+static int gpu_pixel_late_init(struct kbase_device *kbdev)
+{
+	if (kbase_is_large_pages_enabled())
+		panic("b/407731257: kbase_is_large_pages_enabled() should return false");
+
+	if (kbase_is_page_migration_enabled())
+		panic("b/407731257: kbase_is_page_migration_enabled() should return false");
+
+	return 0;
+}
+
 struct kbase_platform_funcs_conf platform_funcs = {
 	.platform_init_func = &gpu_pixel_init,
 	.platform_term_func = &gpu_pixel_term,
+	.platform_late_init_func = &gpu_pixel_late_init,
 #ifdef CONFIG_MALI_MIDGARD_DVFS
 	.platform_handler_context_init_func = &gpu_pixel_kctx_init,
 	.platform_handler_context_term_func = &gpu_pixel_kctx_term,

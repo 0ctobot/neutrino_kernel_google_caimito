@@ -66,7 +66,7 @@ endif
 CONFIG_MALI_PLATFORM_NAME="pixel"
 
 # Driver version string which is returned to userspace via an ioctl
-MALI_RELEASE_NAME ?= '"r52p0-00eac0"'
+MALI_RELEASE_NAME ?= '"r54p0-00eac0"'
 # Set up defaults if not defined by build system
 ifeq ($(CONFIG_MALI_DEBUG), y)
     MALI_UNIT_TEST = 1
@@ -90,7 +90,6 @@ ifeq ($(CONFIG_MALI_CSF_SUPPORT),y)
     ccflags-y += -DCONFIG_MALI_PIXEL_GPU_SSCD
 else
     MALI_JIT_PRESSURE_LIMIT_BASE ?= 1
-    MALI_USE_CSF ?= 0
 endif
 ifeq ($(CONFIG_SOC_ZUMA),y)
     ccflags-y += -DCONFIG_MALI_PM_RUNTIME_S2MPU_CONTROL
@@ -130,7 +129,6 @@ ccflags-y += \
 
 subdir-ccflags-y += \
 		-I$(KERNEL_SRC)/../private/google-modules/power/mitigation
-
 ifeq ($(KBUILD_EXTMOD),)
 # in-tree
     ccflags-y +=-DMALI_KBASE_PLATFORM_PATH=../../$(src)/platform/$(CONFIG_MALI_PLATFORM_NAME)
@@ -155,7 +153,7 @@ subdir-ccflags-y += $(ccflags-y)
 # Kernel Modules
 #
 obj-$(CONFIG_MALI_MIDGARD) += mali_kbase.o
-obj-$(CONFIG_MALI_ARBITRATION) += ../arbitration/
+obj-$(CONFIG_MALI_HAS_VIRTUALIZATION) += ../arbitration/
 obj-$(CONFIG_MALI_KUTF)    += tests/
 
 mali_kbase-y := \
@@ -195,8 +193,6 @@ mali_kbase-y := \
 
 mali_kbase-$(CONFIG_DEBUG_FS) += mali_kbase_pbha_debugfs.o
 
-mali_kbase-$(CONFIG_MALI_CINSTR_GWT) += mali_kbase_gwt.o
-
 mali_kbase-$(CONFIG_SYNC_FILE) += \
     mali_kbase_fence_ops.o \
     mali_kbase_sync_file.o \
@@ -205,23 +201,6 @@ mali_kbase-$(CONFIG_SYNC_FILE) += \
 mali_kbase-$(CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD) += \
         mali_power_gpu_work_period_trace.o \
         mali_kbase_gpu_metrics.o
-
-ifneq ($(CONFIG_MALI_CSF_SUPPORT),y)
-    mali_kbase-y += \
-        mali_kbase_jm.o \
-        mali_kbase_dummy_job_wa.o \
-        mali_kbase_debug_job_fault.o \
-        mali_kbase_event.o \
-        mali_kbase_jd.o \
-        mali_kbase_jd_debugfs.o \
-        mali_kbase_js.o \
-        mali_kbase_js_ctx_attr.o \
-        mali_kbase_kinstr_jm.o
-
-    mali_kbase-$(CONFIG_SYNC_FILE) += \
-        mali_kbase_fence_ops.o \
-        mali_kbase_fence.o
-endif
 
 
 INCLUDE_SUBDIR = \

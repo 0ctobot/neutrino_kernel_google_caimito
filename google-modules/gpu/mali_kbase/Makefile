@@ -61,8 +61,7 @@ ifeq ($(MALI_KCONFIG_EXT_PREFIX),)
         CONFIG_MALI_PLATFORM_NAME ?= "devicetree"
         CONFIG_MALI_TRACE_POWER_GPU_WORK_PERIOD ?= y
         CONFIG_MALI_GATOR_SUPPORT ?= y
-        CONFIG_MALI_ARBITRATION ?= n
-        CONFIG_MALI_PARTITION_MANAGER ?= n
+        CONFIG_MALI_KUTF_PTM_TESTS ?= n
 
 
         ifneq ($(CONFIG_MALI_NO_MALI),y)
@@ -163,7 +162,6 @@ ifeq ($(MALI_KCONFIG_EXT_PREFIX),)
         endif
     else
         # Prevent misuse when CONFIG_MALI_MIDGARD=n
-        CONFIG_MALI_ARBITRATION = n
         CONFIG_MALI_KUTF = n
         CONFIG_MALI_KUTF_IRQ_TEST = n
         CONFIG_MALI_KUTF_CLK_RATE_TRACE = y
@@ -174,8 +172,7 @@ ifeq ($(MALI_KCONFIG_EXT_PREFIX),)
     CONFIGS += \
         CONFIG_MALI_MIDGARD \
         CONFIG_MALI_GATOR_SUPPORT \
-        CONFIG_MALI_ARBITRATION \
-        CONFIG_MALI_PARTITION_MANAGER \
+        CONFIG_MALI_KUTF_PTM_TESTS \
         CONFIG_MALI_REAL_HW \
         CONFIG_MALI_DEVFREQ \
         CONFIG_MALI_MIDGARD_DVFS \
@@ -318,11 +315,8 @@ ifeq ($(CONFIG_MALI_KCOV),y)
     EXTRA_CFLAGS += -DKCOV_ENABLE_COMPARISONS=1
 endif
 
-all:
-	$(MAKE) -C $(KDIR) M=$(M) W=1 $(MAKE_ARGS) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" modules
+# Define and "all" target, which isn't really needed but doesn't hurt.
+all: modules
 
-modules_install:
-	$(MAKE) -C $(KDIR) M=$(M) W=1 $(MAKE_ARGS) modules_install
-
-clean:
-	$(MAKE) -C $(KDIR) M=$(M) W=1 $(MAKE_ARGS) clean
+modules modules_install clean compile_commands.json:
+	$(MAKE) -C $(KDIR) M=$(M) W=1 $(MAKE_ARGS) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" $(@)

@@ -320,9 +320,26 @@ static void gpu_pixel_term(struct kbase_device *kbdev)
 	kfree(pc);
 }
 
+/**
+ * gpu_pixel_late_init() - Verifies final state of features after init.
+ *
+ * @kbdev: The &struct kbase_device for the GPU.
+ */
+static int gpu_pixel_late_init(struct kbase_device *kbdev)
+{
+	if (kbase_is_large_pages_enabled())
+		panic("b/407731257: kbase_is_large_pages_enabled() should return false");
+
+	if (kbase_is_page_migration_enabled())
+		panic("b/407731257: kbase_is_page_migration_enabled() should return false");
+
+	return 0;
+}
+
 struct kbase_platform_funcs_conf platform_funcs = {
 	.platform_init_func = &gpu_pixel_init,
 	.platform_term_func = &gpu_pixel_term,
+	.platform_late_init_func = &gpu_pixel_late_init,
 #ifdef CONFIG_MALI_MIDGARD_DVFS
 	.platform_handler_context_init_func = &gpu_pixel_kctx_init,
 	.platform_handler_context_term_func = &gpu_pixel_kctx_term,

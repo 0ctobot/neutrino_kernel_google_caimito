@@ -109,17 +109,6 @@ config MALI_MIDGARD_ENABLE_TRACE
 	  Enables tracing in kbase. Trace log available through
 	  the "mali_trace" debugfs file, when the CONFIG_DEBUG_FS is enabled
 
-config MALI_ARBITER_SUPPORT
-	bool "Enable arbiter support for Mali"
-	depends on MALI_MIDGARD
-	default n
-	help
-	  Enable support for the arbiter interface in the driver.
-	  This allows an external arbiter to manage driver access
-	  to GPU hardware in a virtualized environment
-
-	  If unsure, say N.
-
 config DMA_BUF_SYNC_IOCTL_SUPPORTED
 	bool "Enable Kernel DMA buffers support DMA_BUF_IOCTL_SYNC"
 	depends on MALI_MIDGARD && BACKEND_KERNEL

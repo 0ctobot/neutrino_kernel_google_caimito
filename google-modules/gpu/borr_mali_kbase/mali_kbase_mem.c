@@ -862,10 +862,10 @@ static int kbase_do_syncset(struct kbase_context *kctx, struct basep_syncset *ss
 
 	/* find the region where the virtual address is contained */
 	reg = kbase_region_tracker_find_region_enclosing_address(kctx,
-								 sset->mem_handle.basep.handle);
+								 sset->gpu_va);
 	if (kbase_is_region_invalid_or_free(reg)) {
 		dev_warn(kctx->kbdev->dev, "Can't find a valid region at VA 0x%016llX",
-			 sset->mem_handle.basep.handle);
+			 sset->gpu_va);
 		err = -EINVAL;
 		goto out_unlock;
 	}
@@ -951,7 +951,7 @@ int kbase_sync_now(struct kbase_context *kctx, struct basep_syncset *sset)
 	KBASE_DEBUG_ASSERT(kctx != NULL);
 	KBASE_DEBUG_ASSERT(sset != NULL);
 
-	if (sset->mem_handle.basep.handle & ~PAGE_MASK) {
+	if (sset->gpu_va & ~PAGE_MASK) {
 		dev_warn(kctx->kbdev->dev, "mem_handle: passed parameter is invalid");
 		return -EINVAL;
 	}

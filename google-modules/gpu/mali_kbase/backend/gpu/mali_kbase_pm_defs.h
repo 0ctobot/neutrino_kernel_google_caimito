@@ -32,10 +32,6 @@
 
 #include <hw_access/mali_kbase_hw_access_regmap.h>
 
-#if defined(CONFIG_PM_RUNTIME) || defined(CONFIG_PM)
-#define KBASE_PM_RUNTIME 1
-#endif
-
 /* Forward definition - see mali_kbase.h */
 struct kbase_device;
 struct kbase_jd_atom;
@@ -62,7 +58,6 @@ struct kbase_jd_atom;
  *
  * They specify which type of core should be acted on.
  */
-#if MALI_USE_CSF
 enum kbase_pm_core_type {
 	KBASE_PM_CORE_L2 = HOST_POWER_ENUM(L2_PRESENT),
 	KBASE_PM_CORE_SHADER = HOST_POWER_ENUM(SHADER_PRESENT),
@@ -77,14 +72,6 @@ enum kbase_pm_core_type {
 	 */
 	KBASE_PM_CORE_BASE = HOST_POWER_ENUM(BASE_PRESENT)
 };
-#else
-enum kbase_pm_core_type {
-	KBASE_PM_CORE_L2 = GPU_CONTROL_ENUM(L2_PRESENT),
-	KBASE_PM_CORE_SHADER = GPU_CONTROL_ENUM(SHADER_PRESENT),
-	KBASE_PM_CORE_TILER = GPU_CONTROL_ENUM(TILER_PRESENT),
-	KBASE_PM_CORE_STACK = GPU_CONTROL_ENUM(STACK_PRESENT)
-};
-#endif
 
 /*
  * enum kbase_l2_core_state - The states used for the L2 cache & tiler power
@@ -96,7 +83,6 @@ enum kbase_l2_core_state {
 #undef KBASEP_L2_STATE
 };
 
-#if MALI_USE_CSF
 /*
  * enum kbase_mcu_state - The states used for the MCU state machine.
  */
@@ -105,7 +91,6 @@ enum kbase_mcu_state {
 #include "mali_kbase_pm_mcu_states.h"
 #undef KBASEP_MCU_STATE
 };
-#endif
 
 /*
  * enum kbase_shader_core_state - The states used for the shaders' state machine.
@@ -166,24 +151,13 @@ enum kbase_pm_runtime_suspend_abort_reason {
  *                  the time_period_start timestamp, measured in units of 256ns.
  *  @busy_mcu: The amount of time MCU was busy measured in units of 256ns
  *  @idle_mcu: The amount of time MCU was idle measured in units of 256ns
- *  @busy_cl: the amount of time the GPU was busy executing CL jobs. Note that
- *           if two CL jobs were active for 256ns, this value would be updated
- *           with 2 (2x256ns).
- *  @busy_gl: the amount of time the GPU was busy executing GL jobs. Note that
- *           if two GL jobs were active for 256ns, this value would be updated
- *           with 2 (2x256ns).
  */
 struct kbasep_pm_metrics {
 	u32 time_busy;
 	u32 time_idle;
-#if MALI_USE_CSF
 	u32 time_in_protm;
 	u32 busy_mcu;
 	u32 idle_mcu;
-#else
-	u32 busy_cl[2];
-	u32 busy_gl;
-#endif
 };
 
 /**
@@ -194,11 +168,6 @@ struct kbasep_pm_metrics {
  *                       kbase_ipa_control client
  *  @skip_gpu_active_sanity_check: Decide whether to skip GPU_ACTIVE sanity
  *                                 check in DVFS utilisation calculation
- *  @gpu_active: true when the GPU is executing jobs. false when
- *           not. Updated when the job scheduler informs us a job in submitted
- *           or removed from a GPU slot.
- *  @active_cl_ctx: number of CL jobs active on the GPU. Array is per-device.
- *  @active_gl_ctx: number of GL jobs active on the GPU. Array is per-slot.
  *  @lock: spinlock protecting the kbasep_pm_metrics_state structure
  *  @platform_data: pointer to data controlled by platform specific code
  *  @kbdev: pointer to kbase device for which metrics are collected
@@ -214,14 +183,8 @@ struct kbasep_pm_metrics {
  */
 struct kbasep_pm_metrics_state {
 	ktime_t time_period_start;
-#if MALI_USE_CSF
 	void *ipa_control_client;
 	bool skip_gpu_active_sanity_check;
-#else
-	bool gpu_active;
-	u32 active_cl_ctx[2];
-	u32 active_gl_ctx[3];
-#endif
 	spinlock_t lock;
 
 	void *platform_data;
@@ -406,6 +369,8 @@ struct kbase_pm_event_log {
  *                                     called previously.
  *                                     See &struct kbase_pm_callback_conf.
  * @ca_cores_enabled: Cores that are currently available
+ * @ca_gov_cores_enabled: Final value used for setting GOV_CORE_MASK register.
+ *                        Depends on sysfs-core-mask and devfreq-core-mask.
  * @apply_hw_issue_TITANHW_2938_wa: Indicates if the workaround for KBASE_HW_ISSUE_TITANHW_2938
  *                                  needs to be applied when unmapping memory from GPU.
  * @mcu_state: The current state of the micro-control unit, only applicable
@@ -435,13 +400,12 @@ struct kbase_pm_event_log {
  *                   progress that will eventually achieve this state (assuming
  *                   that the policy doesn't change its mind in the mean time).
  * @mcu_desired: True if the micro-control unit should be powered on by the MCU state
- *               machine. Updated as per the value of @mcu_poweron_required.
- * @mcu_poweron_required: Boolean flag updated mainly by the CSF Scheduler code,
- *                        before updating the PM active count, to indicate to the
- *                        PM code that micro-control unit needs to be powered up/down.
+ *               machine.
  * @policy_change_clamp_state_to_off: Signaling the backend is in PM policy
  *                change transition, needs the mcu/L2 to be brought back to the
  *                off state and remain in that state until the flag is cleared.
+ * @waiting_for_mmu_fault_handling: Flag set just before the wait for pending MMU faults
+ *                                  is done inside @gpu_poweroff_wait_wq.
  * @csf_pm_sched_flags: CSF Dynamic PM control flags in accordance to the
  *                current active PM policy. This field is updated whenever a
  *                new policy is activated.
@@ -492,20 +456,6 @@ struct kbase_pm_event_log {
  *				 re-enabled whilst the flag is set.
  * @in_reset: True if a GPU is resetting and normal power manager operation is
  *            suspended
- * @partial_shaderoff: True if we want to partial power off shader cores,
- *                     it indicates a partial shader core off case,
- *                     do some special operation for such case like flush
- *                     L2 cache because of GPU2017-861
- * @protected_entry_transition_override : True if GPU reset is being used
- *                                  before entering the protected mode and so
- *                                  the reset handling behaviour is being
- *                                  overridden.
- * @protected_transition_override : True if a protected mode transition is in
- *                                  progress and is overriding power manager
- *                                  behaviour.
- * @protected_l2_override : Non-zero if the L2 cache is required during a
- *                          protected mode transition. Has no effect if not
- *                          transitioning.
  * @hwcnt_desired: True if we want GPU hardware counters to be enabled.
  * @hwcnt_disabled: True if GPU hardware counters are not enabled.
  * @hwcnt_disable_work: Work item to disable GPU hardware counters, used if
@@ -528,6 +478,7 @@ struct kbase_pm_event_log {
  *                          using gpu_clock_control
  * @event_log: data for the always-on event log
  * @reset_in_progress: Set if reset is ongoing, otherwise set to 0
+ * @gpu_lost_pending: Set if GPU_LOST is detected and its handling is pending.
  *
  * This structure contains data for the power management framework. There is one
  * instance of this structure per device in the system.
@@ -581,25 +532,21 @@ struct kbase_pm_backend_data {
 	void (*callback_power_runtime_gpu_active)(struct kbase_device *kbdev);
 
 	u64 ca_cores_enabled;
+	u64 ca_gov_cores_enabled;
 
-#if MALI_USE_CSF
 	bool apply_hw_issue_TITANHW_2938_wa;
 	enum kbase_mcu_state mcu_state;
-#endif
 	enum kbase_l2_core_state l2_state;
 	enum kbase_shader_core_state shaders_state;
 	u64 shaders_avail;
 	u64 shaders_desired_mask;
-#if MALI_USE_CSF
 	bool mcu_desired;
-	bool mcu_poweron_required;
 	bool policy_change_clamp_state_to_off;
+	bool waiting_for_mmu_fault_handling;
 	unsigned int csf_pm_sched_flags;
 	struct mutex policy_change_lock;
 	struct workqueue_struct *core_idle_wq;
 	struct work_struct core_idle_work;
-
-#ifdef KBASE_PM_RUNTIME
 	unsigned long gpu_sleep_allowed;
 	bool gpu_sleep_mode_active;
 	bool exit_gpu_sleep_mode;
@@ -607,7 +554,6 @@ struct kbase_pm_backend_data {
 	bool gpu_wakeup_override;
 	bool db_mirror_interrupt_enabled;
 	enum kbase_pm_runtime_suspend_abort_reason runtime_suspend_abort_reason;
-#endif
 
 	/**
 	 * @has_host_pwr_iface: GPU supports the host power control interface.
@@ -620,20 +566,11 @@ struct kbase_pm_backend_data {
 	 */
 	bool pwr_cntl_delegated;
 	bool l2_force_off_after_mcu_halt;
-#endif
 	bool l2_desired;
 	bool l2_always_on;
 	bool shaders_desired;
 
 	bool in_reset;
-
-#if !MALI_USE_CSF
-	bool partial_shaderoff;
-
-	bool protected_entry_transition_override;
-	bool protected_transition_override;
-	int protected_l2_override;
-#endif
 
 	bool hwcnt_desired;
 	bool hwcnt_disabled;
@@ -647,9 +584,10 @@ struct kbase_pm_backend_data {
 
 	struct kbase_pm_event_log event_log;
 	atomic_t reset_in_progress;
+
+	bool gpu_lost_pending;
 };
 
-#if MALI_USE_CSF
 /* CSF PM flag, signaling that the MCU shader Core should be kept on */
 #define CSF_DYNAMIC_PM_CORE_KEEP_ON (1 << 0)
 /* CSF PM flag, signaling no scheduler suspension on idle groups */
@@ -665,7 +603,6 @@ struct kbase_pm_backend_data {
 #define ADAPTIVE_PM_SCHED_FLAGS (0)
 #if !MALI_CUSTOMER_RELEASE
 #define ALWAYS_ON_DEMAND_PM_SCHED_FLAGS (CSF_DYNAMIC_PM_SCHED_IGNORE_IDLE)
-#endif
 #endif
 
 /* List of policy IDs */
@@ -790,14 +727,12 @@ struct kbase_pm_policy {
 
 	enum kbase_pm_policy_id id;
 
-#if MALI_USE_CSF
 	/* Policy associated with CSF PM scheduling operational flags.
 	 * There are pre-defined required flags exist for each of the
 	 * ARM released policies, such as 'always_on', 'coarse_demand'
 	 * and etc.
 	 */
 	unsigned int pm_sched_flags;
-#endif
 };
 
 #endif /* _KBASE_PM_HWACCESS_DEFS_H_ */

@@ -22,11 +22,13 @@
 #ifndef _UAPI_KBASE_MEM_FLAGS_H_
 #define _UAPI_KBASE_MEM_FLAGS_H_
 
+/* [Pixel-Mod Begin] Keeping for JM compatibility */
 #if MALI_USE_CSF
 #include "csf/mali_kbase_csf_mem_flags.h"
 #else
 #include "jm/mali_kbase_jm_mem_flags.h"
 #endif
+/* [Pixel-Mod End] */
 
 /* Memory allocation, access/hint flags & mask.
  *

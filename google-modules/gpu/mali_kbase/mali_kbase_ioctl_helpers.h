@@ -241,19 +241,6 @@ static inline int check_padding_KBASE_IOCTL_MEM_FIND_GPU_START_AND_OFFSET(
 	return 0;
 }
 
-static inline int check_padding_KBASE_IOCTL_CINSTR_GWT_DUMP(union kbase_ioctl_cinstr_gwt_dump *p)
-{
-	/*
-	 * Checking p->padding is deferred till the support window for backward-compatibility ends.
-	 * GPUCORE-42000 will add the checking.
-	 *
-	 * To avoid the situation with old version of base which might not set padding bytes as 0,
-	 * padding bytes are set as zero here on behalf on user space.
-	 */
-	p->in.padding = 0;
-	return 0;
-}
-
 static inline int check_padding_KBASE_IOCTL_MEM_EXEC_INIT(struct kbase_ioctl_mem_exec_init *p)
 {
 	return 0;
@@ -301,12 +288,6 @@ check_padding_KBASE_IOCTL_KINSTR_PRFCNT_SETUP(union kbase_ioctl_kinstr_prfcnt_se
  ***************/
 
 static inline int
-check_padding_KBASE_IOCTL_APC_REQUEST(struct kbase_ioctl_apc_request *p)
-{
-	return 0;
-}
-
-static inline int
 check_padding_KBASE_IOCTL_BUFFER_LIVENESS_UPDATE(struct kbase_ioctl_buffer_liveness_update *p)
 {
 	return 0;
@@ -314,8 +295,6 @@ check_padding_KBASE_IOCTL_BUFFER_LIVENESS_UPDATE(struct kbase_ioctl_buffer_liven
 
 #if MALI_UNIT_TEST
 #endif /* MALI_UNIT_TEST */
-
-#if MALI_USE_CSF
 
 static inline int
 check_padding_KBASE_IOCTL_CS_QUEUE_REGISTER(struct kbase_ioctl_cs_queue_register *p)
@@ -391,6 +370,19 @@ check_padding_KBASE_IOCTL_CS_QUEUE_GROUP_CREATE_1_6(union kbase_ioctl_cs_queue_g
 
 static inline int check_padding_KBASE_IOCTL_CS_QUEUE_GROUP_CREATE_1_18(
 	union kbase_ioctl_cs_queue_group_create_1_18 *p)
+{
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(p->in.padding); i++) {
+		if (p->in.padding[i])
+			return -1;
+	}
+
+	return 0;
+}
+
+static inline int check_padding_KBASE_IOCTL_CS_QUEUE_GROUP_CREATE_1_35(
+	union kbase_ioctl_cs_queue_group_create_1_35 *p)
 {
 	size_t i;
 
@@ -528,31 +520,10 @@ check_padding_KBASE_IOCTL_QUEUE_GROUP_CLEAR_FAULTS(struct kbase_ioctl_queue_grou
 	return 0;
 }
 
-#else /* MALI_USE_CSF */
-
-static inline int check_padding_KBASE_IOCTL_JOB_SUBMIT(struct kbase_ioctl_job_submit *p)
-{
-	return 0;
-}
-
 static inline int
-check_padding_KBASE_IOCTL_SOFT_EVENT_UPDATE(struct kbase_ioctl_soft_event_update *p)
+check_padding_KBASE_IOCTL_CS_TILER_HEAP_SIZE(union kbase_ioctl_cs_tiler_heap_size *p)
 {
 	return 0;
 }
-
-static inline int check_padding_KBASE_IOCTL_KINSTR_JM_FD(union kbase_kinstr_jm_fd *p)
-{
-	size_t i;
-
-	for (i = 0; i < ARRAY_SIZE(p->in.padding); i++) {
-		if (p->in.padding[i])
-			return -1;
-	}
-
-	return 0;
-}
-
-#endif /* !MALI_USE_CSF */
 
 #endif /* _KBASE_IOCTL_HELPERS_H_ */

@@ -1824,8 +1824,8 @@ u64 kbase_mem_alias(struct kbase_context *kctx, base_mem_alloc_flags *flags, u64
 
 	/* validate and add src handles */
 	for (i = 0; i < nents; i++) {
-		if (ai[i].handle.basep.handle < BASE_MEM_FIRST_FREE_ADDRESS) {
-			if (ai[i].handle.basep.handle != BASEP_MEM_WRITE_ALLOC_PAGES_HANDLE)
+		if (ai[i].gpu_va < BASE_MEM_FIRST_FREE_ADDRESS) {
+			if (ai[i].gpu_va != BASEP_MEM_WRITE_ALLOC_PAGES_HANDLE)
 				goto bad_handle; /* unsupported magic handle */
 			if (!ai[i].length)
 				goto bad_handle; /* must be > 0 */
@@ -1839,7 +1839,7 @@ u64 kbase_mem_alias(struct kbase_context *kctx, base_mem_alloc_flags *flags, u64
 			struct kbase_mem_phy_alloc *alloc;
 
 			aliasing_reg = kbase_region_tracker_find_region_base_address(
-				kctx, (ai[i].handle.basep.handle >> PAGE_SHIFT) << PAGE_SHIFT);
+				kctx, (ai[i].gpu_va >> PAGE_SHIFT) << PAGE_SHIFT);
 
 			/* validate found region */
 			if (kbase_is_region_invalid_or_free(aliasing_reg))

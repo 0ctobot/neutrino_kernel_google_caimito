@@ -202,6 +202,7 @@ void kbase_backend_get_gpu_time(struct kbase_device *kbdev, u64 *cycle_counter, 
 				struct timespec64 *ts)
 {
 #if !MALI_USE_CSF
+	kbase_pm_wait_for_l2_powered(kbdev);
 	WARN_ONCE(kbdev->pm.backend.l2_state != KBASE_L2_ON, "L2 not powered up");
 	WARN_ONCE((!timedwait_cycle_count_active(kbdev)), "Timed out on CYCLE_COUNT_ACTIVE");
 #endif

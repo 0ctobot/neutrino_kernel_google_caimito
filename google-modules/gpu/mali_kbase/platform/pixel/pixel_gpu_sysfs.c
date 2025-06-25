@@ -263,13 +263,8 @@ static ssize_t gpu_top_show(struct device *dev, struct device_attribute *attr, c
 	spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
 	hash_for_each(pc->dvfs.metrics.uid_stats_table, bkt, entry, uid_list_node) {
 		const u64 delta_ns = ktime_get_ns() - entry->timestamp_ns_last;
-#if MALI_USE_CSF
                 /* The GPU cycles increase with the top level clock on CSF. */
 		const u64 max_cycles_per_ms = pc->dvfs.table[0].clk[GPU_DVFS_CLK_TOP_LEVEL] / 1000;
-#else
-                /* The GPU cycles increase with the shaders clock on CSF. */
-		const u64 max_cycles_per_ms = pc->dvfs.table[0].clk[GPU_DVFS_CLK_SHADERS] / 1000;
-#endif
 		const u64 max_cycles_since_last_read = (max_cycles_per_ms * delta_ns) / 1000;
 		const u64 dec_precision = 100;
 		const u64 val_cycles_pct =
@@ -336,7 +331,6 @@ static ssize_t trigger_core_dump_store(struct device *dev, struct device_attribu
 	return count;
 }
 
-#if MALI_USE_CSF
 static ssize_t trigger_fw_fault_store(struct device *dev, struct device_attribute *attr,
 	const char *buf, size_t count)
 {
@@ -368,7 +362,6 @@ static ssize_t trigger_fw_fault_store(struct device *dev, struct device_attribut
 	return count;
 }
 DEVICE_ATTR_WO(trigger_fw_fault);
-#endif
 
 DEVICE_ATTR_RO(utilization);
 DEVICE_ATTR_RO(clock_info);
@@ -735,7 +728,6 @@ static ssize_t governor_store(struct device *dev, struct device_attribute *attr,
 	return ret;
 }
 
-#if MALI_USE_CSF
 static ssize_t hint_power_on_store(struct device *dev, struct device_attribute *attr,
 	const char *buf, size_t count)
 {
@@ -755,9 +747,7 @@ static ssize_t hint_power_on_store(struct device *dev, struct device_attribute *
 
 	return count;
 }
-#endif
 
-#if MALI_USE_CSF
 static ssize_t capacity_headroom_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct kbase_device *kbdev = dev->driver_data;
@@ -825,7 +815,6 @@ static ssize_t capacity_history_depth_store(struct device *dev, struct device_at
 
 	return count;
 }
-#endif
 
 /* Define devfreq-like attributes */
 DEVICE_ATTR_RO(available_frequencies);
@@ -841,13 +830,9 @@ DEVICE_ATTR_RO(time_in_state);
 DEVICE_ATTR_RO(trans_stat);
 DEVICE_ATTR_RO(available_governors);
 DEVICE_ATTR_RW(governor);
-#if MALI_USE_CSF
 DEVICE_ATTR_WO(hint_power_on);
-#endif
-#if MALI_USE_CSF
 DEVICE_ATTR_RW(capacity_headroom);
 DEVICE_ATTR_RW(capacity_history_depth);
-#endif
 
 /* Initialization code */
 
@@ -881,12 +866,10 @@ static struct {
 	{ "available_governors", &dev_attr_available_governors },
 	{ "governor", &dev_attr_governor },
 	{ "trigger_core_dump", &dev_attr_trigger_core_dump },
-#if MALI_USE_CSF
 	{ "capacity_headroom", &dev_attr_capacity_headroom },
 	{ "capacity_history_depth", &dev_attr_capacity_history_depth },
 	{ "hint_power_on", &dev_attr_hint_power_on },
 	{ "trigger_fw_fault", &dev_attr_trigger_fw_fault }
-#endif
 };
 
 /**
@@ -957,13 +940,8 @@ static int gpu_top_h_show(struct seq_file *file, void *data)
 	spin_lock_irqsave(&pc->dvfs.metrics.lock, flags);
 	hash_for_each(pc->dvfs.metrics.uid_stats_table, bkt, entry, uid_list_node) {
 		const u64 delta_ns = ktime_get_ns() - entry->timestamp_ns_last;
-#if MALI_USE_CSF
                 /* The GPU cycles increase with the top level clock on CSF. */
 		const u64 max_cycles_per_ms = pc->dvfs.table[0].clk[GPU_DVFS_CLK_TOP_LEVEL] / 1000;
-#else
-                /* The GPU cycles increase with the shaders clock on CSF. */
-		const u64 max_cycles_per_ms = pc->dvfs.table[0].clk[GPU_DVFS_CLK_SHADERS] / 1000;
-#endif
 		const u64 max_cycles_since_last_read = (max_cycles_per_ms * delta_ns) / 1000;
 		const u64 dec_precision = 100;
 		const u64 val_cycles_pct =

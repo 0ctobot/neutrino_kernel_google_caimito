@@ -324,11 +324,8 @@ ifeq ($(CONFIG_MALI_KCOV),y)
     EXTRA_CFLAGS += -DKCOV_ENABLE_COMPARISONS=1
 endif
 
-all:
-	$(MAKE) -C $(KDIR) M=$(M) W=1 $(MAKE_ARGS) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" modules
+# Define and "all" target, which isn't really needed but doesn't hurt.
+all: modules
 
-modules_install:
-	$(MAKE) -C $(KDIR) M=$(M) W=1 $(MAKE_ARGS) modules_install
-
-clean:
-	$(MAKE) -C $(KDIR) M=$(M) W=1 $(MAKE_ARGS) clean
+modules modules_install clean compile_commands.json:
+	$(MAKE) -C $(KDIR) M=$(M) W=1 $(MAKE_ARGS) EXTRA_CFLAGS="$(EXTRA_CFLAGS)" KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" $(@)

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note
 /*
  *
- * (C) COPYRIGHT 2019-2024 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2019-2025 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -256,7 +256,6 @@ void kbase_csf_debug_dump_registers(struct kbase_device *kbdev)
 		kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(GPU_IRQ_MASK)),
 		kbase_reg_read32(kbdev, JOB_CONTROL_ENUM(JOB_IRQ_MASK)),
 		kbase_reg_read32(kbdev, MMU_CONTROL_ENUM(IRQ_MASK)));
-#if MALI_USE_CSF
 	if (kbdev->pm.backend.has_host_pwr_iface) {
 		dev_err(kbdev->dev, "  PWR_IRQ_RAWSTAT=0x%08x",
 			kbase_reg_read32(kbdev, HOST_POWER_ENUM(PWR_IRQ_RAWSTAT)));
@@ -265,7 +264,6 @@ void kbase_csf_debug_dump_registers(struct kbase_device *kbdev)
 		dev_err(kbdev->dev, "  PWR_STATUS=0x%016llx",
 			kbase_reg_read64(kbdev, HOST_POWER_ENUM(PWR_STATUS)));
 	}
-#endif
 	if (kbdev->gpu_props.gpu_id.arch_id < GPU_ID_ARCH_MAKE(14, 10, 0)) {
 		dev_err(kbdev->dev, "  PWR_OVERRIDE0=0x%08x  PWR_OVERRIDE1=0x%08x",
 			kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(PWR_OVERRIDE0)),
@@ -283,16 +281,17 @@ void kbase_csf_debug_dump_registers(struct kbase_device *kbdev)
 				kbase_csf_fw_io_global_input_read(&kbdev->csf.fw_io, GLB_REQ),
 				kbase_csf_fw_io_global_read(&kbdev->csf.fw_io, GLB_ACK));
 
-#if MALI_USE_CSF
 	if (kbdev->pm.backend.has_host_pwr_iface) {
+		u32 domain_status;
+
 		if (kbdev->gpu_props.gpu_id.arch_id < GPU_ID_ARCH_MAKE(14, 10, 0))
 			dev_err(kbdev->dev, "  NEURAL_CONFIG=0x%08x",
 				kbase_reg_read32(kbdev, GPU_CONTROL_ENUM(NEURAL_CONFIG)));
-		if (kbase_pm_get_domain_status(kbdev, PWR_COMMAND_DOMAIN_L2, 0))
+		if (!kbase_pm_get_domain_status(kbdev, PWR_COMMAND_DOMAIN_L2, 0, &domain_status) &&
+		    domain_status)
 			dev_err(kbdev->dev, "  L2_PWR_STATUS=0x%05llx",
 				kbase_reg_read64(kbdev, HOST_POWER_ENUM(PWR_CMDARG)));
 	}
-#endif
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 }
 
@@ -442,13 +441,17 @@ static int kbase_csf_reset_gpu_now(struct kbase_device *kbdev, bool firmware_ini
 
 	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
 	kbdev->csf.firmware_reload_needed = false;
+	/* Prevent MCU enable before FW data is reloaded */
+	kbdev->pm.backend.in_reset = true;
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 
 	cancel_work_sync(&kbdev->csf.firmware_reload_work);
 
-	dev_dbg(kbdev->dev, "Disable GPU hardware counters.\n");
-	/* This call will block until counters are disabled. */
-	kbase_hwcnt_context_disable(kbdev->hwcnt_gpu_ctx);
+	{
+		dev_dbg(kbdev->dev, "Disable GPU hardware counters.\n");
+		/* This call will block until counters are disabled. */
+		kbase_hwcnt_context_disable(kbdev->hwcnt_gpu_ctx);
+	}
 
 	ret = kbase_csf_reset_gpu_once(kbdev, firmware_inited, silent);
 
@@ -505,13 +508,12 @@ static void kbase_csf_reset_gpu_worker(struct work_struct *data)
 
 	spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
 	firmware_inited = kbdev->csf.firmware_inited;
-#ifdef KBASE_PM_RUNTIME
-	gpu_sleep_mode_active = kbdev->pm.backend.gpu_sleep_mode_active;
-#endif
+	if (IS_ENABLED(CONFIG_PM))
+		gpu_sleep_mode_active = kbdev->pm.backend.gpu_sleep_mode_active;
+
 	spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 
-	if (unlikely(gpu_sleep_mode_active)) {
-#ifdef KBASE_PM_RUNTIME
+	if (unlikely(gpu_sleep_mode_active) && IS_ENABLED(CONFIG_PM)) {
 		/* As prior to GPU reset all on-slot groups are suspended,
 		 * need to wake up the MCU from sleep.
 		 * No pm active reference is taken here since GPU is in sleep
@@ -525,7 +527,6 @@ static void kbase_csf_reset_gpu_worker(struct work_struct *data)
 		kbase_pm_unlock(kbdev);
 
 		err = kbase_csf_reset_gpu_now(kbdev, firmware_inited, silent);
-#endif
 	} else if (!kbase_pm_context_active_handle_suspend(
 			   kbdev, KBASE_PM_SUSPEND_HANDLER_DONT_REACTIVATE)) {
 		err = kbase_csf_reset_gpu_now(kbdev, firmware_inited, silent);
@@ -545,7 +546,7 @@ static void kbase_csf_reset_gpu_worker(struct work_struct *data)
 
 bool kbase_prepare_to_reset_gpu(struct kbase_device *kbdev, unsigned int flags)
 {
-	if (kbase_io_is_gpu_lost(kbdev)) {
+	if (kbase_io_is_aw_removed(kbdev)) {
 		/* GPU access has been removed, reset will be done by Arbiter instead */
 		return false;
 	}
