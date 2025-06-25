@@ -54,6 +54,7 @@ struct gbms_chg_profile {
 	u32 *cccm_limits;
 	/* used to fill table  */
 	u32 capacity_ma;
+	u32 last_volt;
 
 	/* behavior */
 	u32 fv_uv_margin_dpct;
@@ -274,6 +275,7 @@ struct batt_ttf_stats {
 	struct mutex ttf_lock;
 
 	int report_max_ratio; /* max ratio to report ttf */
+	int fcc_now;
 };
 
 /*
@@ -606,27 +608,20 @@ void ttf_soc_init(struct ttf_soc_stats *dst);
 
 int ttf_tier_cstr(char *buff, int size, const struct ttf_tier_stat *t_stat);
 
-int ttf_tier_estimate(ktime_t *res,
-		      const struct batt_ttf_stats *ttf_stats,
-		      int temp_idx, int vbatt_idx,
-		      int capacity, int full_capacity);
+int ttf_tier_estimate(ktime_t *res, const struct batt_ttf_stats *ttf_stats,
+		      int temp_idx, int vbatt_idx, int capacity, int full_capacity);
 
-int ttf_stats_init(struct batt_ttf_stats *stats,
-		   struct device *device,
-		   int capacity_ma);
+int ttf_stats_init(struct batt_ttf_stats *stats, struct device_node *node, int capacity_ma);
 
 void ttf_stats_update(struct batt_ttf_stats *stats,
 	 	      struct gbms_charging_event *ce_data,
 		      bool force);
 
-int ttf_stats_cstr(char *buff, int size, const struct batt_ttf_stats *stats,
-		   bool verbose);
+int ttf_stats_cstr(char *buff, int size, const struct batt_ttf_stats *stats, bool verbose);
 
-int ttf_stats_sscan(struct batt_ttf_stats *stats,
-		    const char *buff, size_t size);
+int ttf_stats_sscan(struct batt_ttf_stats *stats, const char *buff, size_t size);
 
-struct batt_ttf_stats *ttf_stats_dup(struct batt_ttf_stats *dst,
-				     const struct batt_ttf_stats *src);
+struct batt_ttf_stats *ttf_stats_dup(struct batt_ttf_stats *dst, const struct batt_ttf_stats *src);
 
 __printf(2, 3)
 void ttf_log(const struct batt_ttf_stats *stats, const char *fmt, ...);
@@ -674,7 +669,8 @@ int gbms_tier_stats_cstr(char *buff, int size,
 			 bool verbose);
 
 void gbms_log_cstr_handler(struct logbuffer *log, char *buf, int len);
-
+/* decode EEPROM serial number to readable string */
+int gbms_decode_eeprom_sn(char *decode_sn, const size_t max_len);
 
 
 
@@ -919,5 +915,16 @@ enum gbms_fwupdate_max77779_err_code {
 	FWU_MAX77779_ERR_UNKNOWN = 0,
 	FWU_MAX77779_ERR_NONE = 1,
 };
+
+/* Define charger status for stability dump */
+#define CDD_PD_VOLTAGE_UV			9000000
+
+#define CDD_CHARGE_OFF_MODE_CHARGING		BIT(0)
+#define CDD_CHARGE_DISCHARGING			BIT(1)
+#define CDD_CHARGE_CHARGING			BIT(2)
+#define CDD_CHARGE_FAST_CHARGING		BIT(3)
+#define CDD_CHARGE_WLC_CHARGING			BIT(4)
+#define CDD_CHARGE_EXT_CHARGING			BIT(5)
+#define CDD_CHARGE_INIT_DONE			BIT(7)
 
 #endif  /* __GOOGLE_BMS_H_ */

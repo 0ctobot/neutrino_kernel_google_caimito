@@ -23,6 +23,7 @@
 #define MAX77779_BVIM_bvim_trig_8_15_MASK (~((1 << (MAX77779_BVIM_bvim_trig_SPR_7_SHIFT + 1)) - 1))
 
 #define MAX77779_VIMON_MAX_CLIENT 32
+#define MAX77779_VIMON_PAGE_MASK 3
 
 #define VIMON_DBG_TEMP_BUFFER_SZ	32
 #define VIMON_DBG_CLIENT_MAX_OUTPUT	4
@@ -363,32 +364,40 @@ static int max77779_vimon_set_config(struct max77779_vimon_data *data, uint16_t 
  *   page3: [0x180:0x1EF]
  */
 static ssize_t max77779_vimon_access_buffer(struct max77779_vimon_data *data, size_t offset,
-					    size_t len, uint16_t *buffer, bool toread)
+					    size_t addr_len, uint16_t *buffer, bool toread)
 {
 	unsigned int target_addr;
 	int ret = -1;
-	size_t sz;
+	size_t addr_sz;
+	size_t rw_sz;
 	unsigned int page;
 	size_t start = offset;
 	const char* type = toread ? "read" : "write";
 
 	/* valid range: 0 - (1024-32) */
-	if (offset + len > 992) {
+	if (offset + addr_len > 992) {
 		dev_err(data->dev, "Failed to %s BVIM's buffer: out of range\n", type);
 		return -EINVAL;
 	}
+	page = MAX77779_VIMON_PAGE_MASK & (offset >> 7);
+	target_addr = MAX77779_VIMON_OFFSET_BASE + (offset & 0x7F);
 
-	while (len > 0) {
+	while (addr_len > 0) {
 		/*
 		 * page = offset / 128
-		 * sz   = 256 - (offset % 256)
+		 * addr_sz   = 256 - (offset % 256)
 		 * target_addr = 0x80 + (offset % 256)
 		 */
-		page = offset >> 7;
-		sz = MAX77779_VIMON_BUFFER_SIZE - (offset & 0x7F);
-		if (sz > len)
-			sz = len;
-		target_addr = MAX77779_VIMON_OFFSET_BASE + (offset & 0x7F);
+
+		if (page == MAX77779_VIMON_PAGE_CNT - 1)
+			addr_sz = MAX77779_VIMON_LAST_PAGE_SIZE -
+				  (target_addr - MAX77779_VIMON_OFFSET_BASE);
+		else
+			addr_sz = MAX77779_VIMON_PAGE_SIZE -
+				  (target_addr - MAX77779_VIMON_OFFSET_BASE);
+
+		if (addr_len < addr_sz)
+			addr_sz = addr_len;
 
 		ret = regmap_write(data->regmap, MAX77779_BVIM_PAGE_CTRL, page);
 		if (ret < 0) {
@@ -396,22 +405,26 @@ static ssize_t max77779_vimon_access_buffer(struct max77779_vimon_data *data, si
 			return ret;
 		}
 
+		rw_sz = addr_sz * MAX77779_VIMON_BYTES_PER_ENTRY;
+
 		if (toread)
-			ret = regmap_raw_read(data->regmap, target_addr, buffer, sz);
+			ret = regmap_raw_read(data->regmap, target_addr, buffer, rw_sz);
 		else
-			ret = regmap_raw_write(data->regmap, target_addr, buffer, sz);
+			ret = regmap_raw_write(data->regmap, target_addr, buffer, rw_sz);
 
 		if (ret < 0) {
 			dev_err(data->dev, "regmap_raw_read or write failed: %d\n", ret);
 			return ret;
 		}
 
-		offset += sz;
-		buffer += sz / MAX77779_VIMON_BYTES_PER_ENTRY;
-		len -= sz;
+		offset += addr_sz;
+		buffer += addr_sz;
+		addr_len -= addr_sz;
+		page = MAX77779_VIMON_PAGE_MASK & (page + 1);
+		target_addr = MAX77779_VIMON_OFFSET_BASE;
 	}
 
-	return offset - start;
+	return (offset - start) * MAX77779_VIMON_BYTES_PER_ENTRY;
 }
 
 static ssize_t bvim_cfg_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -433,7 +446,7 @@ static void max77779_vimon_handle_data(struct work_struct *work)
 	struct max77779_vimon_data *data = container_of(work, struct max77779_vimon_data,
 							read_data_work.work);
 	unsigned int bvim_rfap, bvim_rs, rts, rsc, bvim_osc, smpl_start_add;
-	int ret, rd_bytes;
+	int ret, rd_addr_cnt, rd_bytes;
 	struct vimon_client_info *client, *temp_node;
 	bool trigger_callback, update_callback_mask;
 	enum vimon_trigger_source reason;
@@ -455,9 +468,14 @@ static void max77779_vimon_handle_data(struct work_struct *work)
 		goto vimon_handle_data_exit;
 
 	rsc = _max77779_bvim_bvim_rs_rsc_get(bvim_rs);
+	if (rsc > MAX77779_VIMON_SMPL_CNT)
+		rsc = MAX77779_VIMON_SMPL_CNT;
+
 	rd_bytes = rsc * MAX77779_VIMON_BYTES_PER_ENTRY * MAX77779_VIMON_ENTRIES_PER_VI_PAIR;
 
-	ret = max77779_vimon_access_buffer(data, bvim_rfap, rd_bytes, data->buf, true);
+	rd_addr_cnt = rsc * MAX77779_VIMON_ENTRIES_PER_VI_PAIR;
+
+	ret = max77779_vimon_access_buffer(data, bvim_rfap, rd_addr_cnt, data->buf, true);
 	if (ret < 0)
 		goto vimon_handle_data_exit;
 

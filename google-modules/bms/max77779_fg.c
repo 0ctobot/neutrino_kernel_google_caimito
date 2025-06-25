@@ -519,6 +519,88 @@ static ssize_t aafv_config_show(struct device *dev,
 
 static DEVICE_ATTR_RW(aafv_config);
 
+static ssize_t bypass_chargelimit_fcn_delta_store(struct device *dev, struct device_attribute *attr,
+						const char *buf, size_t count)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max77779_fg_chip *chip = power_supply_get_drvdata(psy);
+	int val, ret;
+
+	ret = kstrtoint(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+
+	chip->bypass_chargelimit.threshold_fcn_delta = val;
+
+	return count;
+}
+
+static ssize_t bypass_chargelimit_fcn_delta_show(struct device *dev, struct device_attribute *attr,
+					       char *buf)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max77779_fg_chip *chip = power_supply_get_drvdata(psy);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", chip->bypass_chargelimit.threshold_fcn_delta);
+}
+
+static DEVICE_ATTR_RW(bypass_chargelimit_fcn_delta);
+
+static ssize_t bypass_chargelimit_cycle_delta_store(struct device *dev,
+						    struct device_attribute *attr, const char *buf,
+						    size_t count)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max77779_fg_chip *chip = power_supply_get_drvdata(psy);
+	int val, ret;
+
+	ret = kstrtoint(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+
+	chip->bypass_chargelimit.threshold_cycle_delta = val;
+
+	return count;
+}
+
+static ssize_t bypass_chargelimit_cycle_delta_show(struct device *dev,
+						   struct device_attribute *attr, char *buf)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max77779_fg_chip *chip = power_supply_get_drvdata(psy);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", chip->bypass_chargelimit.threshold_cycle_delta);
+}
+
+static DEVICE_ATTR_RW(bypass_chargelimit_cycle_delta);
+
+static ssize_t bypass_chargelimit_mode_store(struct device *dev, struct device_attribute *attr,
+					     const char *buf, size_t count)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max77779_fg_chip *chip = power_supply_get_drvdata(psy);
+	int val, ret;
+
+	ret = kstrtoint(buf, 0, &val);
+	if (ret < 0)
+		return ret;
+
+	chip->bypass_chargelimit.mode = val;
+
+	return count;
+}
+
+static ssize_t bypass_chargelimit_mode_show(struct device *dev, struct device_attribute *attr,
+					    char *buf)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max77779_fg_chip *chip = power_supply_get_drvdata(psy);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", chip->bypass_chargelimit.mode);
+}
+
+static DEVICE_ATTR_RW(bypass_chargelimit_mode);
+
 /* lsb 1/256, race with max77779_fg_model_work()  */
 static int max77779_fg_get_capacity_raw(struct max77779_fg_chip *chip, u16 *data)
 {
@@ -1519,13 +1601,13 @@ static int max77779_fg_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_CURRENT_AVG:
 		rc = REGMAP_READ(map, MAX77779_FG_AvgCurrent, &data);
 		if (rc == 0)
-			val->intval = -reg_to_micro_amp(data, chip->RSense);
+			val->intval = reg_to_micro_amp(data, chip->RSense);
 		break;
 	/* current is positive value when flowing to device */
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		rc = REGMAP_READ(map, MAX77779_FG_Current, &data);
 		if (rc == 0)
-			val->intval = -reg_to_micro_amp(data, chip->RSense);
+			val->intval = reg_to_micro_amp(data, chip->RSense);
 		break;
 	case POWER_SUPPLY_PROP_CYCLE_COUNT:
 		rc = max77779_fg_get_cycle_count(chip);
@@ -1762,6 +1844,12 @@ static int max77779_gbms_fg_get_property(struct power_supply *psy,
 	case GBMS_PROP_AAFV:
 		val->prop.intval = chip->aafv;
 		break;
+	case GBMS_PROP_NEED_CHARGE_TO_FULL:
+		val->prop.intval = maxfg_need_force_fullcharge(&chip->regmap,
+							       &chip->bypass_chargelimit,
+							       chip->cycle_count) ||
+				   chip->aafv_modified_fus;
+		break;
 	default:
 		pr_debug("%s: route to max77779_fg_get_property, psp:%d\n", __func__, psp);
 		err = -ENODATA;
@@ -1840,6 +1928,12 @@ static int max77779_gbms_fg_set_property(struct power_supply *psy,
 		rc = max77779_fg_aafv_update(chip);
 		mutex_unlock(&chip->model_lock);
 		break;
+	case GBMS_PROP_NEED_CHARGE_TO_FULL:
+		rc = maxfg_update_bypass_charge_limit(&chip->regmap, &chip->bypass_chargelimit,
+						      chip->cycle_count);
+		if (rc < 0)
+			dev_err(chip->dev, "failed to update bypass charge limit %d\n", rc);
+		break;
 	default:
 		pr_debug("%s: route to max77779_fg_set_property, psp:%d\n", __func__, psp);
 		return -ENODATA;
@@ -1858,6 +1952,7 @@ static int max77779_gbms_fg_property_is_writeable(struct power_supply *psy,
 	case GBMS_PROP_BATT_CE_CTRL:
 	case GBMS_PROP_HEALTH_ACT_IMPEDANCE:
 	case GBMS_PROP_AAFV:
+	case GBMS_PROP_NEED_CHARGE_TO_FULL:
 		return 1;
 	default:
 		break;
@@ -3158,6 +3253,10 @@ static void max77779_fg_init_sysfs(struct max77779_fg_chip *chip, struct dentry 
 	debugfs_create_file("fw_update", 0600, de, chip, &debug_fw_update_fops);
 	debugfs_create_file("fw_revision", 0600, de, chip, &debug_fw_revision_fops);
 	debugfs_create_file("fw_sub_revision", 0600, de, chip, &debug_fw_sub_revision_fops);
+
+	/* bypass charge limits */
+	debugfs_create_u32("fcn_fcr_delta", 0644, de, &chip->bypass_chargelimit.fcn_fcr_delta);
+	debugfs_create_u32("last_fullcharge", 0644, de, &chip->bypass_chargelimit.last_fullcharge);
 }
 
 static u16 max77779_fg_read_rsense(const struct max77779_fg_chip *chip)
@@ -3259,7 +3358,7 @@ static int max77779_fg_model_load(struct max77779_fg_chip *chip)
 		dev_warn(chip->dev, "Load Model Using Default State (%d)\n", ret);
 
 	/* update fullsocthr based on aafv */
-	max77779_model_apply_aaf_fullsoc(chip->model_data, &chip->aafv_cfgs[chip->aafv_cur_idx]);
+	max77779_model_apply_aafv_fullsoc(chip->model_data, &chip->aafv_cfgs[chip->aafv_cur_idx]);
 
 	/* get fw version from pmic if it's not ready during init */
 	if (!chip->fw_rev && !chip->fw_sub_rev)
@@ -3600,6 +3699,15 @@ static int max77779_fg_prop_read(gbms_tag_t tag, void *buff, size_t size,
 	case GBMS_TAG_CLHI:
 		ret = maxfg_collect_history_data(buff, size, chip->por, chip->designcap,
 						 chip->RSense, &chip->regmap, &chip->regmap_debug);
+		/* size is the idx from google_battery */
+		if (!chip->history_idx)
+			chip->history_idx = size;
+
+		if (chip->history_idx != size) {
+			ret = maxfg_reset_max_min(&chip->regmap);
+			if (ret == 0)
+				chip->history_idx = size;
+		}
 		break;
 
 	default:
@@ -3781,6 +3889,9 @@ static struct attribute *max77779_fg_attrs[] = {
 	&dev_attr_fg_learning_events.attr,
 	&dev_attr_registers_dump.attr,
 	&dev_attr_aafv_config.attr,
+	&dev_attr_bypass_chargelimit_fcn_delta.attr,
+	&dev_attr_bypass_chargelimit_cycle_delta.attr,
+	&dev_attr_bypass_chargelimit_mode.attr,
 	NULL,
 };
 
@@ -3988,6 +4099,11 @@ int max77779_fg_init(struct max77779_fg_chip *chip)
 				   &chip->bhi_fcn_count);
 	if (ret < 0)
 		chip->bhi_fcn_count = BHI_CAP_FCN_COUNT;
+
+	ret = maxfg_init_bypass_charge_limit(&chip->regmap, dev->of_node,
+					     &chip->bypass_chargelimit);
+	if (ret < 0)
+		dev_err(dev, "error on init bypass charge limit(%d)\n", ret);
 
 	ret = max77779_init_fg_capture(chip);
 	if (ret < 0)

@@ -434,7 +434,7 @@ bool gbms_aafv_offset_is_valid(const struct gbms_chg_profile *profile,
 	u32 last_fv, penultimate_fv, delta;
 
 	/* The last updated fv cannot be less than the second to last fv */
-	last_fv = profile->volt_limits[profile->volt_nb_limits - 1];
+	last_fv = profile->last_volt;
 	penultimate_fv = (profile->volt_nb_limits > 1) ?
 			profile->volt_limits[profile->volt_nb_limits - 2] : 0;
 	delta = (last_fv - penultimate_fv) / 1000;
@@ -549,6 +549,9 @@ int gbms_init_chg_profile_internal(struct gbms_chg_profile *profile,
 	for (vi = 0; vi < profile->volt_nb_limits; vi++)
 		profile->volt_limits[vi] = profile->volt_limits[vi] /
 		    profile->fv_uv_resolution * profile->fv_uv_resolution;
+
+	/* save the last vtier in last_volt */
+	profile->last_volt = profile->volt_limits[profile->volt_nb_limits - 1];
 
 	/* reset AACT */
 	profile->aact_init_profile = false;
@@ -698,6 +701,8 @@ int gbms_update_chg_profile_from_aact(struct gbms_chg_profile *profile)
 	memcpy(profile->volt_limits, profile->aact_volt_limits, volt_size);
 	profile->temp_nb_limits = profile->aact_temp_nb_limits;
 	profile->volt_nb_limits = profile->aact_volt_nb_limits;
+	/* save the last vtier in last_volt */
+	profile->last_volt = profile->volt_limits[profile->volt_nb_limits - 1];
 	profile->aact_init_profile = true;
 
 	return 0;
@@ -1307,3 +1312,36 @@ void gbms_log_cstr_handler(struct logbuffer *log, char *buf, int len)
 	}
 }
 EXPORT_SYMBOL_GPL(gbms_log_cstr_handler);
+
+int gbms_decode_eeprom_sn(char *decode_sn, const size_t max_len)
+{
+	const int pack_barcode_len = 23; // 0x0 - 0x16
+	char sn[GBMS_MINF_LEN + 1] = { 0 };
+	u16 tmp, pcb_sn;
+	int ret, count, date;
+
+	ret = gbms_storage_read(GBMS_TAG_MINF, sn, GBMS_MINF_LEN);
+	if (ret < 0)
+		return ret;
+
+	/* Pack barcode area data in ASCII format */
+	strncpy(decode_sn, sn, pack_barcode_len);
+
+	/*
+	 * decode address
+	 * sn[23] - cell type
+	 * sn[24] - Stage
+	 * sn[25-26] - SMT date
+	 * sn[27-28] - PCB serial number
+	 * sn[29] - PCB vendor (ASCII format)
+	 */
+	count = pack_barcode_len;
+	pcb_sn = (sn[27] << 8) | sn[28];
+	tmp = (sn[25] << 8) | sn[26];
+	date = ((((tmp >> 9) & 0x3f) + 1980) * 10000) + ((tmp >> 5) & 0xf) * 100 + (tmp & 0x1F);
+	count += scnprintf(decode_sn + count, max_len, "%02d%02d%d%04X%c", sn[23], sn[24], date, pcb_sn, sn[29]);
+	decode_sn[count] = '\0';
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(gbms_decode_eeprom_sn);

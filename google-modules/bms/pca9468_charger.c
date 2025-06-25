@@ -935,7 +935,7 @@ error:
 	return ret;
 }
 
-static int pca9468_get_iin(struct pca9468_charger *pca9468, int *iin)
+static int pca9468_get_iin_original(struct pca9468_charger *pca9468, int *iin)
 {
 	const int offset = iin_fsw_cfg[pca9468->pdata->fsw_cfg];
 	int temp;
@@ -947,8 +947,21 @@ static int pca9468_get_iin(struct pca9468_charger *pca9468, int *iin)
 	if (temp < offset)
 		temp = offset;
 
-	*iin = (temp - offset) * 2;
+	*iin = (temp - offset);
 	return 0;
+}
+
+static int pca9468_get_iin(struct pca9468_charger *pca9468, int *iin)
+{
+    int ret;
+    int temp;
+
+    ret = pca9468_get_iin_original(pca9468, &temp);
+    if (ret < 0)
+        return ret;
+
+    *iin = temp * 2;
+    return 0;
 }
 
 static int pca9468_get_batt_info(struct pca9468_charger *pca9468, int info_type, int *info)
@@ -4616,6 +4629,13 @@ static int pca9468_gbms_mains_get_property(struct power_supply *psy,
 		if (ret < 0)
 			return ret;
 		val->int64val = chg_state.v;
+		break;
+
+	case GBMS_PROP_CURRENT_NOW:
+		/* return the input current - uA unit */
+		ret = pca9468_get_iin_original(pca9468, &val->prop.intval);
+		if (ret < 0)
+			dev_err(pca9468->dev, "Invalid IIN ADC (%d)\n", ret);
 		break;
 
 	default:

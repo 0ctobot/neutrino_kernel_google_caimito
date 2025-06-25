@@ -754,6 +754,10 @@ bool gs201_setup_usecases(struct max77779_usecase_data *uc_data,
 	/* OPTIONAL: support reverse 1:2 mode for RTx */
 	uc_data->reverse12_en = of_property_read_bool(node, "max77779,reverse_12-en");
 
+	/* OPTIONAL: notify wlc if charge status is disabled */
+	uc_data->wlc_notify_charge_disable = of_property_read_bool(node,
+		"max77779,wlc_notify_charge_disable");
+
 	if (uc_data->rtx_ready == -EPROBE_DEFER)
 		uc_data->rtx_ready = of_get_named_gpio(node, "max77779,rtx-ready", 0);
 
@@ -780,5 +784,5 @@ void gs201_dump_usecasase_config(struct max77779_usecase_data *uc_data)
 	pr_info("rtx_available:%d, rx_to_rx_otg:%d ext_otg_only:%d wlc_spoof_gpio:%d\n",
 		uc_data->rtx_available, uc_data->rx_otg_en, uc_data->ext_otg_only,
 		uc_data->wlc_spoof_gpio);
+	pr_info("wlc_notify_charge_disable: %d\n", uc_data->wlc_notify_charge_disable);
 }
-

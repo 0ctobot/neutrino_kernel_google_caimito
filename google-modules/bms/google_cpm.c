@@ -3690,10 +3690,10 @@ static irqreturn_t google_cpm_cop_warn_irq_handler(int irq, void *ptr)
 	if (gcpm_resume_check(gcpm))
 		return IRQ_NONE;
 
-	dev_warn(gcpm->device, "COP Warn triggered cc_max:%u\n", gcpm->cc_max);
+	dev_warn_ratelimited(gcpm->device, "COP Warn triggered cc_max:%u\n", gcpm->cc_max);
 	/* Schedule work on the first instance of COP Warn */
 	if (gcpm->cop_warn_count == 0) {
-		dev_dbg(gcpm->device, "%s: scheduling cop_warn_work\n", __func__);
+		dev_dbg_ratelimited(gcpm->device, "%s: scheduling cop_warn_work\n", __func__);
 		schedule_delayed_work(&gcpm->cop_warn_work,
 				      msecs_to_jiffies(COP_WARN_BACKOFF_MS));
 	}

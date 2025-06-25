@@ -905,7 +905,7 @@ error:
 	return ret;
 }
 
-static int hl7132_get_iin(struct hl7132_charger *hl7132, int *iin)
+static int hl7132_get_iin_original(struct hl7132_charger *hl7132, int *iin)
 {
 	const int offset = 0;
 	int temp;
@@ -917,8 +917,21 @@ static int hl7132_get_iin(struct hl7132_charger *hl7132, int *iin)
 	if (temp < offset)
 		temp = offset;
 
-	*iin = (temp - offset) * 2; /* 2:1 */
+	*iin = (temp - offset);
 	return 0;
+}
+
+static int hl7132_get_iin(struct hl7132_charger *hl7132, int *iin)
+{
+    int ret;
+    int temp;
+
+    ret = hl7132_get_iin_original(hl7132, &temp);
+    if (ret < 0)
+        return ret;
+
+    *iin = temp * 2; /* 2:1 */
+    return 0;
 }
 
 static int hl7132_get_batt_info(struct hl7132_charger *hl7132, int info_type, int *info)
@@ -4173,6 +4186,13 @@ static int hl7132_gbms_mains_get_property(struct power_supply *psy,
 		if (ret < 0)
 			return ret;
 		val->int64val = chg_state.v;
+		break;
+
+	case GBMS_PROP_CURRENT_NOW:
+		/* return the input current - uA unit */
+		ret = hl7132_get_iin_original(hl7132, &val->prop.intval);
+		if (ret < 0)
+			dev_err(hl7132->dev, "Invalid IIN ADC (%d)\n", ret);
 		break;
 
 	default:

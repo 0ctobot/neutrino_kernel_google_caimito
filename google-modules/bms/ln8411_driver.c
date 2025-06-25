@@ -1073,7 +1073,7 @@ static int ln8411_check_error(struct ln8411_charger *ln8411)
 	return ret;
 }
 
-static int ln8411_get_iin(struct ln8411_charger *ln8411, int *iin)
+static int ln8411_get_iin_original(struct ln8411_charger *ln8411, int *iin)
 {
 	const int offset = 0;
 	int temp;
@@ -1085,8 +1085,21 @@ static int ln8411_get_iin(struct ln8411_charger *ln8411, int *iin)
 	if (temp < offset)
 		temp = offset;
 
-	*iin = conv_chg_mode(ln8411, temp - offset);
+	*iin = temp - offset;
 	return 0;
+}
+
+static int ln8411_get_iin(struct ln8411_charger *ln8411, int *iin)
+{
+    int ret;
+    int temp;
+
+    ret = ln8411_get_iin_original(ln8411, &temp);
+    if (ret < 0)
+        return ret;
+
+    *iin = conv_chg_mode(ln8411, temp);
+    return 0;
 }
 
 /* only needed for logging */
@@ -5102,6 +5115,15 @@ static int ln8411_gbms_mains_get_property(struct power_supply *psy,
 		if (ret < 0)
 			return ret;
 		val->int64val = chg_state.v;
+		break;
+
+	case GBMS_PROP_CURRENT_NOW:
+		/* return the input current - uA unit */
+		mutex_lock(&ln8411->lock);
+		ret = ln8411_get_iin_original(ln8411, &val->prop.intval);
+		if (ret < 0)
+			dev_err(ln8411->dev, "Invalid IIN ADC (%d)\n", ret);
+		mutex_unlock(&ln8411->lock);
 		break;
 
 	default:

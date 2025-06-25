@@ -829,6 +829,7 @@ static int gdbatt_gbms_get_property(struct power_supply *psy,
 	case GBMS_PROP_CAPACITY_FADE_RATE_FCR:
 	case GBMS_PROP_BATT_ID:
 	case GBMS_PROP_AAFV:
+	case GBMS_PROP_NEED_CHARGE_TO_FULL:
 		val->prop.intval = fg_1.prop.intval;
 		break;
 	case GBMS_PROP_RECAL_FG:

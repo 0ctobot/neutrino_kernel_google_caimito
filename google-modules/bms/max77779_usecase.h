@@ -10,7 +10,11 @@
 #define MAX77779_CHG_CNFG_05_WCSM_ILIM_1400_MA 0xA
 #define MAX77779_CHG_TX_RETRIES 10
 
+#define MAX77779_USECASE_VOTER				"USECASE"
+#define MAX77779_USECASE_WLC_CHARGE_DISABLE_INLIM_LIMIT 200000
+
 struct max77779_usecase_data {
+	int to_uc;		/* usecase to transition to */
 	int bst_on;		/* ext boost */
 	int ext_bst_mode;	/* ext boost mode */
 	int otg_enable;		/* enter/exit from OTG cases */
@@ -22,11 +26,13 @@ struct max77779_usecase_data {
 
 	int vin_is_valid;	/* MAX20339 STATUS1.vinvalid */
 
+	bool chgr_on;		/* charge enabled/disabled on current usecase */
 	int wlc_en;		/* wlcrx/chgin coex */
 	int wlc_vbus_en;	/* b/202526678 */
 	bool reverse12_en;	/* reverse 1:2 mode */
 	int wlc_spoof_gpio;	/* wlcrx thermal throttle */
 	u32 wlc_spoof_vbyp;	/* wlc spoof VBYP */
+	bool wlc_notify_charge_disable; /* notify wlc of charge disable */
 
 	u8 otg_ilim;		/* TODO: TCPM to control this? */
 	u8 otg_vbyp;		/* TODO: TCPM to control this? */

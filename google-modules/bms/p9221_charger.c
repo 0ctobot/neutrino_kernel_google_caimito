@@ -7238,10 +7238,14 @@ static int p9221_parse_dt(struct device *dev,
 	pdata->ldo_en_gpio = p9221_parse_gpios(dev, "idt,ldo_en-gpio", "idt,gpio_ldo_en", &flags);
 	if (pdata->ldo_en_gpio > 0)
 		dev_info(dev, "QI_EXT_LDO_EN gpio:%d", pdata->ldo_en_gpio);
+	if (pdata->ldo_en_gpio == -EPROBE_DEFER)
+		return -EPROBE_DEFER;
 
 	pdata->wcin_inlim_en_gpio = p9221_parse_gpios(dev,
 						      "google,wcin_inlim_en-gpio",
 						      "google,wcin_inlim_en", &flags);
+	if (pdata->wcin_inlim_en_gpio == -EPROBE_DEFER)
+		return -EPROBE_DEFER;
 	if (pdata->wcin_inlim_en_gpio > 0)
 		dev_info(dev, "WCIN_INLIM_EN gpio: %d", pdata->wcin_inlim_en_gpio);
 

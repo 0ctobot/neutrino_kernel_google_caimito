@@ -680,6 +680,8 @@ static int max77779_get_usecase(struct max77779_foreach_cb_data *cb_data,
 		cb_data->wlc_tx = 0;
 	}
 
+	uc_data->chgr_on = chgr_on;
+
 	/* buck_on is wired, wlc_rx is wireless, might still need rTX */
 	if (cb_data->usb_wlc) {
 		/* USB+WLC for factory and testing */
@@ -839,6 +841,9 @@ static int max77779_set_insel(struct max77779_chgr_data *data,
 		insel_value |= MAX77779_CHG_CNFG_12_WCINSEL;
 	}
 
+	if (uc_data->wlc_notify_charge_disable)
+		mod_delayed_work(system_wq, &data->wcin_charge_disable_work, 0);
+
 	if (from_uc != use_case || force_wlc || wlc_on) {
 		enum wlc_state_t state;
 		wlc_on = wlc_on || (insel_value & MAX77779_CHG_CNFG_12_WCINSEL) != 0;
@@ -888,6 +893,8 @@ static int max77779_set_usecase(struct max77779_chgr_data *data,
 		uc_data->psy = data->psy;
 		uc_data->init_done = gs201_setup_usecases(uc_data, data->dev->of_node);
 	}
+
+	uc_data->to_uc = use_case;
 
 	/* always fix/adjust insel (solves multiple input_suspend) */
 	ret = max77779_set_insel(data, uc_data, cb_data, from_uc, use_case);
@@ -1819,6 +1826,27 @@ static void max77779_wcin_inlim_work_en(struct max77779_chgr_data *data, bool en
 						data->wcin_soft_icl, false);
 	}
 	mutex_unlock(&data->wcin_inlim_lock);
+}
+
+/*
+ * this doesn't need any special locking because it's called from inside a mode_callback
+ * to_uc (usecase to transition to) and chgr_on (signifies mode 4/5) must be set before calling
+ * this work function
+ */
+static void max77779_wcin_charge_disable_work(struct work_struct *work)
+{
+	struct max77779_chgr_data *data = container_of(work, struct max77779_chgr_data,
+						       wcin_charge_disable_work.work);
+	struct max77779_usecase_data *uc_data = &data->uc_data;
+	/*
+	 * dc_icl votable is a min voter, so this call won't be called recursively forever if
+	 * the election result doesn't change
+	 */
+	gvotable_cast_long_vote(data->dc_icl_votable,
+				MAX77779_USECASE_VOTER,
+				MAX77779_USECASE_WLC_CHARGE_DISABLE_INLIM_LIMIT,
+				(!uc_data->chgr_on &&
+				((uc_data->to_uc == GSU_MODE_WLC_RX))));
 }
 
 #if IS_ENABLED(CONFIG_GPIOLIB)
@@ -3630,6 +3658,7 @@ int max77779_charger_init(struct max77779_chgr_data *data)
 
 	INIT_DELAYED_WORK(&data->cop_enable_work, max77779_cop_enable_work);
 	INIT_DELAYED_WORK(&data->wcin_inlim_work, max77779_wcin_inlim_work);
+	INIT_DELAYED_WORK(&data->wcin_charge_disable_work, max77779_wcin_charge_disable_work);
 
 	data->usecase_wake_lock = wakeup_source_register(NULL, "max77779-usecase");
 	if (!data->usecase_wake_lock) {

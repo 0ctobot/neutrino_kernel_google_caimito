@@ -129,15 +129,13 @@ int ttf_ref_cc(const struct batt_ttf_stats *stats, int soc)
 }
 
 /* assumes that health is active for any soc greater than CHG_HEALTH_REST_SOC */
-static int ttf_pwr_health(const struct gbms_charging_event *ce_data,
-			  int soc)
+static int ttf_pwr_health(const struct gbms_charging_event *ce_data, int soc)
 {
 	return CHG_HEALTH_REST_IS_ACTIVE(&ce_data->ce_health) &&
 	       soc >= CHG_HEALTH_REST_SOC(&ce_data->ce_health);
 }
 
-static int ttf_pwr_health_pause(const struct gbms_charging_event *ce_data,
-			  int soc)
+static int ttf_pwr_health_pause(const struct gbms_charging_event *ce_data, int soc)
 {
 	return CHG_HEALTH_REST_IS_PAUSE(&ce_data->ce_health) &&
 	       soc >= CHG_HEALTH_REST_SOC(&ce_data->ce_health);
@@ -149,14 +147,13 @@ static int ttf_pwr_health_pause(const struct gbms_charging_event *ce_data,
  * tiers for bad cables, ibatt is affected by temperature tier and sysload.
  */
 static int ttf_pwr_equiv_icl(const struct gbms_charging_event *ce_data,
-			     int vbatt_idx, int soc)
+			     int vbatt_idx, int soc, int fcc_now)
 {
 	const struct gbms_chg_profile *profile = ce_data->chg_profile;
 	const int volt_limit = profile->volt_limits[vbatt_idx] == 0 ?
 			       profile->volt_limits[profile->volt_nb_limits - 1] :
 			       profile->volt_limits[vbatt_idx];
-	const int aratio = (ce_data->adapter_details.ad_voltage * 10000) /
-			   (volt_limit / 1000);
+	const int aratio = (ce_data->adapter_details.ad_voltage * 10000) / (volt_limit / 1000);
 	const struct gbms_ce_tier_stats *tier_stats;
 	const int efficiency = 95; /* TODO: use real efficiency */
 	const u32 capacity_ma = profile->capacity_ma;
@@ -195,6 +192,9 @@ static int ttf_pwr_equiv_icl(const struct gbms_charging_event *ce_data,
 	act_ibatt = ttf_pwr_ibatt(tier_stats);
 	if (act_ibatt == 0 && health_ibatt > 0)
 		act_ibatt = health_ibatt;
+	else if (fcc_now > 0 && (act_ibatt == 0 || fcc_now < act_ibatt))
+		act_ibatt = fcc_now;
+
 	if (act_ibatt < 0) {
 		pr_debug("%s: discharging ibatt=%d\n", __func__, act_ibatt);
 		return -EINVAL;
@@ -273,7 +273,7 @@ static int ttf_pwr_ratio(const struct batt_ttf_stats *stats,
 		 avg_cc, cc_max);
 
 	/* equivalent input current for adapter at vtier */
-	equiv_icl = ttf_pwr_equiv_icl(ce_data, vbatt_idx, soc);
+	equiv_icl = ttf_pwr_equiv_icl(ce_data, vbatt_idx, soc, stats->fcc_now / 1000);
 	if (equiv_icl <= 0) {
 		pr_debug("%s %d: negative, null act_icl=%d\n",
 			 __func__, soc, equiv_icl);
@@ -450,8 +450,7 @@ static int ttf_cstr(char *buff, int size, const struct ttf_soc_stats *soc_stats,
 		if (i % split == 0 || i == start) {
 			len += scnprintf(&buff[len], size - len, &type);
 			if (split == 10)
-				len += scnprintf(&buff[len], size - len,
-						"%d", i / 10);
+				len += scnprintf(&buff[len], size - len, "%d", i / 10);
 			len += scnprintf(&buff[len], size - len, ":");
 		}
 		if (type == 'T') {
@@ -572,8 +571,8 @@ static ktime_t ttf_soc_qual_elap(const struct batt_ttf_stats *stats,
 		elap = min_elap;
 
 	pr_debug("%d: dst->elap=%ld, ref_elap=%ld, elap=%ld, src_elap=%ld ratio=%d, min=%d max=%d\n",
-		i, dst->elap[i], stats->soc_ref.elap[i], elap, src->elap[i],
-		ratio, min_elap, max_elap);
+		 i, dst->elap[i], stats->soc_ref.elap[i], elap, src->elap[i],
+		 ratio, min_elap, max_elap);
 
 	return elap;
 }
@@ -671,8 +670,7 @@ void ttf_soc_init(struct ttf_soc_stats *dst)
 	(ts->cc_total != 0 && ts->avg_time != 0)
 
 /* TODO: adjust for adapter capability */
-static ktime_t ttf_tier_accumulate(const struct ttf_tier_stat *ts,
-				  int vbatt_idx,
+static ktime_t ttf_tier_accumulate(const struct ttf_tier_stat *ts, int vbatt_idx,
 				  const struct batt_ttf_stats *stats)
 {
 	ktime_t estimate = 0;
@@ -692,10 +690,7 @@ static ktime_t ttf_tier_accumulate(const struct ttf_tier_stat *ts,
 	return estimate;
 }
 
-/* */
-static int ttf_tier_sscan(struct batt_ttf_stats *stats,
-			  const char *buff,
-			  size_t size)
+static int ttf_tier_sscan(struct batt_ttf_stats *stats, const char *buff, size_t size)
 {
 	int j, len = 0;
 
@@ -705,7 +700,8 @@ static int ttf_tier_sscan(struct batt_ttf_stats *stats,
 		len++;
 
 	for (j = 0; j < GBMS_STATS_TIER_COUNT; j++) {
-		sscanf(&buff[len], TTF_STATS_FMT, &stats->tier_stats[j].soc_in,
+		sscanf(&buff[len], TTF_STATS_FMT,
+		       &stats->tier_stats[j].soc_in,
 		       &stats->tier_stats[j].cc_in,
 		       &stats->tier_stats[j].cc_total,
 		       &stats->tier_stats[j].avg_time);
@@ -847,8 +843,7 @@ static int ttf_soc_cstr_elap(char *buff, int size,
 
 	len += scnprintf(&buff[len], size - len, "T%d:", start);
 	for (i = start; i < end; i++)
-		len += scnprintf(&buff[len], size - len, " %4ld",
-				 soc_stats->elap[i]);
+		len += scnprintf(&buff[len], size - len, " %4ld", soc_stats->elap[i]);
 
 	return len;
 }
@@ -861,8 +856,7 @@ static int ttf_soc_cstr_cc(char *buff, int size,
 
 	len += scnprintf(&buff[len], size - len, "C%d:", start);
 	for (i = start; i < end; i++)
-		len += scnprintf(&buff[len], size - len, " %4d",
-				 soc_stats->cc[i]);
+		len += scnprintf(&buff[len], size - len, " %4d", soc_stats->cc[i]);
 
 	return len;
 }
@@ -877,8 +871,7 @@ void ttf_stats_update(struct batt_ttf_stats *stats,
 	int first_soc = ce_data->charging_stats.ssoc_in;
 	const int last_soc = ce_data->last_soc;
 	const int delta_soc = last_soc - first_soc;
-	const int limit = force ? TTF_STATS_QUAL_DELTA_MIN :
-			  TTF_STATS_QUAL_DELTA;
+	const int limit = force ? TTF_STATS_QUAL_DELTA_MIN : TTF_STATS_QUAL_DELTA;
 	const int tmp_size = PAGE_SIZE;
 	char *tmp;
 
@@ -909,65 +902,14 @@ void ttf_stats_update(struct batt_ttf_stats *stats,
 			if (end_soc > last_soc - 1)
 				end_soc = last_soc - 1;
 
-			ttf_soc_cstr_elap(tmp, tmp_size, &stats->soc_stats,
-					  i, end_soc);
+			ttf_soc_cstr_elap(tmp, tmp_size, &stats->soc_stats, i, end_soc);
 			ttf_log(stats, "%s", tmp);
-			ttf_soc_cstr_cc(tmp, tmp_size, &stats->soc_stats,
-					  i,  end_soc);
+			ttf_soc_cstr_cc(tmp, tmp_size, &stats->soc_stats, i,  end_soc);
 			ttf_log(stats, "%s", tmp);
 		}
 
 		kfree(tmp);
 	}
-}
-
-static int ttf_init_soc_parse_dt(struct ttf_adapter_stats *as,
-				 struct device *device)
-{
-	int table_count;
-	int ret;
-
-	table_count = of_property_count_elems_of_size(device->of_node,
-						      "google,ttf-soc-table",
-						      sizeof(u32));
-	if (table_count <= 0)
-		return -EINVAL;
-	if (table_count % 2)
-		return -EINVAL;
-
-	as->soc_table = devm_kzalloc(device, table_count * 2 * sizeof(u32),
-				     GFP_KERNEL);
-	if (!as->soc_table)
-		return -ENOMEM;
-
-	ret = of_property_read_u32_array(device->of_node,
-					"google,ttf-soc-table",
-					as->soc_table, table_count);
-	if (ret < 0) {
-		pr_err("cannot read google,ttf-soc-table %d\n", ret);
-		return ret;
-	}
-
-	as->elap_table = &as->soc_table[table_count];
-	ret = of_property_read_u32_array(device->of_node,
-					"google,ttf-elap-table",
-					as->elap_table, table_count);
-	if (ret < 0) {
-		pr_err("cannot read google,ttf-elap-table %d\n", ret);
-		return ret;
-	}
-
-	as->table_count = table_count;
-	return 0;
-}
-
-int ttf_stats_sscan(struct batt_ttf_stats *stats,
-		    const char *buff,
-		    size_t size)
-{
-	/* TODO: scan ttf_soc_* data as well */
-
-	return ttf_tier_sscan(stats, buff, size);
 }
 
 static int ttf_as_default(struct ttf_adapter_stats *as, int i, int table_i)
@@ -976,6 +918,63 @@ static int ttf_as_default(struct ttf_adapter_stats *as, int i, int table_i)
 		table_i++;
 
 	return table_i;
+}
+
+static int ttf_init_soc_parse_dt(struct batt_ttf_stats *stats, struct device_node *node,
+				 int capacity_ma)
+{
+	const int cc = (capacity_ma * 100) / GBMS_SOC_STATS_LEN;
+	int table_count, ret, i, table_i = 0;
+	struct ttf_adapter_stats as;
+
+	table_count = of_property_count_elems_of_size(node, "google,ttf-soc-table", sizeof(u32));
+	if (table_count <= 0)
+		return -EINVAL;
+	if (table_count % 2)
+		return -EINVAL;
+
+	as.soc_table = kzalloc(table_count * 2 * sizeof(u32), GFP_KERNEL);
+	if (!as.soc_table)
+		return -ENOMEM;
+
+	ret = of_property_read_u32_array(node, "google,ttf-soc-table", as.soc_table, table_count);
+	if (ret < 0) {
+		pr_err("cannot read google,ttf-soc-table %d\n", ret);
+		kfree(as.soc_table);
+		return ret;
+	}
+
+	as.elap_table = &as.soc_table[table_count];
+	ret = of_property_read_u32_array(node, "google,ttf-elap-table",
+					 as.elap_table, table_count);
+	if (ret < 0) {
+		pr_err("cannot read google,ttf-elap-table %d\n", ret);
+		kfree(as.soc_table);
+		return ret;
+	}
+
+	as.table_count = table_count;
+
+	/* initialize the reference stats for the reference soc estimates */
+	for (i = 0; i < GBMS_SOC_STATS_LEN; i++) {
+		table_i = ttf_as_default(&as, i, table_i);
+
+		stats->soc_ref.elap[i] = as.elap_table[table_i];
+
+		/* assume same cc for each soc */
+		stats->soc_ref.cc[i] = (cc * i) / 100;
+	}
+
+	kfree(as.soc_table);
+
+	return 0;
+}
+
+int ttf_stats_sscan(struct batt_ttf_stats *stats, const char *buff, size_t size)
+{
+	/* TODO: scan ttf_soc_* data as well */
+
+	return ttf_tier_sscan(stats, buff, size);
 }
 
 void ttf_tier_reset(struct batt_ttf_stats *stats)
@@ -989,21 +988,18 @@ void ttf_tier_reset(struct batt_ttf_stats *stats)
 	}
 }
 
-static int ttf_init_tier_parse_dt(struct batt_ttf_stats *stats,
-				  struct device *device)
+static int ttf_init_tier_parse_dt(struct batt_ttf_stats *stats, struct device_node *node,
+				  int capacity_ma)
 {
 	int i, count, ret;
+	int16_t soc_in_diff;
 	u32 tier_table[GBMS_STATS_TIER_COUNT];
 
-	count = of_property_count_elems_of_size(device->of_node,
-						"google,ttf-tier-table",
-						sizeof(u32));
+	count = of_property_count_elems_of_size(node, "google,ttf-tier-table", sizeof(u32));
 	if (count != GBMS_STATS_TIER_COUNT)
 		return -EINVAL;
 
-	ret = of_property_read_u32_array(device->of_node,
-					"google,ttf-tier-table",
-					tier_table, count);
+	ret = of_property_read_u32_array(node, "google,ttf-tier-table", tier_table, count);
 	if (ret < 0) {
 		pr_err("cannot read google,ttf-tier-table %d\n", ret);
 		return ret;
@@ -1014,12 +1010,23 @@ static int ttf_init_tier_parse_dt(struct batt_ttf_stats *stats,
 
 	ttf_tier_reset(stats);
 
+	soc_in_diff = stats->tier_stats[2].soc_in - stats->tier_stats[1].soc_in;
+
+	/* TODO: use the soc stats to calculate cc_in */
+	stats->tier_stats[0].cc_in = 0;
+	stats->tier_stats[1].cc_in = (capacity_ma * stats->tier_stats[1].soc_in) / 100;
+	stats->tier_stats[2].cc_in = (capacity_ma * stats->tier_stats[2].soc_in) / 100;
+
+	/* TODO: use the soc stats to calculate cc_total */
+	stats->tier_stats[0].cc_total = 0;
+	stats->tier_stats[1].cc_total = capacity_ma * soc_in_diff / 100;
+	stats->tier_stats[2].cc_total = capacity_ma - stats->tier_stats[2].cc_in;
+
 	return 0;
 }
 
 /* clone and clear the stats */
-struct batt_ttf_stats *ttf_stats_dup(struct batt_ttf_stats *dst,
-				     const struct batt_ttf_stats *src)
+struct batt_ttf_stats *ttf_stats_dup(struct batt_ttf_stats *dst, const struct batt_ttf_stats *src)
 {
 	memcpy(dst, src, sizeof(*dst));
 	memset(&dst->soc_stats, 0, sizeof(dst->soc_stats));
@@ -1027,31 +1034,10 @@ struct batt_ttf_stats *ttf_stats_dup(struct batt_ttf_stats *dst,
 	return dst;
 }
 
-static void ttf_init_ref_table(struct batt_ttf_stats *stats,
-			       struct ttf_adapter_stats *as,
-			       int capacity_ma)
-{
-	int i, table_i = 0;
-	const int cc = (capacity_ma * 100) / GBMS_SOC_STATS_LEN;
-
-	for (i = 0; i < GBMS_SOC_STATS_LEN; i++) {
-		table_i = ttf_as_default(as, i, table_i);
-
-		stats->soc_ref.elap[i] = as->elap_table[table_i];
-
-		/* assume same cc for each soc */
-		stats->soc_ref.cc[i] = (cc * i) / 100;
-	}
-
-	/* TODO: allocate as->soc_table witk kzalloc, free here */
-}
-
 /* must come after charge profile */
 #define TTF_REPORT_MAX_RATIO	300
-int ttf_stats_init(struct batt_ttf_stats *stats, struct device *device,
-		   int capacity_ma)
+int ttf_stats_init(struct batt_ttf_stats *stats, struct device_node *node, int capacity_ma)
 {
-	struct ttf_adapter_stats as;
 	u32 value;
 	int ret;
 
@@ -1060,63 +1046,38 @@ int ttf_stats_init(struct batt_ttf_stats *stats, struct device *device,
 	mutex_init(&stats->ttf_lock);
 
 	/* reference adapter */
-	ret = of_property_read_u32(device->of_node, "google,ttf-adapter",
-				   &value);
+	ret = of_property_read_u32(node, "google,ttf-adapter", &value);
 	if (ret < 0)
 		return ret;
 
 	stats->ref_watts = value;
 
 	/* reference temperature  */
-	ret = of_property_read_u32(device->of_node, "google,ttf-temp-idx",
-				   &value);
+	ret = of_property_read_u32(node, "google,ttf-temp-idx", &value);
 	if (ret < 0)
 		return ret;
 
 	stats->ref_temp_idx = value;
 
+	/* max ratio to report ttf */
+	ret = of_property_read_u32(node, "google,ttf-report-max-ratio", &value);
+	if (ret < 0)
+		value = TTF_REPORT_MAX_RATIO;
+
+	stats->report_max_ratio = value;
+
 	/* reference soc estimates */
-	ret = ttf_init_soc_parse_dt(&as, device);
+	ret = ttf_init_soc_parse_dt(stats, node, capacity_ma);
 	if (ret < 0)
 		return ret;
 
 	/* reference tier-based statistics */
-	ret = ttf_init_tier_parse_dt(stats, device);
+	ret = ttf_init_tier_parse_dt(stats, node, capacity_ma);
 	if (ret < 0)
 		return ret;
 
-	/* max ratio to report ttf */
-	ret = of_property_read_u32(device->of_node, "google,ttf-report-max-ratio",
-				   &stats->report_max_ratio);
-	if (ret < 0)
-		stats->report_max_ratio = TTF_REPORT_MAX_RATIO;
-
-	/* initialize the reference stats for the reference soc estimates */
-	ttf_init_ref_table(stats, &as, capacity_ma);
-
-
-	/* TODO: use the soc stats to calculate cc_in */
-	stats->tier_stats[0].cc_in = 0;
-	stats->tier_stats[1].cc_in = (capacity_ma *
-					stats->tier_stats[1].soc_in) /
-					100;
-	stats->tier_stats[2].cc_in = (capacity_ma *
-					stats->tier_stats[2].soc_in) /
-					100;
-
-	/* TODO: use the soc stats to calculate cc_total */
-	stats->tier_stats[0].cc_total = 0;
-	stats->tier_stats[1].cc_total = (capacity_ma *
-					(stats->tier_stats[2].soc_in -
-					stats->tier_stats[1].soc_in)) /
-					100;
-	stats->tier_stats[2].cc_total = capacity_ma -
-					stats->tier_stats[2].cc_in;
-
-
 	return 0;
 }
-
 
 /* tier and soc details */
 ssize_t ttf_dump_details(char *buf, int max_size,
@@ -1130,8 +1091,7 @@ ssize_t ttf_dump_details(char *buf, int max_size,
 		int next_soc_in;
 
 		len += scnprintf(&buf[len], max_size - len, "%d: ", i);
-		len += ttf_tier_cstr(&buf[len], max_size - len,
-				     &ttf_stats->tier_stats[i]);
+		len += ttf_tier_cstr(&buf[len], max_size - len, &ttf_stats->tier_stats[i]);
 		len += scnprintf(&buf[len], max_size - len, "\n");
 
 		/* continue only first */
@@ -1149,10 +1109,8 @@ ssize_t ttf_dump_details(char *buf, int max_size,
 		if (next_soc_in == -1)
 			next_soc_in = last_soc - 1;
 
-		len += ttf_soc_cstr(&buf[len], max_size - len,
-				    &ttf_stats->soc_stats,
-				    ttf_stats->tier_stats[i].soc_in >> 8,
-				    next_soc_in);
+		len += ttf_soc_cstr(&buf[len], max_size - len, &ttf_stats->soc_stats,
+				    ttf_stats->tier_stats[i].soc_in >> 8, next_soc_in);
 	}
 
 	return len;

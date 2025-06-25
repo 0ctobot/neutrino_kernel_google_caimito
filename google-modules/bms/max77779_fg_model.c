@@ -1007,10 +1007,14 @@ void *max77779_init_data(struct device *dev, struct device_node *node,
  *  - before the model data is loaded using max77779_fg_model_load,
  *    these values must be updated based on aafv.
  */
-void max77779_model_apply_aaf_fullsoc(struct max77779_model_data *model_data,
+void max77779_model_apply_aafv_fullsoc(struct max77779_model_data *model_data,
 				      const struct aafv_fg_config *cfg)
 {
 	struct max77779_custom_parameters *cp = &model_data->parameters;
+
+	/* no value, return directly */
+	if (!cfg->fullsoc && !cfg->fus)
+		return;
 
 	cp->fullsocthr = percentage_to_reg(cfg->fullsoc);
 	cp->misccfg = (MAX77779_FG_MiscCfg_FUS_CLEAR & cp->misccfg) |

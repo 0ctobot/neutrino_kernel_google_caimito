@@ -188,6 +188,23 @@ static int maxfg_reg_write_verify(struct maxfg_regmap *map, enum maxfg_reg_tags 
 }
 
 
+static int maxfg_reg_write(struct maxfg_regmap *map, enum maxfg_reg_tags tag, u16 val)
+{
+	const struct maxfg_reg *reg;
+	unsigned int tmp = val;
+	int rtn;
+
+	reg = maxfg_find_by_tag(map, tag);
+	if (!reg)
+		return -EINVAL;
+
+	rtn = regmap_write(map->regmap, reg->reg, tmp);
+	if (rtn)
+		pr_err("Failed to write 0x%x to 0x%x\n", tmp, reg->reg);
+
+	return rtn;
+}
+
 #define REG_HALF_HIGH(reg)     ((reg >> 8) & 0x00FF)
 #define REG_HALF_LOW(reg)      (reg & 0x00FF)
 int maxfg_collect_history_data(void *buff, size_t size, bool is_por, u16 designcap, u16 RSense,
@@ -1414,4 +1431,117 @@ ssize_t maxfg_aafv_config_show(struct aafv_fg_config *cfgs, const int config_lim
 	count += sysfs_emit_at(buf, count, "\n");
 
 	return count;
+}
+
+int maxfg_reset_max_min(struct maxfg_regmap *regmap)
+{
+	int ret = 0;
+
+	/* FG_MaxMinTemp */
+	ret = maxfg_reg_write(regmap, MAXFG_TAG_mmdt, 0x807F);
+	if (ret)
+		return ret;
+
+	/* FG_MaxMinCurr */
+	ret = maxfg_reg_write(regmap, MAXFG_TAG_mmdc, 0x807F);
+	if (ret)
+		return ret;
+
+	/* FG_MaxMinVolt */
+	ret = maxfg_reg_write(regmap, MAXFG_TAG_mmdv, 0x00FF);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+static int maxfg_fcn_fcr_delta(struct maxfg_regmap *regmap, struct maxfg_bypss_charglimt *limit)
+{
+	int ret, fullcapnom, fullcaprep;
+
+	ret = maxfg_reg_read(regmap, MAXFG_TAG_fcnom, (u16 *)&fullcapnom);
+	if (ret < 0) {
+		pr_err("failed to read MAXFG_TAG_fcnom (%d)\n", ret);
+		return ret;
+	}
+
+	ret = maxfg_reg_read(regmap, MAXFG_TAG_fcrep, (u16 *)&fullcaprep);
+	if (ret < 0) {
+		pr_err("failed to read MAXFG_TAG_fcrep (%d)\n", ret);
+		return ret;
+	}
+
+	/* Return the 10x scaled percentage */
+	limit->fcn_fcr_delta  = (abs(fullcapnom - fullcaprep) * 1000 ) / fullcapnom;
+
+	return 0;
+}
+
+int maxfg_init_bypass_charge_limit(struct maxfg_regmap *regmap, struct device_node *node,
+				   struct maxfg_bypss_charglimt *limit)
+{
+	int ret;
+
+	ret = gbms_storage_read(GBMS_TAG_FCRU, &limit->last_fullcharge, GBMS_FCRU_LEN);
+	if (ret < 0) {
+		pr_err("failed to read GBMS_TAG_FCRU (%d)\n", ret);
+		limit->last_fullcharge = 0;
+	}
+
+	/* if bypass_chargelimit_cycles has default value of eeprom */
+	if (limit->last_fullcharge == 0xFFFF)
+		limit->last_fullcharge = 0;
+
+	maxfg_fcn_fcr_delta(regmap, limit);
+	if (ret < 0)
+		limit->fcn_fcr_delta = 0;
+
+	/* configure force full charge mode */
+	ret = of_property_read_s32(node, "maxim,cycle-delta-threshold",
+				   &limit->threshold_cycle_delta);
+	if (ret != 0)
+		limit->threshold_cycle_delta = DEFAULT_FORCE_FCR_UPDATE_CYCLE;
+
+	ret = of_property_read_s32(node, "maxim,fcn-fcr-delta-threshold",
+				   &limit->threshold_fcn_delta);
+	if (ret < 0)
+		limit->threshold_fcn_delta = DEFAULT_FCN_FCR_DELTA_THESHOLD;
+
+	limit->mode = MSXFG_BYPASS_FULLCHARGE_CYCLE_DELTA;
+
+	return 0;
+}
+
+int maxfg_update_bypass_charge_limit(struct maxfg_regmap *regmap,
+				     struct maxfg_bypss_charglimt *limit, int cycle)
+{
+	int ret;
+
+	ret = maxfg_fcn_fcr_delta(regmap, limit);
+	if (ret < 0)
+		limit->fcn_fcr_delta = 0;
+
+	ret = gbms_storage_write(GBMS_TAG_FCRU, &cycle, GBMS_FCRU_LEN);
+	if (ret < 0) {
+		pr_err("failed to store FCNU (%d)\n", ret);
+		return ret;
+	}
+
+	limit->last_fullcharge = cycle;
+
+	return ret;
+}
+
+bool maxfg_need_force_fullcharge(struct maxfg_regmap *regmap, struct maxfg_bypss_charglimt *limit,
+				 int cycle)
+{
+	switch (limit->mode) {
+	case MSXFG_BYPASS_FULLCHARGE_CYCLE_DELTA:
+		return cycle - limit->last_fullcharge > limit->threshold_cycle_delta;
+	case MSXFG_BYPASS_FULLCHARGE_FCN_DELTA:
+		maxfg_fcn_fcr_delta(regmap, limit);
+		return limit->fcn_fcr_delta > limit->threshold_fcn_delta;
+	default:
+		return true;
+	}
 }

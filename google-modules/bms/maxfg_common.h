@@ -28,6 +28,9 @@
 #define BHI_CAP_FCN_COUNT		3
 #define BHI_CAP_FILTER_VALUE_COUNT	2
 
+#define DEFAULT_FORCE_FCR_UPDATE_CYCLE	10
+#define DEFAULT_FCN_FCR_DELTA_THESHOLD	10
+
 enum maxfg_reg_tags {
 	MAXFG_TAG_avgc,
 	MAXFG_TAG_cnfg,
@@ -96,6 +99,11 @@ enum max17x0x_reg_types {
 	GBMS_ATOM_TYPE_SET = 3,
 };
 
+enum maxfg_bypass_chargelimit_mode {
+	MSXFG_BYPASS_FULLCHARGE_CYCLE_DELTA = 1,
+	MSXFG_BYPASS_FULLCHARGE_FCN_DELTA = 2,
+};
+
 #define MAX_HIST_FULLCAP	0x3FF
 
 #pragma pack(1)
@@ -137,6 +145,16 @@ struct aafv_fg_config {
 	u32 voffset;
 	u32 fullsoc;
 	u32 fus;
+};
+
+struct maxfg_bypss_charglimt {
+	enum maxfg_bypass_chargelimit_mode mode;
+	int last_fullcharge;
+	int fcn_fcr_delta;
+	/* threshold value to trigger full charge, cycle based */
+	int threshold_cycle_delta;
+	/* threshold value to trigger force_fcr_update (10x scaled percentage) */
+	int threshold_fcn_delta;
 };
 
 #define ESTIMATE_DONE		2
@@ -484,7 +502,13 @@ ssize_t maxfg_aafv_config_store(struct device *dev, const int batt_id,
 				struct aafv_fg_config *aafv_cfgs, int *aafv_config_limits);
 ssize_t maxfg_aafv_config_show(struct aafv_fg_config *cfgs, const int config_limits,
 			       const int batt_id, char *buf);
+int maxfg_reset_max_min(struct maxfg_regmap *regmap);
 
-
+int maxfg_init_bypass_charge_limit(struct maxfg_regmap *regmap, struct device_node *node,
+				   struct maxfg_bypss_charglimt *limit);
+int maxfg_update_bypass_charge_limit(struct maxfg_regmap *regmap,
+				     struct maxfg_bypss_charglimt *limit, int cycle);
+bool maxfg_need_force_fullcharge(struct maxfg_regmap *regmap, struct maxfg_bypss_charglimt *limit,
+				 int cycle);
 
 #endif  // MAXFG_COMMON_H_

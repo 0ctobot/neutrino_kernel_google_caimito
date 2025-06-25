@@ -97,6 +97,8 @@ enum gbms_property {
 	GBMS_PROP_RECAL_FG,			/* GBMS FG reset */
 	GBMS_PROP_LOGBUFFER_BD,			/* GBMS pass logbuffer_bd address */
 	GBMS_PROP_AAFV,				/* GBMS pass aafv to FG */
+	GBMS_PROP_CURRENT_NOW,			/* GBMS get pps current without multiplication */
+	GBMS_PROP_NEED_CHARGE_TO_FULL,		/* GBMS FG requests to bypass 80% limit */
 };
 
 union gbms_propval {
