@@ -11,4 +11,5 @@
 	max77779,reverse_12-en;
 	max77779,rtx-ready = <&p9xxx_gpio 6 GPIO_ACTIVE_HIGH>;
 	max77779,rtx-available = <&p9xxx_gpio 7 GPIO_ACTIVE_HIGH>;
+	max77779,wlc_notify_charge_disable;
 };
