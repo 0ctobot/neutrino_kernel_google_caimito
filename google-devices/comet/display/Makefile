@@ -19,7 +19,7 @@ EXTRA_SYMBOLS += $(OUT_DIR)/../private/google-modules/display/samsung/Module.sym
 
 include $(KERNEL_SRC)/../private/google-modules/soc/gs/Makefile.include
 
-modules modules_install clean:
+modules modules_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) W=1 \
 	$(KBUILD_OPTIONS) \
 	EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \

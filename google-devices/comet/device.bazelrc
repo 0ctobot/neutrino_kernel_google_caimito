@@ -2,5 +2,5 @@
 #
 # Copyright (C) 2023 Google LLC
 
-build:comet --//private/devices/google/common:kernel=//private/devices/google/comet:kernel
-build:comet --//private/google-modules/soc/gs:gs_soc_module=//private/devices/google/comet:zumapro_soc.comet
+build:comet --config=zumapro_base
+build:comet --//private/devices/google/common:kernel=//private/devices/google/comet:comet/kernel

@@ -16,4 +16,5 @@
 	/* for OTG related usecase*/
 	max77779,rx-to-rx-otg-en; /* support RX -> RX+OTG */
 	max77779,ext-otg-only; /* use external OTG only */
+	max77779,wlc_notify_charge_disable;
 };
