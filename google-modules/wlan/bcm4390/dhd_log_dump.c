@@ -274,13 +274,12 @@ dhd_log_dump(void *handle, void *event_info, u8 event)
 	dhdp = &dhd->pub;
 
 #if defined(WL_CFG80211)
-	if (!dhd_bus_is_wl_bp_down(dhdp) &&
-		dhdp->memdump_type != DUMP_TYPE_WL_BP_DOWN) {
+	if (!dhd_query_bus_erros(dhdp)) {
 		/* flush the fw preserve logs */
 		wl_flush_fw_log_buffer(dhd_linux_get_primary_netdev(dhdp),
 			FW_LOGSET_MASK_ALL);
 	} else {
-		DHD_PRINT(("%s: skip flush fw log buffer due to wl bp down\n", __FUNCTION__));
+		DHD_PRINT(("%s: skip flush fw log buffer\n", __FUNCTION__));
 	}
 #endif /* WL_CFG80211 */
 

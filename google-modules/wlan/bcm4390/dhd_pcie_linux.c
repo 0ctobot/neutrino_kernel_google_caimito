@@ -3653,6 +3653,10 @@ bool dhd_runtime_bus_wake(dhd_bus_t *bus, bool wait, void *func_addr)
 
 		/* If wait is TRUE, function with wait = TRUE will be wait in here  */
 		if (wait) {
+			if (!dhd_is_rpm_thread_alive(bus->dhd)) {
+				DHD_ERROR(("%s: RPM thread is terminated\n", __FUNCTION__));
+				return FALSE;
+			}
 			if (!wait_event_timeout(bus->rpm_queue, bus->runtime_resume_done,
 					msecs_to_jiffies(RPM_WAKE_UP_TIMEOUT))) {
 				DHD_ERROR(("%s: RPM_WAKE_UP_TIMEOUT error\n", __FUNCTION__));

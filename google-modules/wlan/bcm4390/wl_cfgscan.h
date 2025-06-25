@@ -90,8 +90,6 @@ extern void wl_cfg80211_abort_scan(struct wiphy *wiphy, struct wireless_dev *wde
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)) */
 extern s32 wl_init_scan(struct bcm_cfg80211 *cfg);
 extern int wl_cfg80211_scan_stop(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev);
-extern s32 wl_notify_scan_status(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
-	const wl_event_msg_t *e, void *data);
 extern void wl_cfg80211_set_passive_scan(struct net_device *dev, char *command);
 #ifdef PNO_SUPPORT
 extern s32 wl_notify_pfn_status(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,

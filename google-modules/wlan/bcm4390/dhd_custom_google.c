@@ -290,8 +290,10 @@ enum {
 #define HW_MAJOR  "major"
 #define HW_MINOR  "minor"
 
-char val_revision[MAX_HW_INFO_LEN] = "NA";
-char val_sku[MAX_HW_INFO_LEN] = "NA";
+#define DEFAULT_VAL "DEFAULT"
+
+char val_revision[MAX_HW_INFO_LEN] = DEFAULT_VAL;
+char val_sku[MAX_HW_INFO_LEN] = DEFAULT_VAL;
 
 enum hw_stage_attr {
 	DEV = 1,
@@ -313,8 +315,8 @@ dhd_set_platform_ext_name(char *hw_rev, char* hw_sku)
 {
 	bzero(&platform_hw_info, sizeof(platform_hw_info_t));
 
-	if (strncmp(hw_rev, "NA", MAX_HW_INFO_LEN) != 0) {
-		if (strncmp(hw_sku, "NA", MAX_HW_INFO_LEN) != 0) {
+	if (strncmp(hw_rev, DEFAULT_VAL, MAX_HW_INFO_LEN) != 0) {
+		if (strncmp(hw_sku, DEFAULT_VAL, MAX_HW_INFO_LEN) != 0) {
 			snprintf(platform_hw_info.ext_name[REV_SKU], MAX_HW_EXT_LEN, "_%s_%s",
 				hw_rev, hw_sku);
 			setbit(&platform_hw_info.avail_bmap, REV_SKU);
@@ -323,7 +325,7 @@ dhd_set_platform_ext_name(char *hw_rev, char* hw_sku)
 		setbit(&platform_hw_info.avail_bmap, REV_ONLY);
 	}
 
-	if (strncmp(hw_sku, "NA", MAX_HW_INFO_LEN) != 0) {
+	if (strncmp(hw_sku, DEFAULT_VAL, MAX_HW_INFO_LEN) != 0) {
 		snprintf(platform_hw_info.ext_name[SKU_ONLY], MAX_HW_EXT_LEN, "_%s", hw_sku);
 		setbit(&platform_hw_info.avail_bmap, SKU_ONLY);
 	}
@@ -338,8 +340,8 @@ dhd_set_platform_ext_name(char *hw_rev, char* hw_sku)
 void
 dhd_set_platform_ext_name_for_chip_version(char* chip_version)
 {
-	if (strncmp(val_revision, "NA", MAX_HW_INFO_LEN) != 0) {
-		if (strncmp(val_sku, "NA", MAX_HW_INFO_LEN) != 0) {
+	if (strncmp(val_revision, DEFAULT_VAL, MAX_HW_INFO_LEN) != 0) {
+		if (strncmp(val_sku, DEFAULT_VAL, MAX_HW_INFO_LEN) != 0) {
 			snprintf(platform_hw_info.ext_name[CHIP_REV_SKU], MAX_HW_EXT_LEN,
 				"%s_%s_%s", chip_version, val_revision, val_sku);
 			setbit(&platform_hw_info.avail_bmap, CHIP_REV_SKU);
@@ -349,7 +351,7 @@ dhd_set_platform_ext_name_for_chip_version(char* chip_version)
 			chip_version, val_revision);
 		setbit(&platform_hw_info.avail_bmap, CHIP_REV);
 	}
-	if (strncmp(val_sku, "NA", MAX_HW_INFO_LEN) != 0) {
+	if (strncmp(val_sku, DEFAULT_VAL, MAX_HW_INFO_LEN) != 0) {
 		snprintf(platform_hw_info.ext_name[CHIP_SKU], MAX_HW_EXT_LEN, "%s_%s",
 			chip_version, val_sku);
 		setbit(&platform_hw_info.avail_bmap, CHIP_SKU);
@@ -523,7 +525,7 @@ dhd_wlan_init_hardware_info(void)
 					hw_major, hw_minor);
 				break;
 			default:
-				strcpy(val_revision, "NA");
+				strcpy(val_revision, DEFAULT_VAL);
 				break;
 		}
 	}

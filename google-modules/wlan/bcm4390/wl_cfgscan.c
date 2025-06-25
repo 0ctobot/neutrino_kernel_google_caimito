@@ -3548,68 +3548,6 @@ exit:
 }
 #endif /* WL_DRV_AVOID_SCANCACHE */
 
-s32
-wl_notify_scan_status(struct bcm_cfg80211 *cfg, bcm_struct_cfgdev *cfgdev,
-	const wl_event_msg_t *e, void *data)
-{
-	struct channel_info channel_inform;
-	wl_scan_results_v109_t *bss_list;
-	struct net_device *ndev = NULL;
-	u32 len = WL_SCAN_BUF_MAX;
-	s32 err = 0;
-	unsigned long flags;
-
-	WL_DBG(("Enter \n"));
-	if (!wl_get_drv_status(cfg, SCANNING, ndev)) {
-		WL_DBG(("scan is not ready \n"));
-		return err;
-	}
-	ndev = cfgdev_to_wlc_ndev(cfgdev, cfg);
-
-	mutex_lock(&cfg->scan_sync);
-	wl_clr_drv_status(cfg, SCANNING, ndev);
-	bzero(&channel_inform, sizeof(channel_inform));
-	err = wldev_ioctl_get(ndev, WLC_GET_CHANNEL, &channel_inform,
-		sizeof(channel_inform));
-	if (unlikely(err)) {
-		WL_ERR(("scan busy (%d)\n", err));
-		goto scan_done_out;
-	}
-	channel_inform.scan_channel = dtoh32(channel_inform.scan_channel);
-	if (unlikely(channel_inform.scan_channel)) {
-
-		WL_DBG(("channel_inform.scan_channel (%d)\n",
-			channel_inform.scan_channel));
-	}
-	cfg->bss_list = cfg->scan_results;
-	bss_list = cfg->bss_list;
-	bzero(bss_list, len);
-	bss_list->buflen = htod32(len);
-	err = wldev_ioctl_get(ndev, WLC_SCAN_RESULTS, bss_list, len);
-	if (unlikely(err) && unlikely(!cfg->scan_suppressed)) {
-		WL_ERR(("%s Scan_results error (%d)\n", ndev->name, err));
-		err = -EINVAL;
-		goto scan_done_out;
-	}
-	bss_list->buflen = dtoh32(bss_list->buflen);
-	bss_list->version = dtoh32(bss_list->version);
-	bss_list->count = dtoh32(bss_list->count);
-
-	err = wl_inform_bss(cfg);
-
-scan_done_out:
-	del_timer_sync(&cfg->scan_timeout);
-	WL_CFG_DRV_LOCK(&cfg->cfgdrv_lock, flags);
-	if (cfg->scan_request) {
-		_wl_notify_scan_done(cfg, false);
-		cfg->scan_request = NULL;
-	}
-	WL_CFG_DRV_UNLOCK(&cfg->cfgdrv_lock, flags);
-	WL_DBG(("cfg80211_scan_done\n"));
-	mutex_unlock(&cfg->scan_sync);
-	return err;
-}
-
 void wl_notify_scan_done(struct bcm_cfg80211 *cfg, bool aborted)
 {
 #if defined(CONFIG_TIZEN)

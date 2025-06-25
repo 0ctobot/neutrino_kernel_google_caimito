@@ -3070,8 +3070,34 @@ typedef struct wl_wme_cnt_v2 {
 	wl_traffic_stats_t tx_retry[AC_COUNT];  /**< Packets retried */
 } wl_wme_cnt_v2_t;
 
+typedef struct wl_wme_cnt_v3 {
+	uint16	version;	/**< see definition of WL_WME_CNT_VERSION */
+	uint16	length;		/**< length of entire structure */
+
+	wl_traffic_stats_t tx_msdu[AC_COUNT];	/**< msdu packets transmitted */
+	wl_traffic_stats_t rx_msdu[AC_COUNT];	/**< msdu packets received */
+	/**< msdu packets failed to receive */
+	wl_traffic_stats_t rx_msdu_failed[AC_COUNT];
+	/**< msdu packets dropped or failed to transmit */
+	wl_traffic_stats_t tx_msdu_failed[AC_COUNT];
+
+	wl_traffic_stats_t tx_mpdu[AC_COUNT];	/**< mpdu packets transmitted */
+	wl_traffic_stats_t rx_mpdu[AC_COUNT];	/**< mpdu packets received */
+	/**< mpdu packets dropped or failed to transmit */
+	wl_traffic_stats_t tx_mpdu_failed[AC_COUNT];
+	/**< mpdu packets failed to receive */
+	wl_traffic_stats_t rx_mpdu_failed[AC_COUNT];
+
+	wl_traffic_stats_t forward[AC_COUNT];	/**< Packets forwarded by AP */
+
+	/**< packets dropped due to lifetime expiry */
+	wl_traffic_stats_t tx_mpdu_expired[AC_COUNT];
+	wl_traffic_stats_t tx_mpdu_retry[AC_COUNT];  /**< Packets retried */
+} wl_wme_cnt_v3_t;
+
 #define WL_WME_CNT_VER_1	1u
 #define WL_WME_CNT_VER_2	2u
+#define WL_WME_CNT_VER_3	3u
 
 /* #ifdef WLBA */
 
@@ -3922,6 +3948,7 @@ typedef struct wlc_btc_stats_v13 {
 	/* core1, channel3 histogram count of ACI power (2%) */
 	uint32 fbagc_fbc_gain_stuck_cnt;
 	/* fbc gain stuck counter */
+	uint32 fbcx_forced_ded_dur;	/* fored dedicated cnt */
 } wlc_btc_stats_v13_t;
 
 #define BTCX_STATS_VER_12 12
@@ -4531,6 +4558,7 @@ typedef struct phy_ecounter_log_core_v5 {
 } phy_ecounter_log_core_v5_t;
 
 /* For trunk ONLY */
+#define PHY_ECOUNTER_LOG_CORE_VER255_SIZE		36u
 typedef struct phy_ecounter_log_core_v255 {
 	uint16	bad_txbaseidx_cnt;	/* cntr for tx_baseidx=127 in healthcheck */
 	uint16	curr_tssival;		/* TxPwrCtrlInit_path[01].TSSIVal */
@@ -5070,6 +5098,7 @@ typedef struct phy_ecounter_v7 {
 
 /* For trunk ONLY */
 /* Do not remove phy_ecounter_v1_t parameters */
+#define PHY_ECOUNTER_VER255_SIZE	304u
 typedef struct phy_ecounter_v255 {
 	chanspec_t	chanspec;
 	uint16		phy_wdg;		/* Count of times watchdog happened. */
@@ -5428,6 +5457,7 @@ typedef struct phy_phycal_core_v4 {
 } phy_phycal_core_v4_t;
 
 /* For trunk ONLY */
+#define PHY_PHYCAL_CORE_VER255_SIZE	228u
 typedef struct phy_phycal_core_v255 {
 	/* RxIQ imbalance coeff */
 	uint16	rxa;
@@ -5638,6 +5668,7 @@ typedef struct phy_phycal_v4 {
 } phy_phycal_v4_t;
 
 /* For trunk ONLY */
+#define PHY_PHYCAL_VER255_SIZE		548u
 typedef struct phy_phycal_v255 {
 	/* General info */
 	uint32 last_cal_time; /* in [sec], covers 136 years if 32 bit */
@@ -5725,6 +5756,7 @@ typedef struct phy_ecounter_phycal_stats_v4 {
 
 /* For trunk ONLY */
 #define PHY_ECOUNTERS_PHYCAL_STATS_VER255	255u
+#define PHY_ECOUNTERS_PHYCAL_STATS_VER255_SIZE	8u
 typedef struct phy_ecounter_phycal_stats_v255 {
 	uint16			version;
 	uint16			length;
@@ -5799,6 +5831,7 @@ typedef struct phy_ecounter_stats_v7 {
 
 /* For trunk ONLY */
 #define PHY_ECOUNTERS_STATS_VER255	255u
+#define PHY_ECOUNTERS_STATS_VER255_SIZE	8u
 typedef struct phy_ecounter_stats_v255 {
 	uint16			version;
 	uint16			length;

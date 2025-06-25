@@ -2344,9 +2344,11 @@ typedef uint32 ratespec_t;
 #define BCM_DCS_IOVAR		0x1
 #define BCM_DCS_UNKNOWN		0xFF
 
-#define WL_CHAN_CC_INDOOR_EXT	(1u << 0u)	/* policy to extend sta indoor chan to peer role */
-#define WL_CHAN_CC_DFS_EXT	(1u << 1u)	/* policy to extend sta DFS chan to peer role */
-#define WL_CHAN_CC_POLICY_MASK	0x3u		/* supported chan concurrency policy mask */
+/* Definition of policies to extend STA DFS/Indoor to Peer-to-Peer roles */
+#define WL_CHAN_CC_INDOOR_EXT		(1u << 0u)	/* To extend sta indoor chan to P2P role */
+#define WL_CHAN_CC_DFS_EXT		(1u << 1u)	/* To extend sta DFS chan to P2P role */
+#define WL_CHAN_CC_AWARE_DFS_EXT	(1u << 2u)	/* To extend sta DFS chan to NAN role */
+#define WL_CHAN_CC_POLICY_MASK		0x7u		/* Supported chan concurrency policy mask */
 
 #ifdef EXT_STA
 #define IHV_OID_BCM 0x00181000	/* based on BRCM_OUI value */
@@ -3177,7 +3179,13 @@ enum wlc_capext_coex_subfeature_bitpos {
 	WLC_CAPEXT_COEX_BITPOS_LTECX_LBT	= 1,
 	WLC_CAPEXT_COEX_BITPOS_BTC_WIFI_PROT	= 2,
 	WLC_CAPEXT_COEX_BITPOS_RC1		= 3,
+#if defined(WL_RC2COEX) || defined(RC2CX)
+	WLC_CAPEXT_COEX_BITPOS_RC2		= 4,
+#endif /* WL_RC2COEX */
 	WLC_CAPEXT_COEX_BITPOS_SIB		= 5,
+#ifdef LR154CX
+	WLC_CAPEXT_COEX_BITPOS_154		= 6,
+#endif /* LR154CX */
 	WLC_CAPEXT_COEX_BITPOS_BT2G		= 7,
 	WLC_CAPEXT_COEX_BITPOS_BT5G		= 8,
 	WLC_CAPEXT_COEX_BITPOS_MAX

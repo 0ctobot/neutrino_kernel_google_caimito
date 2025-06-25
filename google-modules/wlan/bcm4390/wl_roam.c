@@ -572,6 +572,12 @@ void wl_update_roamscan_cache_by_band(struct net_device *dev, int band)
 		}
 	}
 	chanlist_after.n = 0;
+	if (chanlist_before.n > MAX_ROAM_CHANNEL) {
+		WL_ERR(("channel list cnt (%d) > MAX_ROAM_CHANNEL (%d), "
+			"force setting to the max\n", chanlist_before.n, MAX_ROAM_CHANNEL));
+		chanlist_before.n = MAX_ROAM_CHANNEL;
+	}
+
 	/* filtering by the given band */
 	for (i = 0; i < chanlist_before.n; i++) {
 		chanspec_t chspec = chanlist_before.channels[i];

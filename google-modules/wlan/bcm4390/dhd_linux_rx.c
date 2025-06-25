@@ -1047,7 +1047,10 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan)
 			}
 		}
 #endif /* DHD_TCP_WINSIZE_ADJUST */
-
+#ifdef DHD_PRINT_RXPKTS_TRACE
+		DHD_ERROR(("dhd_rx_frame: netif_rx p=%p pdata=%p len=%d\n", skb,
+			skb->data, skb->len));
+#endif /* DHD_PRINT_RXPKTS_TRACE */
 		/* WL here makes sure data is 4-byte aligned? */
 		if (in_interrupt()) {
 			bcm_object_trace_opr(skb, BCM_OBJDBG_REMOVE,

@@ -4743,9 +4743,11 @@ dhd_rpm_state_thread(void *data)
 {
 	tsk_ctl_t *tsk = (tsk_ctl_t *)data;
 	dhd_info_t *dhd = (dhd_info_t *)tsk->parent;
+	int ret = 0;
 
 	while (1) {
-		if (down_interruptible (&tsk->sema) == 0) {
+		ret = down_interruptible(&tsk->sema);
+		if (ret == 0) {
 			unsigned long flags;
 			unsigned long jiffies_at_start = jiffies;
 			unsigned long time_lapse;
@@ -4789,10 +4791,14 @@ dhd_rpm_state_thread(void *data)
 				DHD_GENERAL_UNLOCK(&dhd->pub, flags);
 			}
 		} else {
+			DHD_PRINT(("RPM thread is signalled or timeout ret:%d\n", ret));
 			break;
 		}
 	}
 
+	DHD_PRINT(("%s: RPM thread complete and exit\n", __func__));
+	dhd->thr_rpm_ctl.thr_pid = DHD_PID_KT_TERMINATED;
+	dhd->thr_rpm_ctl.terminated = TRUE;
 	KTHREAD_COMPLETE_AND_EXIT(&tsk->completed, 0);
 }
 
@@ -16329,6 +16335,15 @@ exit:
 
 }
 
+bool dhd_is_rpm_thread_alive(dhd_pub_t *pub)
+{
+	dhd_info_t *dhd = (dhd_info_t *)(pub->info);
+	if (dhd->thr_rpm_ctl.thr_pid < 0) {
+		return FALSE;
+	} else {
+		return TRUE;
+	}
+}
 #endif /* DHD_PCIE_RUNTIMEPM */
 
 int
@@ -20459,6 +20474,11 @@ void dhd_schedule_memdump(dhd_pub_t *dhdp, uint8 *buf, uint32 size)
 #endif /* DHD_LOG_DUMP */
 		return;
 	}
+#ifdef DHD_DUMP_RXPKTIDMAP
+	else if (dhdp->memdump_type == DUMP_TYPE_BY_SYSDUMP) {
+		dhd_dump_rxpktidmap(dhdp);
+	}
+#endif /* DHD_DUMP_RXPKTIDMAP */
 
 	dhd_info->scheduled_memdump = TRUE;
 

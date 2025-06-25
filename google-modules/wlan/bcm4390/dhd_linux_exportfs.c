@@ -2438,6 +2438,36 @@ static struct dhd_attr dhd_attr_control_he_enab=
 __ATTR(control_he_enab, 0660, show_control_he_enab, set_control_he_enab);
 #endif /* CUSTOM_CONTROL_HE_ENAB */
 
+#ifdef DHD_DUMP_RXPKTIDMAP
+static ssize_t
+show_dump_rxpktidmap(struct dhd_info *dhd, char *buf)
+{
+	ssize_t ret = 0;
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return ret;
+	}
+
+	DHD_PRINT(("%s: read not implemented for dump_rxpktidmap\n", __FUNCTION__));
+	return ret;
+}
+
+static ssize_t
+set_dump_rxpktidmap(struct dhd_info *dhd, const char *buf, size_t count)
+{
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return count;
+	}
+
+	dhd_dump_rxpktidmap(&dhd->pub);
+	DHD_PRINT(("%s: dump_rxpktidmap done\n", __FUNCTION__));
+	return count;
+}
+static struct dhd_attr dhd_attr_dump_rxpktidmap =
+__ATTR(dump_rxpktidmap, 0660, show_dump_rxpktidmap, set_dump_rxpktidmap);
+#endif /* DHD_DUMP_RXPKTIDMAP */
+
 #if defined(WLAN_ACCEL_BOOT)
 static ssize_t
 show_wl_accel_force_reg_on(struct dhd_info *dhd, char *buf)
@@ -2980,6 +3010,9 @@ static struct attribute *default_file_attrs[] = {
 #if defined(WLAN_ACCEL_BOOT)
 	&dhd_attr_wl_accel_force_reg_on.attr,
 #endif /* WLAN_ACCEL_BOOT */
+#ifdef DHD_DUMP_RXPKTIDMAP
+	&dhd_attr_dump_rxpktidmap.attr,
+#endif /* DHD_DUMP_RXPKTIDMAP */
 #ifdef PWRSTATS_SYSFS
 	&dhd_attr_pwrstats_path.attr,
 #endif /* PWRSTATS_SYSFS */

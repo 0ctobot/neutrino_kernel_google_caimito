@@ -1398,9 +1398,11 @@ void
 dhd_lb_rx_pkt_enqueue(dhd_pub_t *dhdp, void *pkt, int ifidx)
 {
 	dhd_info_t *dhd = dhdp->info;
-
-	DHD_INFO(("%s enqueue pkt<%p> ifidx<%d> pend_queue<%d>\n", __FUNCTION__,
-		pkt, ifidx, skb_queue_len(&dhd->rx_pend_queue)));
+#ifdef DHD_PRINT_RXPKTS_TRACE
+	DHD_ERROR(("%s enqueue pkt<%p> data<%p> len<%d> ifidx<%d> pend_queue<%d>\n", __FUNCTION__,
+		pkt, PKTDATA(dhdp->osh, pkt), PKTLEN(dhdp->osh, pkt), ifidx,
+		skb_queue_len(&dhd->rx_pend_queue)));
+#endif /* DHD_PRINT_RXPKTS_TRACE */
 	DHD_PKTTAG_SET_IFID((dhd_pkttag_fr_t *)PKTTAG(pkt), ifidx);
 	__skb_queue_tail(&dhd->rx_pend_queue, pkt);
 	DHD_LB_STATS_PERCPU_ARR_INCR(dhd->napi_percpu_run_cnt);

@@ -70,6 +70,11 @@
 
 #include <wlioctl_counters.h>
 
+/* Backwards compatibility for legacy branches. */
+#if !defined(BCM_EXTENSION)
+#define BCM_EXTENSION
+#endif
+
 /* NOTE re: Module specific error codes.
  *
  * BCME_.. error codes are extended by various features - e.g. FTM, NAN, SAE etc.
@@ -9376,9 +9381,11 @@ typedef enum {
 	WL_BSSTRANS_POLICY_PRODUCT = 4,		/**< Policy for real product use cases */
 	WL_BSSTRANS_POLICY_PRODUCT_WBTEXT = 5,	/**< Policy for real product use cases */
 	WL_BSSTRANS_POLICY_MBO = 6,		/**< Policy for MBO certification */
-	WL_BSSTRANS_POLICY_T2LM = 7,		/**< Policy for TID-to-link mapping use-case */
+	WL_BSSTRANS_POLICY_MLO_T2LM = 7,	/**< Policy for MLO TID-to-link mapping use-case */
+	WL_BSSTRANS_POLICY_T2LM = WL_BSSTRANS_POLICY_MLO_T2LM,
 	WL_BSSTRANS_POLICY_MLO_REASSOC = 8,	/**< Policy for MLO Reassociation use-case */
-	WL_BSSTRANS_POLICY_MAX = 9
+	WL_BSSTRANS_POLICY_MLO_LINK_RECFG = 9,	/**< Policy for MLO Link Reconfiguration use-case */
+	WL_BSSTRANS_POLICY_MAX = 10
 } wnm_bsstrans_policy_type_t;
 
 /** Definitions for WNM/NPS TIM Broadcast */
@@ -13248,6 +13255,7 @@ typedef struct wl_nan_host_assist_req {
 } wl_nan_host_assist_req_t;
 
 /* nan sub-features */
+BCM_EXTENSION	/* Suppress warning: enum values in range 'int'. */
 enum wl_nan_fw_cap_flag1 {
 	WL_NAN_FW_CAP_FLAG_NONE			= 0x00000000, /* dummy */
 	WL_NAN_FW_CAP_FLAG1_AVAIL		= 0x00000001,
@@ -15661,6 +15669,7 @@ enum {
 typedef int16 wl_proxd_method_t;
 
 /** global and method configuration flags */
+BCM_EXTENSION	/* Suppress warning: enum values in range 'int'. */
 enum {
 	WL_PROXD_FLAG_NONE			= 0x00000000,
 	WL_PROXD_FLAG_RX_ENABLED		= 0x00000001, /* respond to requests, per bss */
@@ -15684,6 +15693,7 @@ typedef uint32 wl_proxd_flags_t;
 #define WL_PROXD_FLAGS_AVAIL (WL_PROXD_FLAG_AVAIL_PUBLISH | \
 	WL_PROXD_FLAG_AVAIL_SCHEDULE)
 
+BCM_EXTENSION	/* Suppress warning: enum values in range 'int'. */
 typedef enum wl_proxd_session_flags {
 	WL_PROXD_SESSION_FLAG_NONE              = 0x00000000,  /**< no flags */
 	WL_PROXD_SESSION_FLAG_INITIATOR         = 0x00000001,  /**< local device is initiator */
@@ -16321,6 +16331,7 @@ typedef struct wl_proxd_avail {
 /* collect support TBD */
 
 /** debugging */
+BCM_EXTENSION	/* Suppress warning: enum values in range 'int'. */
 enum {
 	WL_PROXD_DEBUG_NONE		= 0x00000000,
 	WL_PROXD_DEBUG_LOG		= 0x00000001,
@@ -17022,7 +17033,9 @@ typedef struct wnm_noqbss_score_mode_v1 {
  */
 typedef enum wl_interface_type {
 	WL_INTERFACE_TYPE_STA = 0,
+	WL_INTERFACE_TYPE_INFRA_STA = 0,
 	WL_INTERFACE_TYPE_AP = 1,
+	WL_INTERFACE_TYPE_INFRA_AP = 1,
 
 
 	WL_INTERFACE_TYPE_NAN = 3,
@@ -20515,13 +20528,15 @@ typedef struct wl_mlo_status_v2 {
  */
 #define WL_MLO_CAP_VER_1	(1u)
 
+#define WL_MLO_CAP_EMLSR_ONLE_LINK_EN	(1u << 0u)	/* Capable of one link EMLSR operation. */
+
 typedef struct wl_mlo_cap_v1 {
 	uint16	version;
 	uint16  length;
 	uint8	max_mlo_links;		/* Maximum number of MLO links supported */
 	uint8	max_str_links;		/* Maximum number of STR links supported */
 	uint8	max_emlsr_links;	/* Maximum number of EMLSR links supported */
-	uint8	PAD;
+	uint8	cap_flags;		/* Bit map of supported capabilities */
 } wl_mlo_cap_v1_t;
 
 // #ifdef EHT_MAC_SW_TEST
@@ -20819,6 +20834,7 @@ typedef struct wl_mlo_tid_map_adv_v1 {
 #define WL_MLO_EMLSR_CTRL_FLAGS_TRANS_DLY_SHIFT		(5u)
 #define WL_MLO_EMLSR_CTRL_FLAGS_EMLOMN_LINKID_SHIFT	(6u)
 #define WL_MLO_EMLSR_CTRL_FLAGS_SM_PRINT_EN_SHIFT	(7u)
+#define WL_MLO_EMLSR_CTRL_FLAGS_ONE_LINK_EN_SHIFT	(8u)
 
 /* MLO emlsr ctrl Flags definition */
 #define WL_MLO_EMLSR_CTRL_FLAGS_MURTS_EN	(1u << WL_MLO_EMLSR_CTRL_FLAGS_MURTS_EN_SHIFT)
@@ -20830,6 +20846,7 @@ typedef struct wl_mlo_tid_map_adv_v1 {
 #define WL_MLO_EMLSR_CTRL_FLAGS_TRANS_DLY	(1u << WL_MLO_EMLSR_CTRL_FLAGS_TRANS_DLY_SHIFT)
 #define WL_MLO_EMLSR_CTRL_FLAGS_EMLOMN_LINKID	(1u << WL_MLO_EMLSR_CTRL_FLAGS_EMLOMN_LINKID_SHIFT)
 #define WL_MLO_EMLSR_CTRL_FLAGS_SM_PRINT_EN	(1u << WL_MLO_EMLSR_CTRL_FLAGS_SM_PRINT_EN_SHIFT)
+#define WL_MLO_EMLSR_CTRL_FLAGS_ONE_LINK_EN	(1u << WL_MLO_EMLSR_CTRL_FLAGS_ONE_LINK_EN_SHIFT)
 
 /* setting values in params: note: reusing some of the flags */
 #define WL_MLO_EMLSR_CTRL_SET_MURTS_EN(val, en)			\
@@ -20863,7 +20880,7 @@ typedef struct wl_mlo_emlsr_ctrl_v1 {
 	uint8	trans_dly;	/* EMLSR transition delay */
 	uint8	emlomn_linkid;	/* link to be used for EML OMN tx */
 	int8	sm_print_en;	/* EMLSR SM print enable */
-	uint8	PAD;
+	uint8	one_link_en;	/* One link EMLSR mode enable */
 } wl_mlo_emlsr_ctrl_v1_t;
 
 /* WL_MLO_CMD_MLD_AP_OP opcode */
@@ -21347,6 +21364,29 @@ typedef struct wl_qos_rav_scs_qos_char_v1 {
 					 * per second
 					 */
 } wl_qos_rav_scs_qos_char_v1_t;
+
+/* QoS DAR Session States */
+enum wl_qos_dar_session_states {
+	/* IDLE state */
+	WL_QOS_DAR_SESSION_STATE_IDLE			= 0u,
+	/* Initiator, Responder Configured */
+	WL_QOS_DAR_SESSION_STATE_CONFIGURED		= 1u,
+	/* Initiator waiting for DAR response */
+	WL_QOS_DAR_SESSION_STATE_INIT_WAIT_RESPONSE	= 2u,
+	/* Initiator waiting for DAR report */
+	WL_QOS_DAR_SESSION_STATE_INIT_WAIT_REPORT	= 3u,
+	/* Initiator waiting for DAR response */
+	WL_QOS_DAR_SESSION_STATE_RESP_SEND_RESPONSE	= 4u,
+	/* Responder in measurement phase */
+	WL_QOS_DAR_SESSION_STATE_RESP_MEASUREMENT	= 5u,
+	/* Session termination */
+	WL_QOS_DAR_SESSION_STATE_TERMINATING		= 6u,
+	/* Session end */
+	WL_QOS_DAR_SESSION_STATE_END			= 7u
+};
+
+typedef uint8 wl_qos_dar_session_states_t;
+typedef uint16 wl_qos_dar_session_id_t;
 
 #define WL_ESP_IOV_MAJOR_VER_1 1
 #define WL_ESP_IOV_MINOR_VER_1 1
@@ -25851,6 +25891,124 @@ typedef struct wl_rng_iovar {
 	} u;
 } wl_rng_iovar_t;
 
+#if defined(WL_RC2COEX) || defined(LR154CX) || defined(RC2CX)
+#define RC2CX_STATUS_VER_3 3
+/* RC2/15.4 coex status structures */
+typedef struct wlc_rc2cx_stats_v3 {
+	uint16	version;		/* version info */
+	uint8	len;			/* status length */
+	uint8	mode;			/* RC2 coex mode */
+	uint16	rc2_req_cnt;		/* RC2 req number since last read. */
+	uint16	rc2_grant_cnt;		/* RC2 grant count since last read. */
+	uint32	rc2_dur;		/* RC2 duration since last read, us. */
+	uint16	rc2_succ_pm_prot_cnt;	/* RC2 number of successfully acked PM. */
+	uint16	rc2_succ_cts_prot_cnt;	/* RC2 number of successfully TXed CTS2A. */
+	uint16	rc2_grant_delay_cnt;	/* RC2 grant delay counter, delay > 4.5ms. */
+	uint16	rc2_crit_phycal_cnt;	/* RC2 WLAN/BT critical: PHY cal. counter. */
+	uint16	rc2_crit_rate_cnt;	/* RC2 WLAN/BT critical: rate recovery counter. */
+	uint16	rc2_crit_bcnloss_cnt;	/* RC2 WLAN/BT critical: beacon loss counter. */
+	uint16	rc2_crit_hpp_cnt;	/* RC2 WLAN/BT critical: HPP counter. */
+	uint16	rc2_crit_bt_cnt;	/* RC2 WLAN/BT critical: BT counter. */
+	uint16	rc2_crit_slotbss_cnt;	/* RC2 WLAN/BT critical: AWDL/NAN counter. */
+	uint16	rc2_crit_max_dur;	/* The longest critical event duration. */
+	uint32	rc2_crit_cnt;		/* RC2 WLAN/BT critical counter, aggregate. */
+	uint16	rc2_crit_map_max;	/* A bitmap of the deny sources. */
+	uint16	rc2_tx_req_cnt;		/* RC2 TX req number since last read. */
+	uint16	rc2_rx_req_cnt;		/* RC2 RX req number since last read. */
+	uint16	rc2_tx_deny_cnt;	/* RC2 TX deny number since last read. */
+	uint16	rc2_rx_deny_cnt;	/* RC2 RX deny number since last read. */
+	uint8	pad[2];
+} wlc_rc2cx_stats_v3_t;
+#endif /* WL_RC2COEX || LR154CX */
+
+#if defined(WL_RC2COEX) || defined(RC2CX)
+#define RC2CX_STATUS_VER_2 2
+/* RC2 coex status structures */
+typedef struct wlc_rc2cx_stats_v2 {
+	uint16	version;		/* version info */
+	uint8	len;			/* status length */
+	uint8	mode;			/* RC2 coex mode */
+	uint16	rc2_req_cnt;		/* RC2 req number since last read. */
+	uint16	rc2_grant_cnt;		/* RC2 grant count since last read. */
+	uint32	rc2_dur;		/* RC2 duration since last read, us. */
+	uint16	rc2_succ_pm_prot_cnt;	/* RC2 number of successfully acked PM. */
+	uint16	rc2_succ_cts_prot_cnt;	/* RC2 number of successfully TXed CTS2A. */
+	uint16	rc2_grant_delay_cnt;	/* RC2 grant delay counter, delay > 4.5ms. */
+	uint16	rc2_crit_phycal_cnt;	/* RC2 WLAN/BT critical: PHY cal. counter. */
+	uint16	rc2_crit_rate_cnt;	/* RC2 WLAN/BT critical: rate recovery counter. */
+	uint16	rc2_crit_bcnloss_cnt;	/* RC2 WLAN/BT critical: beacon loss counter. */
+	uint16	rc2_crit_hpp_cnt;	/* RC2 WLAN/BT critical: HPP counter. */
+	uint16	rc2_crit_bt_cnt;	/* RC2 WLAN/BT critical: BT counter. */
+	uint16	rc2_crit_slotbss_cnt;	/* RC2 WLAN/BT critical: AWDL/NAN counter. */
+	uint16	rc2_crit_max_dur;	/* The longest critical event duration. */
+	uint32	rc2_crit_cnt;		/* RC2 WLAN/BT critical counter, aggregate. */
+	uint16	rc2_crit_map_max;	/* A bitmap of the deny sources. */
+	uint8	pad[2];
+} wlc_rc2cx_stats_v2_t;
+
+#define RC2CX_STATUS_VER_1 1
+/* RC2 coex status structures */
+typedef struct wlc_rc2cx_stats_v1 {
+	uint16	version;		/* version info */
+	uint8	len;			/* status length */
+	uint8	mode;			/* RC2 coex mode */
+	uint16	rc2_req_cnt;		/* RC2 req number since last read. */
+	uint16	rc2_grant_cnt;		/* RC2 grant count since last read. */
+	uint32	rc2_dur;		/* RC2 duration since last read, us. */
+	uint16	rc2_succ_pm_prot_cnt;	/* RC2 number of successfully acked PM. */
+	uint16	rc2_succ_cts_prot_cnt;	/* RC2 number of successfully TXed CTS2A. */
+	uint16	rc2_grant_delay_cnt;	/* RC2 grant delay counter, delay > 4.5ms. */
+	uint16	rc2_crit_phycal_cnt;	/* RC2 WLAN/BT critical: PHY cal. counter. */
+	uint16	rc2_crit_rate_cnt;	/* RC2 WLAN/BT critical: rate recovery counter. */
+	uint16	rc2_crit_bcnloss_cnt;	/* RC2 WLAN/BT critical: beacon loss counter. */
+	uint16	rc2_crit_hpp_cnt;	/* RC2 WLAN/BT critical: HPP counter. */
+	uint16	rc2_crit_bt_cnt;	/* RC2 WLAN/BT critical: BT counter. */
+	uint16	rc2_crit_slotbss_cnt;	/* RC2 WLAN/BT critical: AWDL/NAN counter. */
+	uint16	rsvd;
+	uint32	rc2_crit_cnt;		/* RC2 WLAN/BT critical counter, aggregate. */
+} wlc_rc2cx_stats_v1_t;
+
+/* Definitions for RC2 coex iovar */
+#define WL_RC2CX_VERSION	1
+
+/* RC2 coex IOV sub command IDs */
+typedef enum rc2cx_cmd_id {
+	WL_RC2CX_CMD_VER	= 0,	/* RC2CX version sub command */
+	WL_RC2CX_CMD_MODE	= 1,	/* RC2CX Mode sub command */
+	WL_RC2CX_CMD_PM_PROT	= 2,	/* RC2CX PM Protection sub command */
+	WL_RC2CX_CMD_PER_CTS	= 3	/* RC2CX Periodic CTS sub command */
+} rc2cx_cmd_id_t;
+
+/* first byte of bcm_iov_batch_subcmd.data for the WL_RC2CX_CMD_MODE command */
+#define RC2CX_MODE_DISABLED		0x00u
+#define RC2CX_MODE_TDD			0x01u
+#define RC2CX_MODE_PM_PROT		0x02u
+#define RC2CX_MODE_PER_CTS		0x04u
+#define RC2CX_MODE_PER_CTS_DENY_BT	0x08u
+
+/* first byte of bcm_iov_batch_subcmd.data for the WL_RC2CX_CMD_PM_PROT command */
+#define RC2CX_PM_PROT_ENABLED	0x01u
+#define RC2CX_PM_PROT_DISABLED	0x00u
+
+/* first byte of bcm_iov_batch_subcmd.data for the WL_RC2CX_CMD_PER_CTS command */
+#define RC2CX_PER_CTS_ENABLED	0x01u
+#define RC2CX_PER_CTS_DISABLED	0x00u
+
+#define RC2CX_PER_CTS_DENY_BT	0x02u
+#define RC2CX_PER_CTS_GRANT_BT	0x01u
+
+/* payload for the WL_RC2CX_CMD_PER_CTS command */
+typedef struct rc2cx_per_cts_config {
+	uint8 enable_flag;	/* 0: feature disabled;
+				* 1: grant BT when granting RC2;
+				* 2: deny BT when granting RC2
+				*/
+	uint8 duration_val;	/* Must be valid with enable command */
+	uint8 interval_val;	/* Must be valid with enable command */
+	uint8 PAD;
+} rc2cx_per_cts_config_t;
+
+#endif /* WL_RC2COEX */
 
 #ifdef WL_UWBCOEX
 /* Definitions for UWB coex iovar */
@@ -26427,7 +26585,11 @@ enum {
 	/* AP only. AP is waiting for authentication frame with sequence 3. */
 	WL_PASN_STATE_WAIT_AUTH_3	= 11,
 	/* PASN exchange is done. */
-	WL_PASN_STATE_DONE			= 12
+	WL_PASN_STATE_DONE		= 12,
+	/* STA only. User(ex FTM) indicated to use cached key info. Key info is present for peer in
+	 * the keyinfo database. Install key info by passing it to key management module.
+	 */
+	WL_PASN_STATE_INSTALL_CACHED_KEY = 13
 };
 
 typedef uint8 wl_pasn_session_state_t;
@@ -26442,13 +26604,17 @@ typedef uint16 wl_pasn_flags_t;
 
 enum {
 	/* PASN exchange will use PMKSA to derive PTKSA */
-	WL_PASN_SESSION_FLAG_CACHED_PMK = 0x0001u,
+	WL_PASN_SESSION_FLAG_CACHED_PMK		= 0x0001u,
 	/* PASN exchange will setup PMKSA by tunneling protocol data */
-	WL_PASN_SESSION_FLAG_TUNNELED_AKM = 0x0002u,
+	WL_PASN_SESSION_FLAG_TUNNELED_AKM	= 0x0002u,
 	/* PASN session will be deleted if error occurs */
-	WL_PASN_SESSION_FLAG_DELETE_ON_ERR = 0x0004u,
+	WL_PASN_SESSION_FLAG_DELETE_ON_ERR	= 0x0004u,
 	/* PASN session will issue scan with randmac */
-	WL_PASN_SESSION_FLAG_RANDMAC = 0x0008u
+	WL_PASN_SESSION_FLAG_RANDMAC		= 0x0008u,
+	/* PASN session will use existing cached PTKSA or derive the PTKSA and cache it */
+	WL_PASN_SESSION_FLAG_USE_PTK_CACHE	= 0x0010u,
+	/* PASN session is using cached PTKSA */
+	WL_PASN_SESSION_FLAG_CACHED_PTK_IN_USE	= 0x0020u
 };
 typedef uint16 wl_pasn_session_flags_t;
 
@@ -27957,6 +28123,8 @@ enum wl_platcfg_cmd_id {
 	WL_PLATCFG_CMD_DUMP_DATA	= 4u,
 	WL_PLATCFG_CMD_BLOB_VER_V2	= 5u,
 	WL_PLATCFG_CMD_DUMP_DATA_V2	= 6u,
+	WL_PLATCFG_CMD_DUMP_DATA_V3	= 7u,
+	WL_PLATCFG_CMD_BLOBSEC		= 8u,
 	WL_PLATCFG_CMD_LAST
 };
 
@@ -27978,7 +28146,13 @@ typedef struct wl_platcfg_ver {
 	uint8	pad[2];
 } wl_platcfg_ver_t;
 
+typedef struct wl_platcfg_blobsec {
+	uint32  cmds;		/* WL_PLATCFG_CMD_BLOBSEC */
+} wl_platcfg_blobsec_t;
+
 /* tracks current module command version */
+#define	WL_PLATCFG_CMD_VER_V4	4u	/* Add 4x4, no signing */
+#define WL_PLATCFG_CMD_VER_V3	3u	/* Add MSF signing */
 #define WL_PLATCFG_CMD_VER_V2	2u
 #define WL_PLATCFG_CMD_VER_V1	1u
 
@@ -28056,7 +28230,31 @@ typedef struct wl_antgain6g_datalist_v2 {
 	uint8	antg[];		/* list of wl_antgain6g_data_t */
 } wl_antgain6g_datalist_v2_t;
 
-#define WL_ANTG_NUM_ANTS	2u
+/* V3 is for access router (4x4) and V2 is for mobility (2x2) */
+#define WL_ANTG_MAX_ANTS_V3	4u
+#define WL_ANTG_MAX_ANTS_V2	2u
+/*
+ * Due to build erros, keep WL_ANTG_NUM_ANTS
+ * until all the related changes are checkedin.
+ */
+#define WL_ANTG_NUM_ANTS	WL_ANTG_MAX_ANTS_V2
+typedef struct wl_antgain6g_data_v3 {
+	uint16  start_freq;				/* in MHz */
+	uint16  end_freq;				/* in MHz */
+	uint16	num_ants;				/* 2: 2x2, 3:3x3, 4:4x4 */
+	int16   corr_gain[WL_ANTG_MAX_ANTS_V3 - 1];     /* directional gain of
+							 * correlated signals used by FW,
+							 * scaled to 100x to avoid float
+							 * corr_gain[0] is for 2Tx,
+							 * corr_gain[1] is for 3Tx,
+							 * corr_gain[2] is for 4Tx.
+							 */
+	int16   uncorr_gain[WL_ANTG_MAX_ANTS_V3 - 1];   /* same definition as corr_gain, but for
+							 * non-correlated signals
+							 */
+	int16   ag_val[WL_ANTG_MAX_ANTS_V3];		/* individual antenna gains */
+} wl_antgain6g_data_v3_t;
+
 typedef struct wl_antgain6g_data_v2 {
 	uint16  start_freq;	/* in MHz */
 	uint16  end_freq;	/* in MHz */
@@ -28066,7 +28264,7 @@ typedef struct wl_antgain6g_data_v2 {
 	int16	uncorr_gain;	/* same definition as corr_gain, but for
 				 * non-correlated signals
 				 */
-	int16	ag_val[WL_ANTG_NUM_ANTS]; /* individual antenna gains */
+	int16	ag_val[WL_ANTG_MAX_ANTS_V2]; /* individual antenna gains */
 } wl_antgain6g_data_v2_t;
 
 /* WL_PLATCFG_XTLV_DUMP_DATA */
@@ -28208,5 +28406,53 @@ enum {
 	/* debug/test related sub-commands, mogrify? */
 	WL_UHR_CMD_DBG		= 0x1000u,	/* configure UHR debug facilities */
 };
+
+/*
+ * CCI performance monitor definitions
+ */
+#define WL_CCIPERF_VER_1		1
+
+#define CCIPERF_MAX_COUNTERS_V1		4
+#define CCIPERF_MAX_SOURCES_V1		8
+#define CCIPERF_MAX_SLAVE_SOURCE_V1	5
+#define CCIPERF_MAX_MASTER_SOURCE_V1	CCIPERF_MAX_SOURCES_V1
+#define CCIPERF_MAX_SLAVE_EVENTS_V1	21
+#define CCIPERF_MAX_MASTER_EVENTS_V1	18
+
+/* CCIPERF subcommand IDs */
+enum {
+	WL_CCIPERF_CMD_SELECT		= 0,
+	WL_CCIPERF_CMD_DESELECT		= 1,
+	WL_CCIPERF_CMD_DESELECT_ALL	= 2,
+	WL_CCIPERF_CMD_CLEAR		= 3,
+	WL_CCIPERF_CMD_CLEAR_ALL	= 4,
+	WL_CCIPERF_CMD_DUMP		= 5,
+	WL_CCIPERF_CMD_LAST
+};
+
+typedef struct wl_cciperf_stats_v1 {
+	bool enabled;	/**< counter is enabled if TRUE */
+	uint8 source;	/**< 0-4 for Slave S0-S4; 5-7 for Master M0-M2 */
+	uint8 event;	/**< 0-20 for Slave S0-S4; 0-17 for Master M0-M2 */
+	uint8 PAD;	/**< alignment */
+	uint32 val;	/**< counter value */
+} wl_cciperf_stats_v1_t;
+
+/** cciperf req data struct */
+typedef struct wl_cciperf_req_v1 {
+	uint16 version;	/* structure version */
+	uint16 length;	/* data length (starting after this field) */
+	uint8 counter;	/**< 0-3 */
+	uint8 source;	/**< 0-4 for Slave S0-S4; 5-7 for Master M0-M2 */
+	uint8 event;	/**< 0-20 for Slave S0-S4; 0-17 for Master M0-M2 */
+	uint8 PAD;	/**< alignment */
+} wl_cciperf_req_v1_t;
+
+/** cciperf resp data struct */
+typedef struct wl_cciperf_resp_v1 {
+	uint16 version;	/* structure version */
+	uint16 length;	/* data length (starting after this field) */
+	wl_cciperf_stats_v1_t stats[CCIPERF_MAX_COUNTERS_V1];
+} wl_cciperf_resp_v1_t;
 
 #endif /* _wlioctl_h_ */

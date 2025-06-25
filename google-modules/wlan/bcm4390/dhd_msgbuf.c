@@ -3108,6 +3108,55 @@ error:
 	return (dhd_pktid_map_handle_t *)NULL;
 }
 
+#ifdef DHD_DUMP_RXPKTIDMAP
+/**
+ * Retrieve all allocated keys for a given map and print the
+ * "pkt pktdata len" for each allocated key
+ */
+static void
+dhd_pktid_map_dump(dhd_pub_t *dhd, dhd_pktid_map_handle_t *handle)
+{
+	void *osh;
+	uint32 nkey;
+	dhd_pktid_map_t *map;
+	dhd_pktid_item_t *locker;
+	uint32 map_items;
+	unsigned long flags;
+	void *pkt;
+	uint32 count = 0;
+
+	if (handle == NULL) {
+		return;
+	}
+
+	map = (dhd_pktid_map_t *)handle;
+	DHD_PKTID_LOCK(map->pktid_lock, flags);
+	osh = dhd->osh;
+
+	map_items = DHD_PKIDMAP_ITEMS(map->items);
+	/* skip reserved KEY #0, and start from 1 */
+
+	DHD_ERROR(("pktid map dump map_items=%d avail=%d\n", map_items, map->avail));
+	for (nkey = 1; nkey <= map_items; nkey++) {
+		if (map->lockers[nkey].state == LOCKER_IS_BUSY) {
+			locker = &map->lockers[nkey];
+			pkt = locker->pkt;
+			count++;
+			DHD_ERROR(("<%d> nkey<%d> pkt<%p> data<%p> len<%d>\n", count, nkey,
+				pkt, PKTDATA(osh, pkt), PKTLEN(osh, pkt)));
+		}
+	}
+
+	DHD_PKTID_UNLOCK(map->pktid_lock, flags);
+}
+
+void
+dhd_dump_rxpktidmap(dhd_pub_t *dhd)
+{
+	DHD_ERROR(("** pktid map dump for RX **\n"));
+	dhd_pktid_map_dump(dhd, dhd->prot->pktid_rx_map);
+}
+#endif /* DHD_DUMP_RXPKTIDMAP */
 /**
  * Retrieve all allocated keys and free all <numbered_key, locker>.
  * Freeing implies: unmapping the buffers and freeing the native packet
@@ -6910,7 +6959,10 @@ BCMFASTPATH(dhd_prot_rxbuf_post)(dhd_pub_t *dhd, uint16 count, bool use_rsv_pkti
 			PKTSETLEN(dhd->osh, p, prot->rxbufpost_sz);
 			DHD_TRACE(("%s: pktlen after: %d\n", __FUNCTION__, PKTLEN(dhd->osh, p)));
 		}
-
+#ifdef DHD_PRINT_RXPKTS_TRACE
+		DHD_ERROR(("dhd_prot_rxbuf_post: alloc p=%p pdata=%p len=%d\n", p,
+			PKTDATA(dhd->osh, p), PKTLEN(dhd->osh, p)));
+#endif /* DHD_PRINT_RXPKTS_TRACE */
 #ifdef BCM_ROUTER_DHD
 		/* Reserve extra headroom for router builds */
 		PKTPULL(dhd->osh, p, BCMEXTRAHDROOM);
@@ -7055,6 +7107,10 @@ cleanup:
 
 		DMA_UNMAP(dhd->osh, pa, pktlen[i], DMA_RX, 0, DHD_DMAH_NULL);
 		PKTFREE(dhd->osh, p, FALSE);
+#ifdef DHD_PRINT_RXPKTS_TRACE
+		DHD_ERROR(("dhd_prot_rxbuf_post: cleanup_free p=%p pdata=%p len=%d\n", p,
+			PKTDATA(dhd->osh, p), PKTLEN(dhd->osh, p)));
+#endif /* DHD_PRINT_RXPKTS_TRACE */
 	}
 
 	/* Zero out memory to prevent any stale access */
