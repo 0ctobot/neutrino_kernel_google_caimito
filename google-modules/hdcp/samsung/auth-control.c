@@ -96,6 +96,13 @@ static void hdcp_worker(struct work_struct *work) {
 		hdcp_info("Not trying HDCP13. max_ver is %lu\n", max_ver);
 	}
 
+	state = hdcp_get_auth_state();
+	if (state & (HDCP_AUTH_RESET | HDCP_AUTH_ABORT | HDCP_AUTH_SHUTDOWN)) {
+		// if aborted, don't count it as a legitimate failure.
+		hdcp_info("HDCP aborted\n");
+		return;
+	}
+
 	hdcp_dev->hdcp2_fail_count += (hdcp2_capable);
 	hdcp_dev->hdcp1_fail_count += (!hdcp2_capable && hdcp1_capable);
 	hdcp_dev->hdcp0_count += (!hdcp2_capable && !hdcp1_capable);
