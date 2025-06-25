@@ -7,6 +7,8 @@
 
 #include <linux/slab.h>
 
+#include <gcip/gcip-memory.h>
+
 #include "gxp-config.h"
 #include "gxp-debug-dump.h"
 #include "gxp-firmware-data.h"
@@ -88,14 +90,14 @@ static void _gxp_fw_data_populate_vd_cfg(struct gxp_dev *gxp,
 
 	if (!gxp_is_direct_mode(gxp))
 		return;
-	if (!vd->vd_cfg.vaddr || !vd->core_cfg.vaddr) {
+	if (!vd->vd_cfg.virt_addr || !vd->core_cfg.virt_addr) {
 		dev_warn(
 			gxp->dev,
 			"Missing VD and core CFG in image config, firmware is not bootable\n");
 		return;
 	}
 	/* Set up VD config region. */
-	vd_desc = vd->vd_cfg.vaddr;
+	vd_desc = vd->vd_cfg.virt_addr;
 	vd_desc->application_id = DEFAULT_APP_ID;
 	vd_desc->vd_is_initialized = 0;
 	/* Set up core config region. */
@@ -117,8 +119,7 @@ static void _gxp_fw_data_populate_vd_cfg(struct gxp_dev *gxp,
 	job.hardware_resources_slot = gxp_vd_hw_slot_id(vd);
 	/* Assign the same job descriptor to all cores in this VD */
 	for (i = 0; i < GXP_NUM_CORES; i++) {
-		core_cfg = vd->core_cfg.vaddr +
-			   vd->core_cfg.size / GXP_NUM_CORES * i;
+		core_cfg = vd->core_cfg.virt_addr + vd->core_cfg.size / GXP_NUM_CORES * i;
 		core_cfg->job_descriptor = job;
 	}
 }
@@ -133,12 +134,12 @@ int gxp_fw_data_init(struct gxp_dev *gxp)
 		return -ENOMEM;
 
 	if (gxp_is_direct_mode(gxp)) {
-		virt = memremap(gxp->fwdatabuf.paddr, gxp->fwdatabuf.size, MEMREMAP_WC);
+		virt = memremap(gxp->fwdatabuf.phys_addr, gxp->fwdatabuf.size, MEMREMAP_WC);
 		if (IS_ERR_OR_NULL(virt)) {
 			dev_err(gxp->dev, "Failed to map fw data region\n");
 			return -ENODEV;
 		}
-		gxp->fwdatabuf.vaddr = virt;
+		gxp->fwdatabuf.virt_addr = virt;
 
 		/* Populate the region with a pre-defined pattern. */
 		memset(virt, FW_DATA_DEBUG_PATTERN, gxp->fwdatabuf.size);
@@ -152,8 +153,8 @@ void gxp_fw_data_destroy(struct gxp_dev *gxp)
 {
 	struct gxp_fw_data_manager *mgr = gxp->data_mgr;
 
-	if (gxp->fwdatabuf.vaddr)
-		memunmap(gxp->fwdatabuf.vaddr);
+	if (gxp->fwdatabuf.virt_addr)
+		memunmap(gxp->fwdatabuf.virt_addr);
 
 	devm_kfree(gxp->dev, mgr);
 	gxp->data_mgr = NULL;
@@ -210,25 +211,24 @@ u32 gxp_fw_data_get_core_telemetry_device_status(struct gxp_dev *gxp, uint core)
 	return des_rw->telemetry_desc.per_core_loggers[core].device_status;
 }
 
-struct gxp_mapped_resource gxp_fw_data_resource(struct gxp_dev *gxp)
+struct gcip_memory gxp_fw_data_resource(struct gxp_dev *gxp)
 {
 	/*
 	 * For direct mode, the config regions are programmed by host (us); for
 	 * MCU mode, the config regions are programmed by MCU.
 	 */
-	if (gxp_is_direct_mode(gxp)) {
+	if (gxp_is_direct_mode(gxp))
 		return gxp->fwdatabuf;
-	} else {
-		return gxp->shared_buf;
-	}
+
+	return gxp->shared_buf;
 }
 
 void *gxp_fw_data_system_cfg(struct gxp_dev *gxp)
 {
-	struct gxp_mapped_resource res = gxp_fw_data_resource(gxp);
+	struct gcip_memory res = gxp_fw_data_resource(gxp);
 
 	/* Use the end of the shared region for system cfg. */
-	return res.vaddr + res.size - gxp->data_mgr->sys_cfg_size;
+	return res.virt_addr + res.size - gxp->data_mgr->sys_cfg_size;
 }
 
 void gxp_fw_data_populate_system_config(struct gxp_dev *gxp, u32 sys_cfg_size)

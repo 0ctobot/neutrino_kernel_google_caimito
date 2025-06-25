@@ -21,6 +21,7 @@
 
 #include <gcip/gcip-image-config.h>
 #include <gcip/gcip-iommu-reserve.h>
+#include <gcip/gcip-memory.h>
 
 #include "gxp-host-device-structs.h"
 #include "gxp-internal.h"
@@ -98,7 +99,7 @@ struct gxp_virtual_device {
 	 * The config regions specified in image config.
 	 * core_cfg's size should be a multiple of GXP_NUM_CORES.
 	 */
-	struct gxp_mapped_resource core_cfg, vd_cfg, sys_cfg, lpm;
+	struct gcip_memory core_cfg, vd_cfg, sys_cfg, lpm;
 	uint core_list;
 	/*
 	 * The ID of DSP client. -1 if it is not allocated.
@@ -486,10 +487,44 @@ void gxp_vd_invalidate(struct gxp_dev *gxp, struct gxp_virtual_device *vd, u32 r
  * @vd: The virtual device to be dumped.
  * @core_list: A bitfield enumerating the physical cores on which crash is reported from firmware.
  */
-void gxp_vd_generate_debug_dump(struct gxp_dev *gxp,
-				struct gxp_virtual_device *vd, uint core_list);
+void gxp_vd_generate_debug_dump(struct gxp_dev *gxp, struct gxp_virtual_device *vd, uint core_list);
+
+/*
+ * gxp_vd_conclude_debug_dump () - Concludes generation of a debug dump by sending the locally
+ * copied segments to the SSCD module for the specified cores.
+ *
+ * @gxp: The GXP device to obtain the handler for.
+ * @core_list: Pointer to a bitfield enumerating the physical cores on which crash is reported
+ *             from firmware.
+ *
+ * This function will be called as part of debug dump generation - requested either by the FW or
+ * as a result of VD invalidation.
+ *
+ * Return:
+ * * 0          - Success
+ * * -EINVAL    - Debug dump is not enabled
+ */
+int gxp_vd_conclude_debug_dump(struct gxp_dev *gxp, uint *core_list);
 
 #if GXP_HAS_MCU
+/*
+ * gxp_vd_start_debug_dump_with_client_id() - Starts debug dump for the given @client_id.
+ *
+ * @gxp: The GXP device to obtain the handler for.
+ * @client_id: The client to which the virtual device to be dumped belongs.
+ * @core_list: Pointer to a bitfield enumerating the physical cores on which crash is reported
+ *             from the firmware. The bitfield will be updated to exclude any core which does
+ *             not have dump available.
+ *
+ * This function will be called as part of debug dump generation - requested either by the FW or
+ * as a result of VD invalidation.
+ *
+ * Return:
+ * * 0          - Success
+ * * -EINVAL    - VD belonging to @client_id has been closed.
+ */
+int gxp_vd_start_debug_dump_with_client_id(struct gxp_dev *gxp, int client_id, uint *core_list);
+
 /*
  * Releases the vmbox which is allocated to @vd.
  *
@@ -541,9 +576,10 @@ static inline uint gxp_vd_hw_slot_id(struct gxp_virtual_device *vd)
  * This function shouldn't be called while holding @gxp->vd_seamphore to prevent potential deadlock.
  */
 static inline void gxp_vd_release_unconsumed_async_resps(struct gxp_dev *gxp,
-							 struct gxp_virtual_device *vd)
+							 struct gxp_virtual_device *vd,
+							 int client_id)
 {
-	gxp->mailbox_mgr->release_unconsumed_async_resps(vd);
+	gxp->mailbox_mgr->release_unconsumed_async_resps(vd, client_id);
 }
 
 #endif /* __GXP_VD_H__ */

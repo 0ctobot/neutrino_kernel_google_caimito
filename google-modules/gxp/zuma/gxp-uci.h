@@ -14,6 +14,7 @@
 #include <gcip/gcip-fence-array.h>
 #include <gcip/gcip-fence.h>
 #include <gcip/gcip-mailbox.h>
+#include <gcip/gcip-memory.h>
 
 #include "gxp-client.h"
 #include "gxp-internal.h"
@@ -88,32 +89,6 @@ struct gxp_uci_command {
 		uint16_t iif_id;
 		uint8_t opaque[48];
 	};
-};
-
-/**
- * struct gxp_uci_command_work - The callback and work object to carry data for a UCI command.
- * @cb: The embedded DMA callback.
- * @node: The list node used to add to the client.
- * @fence: The fence that the callback is added to.
- * @client: The client which request the UCI command.
- * @cmd_seq: The specified sequence number used for the uci command.
- * @flags: Same as gxp_mailbox_uci_command_ioctl.
- * @opaque: Same as gxp_mailbox_uci_command_ioctl.
- * @timeout_ms: Same as gxp_mailbox_uci_command_ioctl.
- * @in_fences: Same as gxp_mailbox_uci_command_ioctl.
- * @out_fences: Same as gxp_mailbox_uci_command_ioctl.
- */
-struct gxp_uci_cmd_work {
-	struct dma_fence_cb cb;
-	struct list_head node;
-	struct dma_fence *fence;
-	struct gxp_client *client;
-	u64 cmd_seq;
-	u32 flags;
-	u8 opaque[GXP_UCI_CMD_OPAQUE_SIZE];
-	u32 timeout_ms;
-	struct gcip_fence_array *in_fences;
-	struct gcip_fence_array *out_fences;
 };
 
 /*
@@ -207,7 +182,7 @@ struct gxp_uci_async_response {
 	/*
 	 * List entry which will be inserted to the waiting queue of the vd.
 	 * It will be pushed into the waiting queue when the response is sent.
-	 * (i.e, the `gxp_uci_send_command` function is called)
+	 * (i.e, the `gxp_uci_push_cmd()` function is called)
 	 * It will be poped when the response is consumed by the vd.
 	 */
 	struct list_head wait_list_entry;
@@ -241,28 +216,24 @@ struct gxp_uci_async_response {
 	/* Status of the response. */
 	enum gxp_response_status status;
 	/* Additional info buffer. */
-	struct gxp_mapped_resource additional_info_buf;
+	struct gcip_memory additional_info_buf;
 	/* In-fences. */
 	struct gcip_fence_array *in_fences;
 	/* Out-fences. */
 	struct gcip_fence_array *out_fences;
 	/* Will be set to true if the response has been processed. */
 	bool processed;
-};
-
-struct gxp_uci_wait_list {
-	struct list_head list;
-	struct gxp_uci_response *resp;
-	bool is_async;
+	/* IIF which will be signaled once in-kernel fences of @in_fences are signaled. */
+	struct iif_fence *iif_ikf;
 };
 
 struct gxp_uci {
 	struct gxp_dev *gxp;
 	struct gxp_mcu *mcu;
 	struct gxp_mailbox *mbx;
-	struct gxp_mapped_resource cmd_queue_mem;
-	struct gxp_mapped_resource resp_queue_mem;
-	struct gxp_mapped_resource descriptor_mem;
+	struct gcip_memory cmd_queue_mem;
+	struct gcip_memory resp_queue_mem;
+	struct gcip_memory descriptor_mem;
 };
 
 /* UCI APIs */
@@ -293,28 +264,6 @@ int gxp_uci_reinit(struct gxp_uci *uci);
  */
 void gxp_uci_exit(struct gxp_uci *uci);
 
-/**
- * gxp_uci_create_and_send_cmd() - Create and put the UCI command into the queue.
- * @client: The client which request the UCI command.
- * @cmd_seq: The specified sequence number used for this uci command.
- * @flags: Same as gxp_mailbox_uci_command_ioctl.
- * @opaque: Same as gxp_mailbox_uci_command_ioctl.
- * @timeout_ms: Same as gxp_mailbox_uci_command_ioctl.
- * @in_fences: Same as gxp_mailbox_uci_command_ioctl.
- * @out_fences: Same as gxp_mailbox_uci_command_ioctl.
- *
- * Following tasks will be done in this function:
- * 1. Check the client and its virtual device to see if they are still available.
- * 2. Prepare UCI command object.
- * 3. Prepare UCI additional info.
- * 4. Put the UCI command into the queue.
- *
- * Return: 0 on success or errno on failure.
- */
-int gxp_uci_create_and_send_cmd(struct gxp_client *client, u64 cmd_seq, u32 flags, const u8 *opaque,
-				u32 timeout_ms, struct gcip_fence_array *in_fences,
-				struct gcip_fence_array *out_fences);
-
 /*
  * gxp_uci_wait_async_response() - API for waiting and fetching a response from
  * MCU firmware.
@@ -326,7 +275,7 @@ int gxp_uci_wait_async_response(struct mailbox_resp_queue *uci_resp_queue,
 
 /*
  * gxp_uci_fill_additional_info() - Fills @info according to the passed additional information.
- * It is expected that the filled @info will be passed to the `gxp_uci_send_command`.
+ * It is expected that the filled @info will be passed to the `gxp_uci_push_cmd()`.
  */
 void gxp_uci_fill_additional_info(struct gxp_uci_additional_info *info, uint16_t *in_fences,
 				  uint32_t in_fences_size, uint16_t *out_fences,
@@ -335,40 +284,35 @@ void gxp_uci_fill_additional_info(struct gxp_uci_additional_info *info, uint16_t
 				  uint32_t runtime_additional_info_size);
 
 /**
- * gxp_uci_cmd_work_create_and_schedule() - Creates a UCI command work and registers it to the given
- *                                          DMA fence.
- * @fence: The DMA fence to add the callback for the UCI work.
- * @client: The attribute of gxp_uci_cmd_work.
- * @ibuf: The gxp_mailbox_uci_command_ioctl passed from user.
- * @cmd_seq: The attribute of gxp_uci_cmd_work.
- * @in_fences: The fences which will signal @fence.
- * @out_fences: The fences which will be signaled by @fence.
+ * gxp_uci_send_cmd() - Sends an UCI command to the firmware.
+ * @client: The client sending the command.
+ * @cmd_seq: The command sequence number.
+ * @flags: The command flags passed from the UCI command ioctl. (See gxp_mailbox_uci_command_ioctl)
+ * @opaque: The runtime command. (See gxp_mailbox_uci_command_ioctl)
+ * @timeout_ms: The command timeout. If 0, the default one (MAILBOX_TIMEOUT) will be used. Note
+ *              that, if it is specified, the driver will add a margin (PER_CMD_TIMEOUT_MARGIN_MS).
+ *              It is to give enough time to the firmware side and let them return a timeout
+ *              response to the driver instead of processing the command as timeout from the kernel
+ *              level.
+ * @in_fences: The in-fences that the command will wait on. Note that the command will be always
+ *             pended in the firmware level even though there are in-kernel fences. If there are
+ *             in-kernel fences, the driver will submit the command to the firmware first and then
+ *             notify the firmware of the in-kernel fence unblock later. Note that @timeout_ms will
+ *             be also used for waiting on in-kernel fences.
+ * @out_fences: The out-fences which will be signaled once the command is processed.
  *
- * This function creates a deferred work which will be scheduled when @fence is signaled and will
- * call the gxp_uci_create_and_send_cmd function.
- *
- * If the given fence is NULL or the fence has already been signaled, skips the register process and
- * run gxp_uci_create_and_send_cmd() directly.
- *
- * The work will be added to the @client->uci_cb_list for tracking if the callback is added to the
- * fence successfully.
- *
- * This function should be called in the ioctl function only, where the gxp_client_destroy() is
+ * This function should be called in the ioctl function only, where the `gxp_client_destroy()` is
  * guaranteed not to be called simultaneously.
  *
  * Return: 0 on success or errno on failure.
  */
-int gxp_uci_cmd_work_create_and_schedule(struct dma_fence *fence, struct gxp_client *client,
-					 const struct gxp_mailbox_uci_command_ioctl *ibuf,
-					 u64 cmd_seq, struct gcip_fence_array *in_fences,
-					 struct gcip_fence_array *out_fences);
+int gxp_uci_send_cmd(struct gxp_client *client, u64 cmd_seq, u32 flags, const u8 *opaque,
+		     u32 timeout_ms, struct gcip_fence_array *in_fences,
+		     struct gcip_fence_array *out_fences);
 
-/**
- * gxp_uci_work_destroy() - The revert function of gxp_uci_cmd_work_create().
- * @uci_work: The target work to be destroyed.
+/*
+ * TODO(b/395523291): Remove @gxp_uci_send_iif_unblock_noti() once IIF signalling mailbox available.
  */
-void gxp_uci_work_destroy(struct gxp_uci_cmd_work *uci_work);
-
 /**
  * gxp_uci_send_iif_unblock_noti() - Sends the fence unblock notification of @iif_id fence to the
  *                                   MCU firmware.
@@ -388,10 +332,11 @@ void gxp_uci_send_iif_unblock_noti(struct gxp_uci *uci, int iif_id);
  */
 void gxp_uci_consume_responses(struct gxp_uci *uci);
 
-/*
+/**
  * gxp_uci_cancel() - Cancels all pending UCI commands in the waiting queue of @vd.
- *
  * @vd: The virtual device which is going to cancel all of its UCI commands.
+ * @client_id: The client ID of @vd.
+ * @reason: The reason to cancel UCI commands of @vd. (GXP_INVALIDATED_*)
  *
  * This function should be called not only when the client won't send more commands anymore, but
  * also the MCU won't return any responses of commands of @vd anymore. For example,
@@ -404,6 +349,6 @@ void gxp_uci_consume_responses(struct gxp_uci *uci);
  * were processed well, but from the kernel/runtime perspective, those commands can be considered
  * as canceled.
  */
-void gxp_uci_cancel(struct gxp_virtual_device *vd);
+void gxp_uci_cancel(struct gxp_virtual_device *vd, int client_id, u32 reason);
 
 #endif /* __GXP_UCI_H__ */

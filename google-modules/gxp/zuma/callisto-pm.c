@@ -63,3 +63,9 @@ void gxp_pm_chip_init(struct gxp_dev *gxp)
 void gxp_pm_chip_exit(struct gxp_dev *gxp)
 {
 }
+
+bool gxp_pm_is_blk_down(struct gxp_dev *gxp)
+{
+	return gxp->power_mgr->aur_status ? !readl(gxp->power_mgr->aur_status) :
+					    gxp->power_mgr->curr_state == AUR_OFF;
+}

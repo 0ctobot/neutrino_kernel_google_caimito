@@ -9,7 +9,9 @@
 #define __GXP_MCU_H__
 
 #include <gcip/gcip-mem-pool.h>
+#include <gcip/gcip-memory.h>
 
+#include "gxp-iif.h"
 #include "gxp-kci.h"
 #include "gxp-mcu-firmware.h"
 #include "gxp-mcu-telemetry.h"
@@ -31,7 +33,6 @@ struct gxp_mcu_dump_config {
 };
 
 struct gxp_dev;
-struct gxp_mapped_resource;
 
 struct gxp_mcu {
 	struct gxp_dev *gxp;
@@ -42,7 +43,9 @@ struct gxp_mcu {
 	struct gcip_mem_pool remap_secure_pool;
 	struct gxp_uci uci;
 	struct gxp_kci kci;
-	struct gxp_mcu_telemetry_ctx telemetry;
+	struct gcip_telemetry_ctx telemetry;
+	/* To manage IIF fences. */
+	struct gxp_iif *giif;
 };
 
 /*
@@ -73,11 +76,11 @@ void gxp_mcu_reset_mailbox(struct gxp_mcu *mcu);
  *
  * Returns 0 on success, a negative errno otherwise.
  */
-int gxp_mcu_mem_alloc_data(struct gxp_mcu *mcu, struct gxp_mapped_resource *mem, size_t size);
+int gxp_mcu_mem_alloc_data(struct gxp_mcu *mcu, struct gcip_memory *mem, size_t size);
 /*
  * Free memory allocated by gxp_mcu_mem_alloc_data().
  */
-void gxp_mcu_mem_free_data(struct gxp_mcu *mcu, struct gxp_mapped_resource *mem);
+void gxp_mcu_mem_free_data(struct gxp_mcu *mcu, struct gcip_memory *mem);
 
 /*
  * Returns the pointer of `struct gxp_mcu` associated with the GXP device object.
@@ -95,7 +98,6 @@ void gxp_mcu_set_boot_mode(struct gxp_mcu_firmware *mcu_fw, enum gxp_mcu_boot_mo
 /*
  * Set the MCU debug dump config region.
  */
-void gxp_mcu_set_debug_dump_config(struct gxp_mcu_firmware *mcu_fw,
-				   struct gxp_mapped_resource *mem);
+void gxp_mcu_set_debug_dump_config(struct gxp_mcu_firmware *mcu_fw, struct gcip_memory *mem);
 
 #endif /* __GXP_MCU_H__ */

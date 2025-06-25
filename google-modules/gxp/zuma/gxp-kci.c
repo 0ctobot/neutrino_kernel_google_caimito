@@ -14,6 +14,7 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
+#include <gcip/gcip-memory.h>
 #include <gcip/gcip-telemetry.h>
 #include <gcip/gcip-usage-stats.h>
 
@@ -104,9 +105,9 @@ static void gxp_kci_handle_rkci(struct gxp_kci *gkci,
 	switch (resp->code) {
 	case GXP_RKCI_CODE_PM_QOS_BTS:
 		/* FW indicates to ignore the request by setting them to undefined values. */
-		if (resp->retval != (typeof(resp->retval))~0ull)
-			gxp_soc_pm_set_request(gxp, MEMORY_INT_QOS_REQ, resp->retval);
-		if (resp->status != (typeof(resp->status))~0ull)
+		if (resp->rkci_value2 != U32_MAX)
+			gxp_soc_pm_set_request(gxp, MEMORY_INT_QOS_REQ, resp->rkci_value2);
+		if (resp->rkci_value1 != U16_MAX)
 			dev_warn_once(gxp->dev, "BTS is not supported");
 		gxp_kci_resp_rkci_ack(gkci, resp);
 		break;
@@ -116,34 +117,36 @@ static void gxp_kci_handle_rkci(struct gxp_kci *gkci,
 		break;
 	case GXP_RKCI_CODE_CORE_TELEMETRY_READ: {
 		uint core;
-		uint core_list = (uint)(resp->status);
+		uint core_list = (uint)(resp->rkci_value1);
 
 		for (core = 0; core < GXP_NUM_CORES; core++) {
-			if (BIT(core) & core_list) {
+			if (BIT(core) & core_list)
 				gxp_core_telemetry_status_notify(gxp, core);
-			}
 		}
 		gxp_kci_resp_rkci_ack(gkci, resp);
 		break;
 	}
 	case GCIP_RKCI_CLIENT_FATAL_ERROR_NOTIFY: {
-		int client_id = (int)(resp->retval);
-
-		gxp_kci_resp_rkci_ack(gkci, resp);
+		int client_id = (int)(resp->rkci_value2);
+		uint core_list = (uint)(resp->rkci_value1);
 
 		client_fatal_error_notify = kzalloc(sizeof(*client_fatal_error_notify), GFP_KERNEL);
 		if (!client_fatal_error_notify)
 			break;
 
 		client_fatal_error_notify->client_id = client_id;
+		client_fatal_error_notify->core_list = core_list;
+		client_fatal_error_notify->resp = *resp;
 
 		spin_lock(&gkci->client_fatal_error_notify_lock);
-
 		list_add_tail(&client_fatal_error_notify->node,
 			      &gkci->client_fatal_error_notify_list);
-		schedule_work(&gkci->client_fatal_error_notify_work);
-
 		spin_unlock(&gkci->client_fatal_error_notify_lock);
+		/*
+		 * The work would notify all clients, no need to check whether a pending work
+		 * exists.
+		 */
+		schedule_work(&gkci->client_fatal_error_notify_work);
 
 		break;
 	}
@@ -171,6 +174,7 @@ gxp_reverse_kci_handle_response(struct gcip_kci *kci,
 	switch (resp->code) {
 	case GCIP_RKCI_FIRMWARE_CRASH:
 		if (resp->retval == GCIP_FW_CRASH_UNRECOVERABLE_FAULT)
+			/* Fine to not push a new work if it's already in queue. */
 			schedule_work(&mcu_fw->fw_crash_handler_work);
 		else
 			dev_warn(gxp->dev, "MCU non-fatal crash: %u", resp->retval);
@@ -238,8 +242,8 @@ static int gxp_kci_allocate_resources(struct gxp_mailbox *mailbox,
 					     MBOX_CMD_QUEUE_NUM_ENTRIES);
 	if (ret)
 		goto err_cmd_queue;
-	mailbox->cmd_queue_buf.vaddr = gkci->cmd_queue_mem.vaddr;
-	mailbox->cmd_queue_buf.dsp_addr = gkci->cmd_queue_mem.daddr;
+	mailbox->cmd_queue_buf.vaddr = gkci->cmd_queue_mem.virt_addr;
+	mailbox->cmd_queue_buf.dsp_addr = gkci->cmd_queue_mem.dma_addr;
 	mailbox->cmd_queue_size = MBOX_CMD_QUEUE_NUM_ENTRIES;
 	mailbox->cmd_queue_tail = 0;
 
@@ -249,8 +253,8 @@ static int gxp_kci_allocate_resources(struct gxp_mailbox *mailbox,
 					     MBOX_RESP_QUEUE_NUM_ENTRIES);
 	if (ret)
 		goto err_resp_queue;
-	mailbox->resp_queue_buf.vaddr = gkci->resp_queue_mem.vaddr;
-	mailbox->resp_queue_buf.dsp_addr = gkci->resp_queue_mem.daddr;
+	mailbox->resp_queue_buf.vaddr = gkci->resp_queue_mem.virt_addr;
+	mailbox->resp_queue_buf.dsp_addr = gkci->resp_queue_mem.dma_addr;
 	mailbox->resp_queue_size = MBOX_CMD_QUEUE_NUM_ENTRIES;
 	mailbox->resp_queue_head = 0;
 
@@ -260,8 +264,8 @@ static int gxp_kci_allocate_resources(struct gxp_mailbox *mailbox,
 	if (ret)
 		goto err_descriptor;
 
-	mailbox->descriptor_buf.vaddr = gkci->descriptor_mem.vaddr;
-	mailbox->descriptor_buf.dsp_addr = gkci->descriptor_mem.daddr;
+	mailbox->descriptor_buf.vaddr = gkci->descriptor_mem.virt_addr;
+	mailbox->descriptor_buf.dsp_addr = gkci->descriptor_mem.dma_addr;
 	mailbox->descriptor =
 		(struct gxp_mailbox_descriptor *)mailbox->descriptor_buf.vaddr;
 	mailbox->descriptor->cmd_queue_device_addr =
@@ -342,14 +346,14 @@ static int gxp_kci_send_cmd_with_data(struct gxp_kci *gkci, u16 code, const void
 	struct gcip_kci_command_element cmd = {
 		.code = code,
 	};
-	struct gxp_mapped_resource buf;
+	struct gcip_memory buf;
 	int ret;
 
 	if (gxp_mcu_mem_alloc_data(gkci->mcu, &buf, size))
 		return -ENOSPC;
 
-	memcpy(buf.vaddr, data, size);
-	cmd.dma.address = buf.daddr;
+	memcpy(buf.virt_addr, data, size);
+	cmd.dma.address = buf.dma_addr;
 	cmd.dma.size = size;
 
 	ret = gxp_kci_send_cmd(gkci->mbx, &cmd);
@@ -363,6 +367,7 @@ static void gxp_kci_client_fatal_error_notify_work_func(struct work_struct *work
 {
 	struct gxp_kci *gkci = container_of(work, struct gxp_kci, client_fatal_error_notify_work);
 	struct gxp_rkci_client_fatal_error_notify *cur, *nxt;
+	int ret;
 	LIST_HEAD(client_fatal_error_notify_list);
 
 	spin_lock(&gkci->client_fatal_error_notify_lock);
@@ -370,7 +375,15 @@ static void gxp_kci_client_fatal_error_notify_work_func(struct work_struct *work
 	spin_unlock(&gkci->client_fatal_error_notify_lock);
 
 	list_for_each_entry_safe(cur, nxt, &client_fatal_error_notify_list, node) {
-		gxp_vd_invalidate_with_client_id(gkci->gxp, cur->client_id, true);
+		ret = gxp_vd_start_debug_dump_with_client_id(gkci->gxp, cur->client_id,
+							     &cur->core_list);
+		/* Don't send RKCI if block is powered off. */
+		if (!gcip_pm_get_if_powered(gkci->gxp->power_mgr->pm, true)) {
+			gxp_kci_resp_rkci_ack(gkci, &cur->resp);
+			gcip_pm_put(gkci->gxp->power_mgr->pm);
+		}
+		if (!ret)
+			gxp_vd_conclude_debug_dump(gkci->gxp, &cur->core_list);
 		kfree(cur);
 	}
 }
@@ -485,10 +498,10 @@ enum gcip_fw_flavor gxp_kci_fw_info(struct gxp_kci *gkci,
 		},
 	};
 	enum gcip_fw_flavor flavor = GCIP_FW_FLAVOR_UNKNOWN;
-	struct gxp_mapped_resource buf;
+	struct gcip_memory buf;
 	int ret;
 
-	buf.paddr = 0;
+	buf.phys_addr = 0;
 	ret = gxp_mcu_mem_alloc_data(gkci->mcu, &buf, sizeof(*fw_info));
 	/* If allocation failed still try handshake without full fw_info */
 	if (ret) {
@@ -496,14 +509,14 @@ enum gcip_fw_flavor gxp_kci_fw_info(struct gxp_kci *gkci,
 			 __func__, ret);
 		memset(fw_info, 0, sizeof(*fw_info));
 	} else {
-		memset(buf.vaddr, 0, sizeof(*fw_info));
-		cmd.dma.address = buf.daddr;
+		memset(buf.virt_addr, 0, sizeof(*fw_info));
+		cmd.dma.address = buf.dma_addr;
 		cmd.dma.size = sizeof(*fw_info);
 	}
 
 	ret = gxp_kci_send_cmd(gkci->mbx, &cmd);
-	if (buf.paddr) {
-		memcpy(fw_info, buf.vaddr, sizeof(*fw_info));
+	if (buf.phys_addr) {
+		memcpy(fw_info, buf.virt_addr, sizeof(*fw_info));
 		gxp_mcu_mem_free_data(gkci->mcu, &buf);
 	}
 
@@ -537,8 +550,7 @@ int gxp_kci_update_usage(struct gxp_kci *gkci)
 	int ret = -EAGAIN;
 
 	/* Quick return if device is already powered down. */
-	if (power_mgr->curr_state == AUR_OFF ||
-	    !gxp_lpm_is_powered(gkci->gxp, CORE_TO_PSM(GXP_REG_MCU_ID)))
+	if (power_mgr->curr_state == AUR_OFF)
 		return -EAGAIN;
 
 	/*
@@ -587,7 +599,7 @@ int gxp_kci_update_usage_locked(struct gxp_kci *gkci)
 			.flags = GCIP_USAGE_STATS_V2,
 		},
 	};
-	struct gxp_mapped_resource buf;
+	struct gcip_memory buf;
 	int ret;
 
 	if (!gkci || !gkci->mbx)
@@ -599,33 +611,22 @@ int gxp_kci_update_usage_locked(struct gxp_kci *gkci)
 		return -ENOMEM;
 	}
 
-retry_v1:
-	if (gxp->usage_stats && gxp->usage_stats->ustats.version == GCIP_USAGE_STATS_V1)
-		cmd.code = GCIP_KCI_CODE_GET_USAGE_V1;
-
-	cmd.dma.address = buf.daddr;
+	cmd.dma.address = buf.dma_addr;
 	cmd.dma.size = GXP_MCU_USAGE_BUFFER_SIZE;
-	memset(buf.vaddr, 0, sizeof(struct gcip_usage_stats_header));
+	memset(buf.virt_addr, 0, sizeof(struct gcip_usage_stats_header));
 	ret = gxp_kci_send_cmd(gkci->mbx, &cmd);
 
-	if (ret == GCIP_KCI_ERROR_UNIMPLEMENTED || ret == GCIP_KCI_ERROR_UNAVAILABLE) {
-		if (gxp->usage_stats && gxp->usage_stats->ustats.version != GCIP_USAGE_STATS_V1) {
-			gxp->usage_stats->ustats.version = GCIP_USAGE_STATS_V1;
-			goto retry_v1;
-		}
-		dev_dbg(gxp->dev, "Firmware does not report usage");
-	} else if (ret == GCIP_KCI_ERROR_OK) {
-		gxp_usage_stats_process_buffer(gxp, buf.vaddr);
-	} else if (ret != -ETIMEDOUT) {
+	if (ret == GCIP_KCI_ERROR_OK)
+		gxp_usage_stats_process_buffer(gxp, buf.virt_addr);
+	else if (ret != -ETIMEDOUT)
 		dev_warn_once(gxp->dev, "Failed to send GET_USAGE KCI, ret=%d", ret);
-	}
 
 	gxp_mcu_mem_free_data(gkci->mcu, &buf);
 
 	return ret;
 }
 
-int gxp_kci_map_mcu_log_buffer(struct gcip_telemetry_kci_args *args)
+int gxp_kci_map_mcu_log_buffer(const struct gcip_telemetry_kci_args *args)
 {
 	struct gcip_kci_command_element cmd = {
 		.code = GCIP_KCI_CODE_MAP_LOG_BUFFER,
@@ -638,7 +639,7 @@ int gxp_kci_map_mcu_log_buffer(struct gcip_telemetry_kci_args *args)
 	return gcip_kci_send_cmd(args->kci, &cmd);
 }
 
-int gxp_kci_map_mcu_trace_buffer(struct gcip_telemetry_kci_args *args)
+int gxp_kci_map_mcu_trace_buffer(const struct gcip_telemetry_kci_args *args)
 {
 	struct gcip_kci_command_element cmd = {
 		.code = GCIP_KCI_CODE_MAP_TRACE_BUFFER,

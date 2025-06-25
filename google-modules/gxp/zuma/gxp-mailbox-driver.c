@@ -13,6 +13,7 @@
 #include <linux/spinlock.h>
 
 #include <gcip/gcip-mailbox.h>
+#include <gcip/gcip-memory.h>
 #include <trace/events/gxp.h>
 
 #include "gxp-mailbox-driver.h"
@@ -100,12 +101,12 @@ void gxp_mailbox_driver_disable_interrupts(struct gxp_mailbox *mailbox)
 
 void __iomem *gxp_mailbox_get_csr_base(struct gxp_dev *gxp, uint index)
 {
-	return gxp->mbx[index].vaddr;
+	return gxp->mbx[index].virt_addr;
 }
 
 void __iomem *gxp_mailbox_get_data_base(struct gxp_dev *gxp, uint index)
 {
-	return gxp->mbx[index].vaddr + MBOX_DATA_REG_BASE;
+	return gxp->mbx[index].virt_addr + MBOX_DATA_REG_BASE;
 }
 
 /* gxp-mailbox-driver.h: Data register-based calls */
@@ -390,15 +391,22 @@ int gxp_mailbox_gcip_ops_acquire_resp_queue_lock(struct gcip_mailbox *mailbox,
 						 bool try, bool *atomic)
 {
 	struct gxp_mailbox *gxp_mbx = mailbox->data;
+	unsigned long flags;
+	int ret;
 
 	*atomic = true;
 
-	if (try)
-		return spin_trylock_irqsave(&gxp_mbx->resp_queue_lock,
-					    gxp_mbx->resp_queue_lock_flags);
+	if (try) {
+		ret = spin_trylock_irqsave(&gxp_mbx->resp_queue_lock, flags);
+	} else {
+		spin_lock_irqsave(&gxp_mbx->resp_queue_lock, flags);
+		ret = 1;
+	}
 
-	spin_lock_irqsave(&gxp_mbx->resp_queue_lock, gxp_mbx->resp_queue_lock_flags);
-	return 1;
+	if (ret)
+		gxp_mbx->resp_queue_lock_flags = flags;
+
+	return ret;
 }
 
 void gxp_mailbox_gcip_ops_release_resp_queue_lock(struct gcip_mailbox *mailbox)
@@ -406,24 +414,6 @@ void gxp_mailbox_gcip_ops_release_resp_queue_lock(struct gcip_mailbox *mailbox)
 	struct gxp_mailbox *gxp_mbx = mailbox->data;
 
 	spin_unlock_irqrestore(&gxp_mbx->resp_queue_lock, gxp_mbx->resp_queue_lock_flags);
-}
-
-void gxp_mailbox_gcip_ops_acquire_wait_list_lock(struct gcip_mailbox *mailbox,
-						 bool irqsave,
-						 unsigned long *flags)
-{
-	struct gxp_mailbox *gxp_mbx = mailbox->data;
-
-	spin_lock_irqsave(&gxp_mbx->wait_list_lock, *flags);
-}
-
-void gxp_mailbox_gcip_ops_release_wait_list_lock(struct gcip_mailbox *mailbox,
-						 bool irqrestore,
-						 unsigned long flags)
-{
-	struct gxp_mailbox *gxp_mbx = mailbox->data;
-
-	spin_unlock_irqrestore(&gxp_mbx->wait_list_lock, flags);
 }
 
 int gxp_mailbox_gcip_ops_wait_for_cmd_queue_not_full(

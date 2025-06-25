@@ -13,12 +13,15 @@
 
 #include <gcip/gcip-fence-array.h>
 #include <gcip/gcip-fence.h>
+#include <gcip/gcip-memory.h>
+#include <iif/iif-dma-fence.h>
 #include <iif/iif-shared.h>
 
 #include <trace/events/gxp.h>
 
 #include "gxp-config.h"
 #include "gxp-internal.h"
+#include "gxp-iif.h"
 #include "gxp-mailbox-driver.h"
 #include "gxp-mailbox.h"
 #include "gxp-mcu.h"
@@ -109,48 +112,19 @@ static int gxp_uci_mailbox_manager_execute_cmd(
  *
  * It will cause a deadlock if this function can be called while holding @gxp->vd_semaphore.
  */
-static void gxp_uci_mailbox_manager_release_unconsumed_async_resps(
-	struct gxp_virtual_device *vd)
+static void gxp_uci_mailbox_manager_release_unconsumed_async_resps(struct gxp_virtual_device *vd,
+								   int client_id)
 {
+	struct gxp_dev *gxp = vd->gxp;
 	struct gxp_uci_async_response *cur, *nxt;
-	unsigned long flags;
 
 	/*
-	 * We should hold a lock to prevent removing WAKELOCK responses from the arrived callback
-	 * while iterating @wait_queue.
+	 * As this `release_unconsumed_async_resps()` function will be called after `RELEASE_VMBOX`
+	 * (i.e., gxp_vd_release_vmbox()) which ensures canceling all pending UCI commands, this one
+	 * should be NO-OP theoretically. However, let's do this just in case the firmware has a bug
+	 * of handling the KCI and ensure that all pending commands have been canceled.
 	 */
-	spin_lock_irqsave(&vd->mailbox_resp_queues[UCI_RESOURCE_ID].lock,
-			  flags);
-
-	/* Let arrived and timedout callbacks not to handle responses. */
-	list_for_each_entry (
-		cur, &vd->mailbox_resp_queues[UCI_RESOURCE_ID].wait_queue,
-		wait_list_entry) {
-		cur->processed = true;
-	}
-
-	spin_unlock_irqrestore(&vd->mailbox_resp_queues[UCI_RESOURCE_ID].lock,
-			       flags);
-
-	/*
-	 * From here it is guaranteed that @wait_queue will not be manipulated by the arrived,
-	 * timedout callback or `gxp_uci_send_command`.
-	 */
-
-	/*
-	 * Flush the work of fake firmware to simulate firing arrived or timedout callbacks in the
-	 * middle of this function. If there is no work to be done, this is the same as NO-OP.
-	 */
-	TEST_FLUSH_FIRMWARE_WORK();
-
-	/* Ensure no responses will be called by arrived or timedout handlers. */
-	list_for_each_entry (
-		cur, &vd->mailbox_resp_queues[UCI_RESOURCE_ID].wait_queue,
-		wait_list_entry) {
-		gcip_mailbox_cancel_awaiter(cur->awaiter);
-		gcip_fence_array_signal(cur->out_fences, -ECANCELED);
-		gcip_fence_array_waited(cur->in_fences, IIF_IP_DSP);
-	}
+	gxp_uci_cancel(vd, client_id, GXP_INVALIDATED_CLIENT_CRASH);
 
 	/*
 	 * From here it is guaranteed that no responses will access @vd and be handled by arrived
@@ -168,25 +142,19 @@ static void gxp_uci_mailbox_manager_release_unconsumed_async_resps(
 	 * the `gxp_uci_wait_async_response` function yet. Therefore, we have to remove them from
 	 * the queue and release their awaiter.
 	 */
-	list_for_each_entry_safe (
-		cur, nxt, &vd->mailbox_resp_queues[UCI_RESOURCE_ID].dest_queue,
-		dest_list_entry) {
+	list_for_each_entry_safe(cur, nxt, &vd->mailbox_resp_queues[UCI_RESOURCE_ID].dest_queue,
+				 dest_list_entry) {
+		dev_warn(gxp->dev,
+			 "Client leaves without consuming UCI response, client_id=%d, cmd_seq=%llu",
+			 client_id, cur->resp.seq);
 		list_del(&cur->dest_list_entry);
 		gcip_mailbox_release_awaiter(cur->awaiter);
 	}
 
 	/*
-	 * Clean up responses in the @wait_queue.
-	 * Responses in this queue are not arrived/timedout yet which means they are still in the
-	 * @wait_queue and not put into the @dest_queue. Therefore, we have to remove them from the
-	 * queue and release their awaiter.
+	 * We don't need to clean up @wait_queue as `gxp_uci_cancel()` will move all canceled UCI
+	 * commands to @dest_queue and @dest_queue has been cleaned up above.
 	 */
-	list_for_each_entry_safe (
-		cur, nxt, &vd->mailbox_resp_queues[UCI_RESOURCE_ID].wait_queue,
-		wait_list_entry) {
-		list_del(&cur->wait_list_entry);
-		gcip_mailbox_release_awaiter(cur->awaiter);
-	}
 }
 
 static void gxp_uci_mailbox_manager_set_ops(struct gxp_mailbox_manager *mgr)
@@ -297,6 +265,11 @@ static int gxp_uci_before_enqueue_wait_list(struct gcip_mailbox *mailbox, void *
 static void gxp_uci_push_async_response(struct gxp_uci_async_response *async_resp,
 					enum gxp_response_status status, bool force)
 {
+	struct gcip_fence_array *in_fences, *out_fences;
+	struct gxp_eventfd *eventfd = NULL;
+	wait_queue_head_t *dest_queue_wq;
+	u64 resp_seq;
+	u16 resp_code;
 	unsigned long flags;
 	int errno = 0;
 
@@ -316,15 +289,40 @@ static void gxp_uci_push_async_response(struct gxp_uci_async_response *async_res
 	list_del(&async_resp->wait_list_entry);
 
 	gxp_vd_release_credit(async_resp->vd);
+
+	/*
+	 * To return the response to the runtime earlier, we are going to add @async_resp to the
+	 * @dest_queue to let the runtime consume it before proceeding the post process below.
+	 */
 	list_add_tail(&async_resp->dest_list_entry, async_resp->dest_queue);
+
+	/*
+	 * As @async_resp can be released when the runtime consumes it, we should hold the data and
+	 * refcount of variables required during the post process.
+	 */
+	in_fences = gcip_fence_array_get(async_resp->in_fences);
+	out_fences = gcip_fence_array_get(async_resp->out_fences);
+	if (async_resp->eventfd) {
+		gxp_eventfd_get(async_resp->eventfd);
+		eventfd = async_resp->eventfd;
+	}
+	dest_queue_wq = async_resp->dest_queue_waitq;
+	resp_seq = async_resp->resp.seq;
+	resp_code = async_resp->resp.code;
+
 	spin_unlock_irqrestore(async_resp->queue_lock, flags);
+
+	/*
+	 * From here, we must not access @async_resp. It can be released earlier when the runtime
+	 * consumes it from @dest_queue.
+	 */
 
 	if (status == GXP_RESP_TIMEDOUT)
 		errno = -ETIMEDOUT;
 	else if (status == GXP_RESP_CANCELED)
 		errno = -ECANCELED;
 
-	if (errno && async_resp->out_fences) {
+	if (errno && out_fences) {
 		/*
 		 * If the command has been processed abnormally, we can assume that the firmware is
 		 * not working properly and the kernel driver should take care of propagating the
@@ -337,10 +335,10 @@ static void gxp_uci_push_async_response(struct gxp_uci_async_response *async_res
 		 * - -ECANCELED: The command has ben canceled since the firmware has been crashed
 		 *               and the command couldn't be processed normally.
 		 */
-		gcip_fence_array_iif_set_propagate_unblock(async_resp->out_fences);
+		gcip_fence_array_iif_set_propagate_unblock(out_fences);
 	}
 
-	if (status == GXP_RESP_OK && async_resp->resp.code) {
+	if (status == GXP_RESP_OK && resp_code) {
 		/*
 		 * The response has arrived from MCU, but with an error. The request itself or
 		 * MCU/cores had a problem.
@@ -348,14 +346,21 @@ static void gxp_uci_push_async_response(struct gxp_uci_async_response *async_res
 		errno = -EIO;
 	}
 
-	gcip_fence_array_signal_async(async_resp->out_fences, errno);
-	gcip_fence_array_waited_async(async_resp->in_fences, IIF_IP_DSP);
-	if (async_resp->eventfd)
-		gxp_eventfd_signal(async_resp->eventfd);
+	gcip_fence_array_signal_async(out_fences, errno);
+	gcip_fence_array_put_async(out_fences);
 
-	trace_gxp_uci_rsp_end(async_resp->resp.seq);
+	gcip_fence_array_waited_async(in_fences, IIF_IP_DSP);
+	gcip_fence_array_put_async(in_fences);
 
-	wake_up(async_resp->dest_queue_waitq);
+	if (eventfd) {
+		gxp_eventfd_signal(eventfd);
+		gxp_eventfd_put(eventfd);
+	}
+
+	trace_gxp_uci_rsp_end(resp_seq);
+
+	/* Notifies a thread waiting on a response to be pushed to @dest_queue. */
+	wake_up(dest_queue_wq);
 }
 
 static void
@@ -384,9 +389,25 @@ static void gxp_uci_release_awaiter_data(void *data)
 	 * This function might be called when the VD is already released, don't do VD operations in
 	 * this case.
 	 */
+
+	/*
+	 * Normally, the command will be processed after @async_resp->iif_ikf is signaled. However,
+	 * if the client leaves or the MCU firmware crashes, the command will be canceled and we
+	 * need to stop the thread of @async_resp->iif_ikf waiting on in-kernel fences to be
+	 * signaled. Otherwise, the thread would access the command related resources (e.g., fence)
+	 * after free.
+	 *
+	 * Note that it is safe to call this function even after @async_resp->iif_ikf is signaled
+	 * and its thread already terminated.
+	 */
+	if (async_resp->iif_ikf) {
+		iif_dma_fence_stop(async_resp->iif_ikf);
+		iif_fence_put(async_resp->iif_ikf);
+	}
+
 	gcip_fence_array_put_async(async_resp->out_fences);
 	gcip_fence_array_put_async(async_resp->in_fences);
-	if (async_resp->additional_info_buf.vaddr)
+	if (async_resp->additional_info_buf.virt_addr)
 		gxp_mcu_mem_free_data(async_resp->uci->mcu, &async_resp->additional_info_buf);
 	if (async_resp->eventfd)
 		gxp_eventfd_put(async_resp->eventfd);
@@ -400,11 +421,11 @@ static u32 gxp_uci_get_cmd_timeout(struct gcip_mailbox *mailbox, void *cmd, void
 	struct gxp_uci_additional_info_header *header;
 	struct gxp_uci_additional_info_root *root;
 
-	if (!async_resp->additional_info_buf.vaddr)
+	if (!async_resp->additional_info_buf.virt_addr)
 		return MAILBOX_TIMEOUT;
 
-	header = async_resp->additional_info_buf.vaddr;
-	root = async_resp->additional_info_buf.vaddr + header->root_offset;
+	header = async_resp->additional_info_buf.virt_addr;
+	root = async_resp->additional_info_buf.virt_addr + header->root_offset;
 
 	if (!root->timeout_ms)
 		return MAILBOX_TIMEOUT;
@@ -428,8 +449,6 @@ static const struct gcip_mailbox_ops gxp_uci_gcip_mbx_ops = {
 	.release_resp_queue_lock = gxp_mailbox_gcip_ops_release_resp_queue_lock,
 	.get_resp_elem_seq = gxp_uci_get_resp_elem_seq,
 	.set_resp_elem_seq = gxp_uci_set_resp_elem_seq,
-	.acquire_wait_list_lock = gxp_mailbox_gcip_ops_acquire_wait_list_lock,
-	.release_wait_list_lock = gxp_mailbox_gcip_ops_release_wait_list_lock,
 	.wait_for_cmd_queue_not_full = gxp_mailbox_gcip_ops_wait_for_cmd_queue_not_full,
 	.before_enqueue_wait_list = gxp_uci_before_enqueue_wait_list,
 	.after_enqueue_cmd = gxp_mailbox_gcip_ops_after_enqueue_cmd,
@@ -467,8 +486,8 @@ static int gxp_uci_allocate_resources(struct gxp_mailbox *mailbox,
 					     MBOX_CMD_QUEUE_NUM_ENTRIES);
 	if (ret)
 		goto err_cmd_queue;
-	mailbox->cmd_queue_buf.vaddr = uci->cmd_queue_mem.vaddr;
-	mailbox->cmd_queue_buf.dsp_addr = uci->cmd_queue_mem.daddr;
+	mailbox->cmd_queue_buf.vaddr = uci->cmd_queue_mem.virt_addr;
+	mailbox->cmd_queue_buf.dsp_addr = uci->cmd_queue_mem.dma_addr;
 	mailbox->cmd_queue_size = MBOX_CMD_QUEUE_NUM_ENTRIES;
 	mailbox->cmd_queue_tail = 0;
 
@@ -478,8 +497,8 @@ static int gxp_uci_allocate_resources(struct gxp_mailbox *mailbox,
 					     MBOX_RESP_QUEUE_NUM_ENTRIES);
 	if (ret)
 		goto err_resp_queue;
-	mailbox->resp_queue_buf.vaddr = uci->resp_queue_mem.vaddr;
-	mailbox->resp_queue_buf.dsp_addr = uci->resp_queue_mem.daddr;
+	mailbox->resp_queue_buf.vaddr = uci->resp_queue_mem.virt_addr;
+	mailbox->resp_queue_buf.dsp_addr = uci->resp_queue_mem.dma_addr;
 	mailbox->resp_queue_size = MBOX_RESP_QUEUE_NUM_ENTRIES;
 	mailbox->resp_queue_head = 0;
 
@@ -489,12 +508,12 @@ static int gxp_uci_allocate_resources(struct gxp_mailbox *mailbox,
 	if (ret)
 		goto err_descriptor;
 
-	mailbox->descriptor_buf.vaddr = uci->descriptor_mem.vaddr;
-	mailbox->descriptor_buf.dsp_addr = uci->descriptor_mem.daddr;
+	mailbox->descriptor_buf.vaddr = uci->descriptor_mem.virt_addr;
+	mailbox->descriptor_buf.dsp_addr = uci->descriptor_mem.dma_addr;
 	mailbox->descriptor =
 		(struct gxp_mailbox_descriptor *)mailbox->descriptor_buf.vaddr;
-	mailbox->descriptor->cmd_queue_device_addr = uci->cmd_queue_mem.daddr;
-	mailbox->descriptor->resp_queue_device_addr = uci->resp_queue_mem.daddr;
+	mailbox->descriptor->cmd_queue_device_addr = uci->cmd_queue_mem.dma_addr;
+	mailbox->descriptor->resp_queue_device_addr = uci->resp_queue_mem.dma_addr;
 	mailbox->descriptor->cmd_queue_size = mailbox->cmd_queue_size;
 	mailbox->descriptor->resp_queue_size = mailbox->resp_queue_size;
 
@@ -579,7 +598,7 @@ static int gxp_uci_allocate_additional_info(struct gxp_uci_async_response *async
 {
 	int ret;
 	struct gxp_uci *uci = async_resp->uci;
-	struct gxp_mapped_resource *buf = &async_resp->additional_info_buf;
+	struct gcip_memory *buf = &async_resp->additional_info_buf;
 	size_t size = info->header.root_offset + info->root.runtime_additional_info_offset +
 		      info->root.runtime_additional_info_size;
 
@@ -590,24 +609,24 @@ static int gxp_uci_allocate_additional_info(struct gxp_uci_async_response *async
 	}
 
 	/* Copy header. */
-	memcpy(buf->vaddr, &info->header, sizeof(info->header));
+	memcpy(buf->virt_addr, &info->header, sizeof(info->header));
 
 	/* Copy root. */
-	memcpy(buf->vaddr + info->header.root_offset, &info->root, sizeof(info->root));
+	memcpy(buf->virt_addr + info->header.root_offset, &info->root, sizeof(info->root));
 
 	/* Copy in_fences. */
 	if (info->root.in_fences_size)
-		memcpy(buf->vaddr + info->header.root_offset + info->root.in_fences_offset,
+		memcpy(buf->virt_addr + info->header.root_offset + info->root.in_fences_offset,
 		       info->in_fences, sizeof(uint16_t) * info->root.in_fences_size);
 
 	/* Copy out_fences. */
 	if (info->root.out_fences_size)
-		memcpy(buf->vaddr + info->header.root_offset + info->root.out_fences_offset,
+		memcpy(buf->virt_addr + info->header.root_offset + info->root.out_fences_offset,
 		       info->out_fences, sizeof(uint16_t) * info->root.out_fences_size);
 
 	/* Copy runtime-defined additional info. */
 	if (info->root.runtime_additional_info_size)
-		memcpy(buf->vaddr + info->header.root_offset +
+		memcpy(buf->virt_addr + info->header.root_offset +
 			       info->root.runtime_additional_info_offset,
 		       info->runtime_additional_info, info->root.runtime_additional_info_size);
 
@@ -656,13 +675,15 @@ void gxp_uci_exit(struct gxp_uci *uci)
 }
 
 /**
- * gxp_uci_send_command() - Sends the command to the MCU firmware.
+ * gxp_uci_push_cmd() - Pushes @cmd to the UCI mailbox.
  * @uci: The UCI mailbox.
  * @vd: The virtual device sending the command.
  * @cmd: The command to send.
  * @additional_info: The additional information to be serialized and passed to the command.
  * @in_fences: The fences which the command is waiting on to be unblocked.
  * @out_fences: The fences which the command will signal.
+ * @iif_ikf: The inter-IP fence which will be signaled once in-kernel fences in @in_fences are
+ *           signaled.
  * @wait_queue: The queue where the command will be located before a response arrives.
  * @resp_queue: The queue where the command will be moved after it is processed.
  * @queue_lock: The lock protecting @wait_queue and @dest_queue.
@@ -672,14 +693,14 @@ void gxp_uci_exit(struct gxp_uci *uci)
  *
  * Returns 0 on success or errno on failure.
  */
-static int gxp_uci_send_command(struct gxp_uci *uci, struct gxp_virtual_device *vd,
-				struct gxp_uci_command *cmd,
-				struct gxp_uci_additional_info *additional_info,
-				struct gcip_fence_array *in_fences,
-				struct gcip_fence_array *out_fences, struct list_head *wait_queue,
-				struct list_head *resp_queue, spinlock_t *queue_lock,
-				wait_queue_head_t *queue_waitq, struct gxp_eventfd *eventfd,
-				gcip_mailbox_cmd_flags_t flags)
+static int gxp_uci_push_cmd(struct gxp_uci *uci, struct gxp_virtual_device *vd,
+			    struct gxp_uci_command *cmd,
+			    struct gxp_uci_additional_info *additional_info,
+			    struct gcip_fence_array *in_fences, struct gcip_fence_array *out_fences,
+			    struct iif_fence *iif_ikf, struct list_head *wait_queue,
+			    struct list_head *resp_queue, spinlock_t *queue_lock,
+			    wait_queue_head_t *queue_waitq, struct gxp_eventfd *eventfd,
+			    gcip_mailbox_cmd_flags_t flags)
 {
 	struct gxp_uci_async_response *async_resp;
 	struct gcip_mailbox_resp_awaiter *awaiter;
@@ -710,7 +731,7 @@ static int gxp_uci_send_command(struct gxp_uci *uci, struct gxp_virtual_device *
 		ret = gxp_uci_allocate_additional_info(async_resp, additional_info);
 		if (ret)
 			goto err_free_async_resp;
-		additional_info_address = async_resp->additional_info_buf.daddr;
+		additional_info_address = async_resp->additional_info_buf.dma_addr;
 		additional_info_size = async_resp->additional_info_buf.size;
 	}
 
@@ -719,6 +740,7 @@ static int gxp_uci_send_command(struct gxp_uci *uci, struct gxp_virtual_device *
 
 	async_resp->in_fences = gcip_fence_array_get(in_fences);
 	async_resp->out_fences = gcip_fence_array_get(out_fences);
+	async_resp->iif_ikf = iif_fence_get(iif_ikf);
 
 	/*
 	 * @async_resp->awaiter will be set from the `gxp_uci_before_enqueue_wait_list`
@@ -727,12 +749,13 @@ static int gxp_uci_send_command(struct gxp_uci *uci, struct gxp_virtual_device *
 	awaiter = gxp_mailbox_put_cmd(uci->mbx, cmd, &async_resp->resp, async_resp, flags);
 	if (IS_ERR(awaiter)) {
 		ret = PTR_ERR(awaiter);
-		goto err_put_fences;
+		goto err_put_iif_ikf;
 	}
 
 	return 0;
 
-err_put_fences:
+err_put_iif_ikf:
+	iif_fence_put(async_resp->iif_ikf);
 	gcip_fence_array_put(async_resp->out_fences);
 	gcip_fence_array_put(async_resp->in_fences);
 	if (additional_info)
@@ -747,9 +770,31 @@ err_release_credit:
 	return ret;
 }
 
-int gxp_uci_create_and_send_cmd(struct gxp_client *client, u64 cmd_seq, u32 flags, const u8 *opaque,
-				u32 timeout_ms, struct gcip_fence_array *in_fences,
-				struct gcip_fence_array *out_fences)
+/**
+ * gxp_uci_create_and_push_cmd() - Creates and pushes the UCI command to the UCI mailbox.
+ * @client: The client sending the command.
+ * @cmd_seq: The command sequence number.
+ * @flags: The command flags passed from the UCI command ioctl. (See gxp_mailbox_uci_command_ioctl)
+ * @opaque: The runtime command. (See gxp_mailbox_uci_command_ioctl)
+ * @timeout_ms: The command timeout.
+ * @in_fences: The in-fences that the command will wait on.
+ * @out_fences: The out-fences which will be signaled once the command is processed.
+ * @iif_ikf: The inter-IP fence which will be signaled once in-kernel fences in @in_fences are
+ *           signaled.
+ *
+ * Following tasks will be done in this function:
+ * 1. Check the client and its virtual device to see if they are still available.
+ * 2. Prepare UCI command object.
+ * 3. Prepare UCI additional info.
+ * 4. Put the UCI command into the queue.
+ *
+ * Return: 0 on success or errno on failure.
+ */
+static int gxp_uci_create_and_push_cmd(struct gxp_client *client, u64 cmd_seq, u32 flags,
+				       const u8 *opaque, u32 timeout_ms,
+				       struct gcip_fence_array *in_fences,
+				       struct gcip_fence_array *out_fences,
+				       struct iif_fence *iif_ikf)
 {
 	struct gxp_dev *gxp = client->gxp;
 	struct gxp_mcu *mcu = gxp_mcu_of(gxp);
@@ -759,26 +804,11 @@ int gxp_uci_create_and_send_cmd(struct gxp_client *client, u64 cmd_seq, u32 flag
 	uint32_t in_iif_fences_size, out_iif_fences_size;
 	int ret;
 
-	down_read(&client->semaphore);
-
-	if (!gxp_client_has_available_vd(client, "GXP_MAILBOX_UCI_COMMAND[_COMPAT]")) {
-		ret = -ENODEV;
-		goto out;
-	}
-
-	/* Caller must hold BLOCK wakelock */
-	if (!client->has_block_wakelock) {
-		dev_err(gxp->dev,
-			"GXP_MAILBOX_UCI_COMMAND[_COMPAT] requires the client hold a BLOCK wakelock\n");
-		ret = -ENODEV;
-		goto out;
-	}
-
 	in_iif_fences = gcip_fence_array_get_iif_id(in_fences, &in_iif_fences_size, false, 0);
 	if (IS_ERR(in_iif_fences)) {
 		ret = PTR_ERR(in_iif_fences);
 		dev_err(gxp->dev, "Failed to get IIF IDs from in-fences, ret=%d", ret);
-		goto out;
+		return ret;
 	}
 
 	out_iif_fences =
@@ -801,27 +831,20 @@ int gxp_uci_create_and_send_cmd(struct gxp_client *client, u64 cmd_seq, u32 flag
 	gxp_uci_fill_additional_info(&additional_info, in_iif_fences, in_iif_fences_size,
 				     out_iif_fences, out_iif_fences_size, timeout_ms, NULL, 0);
 
-	ret = gxp_uci_send_command(&mcu->uci, client->vd, &cmd, &additional_info, in_fences,
-				   out_fences,
-				   &client->vd->mailbox_resp_queues[UCI_RESOURCE_ID].wait_queue,
-				   &client->vd->mailbox_resp_queues[UCI_RESOURCE_ID].dest_queue,
-				   &client->vd->mailbox_resp_queues[UCI_RESOURCE_ID].lock,
-				   &client->vd->mailbox_resp_queues[UCI_RESOURCE_ID].waitq,
-				   client->mb_eventfds[UCI_RESOURCE_ID],
-				   GCIP_MAILBOX_CMD_FLAGS_SKIP_ASSIGN_SEQ);
-
-	kfree(out_iif_fences);
-	kfree(in_iif_fences);
-
+	ret = gxp_uci_push_cmd(&mcu->uci, client->vd, &cmd, &additional_info, in_fences, out_fences,
+			       iif_ikf,
+			       &client->vd->mailbox_resp_queues[UCI_RESOURCE_ID].wait_queue,
+			       &client->vd->mailbox_resp_queues[UCI_RESOURCE_ID].dest_queue,
+			       &client->vd->mailbox_resp_queues[UCI_RESOURCE_ID].lock,
+			       &client->vd->mailbox_resp_queues[UCI_RESOURCE_ID].waitq,
+			       client->mb_eventfds[UCI_RESOURCE_ID],
+			       GCIP_MAILBOX_CMD_FLAGS_SKIP_ASSIGN_SEQ);
 	if (ret)
 		dev_err(gxp->dev, "Failed to enqueue mailbox command (ret=%d)\n", ret);
 
-	goto out;
-
+	kfree(out_iif_fences);
 err_put_in_iif_fences:
 	kfree(in_iif_fences);
-out:
-	up_read(&client->semaphore);
 
 	return ret;
 }
@@ -932,132 +955,72 @@ void gxp_uci_fill_additional_info(struct gxp_uci_additional_info *info, uint16_t
 	info->runtime_additional_info = runtime_additional_info;
 }
 
-/**
- * in_fence_cb_func() - A dma_fence_func_t wrapper function to schedule the UCI command work.
- * @fence: The fence that is signaled.
- * @cb: The callback object that is registered to the signaled fence.
- *
- * If the fence is signaled without error, the UCI command work will be removed from the client's
- * callback list and added to the client's work list and then the worker will be scheduled.
- *
- * Context: This function will be called in IRQ context.
- */
-static void in_fence_cb_func(struct dma_fence *fence, struct dma_fence_cb *cb)
+int gxp_uci_send_cmd(struct gxp_client *client, u64 cmd_seq, u32 flags, const u8 *opaque,
+		     u32 timeout_ms, struct gcip_fence_array *in_fences,
+		     struct gcip_fence_array *out_fences)
 {
-	struct gxp_uci_cmd_work *uci_work = container_of(cb, struct gxp_uci_cmd_work, cb);
-	struct gxp_client *client = uci_work->client;
-	unsigned long flag1, flag2;
-
-	spin_lock_irqsave(&client->uci_cb_list_lock, flag1);
-
-	if (client->uci_cb_disabled)
-		goto out;
-
-	list_del(&uci_work->node);
-
-	if (dma_fence_get_status_locked(fence) == 1) {
-		spin_lock_irqsave(&client->uci_work_list_lock, flag2);
-		list_add(&uci_work->node, &client->uci_work_list);
-		spin_unlock_irqrestore(&client->uci_work_list_lock, flag2);
-		schedule_work(&client->uci_worker);
-	} else {
-		gxp_uci_work_destroy(uci_work);
-	}
-
-out:
-	spin_unlock_irqrestore(&client->uci_cb_list_lock, flag1);
-}
-
-/**
- * gxp_uci_cmd_work_create() - Allocates and initializes the UCI command work object.
- * @fence: Same as gxp_uci_cmd_work_create_and_schedule.
- * @client: Same as gxp_uci_cmd_work_create_and_schedule.
- * @ibuf: Same as gxp_uci_cmd_work_create_and_schedule.
- * @cmd_seq: Same as gxp_uci_cmd_work_create_and_schedule.
- * @in_fences: Same as gxp_uci_cmd_work_create_and_schedule.
- * @out_fences: Same as gxp_uci_cmd_work_create_and_schedule.
- */
-static struct gxp_uci_cmd_work *
-gxp_uci_cmd_work_create(struct dma_fence *fence, struct gxp_client *client,
-			const struct gxp_mailbox_uci_command_ioctl *ibuf, u64 cmd_seq,
-			struct gcip_fence_array *in_fences, struct gcip_fence_array *out_fences)
-{
-	struct gxp_uci_cmd_work *uci_work;
-
-	uci_work = kzalloc(sizeof(*uci_work), GFP_KERNEL);
-	if (!uci_work)
-		return ERR_PTR(-ENOMEM);
-
-	uci_work->fence = dma_fence_get(fence);
-	uci_work->client = client;
-	uci_work->cmd_seq = cmd_seq;
-	uci_work->flags = ibuf->flags;
-	uci_work->timeout_ms = ibuf->timeout_ms;
-	uci_work->in_fences = gcip_fence_array_get(in_fences);
-	uci_work->out_fences = gcip_fence_array_get(out_fences);
-	memcpy(uci_work->opaque, ibuf->opaque, sizeof(ibuf->opaque));
-
-	return uci_work;
-}
-
-int gxp_uci_cmd_work_create_and_schedule(struct dma_fence *fence, struct gxp_client *client,
-					 const struct gxp_mailbox_uci_command_ioctl *ibuf,
-					 u64 cmd_seq, struct gcip_fence_array *in_fences,
-					 struct gcip_fence_array *out_fences)
-{
-	struct gxp_uci_cmd_work *uci_work;
-	unsigned long flags;
+	struct gxp_dev *gxp = client->gxp;
+	struct gxp_iif *giif = gxp_mcu_of(gxp)->giif;
+	struct iif_fence *iif_ikf = NULL;
+	struct dma_fence *ikf;
+	signed long timeout_jiffies = msecs_to_jiffies(timeout_ms ? timeout_ms : MAILBOX_TIMEOUT);
 	int ret;
 
-	if (!fence)
-		goto send_cmd;
+	/* @ikf can be NULL if @in_fences are not DMA fences or there are no fences. */
+	ikf = gcip_fence_array_merge_ikf(in_fences);
+	if (IS_ERR(ikf))
+		return PTR_ERR(ikf);
 
-	uci_work = gxp_uci_cmd_work_create(fence, client, ibuf, cmd_seq, in_fences, out_fences);
-	if (IS_ERR(uci_work))
-		return PTR_ERR(uci_work);
-
-	spin_lock_irqsave(&client->uci_cb_list_lock, flags);
-	list_add(&uci_work->node, &client->uci_cb_list);
-	spin_unlock_irqrestore(&client->uci_cb_list_lock, flags);
-
-	ret = dma_fence_add_callback(fence, &uci_work->cb, in_fence_cb_func);
+	if (ikf)
+		dma_fence_enable_sw_signaling(ikf);
 
 	/*
-	 * This means the fence has not been signaled yet and the callback is successfully
-	 * registered. The in_fence_cb_func() callback will eventually schedule a work to
-	 * create and send UCI command to the firmware once the fence is signaled.
-	 * The work object will be destroyed in in_fence_cb_func() or when the client is destroyed.
+	 * If there is an in-kernel fence which is not signaled yet, we should create a driver-
+	 * signaled (i.e., AP-signaled) IIF and a thread which waits on the in-kernel fence to be
+	 * signaled. The thread will signal the IIF once the in-kernel fence is signaled. Therefore,
+	 * the driver will add the IIF to the in-fences of the command and can directly submit it to
+	 * the firmware regardless of the status of the in-kernel fence. The firmware will hold the
+	 * command and decide to process it or not according to the signal status of the IIF.
+	 *
+	 * The reason that we don't wait on the in-kernel fence in the kernel level is:
+	 * 1. To avoid having multiple logic of handling commands. The driver will always submit
+	 *    commands to the firmware. Otherwise, we may need to consider more corner cases.
+	 * 2. Because of the IIF design, all inter-IP fences must be signaled by the signaler IP as
+	 *    long as its firmware is alive. If the kernel driver touches the IIF fence table unless
+	 *    the firmware crashes, a race condition can happen.
+	 *
+	 * If the in-kernel fence was already errored out, we still need to submit the command with
+	 * creating an IIF to let the firmware signal out-fences of the command with an error.
+	 *
+	 * If there is no in-kernel fence or the fence was already signaled without an error, we
+	 * don't need to create a driver-signaled IIF and submit the command to the firmware right
+	 * away.
 	 */
-	if (!ret)
-		return 0;
+	if (ikf && dma_fence_get_status(ikf) <= 0) {
+		iif_ikf = iif_dma_fence_wait_timeout(giif->iif_mgr, ikf, timeout_jiffies);
+		if (IS_ERR(iif_ikf)) {
+			ret = PTR_ERR(iif_ikf);
+			goto put_ikf;
+		}
 
-	spin_lock_irqsave(&client->uci_cb_list_lock, flags);
-	list_del_init(&uci_work->node);
-	spin_unlock_irqrestore(&client->uci_cb_list_lock, flags);
+		ret = gcip_fence_array_add_iif(in_fences, iif_ikf);
+		if (ret)
+			goto stop_iif_dma_fence;
+	}
 
-	gxp_uci_work_destroy(uci_work);
+	ret = gxp_uci_create_and_push_cmd(client, cmd_seq, flags, opaque, timeout_ms, in_fences,
+					  out_fences, iif_ikf);
+stop_iif_dma_fence:
+	if (ret && iif_ikf)
+		iif_dma_fence_stop(iif_ikf);
 
-	/*
-	 * If @ret is -ENOENT, it means that @fence is already signaled so the callback was
-	 * not registered to the fence. If it is signaled without error, we don't have to treat it
-	 * as an error and can run the work directly.
-	 */
-	if (ret == -ENOENT && dma_fence_get_status(fence) == 1)
-		goto send_cmd;
+	if (iif_ikf)
+		iif_fence_put(iif_ikf);
+put_ikf:
+	if (ikf)
+		dma_fence_put(ikf);
 
 	return ret;
-
-send_cmd:
-	return gxp_uci_create_and_send_cmd(client, cmd_seq, ibuf->flags, ibuf->opaque,
-					   ibuf->timeout_ms, in_fences, out_fences);
-}
-
-void gxp_uci_work_destroy(struct gxp_uci_cmd_work *uci_work)
-{
-	gcip_fence_array_put_async(uci_work->in_fences);
-	gcip_fence_array_put_async(uci_work->out_fences);
-	dma_fence_put(uci_work->fence);
-	kfree(uci_work);
 }
 
 void gxp_uci_send_iif_unblock_noti(struct gxp_uci *uci, int iif_id)
@@ -1074,7 +1037,7 @@ void gxp_uci_send_iif_unblock_noti(struct gxp_uci *uci, int iif_id)
 	 * acquire the wakelock if the block is powered on. Otherwise, just give up notifying MCU of
 	 * the fence unblock.
 	 */
-	ret = gcip_pm_get_if_powered(uci->gxp->power_mgr->pm, false);
+	ret = gcip_pm_get_if_powered(uci->gxp->power_mgr->pm, true);
 	if (ret) {
 		dev_warn(uci->gxp->dev, "Block should be powered on before notifying IIF unblock");
 		return;
@@ -1097,8 +1060,9 @@ void gxp_uci_consume_responses(struct gxp_uci *uci)
 	gcip_mailbox_consume_responses(uci->mbx->mbx_impl.gcip_mbx);
 }
 
-void gxp_uci_cancel(struct gxp_virtual_device *vd)
+void gxp_uci_cancel(struct gxp_virtual_device *vd, int client_id, u32 reason)
 {
+	struct gxp_dev *gxp = vd->gxp;
 	struct gxp_uci_async_response *cur, *nxt;
 	unsigned long flags;
 
@@ -1141,6 +1105,9 @@ void gxp_uci_cancel(struct gxp_virtual_device *vd)
 	 */
 	list_for_each_entry_safe(cur, nxt, &vd->mailbox_resp_queues[UCI_RESOURCE_ID].wait_queue,
 				 wait_list_entry) {
+		dev_warn(gxp->dev,
+			 "UCI command has been canceled, client_id=%d, cmd_seq=%llu, reason=%u",
+			 client_id, cur->resp.seq, reason);
 		gcip_mailbox_cancel_awaiter(cur->awaiter);
 		gxp_uci_push_async_response(cur, GXP_RESP_CANCELED, true);
 	}

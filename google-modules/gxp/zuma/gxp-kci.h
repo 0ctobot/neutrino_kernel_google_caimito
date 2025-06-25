@@ -16,6 +16,7 @@
 
 #include <gcip/gcip-fault-injection.h>
 #include <gcip/gcip-kci.h>
+#include <gcip/gcip-memory.h>
 #include <gcip/gcip-telemetry.h>
 
 #include "gxp-internal.h"
@@ -72,9 +73,9 @@ struct gxp_kci {
 	struct gxp_mcu *mcu;
 	struct gxp_mailbox *mbx;
 
-	struct gxp_mapped_resource cmd_queue_mem;
-	struct gxp_mapped_resource resp_queue_mem;
-	struct gxp_mapped_resource descriptor_mem;
+	struct gcip_memory cmd_queue_mem;
+	struct gcip_memory resp_queue_mem;
+	struct gcip_memory descriptor_mem;
 
 	/* If false, the kernel driver won't send RKCI ACK responses. */
 	bool enable_rkci_ack;
@@ -135,6 +136,8 @@ struct gxp_kci_link_unlink_offload_vmbox_detail {
 struct gxp_rkci_client_fatal_error_notify {
 	struct list_head node;
 	int client_id;
+	uint core_list;
+	struct gcip_kci_response_element resp;
 };
 
 /*
@@ -224,14 +227,14 @@ int gxp_kci_update_usage_locked(struct gxp_kci *gkci);
  *
  * Returns the code of response, or a negative errno on error.
  */
-int gxp_kci_map_mcu_log_buffer(struct gcip_telemetry_kci_args *args);
+int gxp_kci_map_mcu_log_buffer(const struct gcip_telemetry_kci_args *args);
 
 /*
  * Sends the "Map Trace Buffer" command and waits for remote response.
  *
  * Returns the code of response, or a negative errno on error.
  */
-int gxp_kci_map_mcu_trace_buffer(struct gcip_telemetry_kci_args *args);
+int gxp_kci_map_mcu_trace_buffer(const struct gcip_telemetry_kci_args *args);
 
 /* Send shutdown request to firmware */
 int gxp_kci_shutdown(struct gxp_kci *gkci);

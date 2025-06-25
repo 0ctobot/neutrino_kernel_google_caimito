@@ -13,6 +13,7 @@
 
 #include <gcip/gcip-firmware.h>
 #include <gcip/gcip-image-config.h>
+#include <gcip/gcip-memory.h>
 
 #include "gxp-internal.h"
 
@@ -30,7 +31,7 @@ struct gxp_mcu_firmware_ns_buffer {
 struct gxp_mcu_firmware {
 	struct gxp_dev *gxp;
 	/* resource for MCU firmware image */
-	struct gxp_mapped_resource image_buf;
+	struct gcip_memory image_buf;
 
 	struct mutex lock; /* lock to protect fields below */
 	enum gcip_fw_status status;

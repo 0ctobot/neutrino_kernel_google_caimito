@@ -103,7 +103,7 @@ typedef int (*wait_async_resp_t)(struct gxp_client *client, int virt_core,
  *
  * This callback is always required regardless of the mode of device.
  */
-typedef void (*release_unconsumed_async_resps_t)(struct gxp_virtual_device *vd);
+typedef void (*release_unconsumed_async_resps_t)(struct gxp_virtual_device *vd, int client_id);
 
 /*
  * This structure manages how the mailbox works with user commands.

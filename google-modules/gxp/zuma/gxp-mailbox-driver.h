@@ -174,13 +174,6 @@ int gxp_mailbox_gcip_ops_acquire_resp_queue_lock(struct gcip_mailbox *mailbox,
 						 bool try, bool *atomic);
 void gxp_mailbox_gcip_ops_release_resp_queue_lock(struct gcip_mailbox *mailbox);
 
-void gxp_mailbox_gcip_ops_acquire_wait_list_lock(struct gcip_mailbox *mailbox,
-						 bool irqsave,
-						 unsigned long *flags);
-void gxp_mailbox_gcip_ops_release_wait_list_lock(struct gcip_mailbox *mailbox,
-						 bool irqrestore,
-						 unsigned long flags);
-
 int gxp_mailbox_gcip_ops_wait_for_cmd_queue_not_full(
 	struct gcip_mailbox *mailbox);
 int gxp_mailbox_gcip_ops_after_enqueue_cmd(struct gcip_mailbox *mailbox,

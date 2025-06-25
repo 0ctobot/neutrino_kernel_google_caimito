@@ -136,14 +136,16 @@ static int gxp_dci_mailbox_manager_wait_async_resp(struct gxp_client *client,
 		if (resp_retval)
 			*resp_retval = resp_ptr->resp.retval;
 		break;
-	case GXP_DCI_RESP_CANCELLED:
+	case GXP_DCI_RESP_TIMEOUT:
 		if (error_code)
 			*error_code = GXP_RESPONSE_ERROR_TIMEOUT;
+		dev_err(client->gxp->dev, "Response not received for seq: %llu\n",
+			resp_seq ? *resp_seq : /*Invalid*/ U64_MAX);
 		break;
 	default:
 		/* No other status values are valid at this point */
-		WARN(true, "Completed response had invalid status %hu",
-		     resp_ptr->resp.status);
+		dev_warn(client->gxp->dev, "Completed response had invalid status %hu",
+			 resp_ptr->resp.status);
 		if (error_code)
 			*error_code = GXP_RESPONSE_ERROR_INTERNAL;
 		break;
@@ -169,8 +171,8 @@ static int gxp_dci_mailbox_manager_wait_async_resp(struct gxp_client *client,
 	return 0;
 }
 
-static void gxp_dci_mailbox_manager_release_unconsumed_async_resps(
-	struct gxp_virtual_device *vd)
+static void gxp_dci_mailbox_manager_release_unconsumed_async_resps(struct gxp_virtual_device *vd,
+								   int client_id)
 {
 	struct gxp_dci_async_response *cur, *nxt;
 	int i;
@@ -183,7 +185,7 @@ static void gxp_dci_mailbox_manager_release_unconsumed_async_resps(
 		 * Do it anyway for consistency.
 		 */
 		spin_lock_irqsave(&vd->mailbox_resp_queues[i].lock, flags);
-		list_for_each_entry_safe (
+		list_for_each_entry_safe(
 			cur, nxt, &vd->mailbox_resp_queues[i].dest_queue,
 			list_entry) {
 			list_del(&cur->list_entry);
@@ -299,7 +301,7 @@ static void gxp_dci_handle_awaiter_timedout(struct gcip_mailbox *mailbox,
 	 */
 	spin_lock_irqsave(async_resp->dest_queue_lock, flags);
 	if (async_resp->dest_queue) {
-		resp->status = GXP_DCI_RESP_CANCELLED;
+		resp->status = GXP_DCI_RESP_TIMEOUT;
 		list_add_tail(&async_resp->list_entry, async_resp->dest_queue);
 		spin_unlock_irqrestore(async_resp->dest_queue_lock, flags);
 
@@ -365,8 +367,6 @@ static const struct gcip_mailbox_ops gxp_dci_gcip_mbx_ops = {
 	.release_resp_queue_lock = gxp_mailbox_gcip_ops_release_resp_queue_lock,
 	.get_resp_elem_seq = gxp_dci_get_resp_elem_seq,
 	.set_resp_elem_seq = gxp_dci_set_resp_elem_seq,
-	.acquire_wait_list_lock = gxp_mailbox_gcip_ops_acquire_wait_list_lock,
-	.release_wait_list_lock = gxp_mailbox_gcip_ops_release_wait_list_lock,
 	.wait_for_cmd_queue_not_full =
 		gxp_mailbox_gcip_ops_wait_for_cmd_queue_not_full,
 	.after_enqueue_cmd = gxp_mailbox_gcip_ops_after_enqueue_cmd,

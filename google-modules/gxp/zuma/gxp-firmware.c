@@ -18,6 +18,7 @@
 #include <gcip/gcip-alloc-helper.h>
 #include <gcip/gcip-common-image-header.h>
 #include <gcip/gcip-image-config.h>
+#include <gcip/gcip-memory.h>
 #include <gcip/gcip-pm.h>
 
 #include "gxp-client.h"
@@ -100,13 +101,11 @@ err:
 static bool check_firmware_config_version(struct gxp_dev *gxp,
 					  const struct firmware *core_firmware[GXP_NUM_CORES])
 {
-	struct gcip_common_image_header *hdr =
-		(struct gcip_common_image_header *)core_firmware[0]->data;
-	struct gcip_image_config *cfg;
+	const struct gcip_image_config *cfg;
 
 	if (unlikely(core_firmware[0]->size < GCIP_FW_HEADER_SIZE))
 		return false;
-	cfg = get_image_config_from_hdr(hdr);
+	cfg = gcip_common_image_get_config_from_hdr(core_firmware[0]->data, GXP_FW_MAGIC);
 	if (!cfg) {
 		dev_err(gxp->dev, "Core firmware doesn't have a valid image config");
 		return false;
@@ -119,9 +118,8 @@ static bool check_firmware_config_version(struct gxp_dev *gxp,
 	return true;
 }
 
-static int elf_load_segments(struct gxp_dev *gxp, const u8 *elf_data,
-			     size_t size,
-			     const struct gxp_mapped_resource *buffer)
+static int elf_load_segments(struct gxp_dev *gxp, const u8 *elf_data, size_t size,
+			     const struct gcip_memory *buffer)
 {
 	struct elf32_hdr *ehdr;
 	struct elf32_phdr *phdr;
@@ -155,8 +153,7 @@ static int elf_load_segments(struct gxp_dev *gxp, const u8 *elf_data,
 		if (!memsz)
 			continue;
 
-		if (!(da >= buffer->daddr &&
-		      da + memsz <= buffer->daddr + buffer->size)) {
+		if (!(da >= buffer->dma_addr && da + memsz <= buffer->dma_addr + buffer->size)) {
 			/*
 			 * Some BSS data may be referenced from TCM, and can be
 			 * skipped while loading
@@ -186,7 +183,7 @@ static int elf_load_segments(struct gxp_dev *gxp, const u8 *elf_data,
 		}
 
 		/* grab the kernel address for this device address */
-		ptr = buffer->vaddr + (da - buffer->daddr);
+		ptr = buffer->virt_addr + (da - buffer->dma_addr);
 		if (!ptr) {
 			dev_err(gxp->dev, "Bad phdr: da %#llx mem %#x", da,
 				memsz);
@@ -215,7 +212,7 @@ gxp_firmware_authenticate(struct gxp_dev *gxp,
 	const u8 *data;
 	size_t size;
 	void *header_vaddr;
-	struct gxp_mapped_resource *buffer;
+	struct gcip_memory *buffer;
 	dma_addr_t header_dma_addr;
 	int core;
 	int ret;
@@ -242,8 +239,7 @@ gxp_firmware_authenticate(struct gxp_dev *gxp,
 		buffer = &gxp->fwbufs[core];
 
 		if ((size - FW_HEADER_SIZE) > buffer->size) {
-			dev_err(gxp->dev,
-				"Firmware image does not fit (%zu > %llu)\n",
+			dev_err(gxp->dev, "Firmware image does not fit (%zu > %lu)\n",
 				size - FW_HEADER_SIZE, buffer->size);
 			ret = -EINVAL;
 			goto error;
@@ -255,8 +251,6 @@ gxp_firmware_authenticate(struct gxp_dev *gxp,
 		header_vaddr = dma_alloc_coherent(gxp->gsa_dev, FW_HEADER_SIZE,
 						  &header_dma_addr, GFP_KERNEL);
 		if (!header_vaddr) {
-			dev_err(gxp->dev,
-				"Failed to allocate coherent memory for header\n");
 			ret = -ENOMEM;
 			goto error;
 		}
@@ -265,15 +259,12 @@ gxp_firmware_authenticate(struct gxp_dev *gxp,
 		memcpy(header_vaddr, data, FW_HEADER_SIZE);
 
 		/* Copy the firmware image to the carveout location, skipping the header */
-		memcpy_toio(buffer->vaddr, data + FW_HEADER_SIZE,
-			    size - FW_HEADER_SIZE);
+		memcpy_toio(buffer->virt_addr, data + FW_HEADER_SIZE, size - FW_HEADER_SIZE);
 
-		dev_dbg(gxp->dev,
-			"Requesting GSA authentication. meta = %pad payload = %pap",
-			&header_dma_addr, &buffer->paddr);
+		dev_dbg(gxp->dev, "Requesting GSA authentication. meta = %pad payload = %pap",
+			&header_dma_addr, &buffer->phys_addr);
 
-		ret = gsa_authenticate_image(gxp->gsa_dev, header_dma_addr,
-					     buffer->paddr);
+		ret = gsa_authenticate_image(gxp->gsa_dev, header_dma_addr, buffer->phys_addr);
 
 		dma_free_coherent(gxp->gsa_dev, FW_HEADER_SIZE, header_vaddr,
 				  header_dma_addr);
@@ -281,7 +272,7 @@ gxp_firmware_authenticate(struct gxp_dev *gxp,
 		if (ret) {
 			dev_err(gxp->dev, "GSA authentication failed: %d\n",
 				ret);
-			memset_io(buffer->vaddr, 0, buffer->size);
+			memset_io(buffer->virt_addr, 0, buffer->size);
 			goto error;
 		}
 	}
@@ -295,7 +286,7 @@ error:
 	 */
 	for (core -= 1; core >= 0; core--) {
 		buffer = &gxp->fwbufs[core];
-		memset_io(buffer->vaddr, 0, buffer->size);
+		memset_io(buffer->virt_addr, 0, buffer->size);
 	}
 	return ret;
 }
@@ -310,16 +301,16 @@ static void gxp_program_reset_vector(struct gxp_dev *gxp, uint core,
 		dev_notice(gxp->dev,
 			   "Current Aurora reset vector for core %u: %#x\n",
 			   phys_core, reset_vec);
-	gxp_write_32(gxp, GXP_REG_CORE_ALT_RESET_VECTOR(phys_core), gxp->fwbufs[core].daddr);
+	gxp_write_32(gxp, GXP_REG_CORE_ALT_RESET_VECTOR(phys_core), gxp->fwbufs[core].dma_addr);
 	if (verbose)
 		dev_notice(gxp->dev, "New Aurora reset vector for core %u: %pad\n", phys_core,
-			   &gxp->fwbufs[core].daddr);
+			   &gxp->fwbufs[core].dma_addr);
 }
 
 static void *get_scratchpad_base(struct gxp_dev *gxp,
 				 struct gxp_virtual_device *vd, uint core)
 {
-	return vd->core_cfg.vaddr + (vd->core_cfg.size / GXP_NUM_CORES) * core;
+	return vd->core_cfg.virt_addr + (vd->core_cfg.size / GXP_NUM_CORES) * core;
 }
 
 static void reset_core_config_region(struct gxp_dev *gxp,
@@ -432,7 +423,7 @@ gxp_firmware_load_into_memories(struct gxp_dev *gxp,
 
 	for (core = 0; core < GXP_NUM_CORES; core++) {
 		/* Load firmware to System RAM */
-		if (FW_HEADER_SIZE > firmwares[core]->size) {
+		if (firmwares[core]->size < FW_HEADER_SIZE) {
 			dev_err(gxp->dev,
 				"Invalid Core %u firmware Image size (%d > %zu)\n",
 				core, FW_HEADER_SIZE, firmwares[core]->size);
@@ -442,22 +433,19 @@ gxp_firmware_load_into_memories(struct gxp_dev *gxp,
 
 		if ((firmwares[core]->size - FW_HEADER_SIZE) >
 		    gxp->fwbufs[core].size) {
-			dev_err(gxp->dev,
-				"Core %u firmware image does not fit (%zu > %llu)\n",
-				core, firmwares[core]->size - FW_HEADER_SIZE,
-				gxp->fwbufs[core].size);
+			dev_err(gxp->dev, "Core %u firmware image does not fit (%zu > %lu)\n", core,
+				firmwares[core]->size - FW_HEADER_SIZE, gxp->fwbufs[core].size);
 			ret = -EINVAL;
 			goto error;
 		}
-		memcpy_toio(gxp->fwbufs[core].vaddr,
-			    firmwares[core]->data + FW_HEADER_SIZE,
+		memcpy_toio(gxp->fwbufs[core].virt_addr, firmwares[core]->data + FW_HEADER_SIZE,
 			    firmwares[core]->size - FW_HEADER_SIZE);
 	}
 	return 0;
 error:
 	/* Zero out firmware buffers if we got invalid size on any core. */
 	for (core -= 1; core >= 0; core--)
-		memset_io(gxp->fwbufs[core].vaddr, 0, gxp->fwbufs[core].size);
+		memset_io(gxp->fwbufs[core].virt_addr, 0, gxp->fwbufs[core].size);
 	return ret;
 }
 
@@ -726,10 +714,11 @@ int gxp_fw_init(struct gxp_dev *gxp)
 	ver = gxp_read_32(gxp, GXP_REG_AURORA_REVISION);
 	dev_notice(gxp->dev, "Aurora version: 0x%x\n", ver);
 
-	for (core = 0; core < GXP_NUM_CORES; core++) {
-		proc_id = gxp_read_32(gxp, GXP_REG_CORE_PROCESSOR_ID(core));
-		dev_notice(gxp->dev, "Aurora core %u processor ID: 0x%x\n",
-			   core, proc_id);
+	if (gxp_is_direct_mode(gxp)) {
+		for (core = 0; core < GXP_NUM_CORES; core++) {
+			proc_id = gxp_read_32(gxp, GXP_REG_CORE_PROCESSOR_ID(core));
+			dev_notice(gxp->dev, "Aurora core %u processor ID: 0x%x\n", core, proc_id);
+		}
 	}
 
 	/* Shut BLK_AUR down again to avoid interfering with power management */
@@ -753,10 +742,8 @@ int gxp_fw_init(struct gxp_dev *gxp)
 	}
 
 	for (core = 0; core < GXP_NUM_CORES; core++) {
-		gxp->fwbufs[core].size =
-			(resource_size(&r) / GXP_NUM_CORES) & PAGE_MASK;
-		gxp->fwbufs[core].paddr =
-			r.start + (core * gxp->fwbufs[core].size);
+		gxp->fwbufs[core].size = DSP_FIRMWARE_IMAGE_SIZE & PAGE_MASK;
+		gxp->fwbufs[core].phys_addr = r.start + (core * gxp->fwbufs[core].size);
 		/*
 		 * Firmware buffers are not mapped into kernel VA space until
 		 * firmware is ready to be loaded.
@@ -770,7 +757,7 @@ int gxp_fw_init(struct gxp_dev *gxp)
 			return ret;
 		}
 		gxp->fwdatabuf.size = resource_size(&r);
-		gxp->fwdatabuf.paddr = r.start;
+		gxp->fwdatabuf.phys_addr = r.start;
 		/*
 		 * Scratchpad region is not mapped until the firmware data is
 		 * initialized.
@@ -788,9 +775,9 @@ int gxp_fw_init(struct gxp_dev *gxp)
 		 * also having compiled the FW with this as the base address
 		 * (used by the linker).
 		 */
-		gxp->fwbufs[core].vaddr =
-			memremap(gxp->fwbufs[core].paddr, gxp->fwbufs[core].size, MEMREMAP_WC);
-		if (!(gxp->fwbufs[core].vaddr)) {
+		gxp->fwbufs[core].virt_addr =
+			memremap(gxp->fwbufs[core].phys_addr, gxp->fwbufs[core].size, MEMREMAP_WC);
+		if (!(gxp->fwbufs[core].virt_addr)) {
 			dev_err(gxp->dev, "FW buf %d memremap failed\n", core);
 			ret = -EINVAL;
 			goto out_fw_destroy;
@@ -833,9 +820,9 @@ void gxp_fw_destroy(struct gxp_dev *gxp)
 	device_remove_group(gxp->dev, &gxp_firmware_attr_group);
 
 	for (core = 0; core < GXP_NUM_CORES; core++) {
-		if (gxp->fwbufs[core].vaddr) {
-			memunmap(gxp->fwbufs[core].vaddr);
-			gxp->fwbufs[core].vaddr = NULL;
+		if (gxp->fwbufs[core].virt_addr) {
+			memunmap(gxp->fwbufs[core].virt_addr);
+			gxp->fwbufs[core].virt_addr = NULL;
 		}
 	}
 }
@@ -1015,17 +1002,16 @@ static void gxp_firmware_stop_core(struct gxp_dev *gxp,
 /*
  * Assigns @res's IOVA, size from image config.
  */
-static void assign_resource(struct gxp_mapped_resource *res,
-			    const struct gcip_image_config *img_cfg, enum gxp_imgcfg_idx idx)
+static void assign_resource(struct gcip_memory *res, const struct gcip_image_config *img_cfg,
+			    enum gxp_imgcfg_idx idx)
 {
-	res->daddr = img_cfg->iommu_mappings[idx].virt_address;
+	res->dma_addr = img_cfg->iommu_mappings[idx].virt_address;
 	res->size = gcip_config_to_size(img_cfg->iommu_mappings[idx].image_config_value);
 }
 
 static int gxp_firmware_get_cfg_resource_v2(struct gxp_dev *gxp,
 					    const struct gcip_image_config *img_cfg,
-					    enum gxp_imgcfg_type type,
-					    struct gxp_mapped_resource *res)
+					    enum gxp_imgcfg_type type, struct gcip_memory *res)
 {
 	if (img_cfg->num_iommu_mappings < 3)
 		return -ENODATA;
@@ -1047,10 +1033,9 @@ static int gxp_firmware_get_cfg_resource_v2(struct gxp_dev *gxp,
 
 static int gxp_firmware_get_cfg_resource_v3(struct gxp_dev *gxp,
 					    const struct gcip_image_config *img_cfg,
-					    enum gxp_imgcfg_type type,
-					    struct gxp_mapped_resource *res)
+					    enum gxp_imgcfg_type type, struct gcip_memory *res)
 {
-	struct gxp_mapped_resource tmp;
+	struct gcip_memory tmp;
 
 	if (img_cfg->num_iommu_mappings < 2)
 		return -ENODATA;
@@ -1065,16 +1050,16 @@ static int gxp_firmware_get_cfg_resource_v3(struct gxp_dev *gxp,
 	/* The MCU shared region covers both core_cfg and the VD cfg region. */
 	assign_resource(&tmp, img_cfg, MCU_SHARED_REGION_IDX);
 	if (tmp.size < CORE_CFG_REGION_SIZE + VD_CFG_REGION_SIZE) {
-		dev_err(gxp->dev, "Invalid shared region size, at least %#x, got %#llx",
+		dev_err(gxp->dev, "Invalid shared region size, at least %#x, got %#lx",
 			CORE_CFG_REGION_SIZE + VD_CFG_REGION_SIZE, tmp.size);
 		return -EINVAL;
 	}
 	if (type == IMAGE_CONFIG_CORE_CFG_REGION) {
 		res->size = CORE_CFG_REGION_SIZE;
-		res->daddr = tmp.daddr;
+		res->dma_addr = tmp.dma_addr;
 	} else {
 		res->size = VD_CFG_REGION_SIZE;
-		res->daddr = tmp.daddr + CORE_CFG_REGION_SIZE;
+		res->dma_addr = tmp.dma_addr + CORE_CFG_REGION_SIZE;
 	}
 	return 0;
 }
@@ -1251,7 +1236,7 @@ u32 gxp_firmware_get_boot_status(struct gxp_dev *gxp, struct gxp_virtual_device 
 }
 
 int gxp_firmware_get_cfg_resource(struct gxp_dev *gxp, const struct gcip_image_config *img_cfg,
-				  enum gxp_imgcfg_type type, struct gxp_mapped_resource *res)
+				  enum gxp_imgcfg_type type, struct gcip_memory *res)
 {
 	if (img_cfg->config_version < 2)
 		return -EINVAL;

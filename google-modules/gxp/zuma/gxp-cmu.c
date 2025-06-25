@@ -9,6 +9,8 @@
 #include <linux/platform_device.h>
 #include <linux/types.h>
 
+#include <gcip/gcip-memory.h>
+
 #include "gxp-cmu.h"
 #include "gxp-config.h"
 #include "gxp-internal.h"
@@ -22,7 +24,7 @@
  */
 static u32 gxp_cmu_reg_read_32(struct gxp_dev *gxp, u64 offset)
 {
-	return readl(gxp->cmu.vaddr + offset);
+	return readl(gxp->cmu.virt_addr + offset);
 }
 
 /**
@@ -33,12 +35,12 @@ static u32 gxp_cmu_reg_read_32(struct gxp_dev *gxp, u64 offset)
  */
 static void gxp_cmu_reg_write_32(struct gxp_dev *gxp, u64 offset, u32 value)
 {
-	writel(value, gxp->cmu.vaddr + offset);
+	writel(value, gxp->cmu.virt_addr + offset);
 }
 
 int gxp_cmu_get_mux_state(struct gxp_dev *gxp, int mux_offset, enum gxp_cmu_mux_state *state)
 {
-	if (IS_ERR_OR_NULL(gxp->cmu.vaddr)) {
+	if (IS_ERR_OR_NULL(gxp->cmu.virt_addr)) {
 		dev_err(gxp->dev, "CMU registers are not mapped");
 		return -ENODEV;
 	}
@@ -50,7 +52,7 @@ int gxp_cmu_get_mux_state(struct gxp_dev *gxp, int mux_offset, enum gxp_cmu_mux_
 
 int gxp_cmu_set_mux_state(struct gxp_dev *gxp, int mux_offset, enum gxp_cmu_mux_state state)
 {
-	if (IS_ERR_OR_NULL(gxp->cmu.vaddr)) {
+	if (IS_ERR_OR_NULL(gxp->cmu.virt_addr)) {
 		dev_err(gxp->dev, "CMU registers are not mapped");
 		return -ENODEV;
 	}
@@ -119,7 +121,7 @@ int gxp_cmu_set_reg_resources(struct gxp_dev *gxp)
 		return -ENODEV;
 	}
 
-	gxp->cmu.paddr = r->start;
+	gxp->cmu.phys_addr = r->start;
 	gxp->cmu.size = resource_size(r);
 	vaddr = devm_ioremap_resource(gxp->dev, r);
 	if (IS_ERR(vaddr)) {
@@ -128,7 +130,7 @@ int gxp_cmu_set_reg_resources(struct gxp_dev *gxp)
 		return ret;
 	}
 
-	gxp->cmu.vaddr = vaddr;
+	gxp->cmu.virt_addr = vaddr;
 
 	return 0;
 }

@@ -46,6 +46,7 @@ gxp-objs += \
 
 gxp-mcu-objs := \
 		gxp-devfreq.o \
+		gxp-iif.o \
 		gxp-kci.o \
 		gxp-mcu-firmware.o \
 		gxp-mcu-fs.o \
@@ -158,7 +159,7 @@ ifneq ($(wildcard $(GMODULE_OUT_PATH)/perf/google_pm_qos_Module.symvers),)
 EXTRA_SYMBOLS += $(GMODULE_OUT_PATH)/perf/google_pm_qos_Module.symvers
 endif
 
-modules modules_install:
+modules modules_install compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M)/$(GCIP_DIR) gcip.o
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) W=1 $(KBUILD_OPTIONS) \
 	EXTRA_CFLAGS="$(EXTRA_CFLAGS)" KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" $(@)

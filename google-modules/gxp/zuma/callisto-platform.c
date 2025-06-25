@@ -182,7 +182,7 @@ static void __exit gxp_platform_exit(void)
 }
 
 MODULE_DESCRIPTION("Google GXP platform driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 #ifdef GIT_REPO_TAG
 MODULE_INFO(gitinfo, GIT_REPO_TAG);
 #endif

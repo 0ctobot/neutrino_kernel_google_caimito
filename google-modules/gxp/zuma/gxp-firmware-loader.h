@@ -13,6 +13,9 @@
 #include "gxp-config.h"
 #include "gxp-internal.h"
 
+/* Value of Magic field in the common header "DSPF' as a 32-bit LE int */
+#define GXP_FW_MAGIC 0x46505344
+
 struct gxp_firmware_loader_manager {
 	const struct firmware *core_firmware[GXP_NUM_CORES];
 	char *core_firmware_name;

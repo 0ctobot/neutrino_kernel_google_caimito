@@ -21,6 +21,7 @@
 #include <linux/sched/mm.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
+#include <linux/swap.h>
 
 #include <gcip/gcip-config.h>
 #include <gcip/gcip-domain-pool.h>
@@ -277,39 +278,66 @@ static int mem_pool_initialize_domain(struct gcip_iommu_domain *domain)
 	size_t size = dpool->size;
 	int ret;
 
-	/* Restrict mem_pool IOVAs to 32 bits. */
-	if (dpool->base_daddr + size > UINT_MAX)
-		size = UINT_MAX - dpool->base_daddr;
-	ret = gcip_mem_pool_init(&domain->iova_space.mem_pool, dpool->dev, dpool->base_daddr, size,
-				 dpool->granule);
+	/*
+	 * Use separate gen_pools for 32-bit vs. unrestricted IOVAs.  Must have a non-empty 32-bit
+	 * space.
+	 */
+	if (dpool->base_daddr > UINT_MAX)
+		return -EINVAL;
+	if (dpool->base_daddr + size + 1 > UINT_MAX) {
+		size = dpool->size - ((unsigned long long)UINT_MAX - dpool->base_daddr + 1);
+		ret = gcip_mem_pool_init(&domain->iova_space.mem_pool.pool64, dpool->dev,
+					 (unsigned long long)UINT_MAX + 1, size, dpool->granule);
+		if (ret)
+			return ret;
 
-	dev_warn(domain->dev, "gcip-reserved-map is not supported in mem_pool mode.");
+		domain->iova_space.mem_pool.pool64_valid = true;
+		size = UINT_MAX - dpool->base_daddr + 1;
+	}
+	ret = gcip_mem_pool_init(&domain->iova_space.mem_pool.pool32, dpool->dev,
+				 dpool->base_daddr, size, dpool->granule);
+	if (ret) {
+		if (domain->iova_space.mem_pool.pool64_valid)
+			gcip_mem_pool_exit(&domain->iova_space.mem_pool.pool64);
+		return ret;
+	}
 
-	return ret;
+	if (dpool->reserved_size)
+		dev_warn(domain->dev, "gcip-reserved-map is not supported in mem_pool mode.");
+
+	return 0;
 }
 
 static void mem_pool_finalize_domain(struct gcip_iommu_domain *domain)
 {
-	gcip_mem_pool_exit(&domain->iova_space.mem_pool);
+	gcip_mem_pool_exit(&domain->iova_space.mem_pool.pool32);
+	if (domain->iova_space.mem_pool.pool64_valid)
+		gcip_mem_pool_exit(&domain->iova_space.mem_pool.pool64);
 }
 
 static void mem_pool_enable_best_fit_algo(struct gcip_iommu_domain *domain)
 {
-	gen_pool_set_algo(domain->iova_space.mem_pool.gen_pool, gen_pool_best_fit, NULL);
+	gen_pool_set_algo(domain->iova_space.mem_pool.pool32.gen_pool, gen_pool_best_fit, NULL);
+	if (domain->iova_space.mem_pool.pool64_valid)
+		gen_pool_set_algo(domain->iova_space.mem_pool.pool64.gen_pool, gen_pool_best_fit,
+				  NULL);
 }
 
 static dma_addr_t mem_pool_alloc_iova_space(struct gcip_iommu_domain *domain, size_t size,
 					    bool restrict_iova)
 {
-	/* mem pool IOVA allocs are currently always restricted. */
-	if (!restrict_iova)
-		dev_warn_once(domain->dev, "IOVA size always restricted to 32-bit");
-	return (dma_addr_t)gcip_mem_pool_alloc(&domain->iova_space.mem_pool, size);
+	if (restrict_iova || !domain->iova_space.mem_pool.pool64_valid)
+		return (dma_addr_t)gcip_mem_pool_alloc(&domain->iova_space.mem_pool.pool32, size);
+	return (dma_addr_t)gcip_mem_pool_alloc(&domain->iova_space.mem_pool.pool64, size);
 }
+
 
 static void mem_pool_free_iova_space(struct gcip_iommu_domain *domain, dma_addr_t iova, size_t size)
 {
-	gcip_mem_pool_free(&domain->iova_space.mem_pool, iova, size);
+	if (iova <= UINT_MAX)
+		gcip_mem_pool_free(&domain->iova_space.mem_pool.pool32, iova, size);
+	else
+		gcip_mem_pool_free(&domain->iova_space.mem_pool.pool64, iova, size);
 }
 
 static const struct gcip_iommu_domain_ops mem_pool_ops = {
@@ -582,7 +610,7 @@ static int gcip_pin_user_pages(struct device *dev, struct page **pages, unsigned
 			       struct mutex *pin_user_pages_lock)
 {
 	int ret, i;
-	__maybe_unused struct vm_area_struct **vmas = NULL;
+	struct vm_area_struct **vmas = NULL;
 
 	ret = gcip_pin_user_pages_fast(pages, start_addr, num_pages, gup_flags,
 				       pin_user_pages_lock);
@@ -660,10 +688,9 @@ int gcip_iommu_domain_pool_init(struct gcip_iommu_domain_pool *pool, struct devi
 	if (!pool->base_daddr || !pool->size) {
 		gcip_domain_pool_destroy(&pool->domain_pool);
 		return -EINVAL;
-	} else {
-		pool->last_daddr = pool->base_daddr + pool->size - 1;
 	}
 
+	pool->last_daddr = pool->base_daddr + pool->size - 1;
 	pool->min_pasid = 0;
 	pool->max_pasid = 0;
 	ida_init(&pool->pasid_pool);
@@ -1274,11 +1301,10 @@ void gcip_iommu_mapping_unmap(struct gcip_iommu_mapping *mapping)
 	void *data = mapping->data;
 	const struct gcip_iommu_mapping_ops *ops = mapping->ops;
 
-	if (mapping->type == GCIP_IOMMU_MAPPING_BUFFER) {
+	if (mapping->type == GCIP_IOMMU_MAPPING_BUFFER)
 		gcip_iommu_mapping_unmap_buffer(mapping);
-	} else if (mapping->type == GCIP_IOMMU_MAPPING_DMA_BUF) {
+	else if (mapping->type == GCIP_IOMMU_MAPPING_DMA_BUF)
 		gcip_iommu_mapping_unmap_dma_buf(mapping);
-	}
 
 	/* From now on, @mapping is released and must not be accessed. */
 

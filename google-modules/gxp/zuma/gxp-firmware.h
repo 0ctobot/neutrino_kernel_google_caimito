@@ -11,6 +11,7 @@
 #include <linux/sizes.h>
 
 #include <gcip/gcip-image-config.h>
+#include <gcip/gcip-memory.h>
 
 #include "gxp-config.h"
 #include "gxp-internal.h"
@@ -187,6 +188,6 @@ void gxp_firmware_disable_ext_interrupts(struct gxp_dev *gxp, uint core);
  * provided image config.
  */
 int gxp_firmware_get_cfg_resource(struct gxp_dev *gxp, const struct gcip_image_config *img_cfg,
-				  enum gxp_imgcfg_type type, struct gxp_mapped_resource *res);
+				  enum gxp_imgcfg_type type, struct gcip_memory *res);
 
 #endif /* __GXP_FIRMWARE_H__ */

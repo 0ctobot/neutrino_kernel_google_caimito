@@ -23,9 +23,9 @@
 #include <linux/rwsem.h>
 #include <linux/spinlock.h>
 
+#include <gcip/gcip-memory.h>
 #include <gcip/gcip-resource-accessor.h>
 #include <gcip/gcip-thermal.h>
-#include <iif/iif-manager.h>
 
 #include "gxp-config.h"
 #include "gxp.h"
@@ -45,14 +45,6 @@ enum gxp_chip_revision {
 struct gxp_tpu_mbx_desc {
 	uint phys_core_list;
 	size_t cmdq_size, respq_size;
-};
-
-/* ioremapped resource */
-struct gxp_mapped_resource {
-	void __iomem *vaddr;		 /* starting virtual address */
-	phys_addr_t paddr;		 /* starting physical address */
-	dma_addr_t daddr;		 /* starting device address */
-	resource_size_t size;		 /* size in bytes */
 };
 
 /* device properties */
@@ -88,12 +80,12 @@ struct gxp_dev {
 	struct cdev char_dev; /* char device structure */
 	dev_t char_dev_no;
 	struct dentry *d_entry;		 /* debugfs dir for this device */
-	struct gxp_mapped_resource regs; /* ioremapped CSRs */
-	struct gxp_mapped_resource lpm_regs; /* ioremapped LPM CSRs, may be equal to @regs */
-	struct gxp_mapped_resource mbx[GXP_NUM_MAILBOXES]; /* mailbox CSRs */
-	struct gxp_mapped_resource fwbufs[GXP_NUM_CORES]; /* FW carveout */
-	struct gxp_mapped_resource fwdatabuf; /* Shared FW data carveout */
-	struct gxp_mapped_resource cmu; /* CMU CSRs */
+	struct gcip_memory regs; /* ioremapped CSRs */
+	struct gcip_memory lpm_regs; /* ioremapped LPM CSRs, may be equal to @regs */
+	struct gcip_memory mbx[GXP_NUM_MAILBOXES]; /* mailbox CSRs */
+	struct gcip_memory fwbufs[GXP_NUM_CORES]; /* FW carveout */
+	struct gcip_memory fwdatabuf; /* Shared FW data carveout */
+	struct gcip_memory cmu; /* CMU CSRs */
 	struct gxp_mailbox_manager *mailbox_mgr;
 	struct gxp_power_manager *power_mgr;
 	struct gxp_debug_dump_manager *debug_dump_mgr;
@@ -121,6 +113,9 @@ struct gxp_dev {
 	struct gxp_client *debugfs_client;
 	struct mutex debugfs_client_lock;
 	bool debugfs_wakelock_held;
+	/* TODO(b/395523291): Remove @num_mailboxes_compat flag. */
+	/* Total number of mailboxes present in the device tree. */
+	uint num_mailboxes_compat;
 	struct gxp_dma_manager *dma_mgr;
 	struct gxp_fw_data_manager *data_mgr;
 	struct gxp_tpu_dev tpu_dev;
@@ -145,7 +140,7 @@ struct gxp_dev {
 	 * Buffer shared across firmware.
 	 * Its paddr is 0 if the shared buffer is not available.
 	 */
-	struct gxp_mapped_resource shared_buf;
+	struct gcip_memory shared_buf;
 	/*
 	 * If the @shared_buf is used as split slices, it will keep track of
 	 * which indexes of slices are used by ID allocator.
@@ -162,10 +157,6 @@ struct gxp_dev {
 
 	/* To save device properties */
 	struct gxp_dev_prop device_prop;
-
-	/* To manage IIF fences. */
-	struct iif_manager *iif_mgr;
-	struct device *iif_dev;
 
 	/* callbacks for chip-dependent implementations */
 
@@ -289,12 +280,12 @@ struct gxp_dev {
 
 static inline u32 gxp_read_32(struct gxp_dev *gxp, uint reg_offset)
 {
-	return readl(gxp->regs.vaddr + reg_offset);
+	return readl(gxp->regs.virt_addr + reg_offset);
 }
 
 static inline void gxp_write_32(struct gxp_dev *gxp, uint reg_offset, u32 value)
 {
-	writel(value, gxp->regs.vaddr + reg_offset);
+	writel(value, gxp->regs.virt_addr + reg_offset);
 }
 
 static inline int gxp_acquire_rmem_resource(struct gxp_dev *gxp,

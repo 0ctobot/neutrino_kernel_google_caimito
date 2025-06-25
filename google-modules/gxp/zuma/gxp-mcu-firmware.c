@@ -21,6 +21,7 @@
 #include <gcip/gcip-fault-injection.h>
 #include <gcip/gcip-image-config.h>
 #include <gcip/gcip-iommu.h>
+#include <gcip/gcip-memory.h>
 #include <gcip/gcip-pm.h>
 #include <gcip/gcip-thermal.h>
 
@@ -53,16 +54,13 @@
 #define TEST_FLUSH_KCI_WORKERS(...)
 #endif
 
-/* Value of Magic field in the common header "DSPF' as a 32-bit LE int */
-#define GXP_FW_MAGIC 0x46505344
-
 /* The number of times trying to rescue MCU. */
 #define MCU_RESCUE_TRY 3
 
 /*
  * Programs instruction remap CSRs.
  */
-static int program_iremap_csr(struct gxp_dev *gxp, struct gxp_mapped_resource *buf)
+static int program_iremap_csr(struct gxp_dev *gxp, struct gcip_memory *buf)
 {
 	struct gxp_mcu_firmware *mcu_fw = gxp_mcu_firmware_of(gxp);
 	size_t size;
@@ -71,22 +69,22 @@ static int program_iremap_csr(struct gxp_dev *gxp, struct gxp_mapped_resource *b
 	gxp_soc_set_iremap_context(gxp);
 
 	if (mcu_fw->dynamic_fw_buffer) {
-		if (buf->daddr + buf->size > GXP_IREMAP_DYNAMIC_CODE_BASE) {
+		if (buf->dma_addr + buf->size > GXP_IREMAP_DYNAMIC_CODE_BASE) {
 			dev_err(gxp->dev,
-				"Bad dynamic firmware base %x, carveout daddr: %pad size: %llx",
-				GXP_IREMAP_DYNAMIC_CODE_BASE, &buf->daddr, buf->size);
+				"Bad dynamic firmware base %x, carveout dma_addr: %pad size: %lx",
+				GXP_IREMAP_DYNAMIC_CODE_BASE, &buf->dma_addr, buf->size);
 			return -EINVAL;
 		}
 		gxp_write_32(gxp, GXP_REG_CFGVECTABLE0, GXP_IREMAP_DYNAMIC_CODE_BASE);
 		size = mcu_fw->dynamic_fw_buffer->size;
-		gxp_write_32(gxp, GXP_REG_IREMAP_LOW, buf->daddr);
+		gxp_write_32(gxp, GXP_REG_IREMAP_LOW, buf->dma_addr);
 		gxp_write_32(gxp, GXP_REG_IREMAP_HIGH, GXP_IREMAP_DYNAMIC_CODE_BASE + size);
 	} else {
-		gxp_write_32(gxp, GXP_REG_CFGVECTABLE0, buf->daddr);
-		gxp_write_32(gxp, GXP_REG_IREMAP_LOW, buf->daddr);
-		gxp_write_32(gxp, GXP_REG_IREMAP_HIGH, buf->daddr + buf->size);
+		gxp_write_32(gxp, GXP_REG_CFGVECTABLE0, buf->dma_addr);
+		gxp_write_32(gxp, GXP_REG_IREMAP_LOW, buf->dma_addr);
+		gxp_write_32(gxp, GXP_REG_IREMAP_HIGH, buf->dma_addr + buf->size);
 	}
-	gxp_write_32(gxp, GXP_REG_IREMAP_TARGET, buf->daddr);
+	gxp_write_32(gxp, GXP_REG_IREMAP_TARGET, buf->dma_addr);
 	gxp_write_32(gxp, GXP_REG_IREMAP_ENABLE, 1);
 	return 0;
 }
@@ -94,13 +92,12 @@ static int program_iremap_csr(struct gxp_dev *gxp, struct gxp_mapped_resource *b
 /*
  * Check whether the firmware file is signed or not.
  */
-static bool is_signed_firmware(const struct firmware *fw,
-			       const struct gcip_common_image_header *hdr)
+static bool is_signed_firmware(const struct firmware *fw)
 {
 	if (fw->size < GCIP_FW_HEADER_SIZE)
 		return false;
 
-	if (hdr->common.magic != GXP_FW_MAGIC)
+	if (!gcip_common_image_check_magic(fw->data, GXP_FW_MAGIC))
 		return false;
 
 	return true;
@@ -153,6 +150,7 @@ static int gxp_mcu_firmware_handshake(struct gxp_mcu_firmware *mcu_fw)
 	if (ret)
 		dev_warn(gxp->dev, "Failed to pass device_prop to fw: %d\n", ret);
 
+	gxp_iif_enable_iif_mbox(mcu->giif);
 	return 0;
 }
 
@@ -231,8 +229,7 @@ int gxp_mcu_firmware_load(struct gxp_dev *gxp, char *fw_name,
 	int ret;
 	struct gxp_mcu_firmware *mcu_fw = gxp_mcu_firmware_of(gxp);
 	struct device *dev = gxp->dev;
-	struct gcip_image_config *imgcfg;
-	struct gcip_common_image_header *hdr;
+	const struct gcip_image_config *imgcfg;
 	size_t size;
 
 	mutex_lock(&mcu_fw->lock);
@@ -253,9 +250,7 @@ int gxp_mcu_firmware_load(struct gxp_dev *gxp, char *fw_name,
 		goto err_out;
 	}
 
-	hdr = (struct gcip_common_image_header *)(*fw)->data;
-
-	if (!is_signed_firmware(*fw, hdr)) {
+	if (!is_signed_firmware(*fw)) {
 		dev_err(dev, "Invalid firmware format %s", fw_name);
 		ret = -EINVAL;
 		goto err_release_firmware;
@@ -263,7 +258,7 @@ int gxp_mcu_firmware_load(struct gxp_dev *gxp, char *fw_name,
 
 	size = (*fw)->size - GCIP_FW_HEADER_SIZE;
 
-	imgcfg = get_image_config_from_hdr(hdr);
+	imgcfg = gcip_common_image_get_config_from_hdr((*fw)->data, GXP_FW_MAGIC);
 	if (!imgcfg) {
 		dev_err(dev, "Unsupported image header generation");
 		ret = -EINVAL;
@@ -294,7 +289,7 @@ int gxp_mcu_firmware_load(struct gxp_dev *gxp, char *fw_name,
 
 	if (size > mcu_fw->image_buf.size || (mcu_fw->sanitizer_status != 0)) {
 		if (mcu_fw->is_secure) {
-			dev_err(dev, "firmware %s size %#zx exceeds buffer size %#llx", fw_name,
+			dev_err(dev, "firmware %s size %#zx exceeds buffer size %#lx", fw_name,
 				size, mcu_fw->image_buf.size);
 			ret = -ENOSPC;
 			goto err_clear_config;
@@ -313,7 +308,7 @@ int gxp_mcu_firmware_load(struct gxp_dev *gxp, char *fw_name,
 					   mcu_fw->dynamic_fw_buffer->sgt->orig_nents,
 					   DMA_TO_DEVICE);
 	} else {
-		memcpy(mcu_fw->image_buf.vaddr, (*fw)->data + GCIP_FW_HEADER_SIZE, size);
+		memcpy(mcu_fw->image_buf.virt_addr, (*fw)->data + GCIP_FW_HEADER_SIZE, size);
 	}
 
 out:
@@ -481,8 +476,9 @@ static void gxp_mcu_firmware_stop_locked(struct gxp_mcu_firmware *mcu_fw)
 
 	gxp_lpm_enable_state(gxp, CORE_TO_PSM(GXP_REG_MCU_ID), LPM_PG_STATE);
 
-	/* Clear doorbell to refuse non-expected interrupts */
-	gxp_doorbell_clear(gxp, CORE_WAKEUP_DOORBELL(GXP_REG_MCU_ID));
+	if (!mcu_fw->is_secure)
+		/* Clear doorbell to refuse non-expected interrupts */
+		gxp_doorbell_clear(gxp, CORE_WAKEUP_DOORBELL(GXP_REG_MCU_ID));
 
 	/*
 	 * As the RKCI requests are processed asynchronously, the driver may return RKCI ACK
@@ -590,8 +586,7 @@ static int gxp_mcu_firmware_run_locked(struct gxp_mcu_firmware *mcu_fw)
 	return 0;
 }
 
-static int init_mcu_firmware_buf(struct gxp_dev *gxp,
-				 struct gxp_mapped_resource *buf)
+static int init_mcu_firmware_buf(struct gxp_dev *gxp, struct gcip_memory *buf)
 {
 	struct resource r;
 	int ret;
@@ -602,12 +597,11 @@ static int init_mcu_firmware_buf(struct gxp_dev *gxp,
 		return ret;
 	}
 	buf->size = resource_size(&r);
-	buf->paddr = r.start;
-	buf->daddr = GXP_IREMAP_CODE_BASE;
-	buf->vaddr =
-		devm_memremap(gxp->dev, buf->paddr, buf->size, MEMREMAP_WC);
-	if (IS_ERR(buf->vaddr))
-		ret = PTR_ERR(buf->vaddr);
+	buf->phys_addr = r.start;
+	buf->dma_addr = GXP_IREMAP_CODE_BASE;
+	buf->virt_addr = devm_memremap(gxp->dev, buf->phys_addr, buf->size, MEMREMAP_WC);
+	if (IS_ERR(buf->virt_addr))
+		ret = PTR_ERR(buf->virt_addr);
 	return ret;
 }
 
@@ -941,6 +935,8 @@ void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,
 
 	mcu_fw->crash_cnt += 1;
 
+	gxp_iif_disable_iif_mbox(mcu->giif);
+
 	/*
 	 * Prevent @gxp->client_list is being changed while handling the crash.
 	 * The user cannot create or release a client until this function releases the lock.
@@ -951,7 +947,7 @@ void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,
 	 * Hold @client->semaphore first to prevent deadlock.
 	 * By holding this lock, clients cannot proceed most IOCTLs.
 	 */
-	list_for_each_entry (client, &gxp->client_list, list_entry) {
+	list_for_each_entry(client, &gxp->client_list, list_entry) {
 		down_write(&client->semaphore);
 	}
 
@@ -1007,11 +1003,12 @@ void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,
 	 * Discard all pending/unconsumed UCI responses and change the state of all virtual devices
 	 * to GXP_VD_UNAVAILABLE. From now on, all clients cannot request new UCI commands.
 	 */
-	list_for_each_entry (client, &gxp->client_list, list_entry) {
+	list_for_each_entry(client, &gxp->client_list, list_entry) {
 		if (client->has_block_wakelock && client->vd) {
 			gxp_vd_invalidate(gxp, client->vd, GXP_INVALIDATED_MCU_CRASH);
 			client->vd->mcu_crashed = true;
-			gxp_uci_cancel(client->vd);
+			gxp_uci_cancel(client->vd, client->vd->client_id,
+				       GXP_INVALIDATED_MCU_CRASH);
 		}
 	}
 
@@ -1032,7 +1029,7 @@ out:
 	mutex_unlock(&mcu_fw->lock);
 out_unlock_pm:
 	gcip_pm_unlock(pm);
-	list_for_each_entry (client, &gxp->client_list, list_entry) {
+	list_for_each_entry(client, &gxp->client_list, list_entry) {
 		up_write(&client->semaphore);
 	}
 	mutex_unlock(&gxp->client_list_lock);

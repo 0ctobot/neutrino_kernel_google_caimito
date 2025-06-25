@@ -61,8 +61,7 @@
 #define GCIP_MAP_FLAGS_MMIO_OFFSET \
 	(GCIP_MAP_FLAGS_RESTRICT_IOVA_OFFSET + GCIP_MAP_FLAGS_RESTRICT_IOVA_BIT_SIZE)
 #define GCIP_MAP_FLAGS_MMIO_BIT_SIZE 1
-#define GCIP_MAP_FLAGS_MMIO_TO_FLAGS(mmio) \
-	((u64)(mmio) << GCIP_MAP_FLAGS_RESTRICT_IOVA_OFFSET)
+#define GCIP_MAP_FLAGS_MMIO_TO_FLAGS(mmio) ((u64)(mmio) << GCIP_MAP_FLAGS_MMIO_OFFSET)
 
 /* Helper macros to easily create the mapping direction flags. */
 #define GCIP_MAP_FLAGS_DMA_RW GCIP_MAP_FLAGS_DMA_DIRECTION_TO_FLAGS(DMA_BIDIRECTIONAL)
@@ -193,6 +192,14 @@ struct gcip_iommu_domain_pool {
 	struct ida pasid_pool;
 };
 
+/* For GCIP_IOMMU_DOMAIN_TYPE_MEM_POOL, gen_pools for 32-bit and > 32-bit spaces. */
+struct gcip_iommu_domain_iova_mem_pools {
+	struct gcip_mem_pool pool32;
+	struct gcip_mem_pool pool64;
+	/* If true then pool64 is valid, else this is a 32-bit-only pool. */
+	bool pool64_valid;
+};
+
 /*
  * Wrapper of iommu_domain.
  * It has its own IOVA space pool based on iova_domain or gcip_mem_pool. One can choose one of them
@@ -206,7 +213,7 @@ struct gcip_iommu_domain {
 	bool default_domain;
 	union {
 		struct iova_domain iovad;
-		struct gcip_mem_pool mem_pool;
+		struct gcip_iommu_domain_iova_mem_pools mem_pool;
 	} iova_space;
 	const struct gcip_iommu_domain_ops *ops;
 	ioasid_t pasid; /* Only valid if attached */

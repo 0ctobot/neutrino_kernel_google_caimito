@@ -46,6 +46,13 @@
  */
 #define GCIP_MAILBOX_CMD_FLAGS_SKIP_ASSIGN_SEQ BIT(0)
 
+/*
+ * With this flag, no timemout handler will be scheduled for the command.
+ * If this flag is used, the calling driver must rely on the receiving firmware to timeout any
+ * excessively long-running commands.
+ */
+#define GCIP_MAILBOX_CMD_FLAGS_NO_TIMEOUT BIT(1)
+
 typedef u32 gcip_mailbox_cmd_flags_t;
 
 /* To specify the operation is toward cmd or resp queue. */
@@ -256,42 +263,6 @@ struct gcip_mailbox_ops {
 	 */
 	void (*set_resp_elem_seq)(struct gcip_mailbox *mailbox, void *resp, u64 seq);
 
-	/*
-	 * This callback will be called in following situations.
-	 * - Push a waiting response to the @mailbox->wait_list.
-	 * - Delete a waiting response from the @mailbox->wait_list.
-	 * - Handle an arrived response and delete it from the @mailbox->wait_list.
-	 * - Flush the asynchronous responses in the @mailbox->wait_list when release the @mailbox.
-	 *
-	 * The lock can be a mutex lock or a spin lock. However, if it is a spin lock and the lock
-	 * can be held in any functions in the IRQ context (e.g., the IP driver calls
-	 * `gcip_mailbox_consume_one_response()` or `gcip_mailbox_consume_responses()` functions
-	 * in the IRQ context), the callback must use `_irqsave()` function and store the IRQ state
-	 * to @flags.
-	 *
-	 * Note that @irqsave is deprecated and true will be always passed.
-	 *
-	 * The lock will be released by calling `release_wait_list_lock` callback.
-	 *
-	 * Context: normal and in_interrupt().
-	 */
-	void (*acquire_wait_list_lock)(struct gcip_mailbox *mailbox, bool irqsave,
-				       unsigned long *flags);
-	/*
-	 * Releases the lock of wait_list which is acquired by calling `acquire_wait_list_lock`.
-	 *
-	 * If the lock is a spin lock and the lock can be held in any functions in the IRQ context
-	 * (e.g., the IP driver calls `gcip_mailbox_consume_one_response()` or
-	 * `gcip_mailbox_consume_responses()` functions in the IRQ context), the callback must use
-	 * `_irqresotre()` function and restore the IRQ state from @flags.
-	 *
-	 * Note that @irqsave is deprecated and true will be always passed.
-	 *
-	 * Context: wait_list_lock.
-	 */
-	void (*release_wait_list_lock)(struct gcip_mailbox *mailbox, bool irqrestore,
-				       unsigned long flags);
-
 	/* Optional. */
 	/*
 	 * This callback will be called before putting the @resp into @mailbox->wait_list and
@@ -424,6 +395,8 @@ struct gcip_mailbox {
 	/* Size of element of resp queue. */
 	u32 resp_elem_size;
 
+	/* The spinlock to protect the @wait_list. */
+	spinlock_t wait_list_lock;
 	/* List of commands that need to wait for responses. */
 	struct list_head wait_list;
 	/* Queue for waiting for the wait_list to be consumed. */

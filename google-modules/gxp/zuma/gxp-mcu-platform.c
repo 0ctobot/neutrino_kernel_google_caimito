@@ -7,17 +7,11 @@
 
 #include <linux/device.h>
 #include <linux/interrupt.h>
-#include <linux/list.h>
 #include <linux/moduleparam.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
-#include <linux/spinlock.h>
-#include <linux/workqueue.h>
-
-#include <iif/iif-fence.h>
-#include <iif/iif-manager.h>
 
 #include "gxp-config.h"
 #include "gxp-devfreq.h"
@@ -42,11 +36,6 @@ module_param_named(work_mode, gxp_work_mode_name, charp, 0660);
 
 static char *chip_rev = "a0";
 module_param(chip_rev, charp, 0660);
-
-struct gxp_iif_unblocked {
-	struct list_head node;
-	int fence_id;
-};
 
 static int allocate_vmbox(struct gxp_dev *gxp, struct gxp_virtual_device *vd)
 {
@@ -223,6 +212,12 @@ static irqreturn_t mcu_wdg_irq_handler(int irq, void *arg)
 	struct gxp_dev *gxp = arg;
 	u32 wdg_control_val;
 
+	/*
+	 * Unlock the WDG registers in case they are locked. Skip locking it back as MCU assumes
+	 * that the registers are always unlocked.
+	 */
+	gxp_write_32(gxp, GXP_REG_WDOG_KEY, GXP_WDG_KEY_VALUE);
+
 	/* Clear the interrupt and disable the WDG. */
 	wdg_control_val = gxp_read_32(gxp, GXP_REG_WDOG_CONTROL);
 	wdg_control_val |= BIT(GXP_WDG_INT_CLEAR_BIT);
@@ -289,175 +284,6 @@ enum gxp_chip_revision gxp_get_chip_revision(struct gxp_dev *gxp)
 	return GXP_CHIP_ANY;
 }
 
-static void gxp_iif_unblocked(struct iif_fence *fence, void *data)
-{
-	struct gxp_dev *gxp = data;
-	struct gxp_mcu_dev *mcu_dev = to_mcu_dev(gxp);
-	struct gxp_iif_unblocked *unblocked;
-
-	if (fence->signal_error)
-		dev_warn(gxp->dev, "IIF has been unblocked with an error, id=%d, error=%d",
-			 fence->id, fence->signal_error);
-
-	if (fence->propagate) {
-		unblocked = kzalloc(sizeof(*unblocked), GFP_KERNEL);
-		if (!unblocked)
-			return;
-
-		unblocked->fence_id = fence->id;
-
-		spin_lock(&mcu_dev->iif_unblocked_lock);
-		list_add_tail(&unblocked->node, &mcu_dev->iif_unblocked_list);
-		schedule_work(&mcu_dev->iif_unblocked_work);
-		spin_unlock(&mcu_dev->iif_unblocked_lock);
-	}
-}
-
-static const struct iif_manager_ops iif_mgr_ops = {
-	.fence_unblocked = gxp_iif_unblocked,
-};
-
-static void gxp_iif_unblocked_work_func(struct work_struct *work)
-{
-	struct gxp_mcu_dev *mcu_dev = container_of(work, struct gxp_mcu_dev, iif_unblocked_work);
-	struct gxp_iif_unblocked *cur, *nxt;
-	LIST_HEAD(iif_unblocked_list);
-
-	spin_lock(&mcu_dev->iif_unblocked_lock);
-	list_replace_init(&mcu_dev->iif_unblocked_list, &iif_unblocked_list);
-	spin_unlock(&mcu_dev->iif_unblocked_lock);
-
-	list_for_each_entry_safe(cur, nxt, &iif_unblocked_list, node) {
-		gxp_uci_send_iif_unblock_noti(&mcu_dev->mcu.uci, cur->fence_id);
-		kfree(cur);
-	}
-}
-
-static void gxp_init_iif_unblocked_work(struct gxp_dev *gxp)
-{
-	struct gxp_mcu_dev *mcu_dev = to_mcu_dev(gxp);
-
-	INIT_LIST_HEAD(&mcu_dev->iif_unblocked_list);
-	spin_lock_init(&mcu_dev->iif_unblocked_lock);
-	INIT_WORK(&mcu_dev->iif_unblocked_work, &gxp_iif_unblocked_work_func);
-}
-
-static void gxp_cancel_iif_unblocked_work(struct gxp_dev *gxp)
-{
-	struct gxp_mcu_dev *mcu_dev = to_mcu_dev(gxp);
-	struct gxp_iif_unblocked *cur, *nxt;
-
-	cancel_work_sync(&mcu_dev->iif_unblocked_work);
-
-	/*
-	 * As the work is canceled and it will never be scheduled, we don't need to hold
-	 * @mcu_dev->iif_unblocked_lock.
-	 */
-	list_for_each_entry_safe(cur, nxt, &mcu_dev->iif_unblocked_list, node) {
-		kfree(cur);
-	}
-}
-
-static void gxp_get_embedded_iif_mgr(struct gxp_dev *gxp)
-{
-	struct iif_manager *mgr;
-
-#if HAS_TPU_EXT
-	if (gxp->tpu_dev.dev) {
-		int ret = edgetpu_ext_driver_cmd(gxp->tpu_dev.dev, EDGETPU_EXTERNAL_CLIENT_TYPE_DSP,
-						 GET_IIF_MANAGER, NULL, &mgr);
-
-		if (!ret) {
-			dev_info(gxp->dev, "Use the IIF manager of TPU driver");
-			/* Note that we shouldn't call `iif_manager_get` here. */
-			gxp->iif_mgr = mgr;
-			return;
-		}
-	}
-#endif /* HAS_TPU_EXT */
-
-	dev_info(gxp->dev, "Try to get an embedded IIF manager");
-
-	mgr = iif_manager_init(gxp->dev->of_node);
-	if (IS_ERR(mgr)) {
-		dev_warn(gxp->dev, "Failed to init an embedded IIF manager: %ld", PTR_ERR(mgr));
-		return;
-	}
-
-	gxp->iif_mgr = mgr;
-}
-
-static void gxp_get_iif_mgr(struct gxp_dev *gxp)
-{
-	struct platform_device *pdev;
-	struct device_node *node;
-	struct iif_manager *mgr;
-
-	node = of_parse_phandle(gxp->dev->of_node, "iif-device", 0);
-	if (IS_ERR_OR_NULL(node)) {
-		dev_warn(gxp->dev, "There is no iif-device node in the device tree");
-		goto get_embed;
-	}
-
-	pdev = of_find_device_by_node(node);
-	of_node_put(node);
-	if (!pdev) {
-		dev_warn(gxp->dev, "Failed to find the IIF device");
-		goto get_embed;
-	}
-
-	mgr = platform_get_drvdata(pdev);
-	if (!mgr) {
-		dev_warn(gxp->dev, "Failed to get a manager from IIF device");
-		goto put_device;
-	}
-
-	dev_info(gxp->dev, "Use the IIF manager of IIF device");
-
-	/* We don't need to call `get_device` since `of_find_device_by_node` takes a refcount. */
-	gxp->iif_dev = &pdev->dev;
-	gxp->iif_mgr = iif_manager_get(mgr);
-	return;
-
-put_device:
-	put_device(&pdev->dev);
-get_embed:
-	gxp_get_embedded_iif_mgr(gxp);
-}
-
-static void gxp_put_iif_mgr(struct gxp_dev *gxp)
-{
-	if (gxp->iif_mgr) {
-		iif_manager_put(gxp->iif_mgr);
-		gxp->iif_mgr = NULL;
-	}
-	/* NO-OP if `gxp->iif_dev` is NULL. */
-	put_device(gxp->iif_dev);
-}
-
-/* Registers IIF operators of @gxp to IIF manager. */
-static void gxp_register_iif_mgr_ops(struct gxp_dev *gxp)
-{
-	int ret;
-
-	if (!gxp->iif_mgr)
-		return;
-
-	ret = iif_manager_register_ops(gxp->iif_mgr, IIF_IP_DSP, &iif_mgr_ops, gxp);
-	if (ret) {
-		dev_warn(gxp->dev, "Failed to register IIF ops, disable IIF (ret=%d)", ret);
-		gxp_put_iif_mgr(gxp);
-	}
-}
-
-/* Unregisters IIF operators of @gxp from IIF manager. */
-static void gxp_unregister_iif_mgr_ops(struct gxp_dev *gxp)
-{
-	if (!gxp->iif_mgr)
-		return;
-	iif_manager_unregister_ops(gxp->iif_mgr, IIF_IP_DSP);
-}
-
 int gxp_mcu_platform_after_probe(struct gxp_dev *gxp)
 {
 	int ret;
@@ -473,18 +299,10 @@ int gxp_mcu_platform_after_probe(struct gxp_dev *gxp)
 	if (ret)
 		dev_warn(gxp->dev, "Failed to init devfreq framework: %d\n", ret);
 
-	gxp_get_iif_mgr(gxp);
 	gxp_usage_stats_init(gxp);
 	ret = gxp_mcu_init(gxp, gxp_mcu_of(gxp));
 	if (ret)
 		return ret;
-
-	gxp_init_iif_unblocked_work(gxp);
-	/*
-	 * We should call this after UCI is initialized since fence_unblocked operator will try to
-	 * send commands to the UCI mailbox.
-	 */
-	gxp_register_iif_mgr_ops(gxp);
 
 	return 0;
 }
@@ -494,11 +312,8 @@ void gxp_mcu_platform_before_remove(struct gxp_dev *gxp)
 	if (gxp_is_direct_mode(gxp))
 		return;
 
-	gxp_unregister_iif_mgr_ops(gxp);
-	gxp_cancel_iif_unblocked_work(gxp);
 	gxp_mcu_exit(gxp_mcu_of(gxp));
 	gxp_usage_stats_exit(gxp);
-	gxp_put_iif_mgr(gxp);
 	gxp_devfreq_exit(gxp);
 }
 

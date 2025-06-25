@@ -21,11 +21,43 @@
 
 #include "gxp-client.h"
 #include "gxp-internal.h"
+#include "gxp-iif.h"
 #include "gxp-mcu-fs.h"
 #include "gxp-mcu-telemetry.h"
 #include "gxp-mcu.h"
 #include "gxp-uci.h"
 #include "gxp.h"
+
+static int gxp_mcu_fs_send_uci_cmd(struct gxp_client *client, u64 cmd_seq, u32 flags,
+				   const u8 *opaque, u32 timeout_ms,
+				   struct gcip_fence_array *in_fences,
+				   struct gcip_fence_array *out_fences, const char *ioctl_name)
+{
+	struct gxp_dev *gxp = client->gxp;
+	int ret;
+
+	down_read(&client->semaphore);
+
+	if (!gxp_client_has_available_vd(client, ioctl_name)) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	/* Caller must hold BLOCK wakelock */
+	if (!client->has_block_wakelock) {
+		dev_err(gxp->dev, "%s requires the client hold a BLOCK wakelock\n", ioctl_name);
+		ret = -ENODEV;
+		goto out;
+	}
+
+	ret = gxp_uci_send_cmd(client, cmd_seq, flags, opaque, timeout_ms, in_fences, out_fences);
+	if (ret)
+		dev_err(gxp->dev, "Failed to request an UCI command (ret=%d)", ret);
+out:
+	up_read(&client->semaphore);
+
+	return ret;
+}
 
 static int gxp_ioctl_uci_command_compat(struct gxp_client *client,
 					struct gxp_mailbox_uci_command_compat_ioctl __user *argp)
@@ -41,11 +73,10 @@ static int gxp_ioctl_uci_command_compat(struct gxp_client *client,
 
 	cmd_seq = gcip_mailbox_inc_seq_num(mcu->uci.mbx->mbx_impl.gcip_mbx, 1);
 
-	ret = gxp_uci_create_and_send_cmd(client, cmd_seq, 0, ibuf.opaque, 0, NULL, NULL);
-	if (ret) {
-		dev_err(gxp->dev, "Failed to request an UCI command (ret=%d)", ret);
+	ret = gxp_mcu_fs_send_uci_cmd(client, cmd_seq, 0, ibuf.opaque, 0, NULL, NULL,
+				      "GXP_MAILBOX_UCI_COMMAND_COMPAT");
+	if (ret)
 		return ret;
-	}
 
 	ibuf.sequence_number = cmd_seq;
 
@@ -86,7 +117,6 @@ static int gxp_ioctl_uci_command(struct gxp_client *client,
 	struct gxp_mcu *mcu = gxp_mcu_of(client->gxp);
 	struct gxp_mailbox_uci_command_ioctl ibuf;
 	struct gcip_fence_array *in_fences, *out_fences;
-	struct dma_fence *polled_dma_fence;
 	u64 cmd_seq;
 	int ret, num_in_fences, num_out_fences;
 
@@ -115,33 +145,16 @@ static int gxp_ioctl_uci_command(struct gxp_client *client,
 		return PTR_ERR(out_fences);
 	}
 
-	/* @polled_dma_fence can be NULL if @in_fences are not DMA fences or there are no fences. */
-	polled_dma_fence = gcip_fence_array_merge_ikf(in_fences);
-	if (IS_ERR(polled_dma_fence)) {
-		ret = PTR_ERR(polled_dma_fence);
+	ret = gxp_mcu_fs_send_uci_cmd(client, cmd_seq, ibuf.flags, ibuf.opaque, ibuf.timeout_ms,
+				      in_fences, out_fences, "GXP_MAILBOX_UCI_COMMAND");
+	if (ret)
 		goto out;
-	}
-
-	ret = gxp_uci_cmd_work_create_and_schedule(polled_dma_fence, client, &ibuf, cmd_seq,
-						   in_fences, out_fences);
-	if (ret) {
-		dev_err(client->gxp->dev, "Failed to request an UCI command (ret=%d)", ret);
-		goto err_put_fence;
-	}
 
 	ibuf.sequence_number = cmd_seq;
 
 	if (copy_to_user(argp, &ibuf, sizeof(ibuf)))
 		ret = -EFAULT;
 
-err_put_fence:
-	/*
-	 * Put the reference count of the fence acqurired in gcip_fence_array_merge_ikf.
-	 * If the fence is a dma_fence_array and the callback is failed to be added,
-	 * the whole object and the array it holds will be freed.
-	 * If it is a NULL pointer, it's still safe to call this function.
-	 */
-	dma_fence_put(polled_dma_fence);
 out:
 	gcip_fence_array_put(out_fences);
 	gcip_fence_array_put(in_fences);
@@ -216,13 +229,15 @@ static int gxp_ioctl_set_device_properties(
 static int gxp_ioctl_create_iif_fence(struct gxp_client *client,
 				      struct gxp_create_iif_fence_ioctl __user *argp)
 {
+	struct gxp_dev *gxp = client->gxp;
+	struct gxp_iif *giif = gxp_mcu_of(gxp)->giif;
 	struct gxp_create_iif_fence_ioctl ibuf;
 	int fd;
 
 	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
 		return -EFAULT;
 
-	fd = gcip_fence_create_iif(client->gxp->iif_mgr, ibuf.signaler_ip, ibuf.total_signalers);
+	fd = gcip_fence_create_iif(giif->iif_mgr, ibuf.signaler_ip, ibuf.total_signalers);
 	if (fd < 0)
 		return fd;
 
@@ -269,9 +284,9 @@ out:
 static inline enum gcip_telemetry_type to_gcip_telemetry_type(u8 type)
 {
 	if (type == GXP_TELEMETRY_TYPE_LOGGING)
-		return GCIP_TELEMETRY_LOG;
+		return GCIP_TELEMETRY_TYPE_LOG;
 	else
-		return GCIP_TELEMETRY_TRACE;
+		return GCIP_TELEMETRY_TYPE_TRACE;
 }
 
 static int
@@ -284,8 +299,8 @@ gxp_ioctl_register_mcu_telemetry_eventfd(struct gxp_client *client,
 	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
 		return -EFAULT;
 
-	return gxp_mcu_telemetry_register_eventfd(
-		mcu, to_gcip_telemetry_type(ibuf.type), ibuf.eventfd);
+	return gcip_telemetry_set_event(&mcu->telemetry, to_gcip_telemetry_type(ibuf.type),
+					ibuf.eventfd);
 }
 
 static int
@@ -298,8 +313,9 @@ gxp_ioctl_unregister_mcu_telemetry_eventfd(struct gxp_client *client,
 	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
 		return -EFAULT;
 
-	return gxp_mcu_telemetry_unregister_eventfd(
-		mcu, to_gcip_telemetry_type(ibuf.type));
+	gcip_telemetry_unset_event(&mcu->telemetry, to_gcip_telemetry_type(ibuf.type));
+
+	return 0;
 }
 
 long gxp_mcu_ioctl(struct file *file, uint cmd, ulong arg)
@@ -359,12 +375,10 @@ int gxp_mcu_mmap(struct file *file, struct vm_area_struct *vma)
 
 	switch (vma->vm_pgoff << PAGE_SHIFT) {
 	case GXP_MMAP_MCU_LOG_BUFFER_OFFSET:
-		ret = gxp_mcu_telemetry_mmap_buffer(mcu, GCIP_TELEMETRY_LOG,
-						    vma);
+		ret = gcip_telemetry_mmap(&mcu->telemetry, GCIP_TELEMETRY_TYPE_LOG, vma);
 		break;
 	case GXP_MMAP_MCU_TRACE_BUFFER_OFFSET:
-		ret = gxp_mcu_telemetry_mmap_buffer(mcu, GCIP_TELEMETRY_TRACE,
-						    vma);
+		ret = gcip_telemetry_mmap(&mcu->telemetry, GCIP_TELEMETRY_TYPE_TRACE, vma);
 		break;
 	default:
 		ret = -EOPNOTSUPP; /* unknown offset */

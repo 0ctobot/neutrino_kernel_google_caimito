@@ -14,6 +14,7 @@
 #include <linux/slab.h>
 
 #include <gcip/gcip-iommu.h>
+#include <gcip/gcip-memory.h>
 
 #include "gxp-config.h"
 #include "gxp-dma.h"
@@ -72,14 +73,14 @@ static int iommu_fault_handler(struct iommu_fault *fault, void *token)
 #else /* !GXP_HAS_LAP */
 
 static int gxp_map_csrs(struct gxp_dev *gxp, struct gcip_iommu_domain *gdomain,
-			struct gxp_mapped_resource *regs)
+			struct gcip_memory *regs)
 {
-	return gcip_iommu_map(gdomain, GXP_IOVA_AURORA_TOP, gxp->regs.paddr, gxp->regs.size,
-				 GCIP_MAP_FLAGS_DMA_RW);
+	return gcip_iommu_map(gdomain, GXP_IOVA_AURORA_TOP, gxp->regs.phys_addr, gxp->regs.size,
+			      GCIP_MAP_FLAGS_DMA_RW);
 }
 
 static void gxp_unmap_csrs(struct gxp_dev *gxp, struct gcip_iommu_domain *gdomain,
-			   struct gxp_mapped_resource *regs)
+			   struct gcip_memory *regs)
 {
 	gcip_iommu_unmap(gdomain, GXP_IOVA_AURORA_TOP, gxp->regs.size);
 }
@@ -148,10 +149,10 @@ void gxp_dma_init_default_resources(struct gxp_dev *gxp)
 	unsigned int core;
 	int i;
 
-	for (i = 0; i < GXP_NUM_MAILBOXES; i++)
-		gxp->mbx[i].daddr = GXP_IOVA_MAILBOX(i);
+	for (i = 0; i < gxp->num_mailboxes_compat; i++)
+		gxp->mbx[i].dma_addr = GXP_IOVA_MAILBOX(i);
 	for (core = 0; core < GXP_NUM_CORES; core++)
-		gxp->fwbufs[core].daddr = GXP_IOVA_FIRMWARE(core);
+		gxp->fwbufs[core].dma_addr = GXP_IOVA_FIRMWARE(core);
 }
 
 int gxp_dma_domain_attach_device(struct gxp_dev *gxp, struct gcip_iommu_domain *gdomain,
@@ -199,8 +200,8 @@ int gxp_dma_map_core_resources(struct gxp_dev *gxp, struct gcip_iommu_domain *gd
 	for (i = 0; i < GXP_NUM_CORES; i++) {
 		if (!(BIT(i) & core_list))
 			continue;
-		ret = gcip_iommu_map(gdomain, gxp->mbx[i].daddr,
-				     gxp->mbx[i].paddr + MAILBOX_DEVICE_INTERFACE_OFFSET,
+		ret = gcip_iommu_map(gdomain, gxp->mbx[i].dma_addr,
+				     gxp->mbx[i].phys_addr + MAILBOX_DEVICE_INTERFACE_OFFSET,
 				     gxp->mbx[i].size, GCIP_MAP_FLAGS_DMA_RW);
 		if (ret)
 			goto err;
@@ -249,7 +250,7 @@ void gxp_dma_unmap_core_resources(struct gxp_dev *gxp, struct gcip_iommu_domain 
 	for (i = 0; i < GXP_NUM_CORES; i++) {
 		if (!(BIT(i) & core_list))
 			continue;
-		gcip_iommu_unmap(gdomain, gxp->mbx[i].daddr, gxp->mbx[i].size);
+		gcip_iommu_unmap(gdomain, gxp->mbx[i].dma_addr, gxp->mbx[i].size);
 	}
 	gxp_unmap_csrs(gxp, gdomain, &gxp->regs);
 }
@@ -430,10 +431,8 @@ int gxp_dma_alloc_coherent_buf(struct gxp_dev *gxp,
 
 	/* Allocate a coherent buffer in the default domain */
 	buf = dma_alloc_coherent(gxp->dev, size, &daddr, flag);
-	if (!buf) {
-		dev_err(gxp->dev, "Failed to allocate coherent buffer\n");
+	if (!buf)
 		return -ENOMEM;
-	}
 
 	buffer->vaddr = buf;
 	buffer->size = size;

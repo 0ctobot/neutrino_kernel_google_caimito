@@ -31,10 +31,9 @@
 #define MAILBOX_DEVICE_INTERFACE_OFFSET 0x10000
 #endif
 
-#define __wait_event_lock_irq_timeout_exclusive(wq_head, condition, lock,      \
-						timeout, state)                \
-	___wait_event(wq_head, ___wait_cond_timeout(condition), state, 1,      \
-		      timeout, spin_unlock_irq(&lock);                         \
+#define __wait_event_lock_irq_timeout_exclusive(wq_head, condition, lock, timeout, state) \
+	___wait_event(wq_head, ___wait_cond_timeout(condition), state, 1, timeout,        \
+		      spin_unlock_irq(&lock);                                             \
 		      __ret = schedule_timeout(__ret); spin_lock_irq(&lock))
 
 /*
@@ -199,8 +198,6 @@ struct gxp_mailbox {
 	spinlock_t resp_queue_lock; /* protects resp_queue */
 	unsigned long resp_queue_lock_flags; /* to store IRQ flags */
 
-	/* commands which need to wait for responses will be added to the wait_list */
-	spinlock_t wait_list_lock; /* protects wait_list */
 	/* to create our own realtime worker for handling responses */
 	struct kthread_worker response_worker;
 	struct task_struct *response_thread;

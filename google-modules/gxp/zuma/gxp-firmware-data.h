@@ -11,6 +11,8 @@
 
 #include <linux/sizes.h>
 
+#include <gcip/gcip-memory.h>
+
 #include "gxp-dma.h"
 #include "gxp-internal.h"
 #include "gxp-vd.h"
@@ -93,7 +95,7 @@ u32 gxp_fw_data_get_core_telemetry_device_status(struct gxp_dev *gxp, uint core)
  *
  * Return: The resource.
  */
-struct gxp_mapped_resource gxp_fw_data_resource(struct gxp_dev *gxp);
+struct gcip_memory gxp_fw_data_resource(struct gxp_dev *gxp);
 
 /**
  * gxp_fw_data_system_cfg() - Returns the pointer to the system config region.

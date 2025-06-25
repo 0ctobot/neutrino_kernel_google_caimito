@@ -15,6 +15,7 @@
 #include <linux/types.h>
 
 #include <gcip/gcip-iommu.h>
+#include <gcip/gcip-memory.h>
 
 #include "gxp-config.h"
 #include "gxp-internal.h"
@@ -107,8 +108,8 @@ void gxp_dma_init_default_resources(struct gxp_dev *gxp);
  * locations in their IOVA space. This function initializes all those mappings
  * for the core.
  *
- * This function must not be called until after all the `vaddr` and `size`
- * fields of every `struct gxp_mapped_resource` inside of @gxp have been
+ * This function must not be called until after all the `virt_addr` and `size`
+ * fields of every `struct gcip_memory` inside of @gxp have been
  * initialized.
  *
  * Return:

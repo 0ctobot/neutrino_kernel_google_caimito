@@ -53,6 +53,10 @@ void gxp_mailbox_chip_irq_handler(struct gxp_mailbox *mailbox)
 		intr_bits &= ~BIT(next_int);
 
 		if (handlers[next_int])
+			/*
+			 * Handler would consume all pending messages - no need to check whether the
+			 * work has been scheduled.
+			 */
 			schedule_work(handlers[next_int]);
 		else
 			dev_warn_ratelimited(mailbox->gxp->dev,

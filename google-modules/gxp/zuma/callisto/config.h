@@ -14,6 +14,9 @@
 #define DSP_FIRMWARE_DEFAULT_PREFIX "gxp_callisto_fw_core"
 #define GXP_DEFAULT_MCU_FIRMWARE "google/gxp-callisto.fw"
 
+/* Maximum size of the DSP FW */
+#define DSP_FIRMWARE_IMAGE_SIZE 0x00100000
+
 /*
  * From soc/gs/include/dt-bindings/clock/zuma.h
  *   #define ACPM_DVFS_AUR 0x0B040013
@@ -21,11 +24,12 @@
 #define AUR_DVFS_DOMAIN 19
 
 #define GXP_NUM_CORES 3
-/* three for cores, one for KCI, and one for UCI */
-#define GXP_NUM_MAILBOXES (GXP_NUM_CORES + 2)
+/* Three for cores, one for KCI, one for UCI and one for IIF */
+#define GXP_NUM_MAILBOXES (GXP_NUM_CORES + 3)
 /* Indexes of the mailbox reg in device tree */
 #define KCI_MAILBOX_ID (GXP_NUM_CORES)
 #define UCI_MAILBOX_ID (GXP_NUM_CORES + 1)
+#define IIF_MAILBOX_ID (GXP_NUM_CORES + 2)
 
 /* three for cores, one for MCU */
 #define GXP_NUM_WAKEUP_DOORBELLS (GXP_NUM_CORES + 1)
@@ -50,6 +54,7 @@
 #define GXP_WDG_DT_IRQ_INDEX 5
 #define GXP_WDG_ENABLE_BIT 0
 #define GXP_WDG_INT_CLEAR_BIT 5
+#define GXP_WDG_KEY_VALUE 0xA55AA55A
 
 #define GXP_HAS_BPM 1
 #define GXP_HAS_GEM 0

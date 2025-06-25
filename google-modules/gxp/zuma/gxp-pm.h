@@ -389,11 +389,7 @@ void gxp_pm_chip_exit(struct gxp_dev *gxp);
  * Return:
  * * true       - blk is turned off.
  */
-static inline bool gxp_pm_is_blk_down(struct gxp_dev *gxp)
-{
-	return gxp->power_mgr->aur_status ? !readl(gxp->power_mgr->aur_status) :
-					    gxp->power_mgr->curr_state == AUR_OFF;
-}
+bool gxp_pm_is_blk_down(struct gxp_dev *gxp);
 
 /**
  * gxp_pm_set_min_max_freq_limit() - Sets the [min,max] frequency range for the device.
