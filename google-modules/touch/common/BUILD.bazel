@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
-load("//build/kernel/kleaf:kernel.bzl", "kernel_module")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_uapi_headers", "kernel_module")
 
 filegroup(
     name = "headers",
@@ -12,6 +12,18 @@ filegroup(
         "//private/devices/google:__subpackages__",
         "//private/google-modules/fingerprint:__subpackages__",
         "//private/google-modules/touch:__subpackages__",
+    ],
+)
+
+ddk_uapi_headers(
+    name = "uapi_headers",
+    srcs = glob([
+        "include/uapi/**/*.h",
+    ]),
+    out = "touch.common-uapi-headers.tar.gz",
+    kernel_build = "//private/devices/google/common:kernel",
+    visibility = [
+        "//private/devices/google:__subpackages__",
     ],
 )
 

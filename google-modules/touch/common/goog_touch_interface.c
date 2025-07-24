@@ -4627,7 +4627,7 @@ static void goog_pm_resume(struct gti_pm *pm)
 		gti->lptw_track_finger = true;
 		gti->slot_bit_lptw_track = 0;
 		queue_delayed_work(gti->event_wq, &gti->lptw_cancel_delayed_work,
-				msecs_to_jiffies(20));
+				msecs_to_jiffies(40));
 	}
 
 	/*
