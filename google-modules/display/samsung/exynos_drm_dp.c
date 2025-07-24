@@ -608,8 +608,8 @@ static int dp_init_link_training_cr(struct dp_device *dp)
 	dp_info(dp, "HW configured with Rate(%d) and Lanes(%u)\n",
 		dp->hw_config.link_rate, dp->hw_config.num_lanes);
 
-	/* Configure FEC before link training */
-	dp_hw_set_fec(dp->link.fec);
+	/* Configure FEC_READY before link training */
+	dp_hw_set_fec_ready(dp->link.fec);
 
 	/* Reconfigure DP Link */
 	dp_link_configure(dp);
@@ -1110,6 +1110,9 @@ static int dp_link_up(struct dp_device *dp)
 		dp->stats.link_negotiation_failures++;
 		return -ENOLINK;
 	}
+
+	/* Post HW Configuration after Link Training */
+	dp_hw_set_fec(dp->link.fec);
 
 	mutex_unlock(&dp->training_lock);
 	return 0;

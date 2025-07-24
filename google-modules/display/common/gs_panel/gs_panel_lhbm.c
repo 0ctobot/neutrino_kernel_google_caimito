@@ -259,7 +259,7 @@ static void local_hbm_post_work(struct kthread_work *work)
 	ctx->lhbm.timestamps.next_vblank_ts = 0;
 	ctx->lhbm.frame_index = 0;
 	/* TODO: delay time might be inaccurate if refresh rate changes around here */
-	if (desc->lhbm_desc->post_cmd_delay_frames <= desc->lhbm_desc->effective_delay_frames) {
+	if (desc->lhbm_desc->post_cmd_delay_frames <= get_local_hbm_effective_delay_frames(ctx)) {
 		local_hbm_wait_and_send_post_cmd(ctx, crtc);
 		local_hbm_wait_and_notify_effectiveness(ctx, crtc);
 	} else {

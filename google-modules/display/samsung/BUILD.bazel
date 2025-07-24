@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 
-load("//build/kernel/kleaf:kernel.bzl", "kernel_module")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_uapi_headers", "kernel_module")
 
 filegroup(
     name = "headers",
@@ -17,6 +17,19 @@ filegroup(
         "//private/devices/google:__subpackages__",
         "//private/google-modules/aoc/alsa:__subpackages__",
         "//private/google-modules/touch:__subpackages__",
+    ],
+)
+
+ddk_uapi_headers(
+    name = "uapi_headers",
+    srcs = [
+        "//common:include/uapi/drm/drm_fourcc.h",
+        "//private/google-modules/display/samsung/include:uapi_headers",
+    ],
+    out = "display-samsung-uapi-headers.tar.gz",
+    kernel_build = "//private/devices/google/common:kernel",
+    visibility = [
+        "//private/devices/google:__subpackages__",
     ],
 )
 

@@ -11,3 +11,13 @@ filegroup(
         "//private/google-modules/touch:__subpackages__",
     ],
 )
+
+filegroup(
+    name = "uapi_headers",
+    srcs = glob([
+        "uapi/**/*.h",
+    ]),
+    visibility = [
+        "//private/google-modules/display/samsung:__pkg__",
+    ],
+)

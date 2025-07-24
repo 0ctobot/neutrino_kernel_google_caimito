@@ -2612,7 +2612,7 @@ static void exynos_panel_set_atc_config(struct exynos_panel *ctx,
 	exynos_atc_update(decon->dqe, &exynos_crtc_state->dqe);
 }
 
-static void exynos_panel_pre_commit_properties(
+static void exynos_panel_commit_properties(
 				struct exynos_panel *ctx,
 				struct exynos_drm_connector_state *conn_state)
 {
@@ -2752,8 +2752,6 @@ static void exynos_panel_connector_atomic_pre_commit(
 {
 	struct exynos_panel *ctx = exynos_connector_to_panel(exynos_connector);
 
-	exynos_panel_pre_commit_properties(ctx, exynos_new_state);
-
 	mutex_lock(&ctx->mode_lock);
 	if (ctx->panel_update_idle_mode_pending)
 		panel_update_idle_mode_locked(ctx, false);
@@ -2771,6 +2769,9 @@ static void exynos_panel_connector_atomic_commit(
 
 	if (!exynos_panel_func)
 		return;
+
+	/* send mipi_sync commands at the time close to the expected present time */
+	exynos_panel_commit_properties(ctx, exynos_new_state);
 
 	mutex_lock(&ctx->mode_lock);
 	if (exynos_panel_func->commit_done && ctx->current_mode)

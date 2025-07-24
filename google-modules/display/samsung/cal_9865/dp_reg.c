@@ -1418,6 +1418,14 @@ static void dp_reg_set_custom_pattern(void)
 	dp_write(SST1, PCS_TEST_PATTERN_SET2, 0x0000F83E);  // 11111000 00111110
 }
 
+static void dp_reg_set_4th_symbol(u32 en)
+{
+	dp_write_mask(SST1, PCS_DEBUG_CONTROL,
+		      FEC_DECODE_EN_4TH_SEL(en), FEC_DECODE_EN_4TH_SEL_MASK);
+	dp_write_mask(SST1, PCS_DEBUG_CONTROL,
+		      FEC_DECODE_DIS_4TH_SEL(en), FEC_DECODE_DIS_4TH_SEL_MASK);
+}
+
 static void dp_reg_set_hbr2_scrambler_reset(u32 uResetCount)
 {
 	dp_write_mask(SST1, PCS_HBR2_EYE_SR_CONTROL,
@@ -1572,6 +1580,16 @@ static void dp_reg_get_hdcp13_am0(u32 *am0, u32 *am1)
 static u32 dp_reg_get_hdcp13_key_valid(void)
 {
 	return KEY_VALID_SYNC_IN_I2C_CLK_GET(dp_read(SST1, HDCP13_KEY_VALID_STATUS));
+}
+
+static void dp_reg_set_cipher_hold_option(u32 en)
+{
+	// en is hold for DP v1.4a, !en is advance for DP v1.4
+	dp_write_mask(SST1, HDCP13_HIDDEN,
+		FEC_PM_HOLD_CIPHER_SET(en), FEC_PM_HOLD_CIPHER_MASK);
+	dp_write_mask(SST1, HDCP13_HIDDEN,
+		FEC_PM_HOLD_LINK_LINE_BOUNDARY_COUNTER_SET(en),
+		FEC_PM_HOLD_LINK_LINE_BOUNDARY_COUNTER_MASK);
 }
 
 // HDCP 2.2
@@ -2597,10 +2615,22 @@ void dp_hw_send_spd_infoframe(struct infoframe spd_infoframe)
 	dp_reg_set_spd_infoframe_send(1);
 }
 
+void dp_hw_set_fec_ready(bool en)
+{
+	dp_reg_set_fec_ready(en ? 1 : 0);
+}
+
 void dp_hw_set_fec(bool en)
 {
+	/*
+	 * In case of DP v1.4a, the HDCP cipher shall not advance
+	 * in the link symbol clock cycle carrying the FEC_PM.
+	 * And 4th Symbol Selection is required.
+	 */
+	dp_reg_set_4th_symbol(en ? 1 : 0);
+	dp_reg_set_cipher_hold_option(en ? 1 : 0);
+
 	dp_reg_set_fec_func_en(en ? 1 : 0);
-	dp_reg_set_fec_ready(en ? 1 : 0);
 }
 
 void dp_hw_set_training_pattern(dp_training_pattern pattern)
