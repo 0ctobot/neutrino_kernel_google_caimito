@@ -88,7 +88,7 @@ static void gxp_debug_dump_cache_flush(struct gxp_dev *gxp)
 	/* Debug dump carveout is currently coherent. NO-OP. */
 }
 
-static u32 gxp_read_sync_barrier_shadow(struct gxp_dev *gxp, uint index)
+__maybe_unused static u32 gxp_read_sync_barrier_shadow(struct gxp_dev *gxp, uint index)
 {
 	return gxp_read_32(gxp, GXP_REG_SYNC_BARRIER_SHADOW(index));
 }
@@ -97,7 +97,7 @@ static void gxp_get_common_registers(struct gxp_dev *gxp,
 				     struct gxp_seg_header *seg_header,
 				     struct gxp_common_registers *common_regs)
 {
-	int i;
+	__maybe_unused int i;
 
 	dev_dbg(gxp->dev, "Getting common registers\n");
 
@@ -108,6 +108,7 @@ static void gxp_get_common_registers(struct gxp_dev *gxp,
 	/* Get Aurora Top registers */
 	common_regs->aurora_revision =
 		gxp_read_32(gxp, GXP_REG_AURORA_REVISION);
+#ifndef GXP_RFW_AC_POLICY_ENABLED
 #if GXP_DUMP_INTERRUPT_POLARITY_REGISTER
 	common_regs->common_int_pol_0 =
 		gxp_read_32(gxp, GXP_REG_COMMON_INT_POL_0);
@@ -142,6 +143,7 @@ static void gxp_get_common_registers(struct gxp_dev *gxp,
 	for (i = 0; i < SYNC_BARRIER_COUNT; i++)
 		common_regs->sync_barrier[i] =
 			gxp_read_sync_barrier_shadow(gxp, i);
+#endif /* GXP_RFW_AC_POLICY_ENABLED */
 
 	dev_dbg(gxp->dev, "Done getting common registers\n");
 }

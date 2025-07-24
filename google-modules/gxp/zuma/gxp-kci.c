@@ -15,6 +15,7 @@
 #include <linux/workqueue.h>
 
 #include <gcip/gcip-memory.h>
+#include <gcip/gcip-status-code.h>
 #include <gcip/gcip-telemetry.h>
 #include <gcip/gcip-usage-stats.h>
 
@@ -520,7 +521,7 @@ enum gcip_fw_flavor gxp_kci_fw_info(struct gxp_kci *gkci,
 		gxp_mcu_mem_free_data(gkci->mcu, &buf);
 	}
 
-	if (ret == GCIP_KCI_ERROR_OK) {
+	if (ret == GCIP_STATUS_CODE_OK) {
 		switch (fw_info->fw_flavor) {
 		case GCIP_FW_FLAVOR_BL1:
 		case GCIP_FW_FLAVOR_SYSTEST:
@@ -616,7 +617,7 @@ int gxp_kci_update_usage_locked(struct gxp_kci *gkci)
 	memset(buf.virt_addr, 0, sizeof(struct gcip_usage_stats_header));
 	ret = gxp_kci_send_cmd(gkci->mbx, &cmd);
 
-	if (ret == GCIP_KCI_ERROR_OK)
+	if (ret == GCIP_STATUS_CODE_OK)
 		gxp_usage_stats_process_buffer(gxp, buf.virt_addr);
 	else if (ret != -ETIMEDOUT)
 		dev_warn_once(gxp->dev, "Failed to send GET_USAGE KCI, ret=%d", ret);

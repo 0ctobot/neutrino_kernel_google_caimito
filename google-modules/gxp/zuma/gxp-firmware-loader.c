@@ -286,6 +286,8 @@ void gxp_firmware_loader_unload(struct gxp_dev *gxp)
 		gxp_firmware_loader_unload_core_firmware(gxp);
 	}
 	mgr->is_loaded = false;
+	mgr->is_core_copied = false;
+	mgr->is_mcu_copied = false;
 	mutex_unlock(&mgr->lock);
 }
 

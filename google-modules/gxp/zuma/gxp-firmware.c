@@ -833,6 +833,7 @@ int gxp_firmware_load_core_firmware(
 {
 	uint core;
 	int ret;
+	struct gxp_firmware_loader_manager *mgr = gxp->fw_loader_mgr;
 
 	if (name_prefix == NULL)
 		name_prefix = DSP_FIRMWARE_DEFAULT_PREFIX;
@@ -843,13 +844,15 @@ int gxp_firmware_load_core_firmware(
 		ret = -EOPNOTSUPP;
 		goto error;
 	}
-	ret = gxp_firmware_load_into_memories(gxp, core_firmware);
-	if (ret)
-		goto error;
+	if (!mgr->is_core_copied) {
+		ret = gxp_firmware_load_into_memories(gxp, core_firmware);
+		if (ret)
+			goto error;
+		mgr->is_core_copied = true;
+	}
 	ret = gxp_firmware_authenticate(gxp, core_firmware);
 	if (ret)
 		goto error;
-
 	return 0;
 error:
 	for (core = 0; core < GXP_NUM_CORES; core++) {

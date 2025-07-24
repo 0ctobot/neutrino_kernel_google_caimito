@@ -13,6 +13,7 @@
 #include <gcip/gcip-fault-injection.h>
 #include <gcip/gcip-kci.h>
 #include <gcip/gcip-pm.h>
+#include <gcip/gcip-status-code.h>
 
 static int gcip_fault_inject_send_locked(struct gcip_fault_inject *injection)
 {
@@ -38,7 +39,7 @@ static int gcip_fault_inject_send_locked(struct gcip_fault_inject *injection)
 	ret = injection->send_kci(injection);
 	if (!ret) {
 		injection->fw_support_status = GCIP_FAULT_INJECT_STATUS_SUPPORTED;
-	} else if (ret == GCIP_KCI_ERROR_UNIMPLEMENTED) {
+	} else if (ret == GCIP_STATUS_CODE_UNIMPLEMENTED) {
 		injection->fw_support_status = GCIP_FAULT_INJECT_STATUS_UNSUPPORTED;
 	} else {
 		injection->fw_support_status = GCIP_FAULT_INJECT_STATUS_ERROR;

@@ -19,6 +19,7 @@
 #include <gcip/gcip-iommu-reserve.h>
 #include <gcip/gcip-iommu.h>
 #include <gcip/gcip-memory.h>
+#include <gcip/gcip-status-code.h>
 
 #include "gxp-config.h"
 #include "gxp-core-telemetry.h"
@@ -1747,7 +1748,7 @@ void gxp_vd_release_vmbox(struct gxp_dev *gxp, struct gxp_virtual_device *vd)
 
 	if (!ret)
 		goto out;
-	if (ret > 0 && KCI_RETURN_GET_ERROR_CODE(ret) == GCIP_KCI_ERROR_ABORTED) {
+	if (ret > 0 && KCI_RETURN_GET_ERROR_CODE(ret) == GCIP_STATUS_CODE_ABORTED) {
 		core_list = KCI_RETURN_GET_CORE_LIST(ret);
 		dev_err(gxp->dev,
 			"Firmware failed to gracefully release a VMBox for client %d, core_list=%d",

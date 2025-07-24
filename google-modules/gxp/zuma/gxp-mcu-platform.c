@@ -13,9 +13,12 @@
 #include <linux/of.h>
 #include <linux/platform_device.h>
 
+#include <gcip/gcip-status-code.h>
+
 #include "gxp-config.h"
 #include "gxp-devfreq.h"
 #include "gxp-internal.h"
+#include "gxp-lpm.h"
 #include "gxp-mcu-fs.h"
 #include "gxp-mcu-platform.h"
 #include "gxp-mcu.h"
@@ -53,7 +56,7 @@ static int allocate_vmbox(struct gxp_dev *gxp, struct gxp_virtual_device *vd)
 		if (ret > 0) {
 			dev_err(gxp->dev, "Received GCIP_KCI_CODE_ALLOCATE_VMBOX error code: %u.",
 				ret);
-			ret = gcip_kci_error_to_errno(gxp->dev, ret);
+			ret = gcip_status_code_convert_to_errno(ret);
 		}
 		dev_err(gxp->dev, "Failed to allocate VMBox for client %d, TPU client %d: %d.",
 			client_id, vd->tpu_client_id, ret);
@@ -136,16 +139,16 @@ static int gxp_mcu_pm_after_blk_on(struct gxp_dev *gxp)
 	return gxp_mcu_firmware_run(mcu_fw);
 }
 
-static void gxp_mcu_pm_before_blk_off(struct gxp_dev *gxp)
+static int gxp_mcu_pm_before_blk_off(struct gxp_dev *gxp)
 {
 	struct gxp_kci *kci = &(gxp_mcu_of(gxp)->kci);
 	struct gxp_mcu_firmware *mcu_fw = gxp_mcu_firmware_of(gxp);
 
 	if (gxp_is_direct_mode(gxp))
-		return;
-	if (mcu_fw->status == GCIP_FW_VALID)
+		return 0;
+	if (mcu_fw->status == GCIP_FW_VALID && gxp_lpm_is_powered(gxp, CORE_TO_PSM(GXP_REG_MCU_ID)))
 		gxp_kci_update_usage_locked(kci);
-	gxp_mcu_firmware_stop(mcu_fw);
+	return gxp_mcu_firmware_stop(mcu_fw);
 }
 
 #if HAS_TPU_EXT

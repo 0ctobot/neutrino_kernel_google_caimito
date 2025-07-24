@@ -540,6 +540,9 @@ void gxp_iif_send_unblock_notification(struct gxp_iif *giif, int iif_id)
 
 void gxp_iif_enable_iif_mbox(struct gxp_iif *giif)
 {
+	if (!giif->use_iif_mbox)
+		return;
+
 	spin_lock(&giif->enable_iif_mbox_lock);
 	giif->enable_iif_mbox = true;
 	spin_unlock(&giif->enable_iif_mbox_lock);
@@ -547,6 +550,9 @@ void gxp_iif_enable_iif_mbox(struct gxp_iif *giif)
 
 void gxp_iif_disable_iif_mbox(struct gxp_iif *giif)
 {
+	if (!giif->use_iif_mbox)
+		return;
+
 	spin_lock(&giif->enable_iif_mbox_lock);
 	giif->enable_iif_mbox = false;
 	spin_unlock(&giif->enable_iif_mbox_lock);

@@ -31,6 +31,13 @@ struct gxp_firmware_loader_manager {
 	char *mcu_firmware_name;
 #endif
 	bool is_loaded;
+	/* Flags to track if fw is copied to DRAM. */
+	/*
+	 * Note: if firmware load attempt fails due to corrupted firmware
+	 * binary, there is no way to update the binary until driver is re-inserted.
+	 */
+	bool is_core_copied;
+	bool is_mcu_copied;
 	/* Protects above fields */
 	struct mutex lock;
 };

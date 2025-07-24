@@ -102,6 +102,21 @@ enum gcip_iommu_mapping_type {
 	GCIP_IOMMU_MAPPING_DMA_BUF,
 };
 
+/**
+ * enum gcip_map_debug_flags - Mapping status flags for debugging, noting various attributes of the
+ *                             mapping used for diagnosis of access problems.
+ * GCIP_MAP_DEBUG_COW: VMA is copy-on-write, writeable mappings may have made a copy of pages
+ * GCIP_MAP_DEBUG_OVRRD_RDDIR: map direction override to read-only, writable page pin failed
+ * GCIP_MAP_DEBUG_VMA_NF: VMA for host addr not found, so initially assumed writeable by default
+ * GCIP_MAP_DEBUG_ASSUME_RDONLY: writable page pin failed, assuming read-only
+ */
+enum gcip_map_debug_flags {
+	GCIP_MAP_DEBUG_COW = 0x1,
+	GCIP_MAP_DEBUG_OVRRD_RDDIR = 0x2,
+	GCIP_MAP_DEBUG_VMA_NF = 0x4,
+	GCIP_MAP_DEBUG_ASSUME_RDONLY = 0x8,
+};
+
 /* Operaters for `struct gcip_iommu_mapping`. */
 struct gcip_iommu_mapping_ops {
 	/*
@@ -145,6 +160,7 @@ struct gcip_iommu_mapping {
 	struct sg_table *sgt;
 	enum dma_data_direction dir;
 	u64 gcip_map_flags;
+	enum gcip_map_debug_flags map_debug_flags;
 	/*
 	 * TODO(b/302510715): Use another wrapper struct to contain this because it is used in
 	 *                    buffer mapping only.

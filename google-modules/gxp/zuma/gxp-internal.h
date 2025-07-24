@@ -245,9 +245,11 @@ struct gxp_dev {
 	 *
 	 * This function is called with holding gcip_pm lock.
 	 *
+	 * Return -EAGAIN will schedule a retry for gcip_pm_put.
+	 *
 	 * This callback is optional.
 	 */
-	void (*pm_before_blk_off)(struct gxp_dev *gxp);
+	int (*pm_before_blk_off)(struct gxp_dev *gxp);
 	/*
 	 * Called in gxp_map_tpu_mbx_queue(), after the TPU mailbox buffers are mapped.
 	 *

@@ -18,7 +18,6 @@
 #include <linux/kref.h>
 #include <linux/of.h>
 #include <linux/rwsem.h>
-#include <linux/spinlock.h>
 #include <linux/types.h>
 
 #include <iif/iif-fence-table.h>

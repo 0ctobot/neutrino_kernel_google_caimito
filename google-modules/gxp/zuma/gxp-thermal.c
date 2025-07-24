@@ -9,6 +9,7 @@
 #include <linux/minmax.h>
 
 #include <gcip/gcip-pm.h>
+#include <gcip/gcip-status-code.h>
 #include <gcip/gcip-thermal.h>
 
 #include "gxp-config.h"
@@ -43,7 +44,7 @@ static int gxp_thermal_set_rate(void *data, unsigned long rate)
 		if (ret > 0) {
 			dev_err(gxp->dev,
 				"Received GCIP_KCI_CODE_NOTIFY_THROTTLING error code: %u.", ret);
-			ret = gcip_kci_error_to_errno(gxp->dev, ret);
+			ret = gcip_status_code_convert_to_errno(ret);
 		}
 #endif /* GXP_HAS_MCU */
 	} else {
@@ -75,7 +76,7 @@ static int gxp_thermal_control(void *data, bool enable)
 		if (ret > 0) {
 			dev_err(gxp->dev, "Received GCIP_KCI_CODE_THERMAL_CONTROL error code: %u.",
 				ret);
-			ret = gcip_kci_error_to_errno(gxp->dev, ret);
+			ret = gcip_status_code_convert_to_errno(ret);
 		}
 		dev_err(gxp->dev, "Error on %s thermal throttling: %d.\n",
 			enable ? "enabling" : "disabling", ret);

@@ -231,6 +231,7 @@ int gxp_mcu_firmware_load(struct gxp_dev *gxp, char *fw_name,
 	struct device *dev = gxp->dev;
 	const struct gcip_image_config *imgcfg;
 	size_t size;
+	struct gxp_firmware_loader_manager *mgr = gxp->fw_loader_mgr;
 
 	mutex_lock(&mcu_fw->lock);
 	if (mcu_fw->status == GCIP_FW_LOADING ||
@@ -308,7 +309,11 @@ int gxp_mcu_firmware_load(struct gxp_dev *gxp, char *fw_name,
 					   mcu_fw->dynamic_fw_buffer->sgt->orig_nents,
 					   DMA_TO_DEVICE);
 	} else {
-		memcpy(mcu_fw->image_buf.virt_addr, (*fw)->data + GCIP_FW_HEADER_SIZE, size);
+		if (!mgr->is_mcu_copied) {
+			memcpy(mcu_fw->image_buf.virt_addr, (*fw)->data + GCIP_FW_HEADER_SIZE,
+			       size);
+			mgr->is_mcu_copied = true;
+		}
 	}
 
 out:
@@ -466,11 +471,11 @@ static int gxp_mcu_firmware_rescue(struct gxp_dev *gxp)
 	return ret;
 }
 
-static void gxp_mcu_firmware_stop_locked(struct gxp_mcu_firmware *mcu_fw)
+static int gxp_mcu_firmware_stop_locked(struct gxp_mcu_firmware *mcu_fw)
 {
 	struct gxp_dev *gxp = mcu_fw->gxp;
 	struct gxp_mcu *mcu = container_of(mcu_fw, struct gxp_mcu, fw);
-	int ret;
+	int ret = 0;
 
 	lockdep_assert_held(&mcu_fw->lock);
 
@@ -488,9 +493,16 @@ static void gxp_mcu_firmware_stop_locked(struct gxp_mcu_firmware *mcu_fw)
 	 */
 	gxp_kci_disable_rkci_ack(&mcu->kci);
 
-	ret = gxp_kci_shutdown(&mcu->kci);
-	if (ret)
-		dev_warn(gxp->dev, "KCI shutdown failed: %d", ret);
+	/*
+	 * As firmware stop can be called repeatedly by power down retry mechanism, MCU may transit
+	 * to PG state in any of earlier tries. Sending a KCI may wakeup the MCU again from PG
+	 * state, hence check if MCU is already in PG.
+	 */
+	if (gxp_lpm_is_powered(gxp, CORE_TO_PSM(GXP_REG_MCU_ID))) {
+		ret = gxp_kci_shutdown(&mcu->kci);
+		if (ret)
+			dev_warn(gxp->dev, "KCI shutdown failed: %d", ret);
+	}
 
 	/* TODO(b/296980539): revert this change after the bug is fixed. */
 #if IS_ENABLED(CONFIG_GXP_GEM5)
@@ -500,8 +512,10 @@ static void gxp_mcu_firmware_stop_locked(struct gxp_mcu_firmware *mcu_fw)
 	 * Waits for MCU transiting to PG state. If KCI shutdown was failed above (ret != 0), it
 	 * will force to PG state.
 	 */
-	if (!wait_for_pg_state_shutdown_locked(gxp, /*force=*/ret))
-		dev_warn(gxp->dev, "Failed to transit MCU to PG state after KCI shutdown");
+	ret = wait_for_pg_state_shutdown_locked(gxp, /*force=*/ret);
+	if (!ret)
+		dev_warn(gxp->dev,
+			 "Failed to transit MCU to PG state after KCI shutdown, or error with GSA");
 #endif /* IS_ENABLED(CONFIG_GXP_GEM5) */
 
 	/* To test the case of the MCU FW sending FW_CRASH RKCI in the middle. */
@@ -530,6 +544,8 @@ static void gxp_mcu_firmware_stop_locked(struct gxp_mcu_firmware *mcu_fw)
 	 */
 	gxp_kci_enable_rkci_ack(&mcu->kci);
 	gxp_kci_enable_irq_handler(&mcu->kci);
+
+	return ret ? 0 : -EAGAIN;
 }
 
 /*
@@ -898,11 +914,14 @@ int gxp_mcu_firmware_run(struct gxp_mcu_firmware *mcu_fw)
 	return ret;
 }
 
-void gxp_mcu_firmware_stop(struct gxp_mcu_firmware *mcu_fw)
+int gxp_mcu_firmware_stop(struct gxp_mcu_firmware *mcu_fw)
 {
+	int ret;
+
 	mutex_lock(&mcu_fw->lock);
-	gxp_mcu_firmware_stop_locked(mcu_fw);
+	ret = gxp_mcu_firmware_stop_locked(mcu_fw);
 	mutex_unlock(&mcu_fw->lock);
+	return ret;
 }
 
 void gxp_mcu_firmware_crash_handler(struct gxp_dev *gxp,

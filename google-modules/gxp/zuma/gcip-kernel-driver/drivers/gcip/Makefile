@@ -26,6 +26,7 @@ gcip-objs		:= gcip-alloc-helper.o \
 			   gcip-pm.o \
 			   gcip-resource-accessor.o \
 			   gcip-slc.o \
+			   gcip-status-code.o \
 			   gcip-telemetry.o \
 			   gcip-thermal.o \
 			   gcip-usage-stats.o

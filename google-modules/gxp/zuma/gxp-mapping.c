@@ -114,6 +114,13 @@ struct gxp_mapping *gxp_mapping_create(struct gxp_dev *gxp, struct gcip_iommu_re
 		goto error_free_mapping;
 	}
 
+	if (dir != mapping->gcip_mapping->dir)
+		dev_warn_ratelimited(
+			gxp->dev,
+			"Map buffer direction overridden to dir: %#x (iova = %#llx, size = %zx) ",
+			mapping->gcip_mapping->dir, mapping->gcip_mapping->device_address,
+			mapping->gcip_mapping->size);
+
 	refcount_set(&mapping->refcount, 1);
 	mutex_init(&mapping->sync_lock);
 	mutex_init(&mapping->vlock);

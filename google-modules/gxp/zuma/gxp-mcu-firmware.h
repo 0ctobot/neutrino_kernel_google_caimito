@@ -73,8 +73,10 @@ int gxp_mcu_firmware_run(struct gxp_mcu_firmware *mcu_fw);
 
 /*
  * Stops the running MCU firmware.
+ *
+ * Returns 0 on success, -EAGAIN on errors while ensuring MCU in PG state.
  */
-void gxp_mcu_firmware_stop(struct gxp_mcu_firmware *mcu_fw);
+int gxp_mcu_firmware_stop(struct gxp_mcu_firmware *mcu_fw);
 
 /*
  * Send shutdown command to GSA.

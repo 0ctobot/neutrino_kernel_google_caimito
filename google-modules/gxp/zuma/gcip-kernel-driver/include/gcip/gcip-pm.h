@@ -9,9 +9,15 @@
 #define __GCIP_PM_H__
 
 #include <linux/atomic.h>
+#include <linux/bitops.h>
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/workqueue.h>
+
+enum gcip_pm_flags {
+	/* Get/put is for a "suspendable" power up, system suspend allowed. */
+	GCIP_PM_SUSPENDABLE = BIT(0),
+};
 
 struct gcip_pm {
 	struct device *dev;
@@ -22,6 +28,12 @@ struct gcip_pm {
 	struct mutex lock;
 	/* Power up counter. Protected by @lock */
 	int count;
+	/*
+	 * Suspendable power up counter. This many power up counts allow system suspend; if equal
+	 * to @count then all power ups are suspendable and system suspend may proceed.
+	 * Protected by @lock.
+	 */
+	int suspendable_count;
 	/* Flag indicating a deferred power down is pending. Protected by @lock */
 	bool power_down_pending;
 	/* The worker to asynchronously call gcip_pm_put(). */
@@ -92,10 +104,21 @@ int gcip_pm_get_if_powered(struct gcip_pm *pm, bool blocking);
 
 /*
  * Increases @pm->count and powers up the device if previous @pm->count was zero.
+ * The "suspendable power up" count is not increased, and system suspend will be rejected while
+ * the power up remains in effect.
  *
  * Returns 0 on success; otherwise negative error values.
  */
 int gcip_pm_get(struct gcip_pm *pm);
+
+/*
+ * Increases @pm->count and powers up the device if previous @pm->count was zero.
+ * Passes @flags that customize power up behavior:
+ *    GCIP_PM_SUSPENDABLE: The "suspendable power up" count is increased; system suspend is allowed
+ *                         if all current power up requests are suspendable.
+ * Returns 0 on success; otherwise negative error values.
+ */
+int gcip_pm_get_flags(struct gcip_pm *pm, enum gcip_pm_flags flags);
 
 /*
  * Decreases @pm->count and powers off the device if @pm->count reaches zero.
@@ -103,6 +126,16 @@ int gcip_pm_get(struct gcip_pm *pm);
  * GCIP_ASYNC_POWER_DOWN_RETRY_DELAY ms.
  */
 void gcip_pm_put(struct gcip_pm *pm);
+
+/*
+ * Decreases @pm->count and powers off the device if @pm->count reaches zero.
+ * If .power_down fails, async work will be scheduled to retry after
+ * GCIP_ASYNC_POWER_DOWN_RETRY_DELAY ms.
+ * Passes @flags that customize power down behavior:
+ *    GCIP_PM_SUSPENDABLE: This power down matches a previous "suspendable power up", also decrement
+ *                         the suspendable power up count.
+ */
+void gcip_pm_put_flags(struct gcip_pm *pm, enum gcip_pm_flags flags);
 
 /* Schedules an asynchronous job to execute gcip_pm_put(). */
 void gcip_pm_put_async(struct gcip_pm *pm);
@@ -118,6 +151,14 @@ bool gcip_pm_is_powered(struct gcip_pm *pm);
 
 /* Shuts down the device if @pm->count equals to 0 or @force is true. */
 void gcip_pm_shutdown(struct gcip_pm *pm, bool force);
+
+/*
+ * Checks if device is powered down and can be suspended.
+ * @count is current power count.
+ *
+ * Returns true, if device can be suspended, false otherwise.
+ */
+bool gcip_pm_suspendable_locked(struct gcip_pm *pm, int *count);
 
 /* Make sure @pm->lock is held. */
 static inline void gcip_pm_lockdep_assert_held(struct gcip_pm *pm)

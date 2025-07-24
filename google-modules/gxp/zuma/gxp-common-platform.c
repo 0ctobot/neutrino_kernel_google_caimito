@@ -2155,17 +2155,24 @@ static int gxp_platform_suspend(struct device *dev)
 	struct gcip_pm *pm = gxp->power_mgr->pm;
 	struct gxp_client *client;
 	int count;
+	bool suspendable;
 
 	if (!gcip_pm_trylock(pm)) {
 		dev_warn_ratelimited(gxp->dev, "cannot suspend during power state transition\n");
 		return -EAGAIN;
 	}
-	count = gcip_pm_get_count(pm);
+
+	suspendable = gcip_pm_suspendable_locked(pm, &count);
 	gcip_pm_unlock(pm);
-	if (!count) {
+
+	if (suspendable) {
 		dev_info_ratelimited(gxp->dev, "suspended\n");
 		return 0;
 	}
+
+	/* Not suspendable but count 0 means there is pending power down transition. */
+	if (!count)
+		return -EAGAIN;
 
 	dev_warn_ratelimited(gxp->dev, "cannot suspend with power up count = %d\n", count);
 	/* Log clients currently holding a wakelock */
