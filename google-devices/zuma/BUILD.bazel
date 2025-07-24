@@ -180,6 +180,15 @@ kernel_module(
 device_build(
     name = "zuma_base",
     build_configs = ["build.config.zuma"],
+    ddk_uapi_headers = [
+        # keep sorted
+        "//private/google-modules/aoc/alsa:uapi_headers",
+        "//private/google-modules/display/samsung:uapi_headers",
+        "//private/google-modules/soc/gs:exynos_uapi_headers",
+        "//private/google-modules/soc/gs:misc_uapi_headers",
+        "//private/google-modules/touch/common:uapi_headers",
+        "//private/google-modules/video/gchips:uapi_headers",
+    ],
     defconfig_fragments = ["zuma_defconfig"],
     ext_modules = [
         # keep sorted
