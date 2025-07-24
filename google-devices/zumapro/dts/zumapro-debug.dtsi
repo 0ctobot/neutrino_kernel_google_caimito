@@ -531,6 +531,11 @@
 		};
 	};
 
+	trbe {
+		compatible = "arm,trace-buffer-extension";
+		interrupts = <GIC_PPI 0 IRQ_TYPE_LEVEL_HIGH 0>;
+	};
+
 	funnel0 {
 		compatible = "arm,coresight-static-funnel";
 
