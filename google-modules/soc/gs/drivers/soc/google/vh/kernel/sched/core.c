@@ -379,7 +379,8 @@ static void set_performance_inheritance(struct task_struct *p, struct task_struc
 void vh_binder_set_priority_pixel_mod(void *data, struct binder_transaction *t,
 	struct task_struct *p)
 {
-	get_vendor_task_struct(p)->is_binder_task = true;
+	if (!t->is_nested)
+		get_vendor_task_struct(p)->is_binder_task = true;
 
 	if (!t->from)
 		return;

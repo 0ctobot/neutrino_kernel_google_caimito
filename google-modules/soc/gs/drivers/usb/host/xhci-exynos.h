@@ -38,6 +38,10 @@ struct xhci_hcd_exynos {
 	u32 			portsc_control_priority;
 	enum usb_port_state	port_state;
 	bool			port_ctrl_allowed;
+	bool			usb3_phy_control;
+
+	/* remote wakeup */
+	bool			rewa_supported;
 };
 
 struct xhci_exynos_priv {
@@ -81,4 +85,5 @@ void register_bus_suspend_callback(void (*callback)(void *bus_suspend_payload, b
 						    bool suspend),
 				   void *data);
 
+int usb_power_notify_control(int on);
 #endif	/* _XHCI_EXYNOS_H */

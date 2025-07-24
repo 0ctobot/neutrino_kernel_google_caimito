@@ -2713,7 +2713,7 @@ void rvh_set_user_nice_locked_pixel_mod(void *data, struct task_struct *p, long 
 	}
 }
 
-void rvh_setscheduler_pixel_mod(void *data, struct task_struct *p)
+void rvh_setscheduler_prio_pixel_mod(void *data, struct task_struct *p)
 {
 	struct vendor_task_struct *vp = get_vendor_task_struct(p);
 	int group = get_vendor_group(p);
@@ -2751,6 +2751,9 @@ static struct task_struct *detach_important_task(struct rq *src_rq, int dst_cpu)
 			continue;
 
 		if (task_on_cpu(src_rq, p))
+			continue;
+
+		if (is_binder_task(p))
 			continue;
 
 		/*

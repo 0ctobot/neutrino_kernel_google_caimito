@@ -64,6 +64,7 @@ int dwc3_otg_start_gadget(struct dwc3_otg *dotg, int on);
 void dwc3_otg_gadget_handler(struct usb_gadget *gadget, bool status);
 enum usb_role dwc3_exynos_wait_role(struct dwc3_otg *dotg);
 void dwc3_exynos_set_role(struct dwc3_otg *dotg);
+int usb_power_notify_control(int on);
 
 extern void __iomem *phycon_base_addr;
 extern int exynos_usbdrd_pipe3_enable(struct phy *phy);

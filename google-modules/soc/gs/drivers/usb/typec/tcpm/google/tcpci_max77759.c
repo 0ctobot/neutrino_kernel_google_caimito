@@ -352,8 +352,12 @@ static ssize_t cc_toggle_enable_store(struct device *dev, struct device_attribut
 	struct max77759_plat *chip = i2c_get_clientdata(to_i2c_client(dev));
 	int val, ret;
 
-	if (kstrtoint(buf, 10, &val) < 0)
+	__pm_stay_awake(chip->cc_toggle_ws);
+
+	if (kstrtoint(buf, 10, &val) < 0) {
+		__pm_relax(chip->cc_toggle_ws);
 		return -EINVAL;
+	}
 
 	logbuffer_logk(chip->log, LOGLEVEL_INFO, "Requesting CC toggle, cc state: curr=%s next=%s",
 		       !chip->toggle_disable_status ? "on" : "off", val ? "on" : "off");
@@ -364,6 +368,7 @@ static ssize_t cc_toggle_enable_store(struct device *dev, struct device_attribut
 	if (ret < 0)
 		dev_err(chip->dev, "Cannot set TOGGLE DISABLE=%d (%d)\n", val, ret);
 
+	__pm_relax(chip->cc_toggle_ws);
 	return count;
 }
 static DEVICE_ATTR_RW(cc_toggle_enable);
@@ -3355,6 +3360,9 @@ static int max77759_probe(struct i2c_client *client,
 	const char *ovp_status;
 	enum of_gpio_flags flags;
 	u32 first_src_pdo = 0;
+	const char *ws_name_prefix = "cc_toggle-";
+	ssize_t ws_name_len;
+	char *ws_name;
 
 	ret = max77759_register_vendor_hooks(client);
 	if (ret)
@@ -3738,6 +3746,21 @@ static int max77759_probe(struct i2c_client *client,
 	if (ret)
 		goto remove_files;
 #endif
+
+	ws_name_len = strlen(ws_name_prefix) + strlen(dev_name(chip->dev)) + 1;
+	ws_name = devm_kzalloc(chip->dev, ws_name_len, GFP_KERNEL);
+	if (!ws_name) {
+		ret = -ENOMEM;
+		goto remove_files;
+	}
+
+	snprintf(ws_name, ws_name_len, "%s%s", ws_name_prefix, dev_name(chip->dev));
+	chip->cc_toggle_ws = wakeup_source_register(chip->dev, ws_name);
+	if (!chip->cc_toggle_ws) {
+		dev_err(chip->dev, "TCPCI: Failed to create wakeup source");
+		goto remove_files;
+	}
+
 	return 0;
 
 remove_files:
@@ -3783,6 +3806,7 @@ static void max77759_remove(struct i2c_client *client)
 #ifdef CONFIG_DEBUG_FS
 	debugfs_remove_recursive(chip->dentry);
 #endif
+	wakeup_source_unregister(chip->cc_toggle_ws);
 	for (i = 0; max77759_device_attrs[i]; i++)
 		device_remove_file(&client->dev, max77759_device_attrs[i]);
 	if (!IS_ERR_OR_NULL(chip->tcpci))

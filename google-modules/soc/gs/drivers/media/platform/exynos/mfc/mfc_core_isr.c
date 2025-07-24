@@ -413,6 +413,11 @@ static struct mfc_buf *__mfc_handle_frame_output_del(struct mfc_core *core,
 			mutex_unlock(&ctx->drc_wait_mutex);
 		}
 
+		if (mfc_core_get_crop_info_change()) {
+			mfc_core_dec_get_crop_info(core, ctx);
+			mfc_set_mb_flag(dst_mb, MFC_FLAG_DISP_RES_CHANGE);
+		}
+
 		if (dec->black_bar_updated) {
 			mfc_set_mb_flag(dst_mb, MFC_FLAG_BLACKBAR_DETECT);
 			mfc_debug(3, "[BLACKBAR] black bar detected\n");

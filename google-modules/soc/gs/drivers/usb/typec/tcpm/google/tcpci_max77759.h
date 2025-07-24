@@ -231,6 +231,8 @@ struct max77759_plat {
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *dentry;
 #endif
+
+	struct wakeup_source *cc_toggle_ws;
 };
 
 /*

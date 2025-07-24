@@ -149,7 +149,7 @@ static void iommu_alloc_insert_iova(void *unused, struct iova_domain *iovad, uns
 		return;
 	}
 
-	*ret = __alloc_and_insert_iova_best_fit(iovad, size, limit_pfn + 1, new_iova, size_aligned);
+	*ret = __alloc_and_insert_iova_best_fit(iovad, size, limit_pfn, new_iova, size_aligned);
 }
 
 static void iommu_iovad_init_alloc_algo(void *unused, struct device *dev, struct iova_domain *iovad)

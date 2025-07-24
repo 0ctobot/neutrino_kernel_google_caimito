@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
+load("//build/kernel/kleaf:kernel.bzl", "ddk_uapi_headers")
+
 package(
     default_visibility = [
         "//private/devices/google:__subpackages__",
@@ -81,6 +83,26 @@ filegroup(
         "//private/devices/google:__subpackages__",
         "//private/google-modules:__subpackages__",
     ],
+)
+
+ddk_uapi_headers(
+    name = "misc_uapi_headers",
+    srcs = [
+        "include/uapi/misc/crashinfo.h",
+    ],
+    out = "misc-uapi-headers.tar.gz",
+    kernel_build = "//private/devices/google/common:kernel",
+    visibility = ["//private/devices/google:__subpackages__"],
+)
+
+ddk_uapi_headers(
+    name = "exynos_uapi_headers",
+    srcs = [
+        "include/uapi/linux/videodev2_exynos_media.h",
+    ],
+    out = "exynos-uapi-headers.tar.gz",
+    kernel_build = "//private/devices/google/common:kernel",
+    visibility = ["//private/devices/google:__subpackages__"],
 )
 
 exports_files([

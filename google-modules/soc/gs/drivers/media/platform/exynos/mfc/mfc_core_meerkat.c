@@ -1287,6 +1287,7 @@ void mfc_core_meerkat_worker(struct work_struct *work)
 			mfc_core_err("MFC driver waited for upward of %dsec\n",
 					max_tick_cnt);
 			core->logging_data->cause |= (1 << MFC_CAUSE_NO_SCHEDULING);
+			return;
 		} else {
 			mfc_core_err("interrupt(%d) is occurred, wait scheduling\n", cmd);
 			return;

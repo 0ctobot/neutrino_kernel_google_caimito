@@ -367,6 +367,11 @@ static void xhci_exynos_scan_roothub(struct xhci_hcd_exynos *xhci_exynos,
 
 			if (!child_udev->config->interface[0]) {
 				*suspend = false;
+
+				if (child_udev->speed >= USB_SPEED_SUPER)
+					xhci_exynos->port_state = PORT_USB3;
+				else
+					xhci_exynos->port_state = PORT_USB2;
 				break;
 			}
 
@@ -472,6 +477,7 @@ static void xhci_exynos_set_port(struct usb_device *udev, unsigned long action)
 	struct xhci_hcd_exynos *xhci_exynos = priv->xhci_exynos;
 	struct device *dev = &udev->dev;
 	int check_port;
+	int ret;
 
 	if (!xhci_exynos) {
 		dev_err(dev, "Couldn't get exynos xhci!\n");
@@ -487,6 +493,12 @@ static void xhci_exynos_set_port(struct usb_device *udev, unsigned long action)
 	case PORT_EMPTY:
 		dev_dbg(dev, "Port check empty\n");
 		xhci_exynos->is_otg_only = 1;
+		if (!xhci_exynos->usb3_phy_control) {
+			ret = usb_power_notify_control(1);
+			xhci_exynos->usb3_phy_control = true;
+			if (ret)
+				dev_warn(dev, "usb power control request ignored/rejected: %d\n", ret);
+		}
 		if (xhci_exynos->port_ctrl_allowed)
 			xhci_exynos_port_power_set(xhci_exynos, 1, 1);
 		break;
@@ -495,6 +507,8 @@ static void xhci_exynos_set_port(struct usb_device *udev, unsigned long action)
 		xhci_exynos->is_otg_only = 0;
 		if (xhci_exynos->port_ctrl_allowed)
 			xhci_exynos_port_power_set(xhci_exynos, 0, 1);
+		usb_power_notify_control(0);
+		xhci_exynos->usb3_phy_control = false;
 		break;
 	case PORT_USB3:
 		xhci_exynos->is_otg_only = 0;
@@ -774,6 +788,7 @@ static int xhci_exynos_probe(struct platform_device *pdev)
 	xhci_exynos->usb3_portsc = hcd->regs + PORTSC_OFFSET;
 	xhci_exynos->is_otg_only = 1;
 	xhci_exynos->port_state = PORT_EMPTY;
+	xhci_exynos->usb3_phy_control = true;
 
 	xhci_exynos_register_notify();
 
