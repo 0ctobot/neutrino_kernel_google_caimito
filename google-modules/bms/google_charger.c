@@ -2764,7 +2764,7 @@ update_charger:
 	pr_debug("MSC_CHG disable_charging=%d, update_interval=%d\n",
 		 chg_drv->disable_charging, update_interval);
 
-	if (!chg_drv->disable_charging && update_interval > 0) {
+	if (!chg_drv->disable_charging && (update_interval > 0 || online_changed)) {
 
 		/* msc_update_charger_cb will write to charger and reschedule */
 		gvotable_cast_int_vote(chg_drv->msc_interval_votable,
@@ -4591,6 +4591,8 @@ static void chg_update_charging_policy(struct chg_drv *chg_drv, const int value)
 		   chg_drv->charging_policy == CHARGING_POLICY_VOTE_LONGLIFE) {
 		chg_drv->charge_stop_level = DEFAULT_CHARGE_STOP_LEVEL;
 		chg_drv->charge_start_level = DEFAULT_CHARGE_START_LEVEL;
+		/* reset charging policy */
+		chg_update_charging_state(chg_drv, false, false);
 	}
 
 	chg_drv->charging_policy = value;

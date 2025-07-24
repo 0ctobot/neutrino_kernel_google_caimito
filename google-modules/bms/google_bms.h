@@ -38,7 +38,7 @@ struct device_node;
 #define GBMS_AACR_DATA_MAX 10
 #define GBMS_AAFV_DATA_MAX 16
 #define GBMS_AAFV_VOLTAGE_OFFSET_SCALE 1000
-#define GBMS_AACT_NB_LIMITS_MAX 10
+#define GBMS_AACT_NB_LIMITS_MAX 5
 #define GBMS_AACT_PROFILE_MAX 100
 
 struct gbms_chg_profile {
@@ -92,10 +92,43 @@ struct gbms_chg_profile {
 	int aact_idx;
 	bool aact_init_profile;
 	bool aact_update_profile;
+	bool aact_support_multiple_profiles;
+	bool aact_load_chg_ecc;
 	u32 *aact_cccm_limits;
 
 	bool debug_chg_profile;
 	bool enable_switch_chg_profile;
+};
+
+typedef struct {
+    char *temp_limits[GBMS_AACT_NB_LIMITS_MAX];
+    char *cv_limits[GBMS_AACT_NB_LIMITS_MAX];
+    char *cc_limits[GBMS_AACT_NB_LIMITS_MAX];
+} aact_limits_profiles_t;
+
+/* the number should be the same as GBMS_AACT_NB_LIMITS_MAX */
+static aact_limits_profiles_t aact_all_limits = {
+    .temp_limits = {
+        "google,aact-temp-limits",
+        "google,aact-temp-limits-1",
+        "google,aact-temp-limits-2",
+        "google,aact-temp-limits-3",
+        "google,aact-temp-limits-4"
+    },
+    .cv_limits = {
+        "google,aact-cv-limits",
+        "google,aact-cv-limits-1",
+        "google,aact-cv-limits-2",
+        "google,aact-cv-limits-3",
+        "google,aact-cv-limits-4"
+    },
+    .cc_limits = {
+        "google,aact-cc-limits",
+        "google,aact-cc-limits-1",
+        "google,aact-cc-limits-2",
+        "google,aact-cc-limits-3",
+        "google,aact-cc-limits-4"
+    }
 };
 
 #define WLC_BPP_THRESHOLD_UV	7000000
@@ -451,12 +484,22 @@ struct gbms_charging_event {
 #define GBMS_CCCM_LIMITS_GET(profile, ti, vi) \
 	(((ti) >= 0 && (vi) >= 0) ? profile->cccm_limits[((ti) * profile->volt_nb_limits) + (vi)] : 0)
 
-#define GBMS_AACT_IDX(profile) \
-	(profile->aact_idx * (profile->temp_nb_limits - 1))
+/* only one table in each profile if multiple_profiles is supported */
+#define GBMS_AACT_TI(profile) \
+	(profile->aact_support_multiple_profiles ? \
+	0 : profile->aact_idx * (profile->temp_nb_limits - 1))
 
 #define GBMS_CCCM_LIMITS(profile, ti, vi) \
 	(((ti) >= 0 && (vi) >= 0) ? \
-	profile->cccm_limits[((ti + GBMS_AACT_IDX(profile)) * profile->volt_nb_limits) + (vi)] : 0)
+	profile->cccm_limits[((ti + GBMS_AACT_TI(profile)) * profile->volt_nb_limits) + (vi)] : 0)
+
+/* select the preset (first) profile if multiple_profiles is not supported */
+#define GBMS_AACT_IDX(profile) \
+	(profile->aact_support_multiple_profiles ? profile->aact_idx : 0)
+
+/* only one table in each profile if multiple_profiles is supported */
+#define GBMS_AACT_NB_LIMITS(profile) \
+	(profile->aact_support_multiple_profiles ? 1 : profile->aact_nb_limits)
 
 /* newgen charging */
 #define GBMS_CS_FLAG_BUCK_EN		BIT(0)
@@ -491,6 +534,7 @@ int gbms_init_aact_profile_internal(struct gbms_chg_profile *profile,
 	gbms_init_aact_profile_internal(p, n, KBUILD_MODNAME)
 int gbms_update_chg_profile_from_aact(struct gbms_chg_profile *profile);
 int gbms_aact_get_index(const struct gbms_chg_profile *profile, const int cycles);
+int gbms_read_chg_aact_ecc(struct gbms_chg_profile *profile, struct device_node *node);
 
 void gbms_init_chg_table(struct gbms_chg_profile *profile,
 			 struct device_node *node, u32 capacity);

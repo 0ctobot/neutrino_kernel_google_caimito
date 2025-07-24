@@ -73,6 +73,8 @@
 #define EEPROM_DELTA_CYCLE	10
 #define CYCLE_LSB_UNIT		100			/* LSB: 1% */
 #define HIST_MIGRATION_FLAG	(BIT(7) | BIT(6))	/* in timerh */
+/* if history gaps < threshold, will NOT trigger */
+#define RECOVER_TRIGGER_THR	5
 
 enum max1720x_fix_cc_failures {
 	FIX_CC_MIGRATE_HIST_FAIL = -1,
@@ -175,7 +177,7 @@ struct max1720x_chip {
 	u16 designcap;
 
 	/* for cycle count recovery */
-	u16 update_fixed_cycle;
+	u16 recover_cycle_reg;
 
 	bool init_complete;
 	bool resume_complete;
@@ -988,6 +990,23 @@ static ssize_t fg_learning_events_store(struct device *dev,
 
 static DEVICE_ATTR_RW(fg_learning_events);
 
+static ssize_t full_cap_rep_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max1720x_chip *chip = power_supply_get_drvdata(psy);
+	struct maxfg_regmap *map = &chip->regmap;
+	int rc;
+	u16 data;
+
+	rc = REGMAP_READ(map, MAX1720X_FULLCAPREP, &data);
+	if (rc == 0)
+		rc = reg_to_capacity_uah(data, chip);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", rc);
+}
+
+static DEVICE_ATTR_RO(full_cap_rep);
+
 static ssize_t fix_cycle_count_store(struct device *dev,
 				    struct device_attribute *attr,
 				    const char *buf, size_t count)
@@ -1500,52 +1519,38 @@ static inline bool max1720x_compare_migrated_entry(struct maxfg_eeprom_history *
 }
 
 /*
- * find first_empty entry, first_misplaced entry, last_migrated entry, num_migrated
+ * find first_empty, first_misplaced, first_migrated, last_migrated entry
  * call holding chip->model_lock
  */
-static int max1720x_find_entry(int *first_empty, int *first_misplaced, int *last_migrated,
-			       int *num_migrated)
+static int max1720x_find_entry(int *first_empty, int *first_misplaced,
+			       int *first_migrated, int *last_migrated)
 {
 	struct maxfg_eeprom_history temp = { 0 };
 	int ret, index;
-	int last_valid_entry;
 
-	*first_empty = *first_misplaced = *last_migrated = *num_migrated = 0;
+	/* scan EEPROM history entry 0 to 74 */
 	for (index = 0; index <= LAST_ENTRY; index++) {
 		ret = gbms_storage_read_data(GBMS_TAG_HIST, &temp, sizeof(temp), index);
 		if (ret < 0)
 			return ret;
 
-		if (max1720x_history_migrated(&temp)) {
-			*num_migrated = *num_migrated + 1;
-			*last_migrated = index;
-		} else if (!max1720x_history_empty(&temp)) {
-			/* when find valid entry >= 65 and has empty entry before it */
-			if (index >= OVERFLOW_START_ENTRY && *first_empty != 0 &&
-			    *first_misplaced == 0)
+		if (!max1720x_history_empty(&temp)) {
+			if (max1720x_history_migrated(&temp)) {
+				*first_empty = 0;
+				/* first hit or not continuous with previous entry */
+				if (!*first_migrated || *last_migrated != index - 1)
+					*first_migrated = index;
+				*last_migrated = index;
+			} else if (index < OVERFLOW_START_ENTRY) {
+				*first_empty = 0;
+			} else if (index >= OVERFLOW_START_ENTRY && *first_empty != 0 &&
+				   *first_misplaced == 0) {
 				*first_misplaced = index;
-
-			/* reset num_migrated if find not empty and not migrated entry*/
-			if (*first_misplaced == 0) {
-				last_valid_entry = index;
-				*num_migrated = 0;
 			}
 		} else if (*first_empty == 0) {
 			*first_empty = index;
 		}
 	}
-
-	/*
-	 * ignore empty entry before valid entry, set first_empty to last_valid + 1
-	 * [0] 0001 0203 0405 0607 0809 0a0b
-	 * [1] 1011 1213 1415 1617 1819 1a1b
-	 * [2] 2021 2223 2425 2627 2829 2a2b
-	 * [3] ffff ffff ffff ffff ffff ffff <- first_empty entry
-	 * [4] 4041 4243 4445 4647 4849 4a4b <- last_valid entry
-	 * [5] ffff ffff ffff ffff ffff ffff <- update first_empty here
-	 */
-	if (last_valid_entry > *first_empty && last_valid_entry != OVERFLOW_START_ENTRY - 1)
-		*first_empty = last_valid_entry + 1;
 
 	return 0;
 }
@@ -1597,31 +1602,47 @@ static int max1720x_write_history(struct maxfg_eeprom_history hist_high, int dst
 }
 
 /* call holding chip->model_lock */
-static int max1720x_migrate_history(int *entry_low, int *entry_high, int dst_entry)
+static int max1720x_migrate_history(struct max1720x_chip *chip, int *entry_low, int *entry_high,
+				    int dst_entry)
 {
 	struct maxfg_eeprom_history hist_high;
-	int ret;
+	int ret, offset = 0;
 
-	ret = gbms_storage_read_data(GBMS_TAG_HIST, &hist_high, sizeof(hist_high), *entry_high);
-	if (ret != sizeof(hist_high))
-		return -EAGAIN;
-
-	/* if current entry doesn't have history, use previous entry */
-	if (max1720x_history_empty(&hist_high)) {
+	do {
 		ret = gbms_storage_read_data(GBMS_TAG_HIST, &hist_high, sizeof(hist_high),
-					     *entry_high - 1);
+					     *entry_high + offset);
 		if (ret != sizeof(hist_high))
 			return -EAGAIN;
-	}
+
+		if (!max1720x_history_empty(&hist_high))
+			break;
+
+		/* if current entry has no data, use next valid entry instead */
+		offset++;
+		if (*entry_high + offset > LAST_ENTRY)
+			return -EAGAIN;
+	} while (true);
 
 	/* set migration flag for identification */
 	hist_high.timerh |= HIST_MIGRATION_FLAG;
-	/* repeatedly fill empty entries before dst_entry if migrating last entry */
+	/* repeatedly fill entries before dst_entry if migrating last entry */
 	do {
 		ret = max1720x_write_history(hist_high, *entry_low);
+		gbms_logbuffer_devlog(chip->ce_log, chip->dev, LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
+				      "migrate history entry %d to %d (ret=%d)",
+				      *entry_high + offset, *entry_low, ret);
 		if (ret < 0)
 			return ret;
-	} while (*entry_high == LAST_ENTRY && *entry_low + 1 < dst_entry && ++*entry_low);
+
+		if (*entry_high != LAST_ENTRY || *entry_low == dst_entry)
+			break;
+
+		/* next is the last entry, no need to write/erase */
+		if (*entry_low == LAST_ENTRY - 1)
+			return 0;
+
+		++*entry_low;
+	} while (true);
 
 	/* erase if complete successfully */
 	return max1720x_erase_history(*entry_high);
@@ -1637,13 +1658,6 @@ static int max1720x_fix_reg_eeprom_cycles(struct max1720x_chip *chip, int est_cc
 	if (chip->gauge_type != MAX_M5_GAUGE_TYPE)
 		return 0;
 
-	chip->eeprom_cycle = eeprom_cycle;
-	chip->cycle_count = est_cc;
-	chip->model_next_update = -1;
-	chip->cycle_count_offset = 0;
-	if (est_cc >= MAXIM_CYCLE_COUNT_RESET)
-		chip->cycle_count_offset = MAXIM_CYCLE_COUNT_RESET;
-
 	do {
 		ret = gbms_storage_write(GBMS_TAG_CNHS, &eeprom_cycle, sizeof(eeprom_cycle));
 		if (ret < 0) {
@@ -1654,16 +1668,23 @@ static int max1720x_fix_reg_eeprom_cycles(struct max1720x_chip *chip, int est_cc
 	} while (ret < 0 && --retry);
 
 	if (ret < 0) {
-		chip->update_fixed_cycle = est_cc;
+		chip->recover_cycle_reg = est_cc;
 		return FIX_CC_UPDATE_CYCLES_FAIL;
 	}
+
+	chip->eeprom_cycle = eeprom_cycle;
+	chip->cycle_count = est_cc;
+	chip->model_next_update = -1;
+	chip->cycle_count_offset = est_cc >= MAXIM_CYCLE_COUNT_RESET ? MAXIM_CYCLE_COUNT_RESET : 0;
+	chip->recover_cycle_reg = 0;
 
 	return ret >= 0 ? 0 : ret;
 }
 
 /* call holding chip->model_lock */
 static int max1720x_recover_history(struct max1720x_chip *chip, int *first_empty,
-				    int *first_misplaced, int est_cc)
+				    int *first_misplaced, int *first_migrated, int *last_migrated,
+				    int est_cc)
 {
 	const int last_misplaced = chip->cycle_count / EEPROM_DELTA_CYCLE < LAST_ENTRY
 				   ? chip->cycle_count / EEPROM_DELTA_CYCLE
@@ -1671,14 +1692,14 @@ static int max1720x_recover_history(struct max1720x_chip *chip, int *first_empty
 	int ret;
 
 	/* Migrate history from first_misplaced entry to first_empty entry */
-	for (; *first_misplaced <= last_misplaced; ++*first_empty, ++*first_misplaced) {
-		ret = max1720x_migrate_history(first_empty, first_misplaced,
-					       est_cc / EEPROM_DELTA_CYCLE);
-		gbms_logbuffer_devlog(chip->ce_log, chip->dev, LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
-				      "migrate history entry %d to %d (ret=%d)",
-				      *first_misplaced, *first_empty, ret);
+	for (*first_migrated = *first_empty; *first_misplaced <= last_misplaced;
+	     ++*first_empty, ++*first_misplaced) {
+		ret = max1720x_migrate_history(chip, first_empty, first_misplaced,
+					       est_cc / EEPROM_DELTA_CYCLE - 1);
 		if (ret < 0)
 			return FIX_CC_MIGRATE_HIST_FAIL;
+
+		*last_migrated = *first_empty;
 	}
 	chip->history_ok = true;
 
@@ -1692,57 +1713,79 @@ static int max1720x_recover_history(struct max1720x_chip *chip, int *first_empty
 static int max1720x_check_history(struct max1720x_chip *chip, bool fix)
 {
 	struct maxfg_eeprom_history hist_migrated, hist_misplaced;
-	int ret, first_empty, first_misplaced, last_migrated, num_migrated, est_cc;
+	int ret, est_cc, first_empty = 0, first_misplaced = 0, first_migrated = 0,
+	    last_migrated = 0, num_migrated = 0, num_misplaced;
 	const int last_cc = chip->cycle_count;
 	const int num_overflow = (last_cc / EEPROM_DELTA_CYCLE - OVERFLOW_START_ENTRY + 1);
+	bool recovering = false;
 
 	if (chip->gauge_type != MAX_M5_GAUGE_TYPE)
 		return 0;
 
-	ret = max1720x_find_entry(&first_empty, &first_misplaced, &last_migrated, &num_migrated);
-	if (ret < 0) {
-		chip->cycle_reg_ok = false;
+	ret = max1720x_find_entry(&first_empty, &first_misplaced, &first_migrated, &last_migrated);
+	if (ret < 0)
 		return ret;
+
+	/* check if last recovery was not complete */
+	if (last_migrated == first_empty - 1) {
+		recovering = true;
+		num_migrated = last_migrated - first_migrated + 1;
 	}
 
-	/* no misplaced entry or cycle count < 655 -> done */
-	if (first_misplaced == 0 || chip->cycle_count_offset < MAXIM_CYCLE_COUNT_RESET)
-		goto done;
+	/*
+	 * will NOT recover if any of the conditions are met:
+	 *  - current cycle count < 655
+	 *  - not cycle count jump case
+	 *  - num of gaps < trigger threshold
+	 */
+	if (last_cc < MAXIM_CYCLE_COUNT_RESET || first_misplaced == 0 ||
+	    first_misplaced - first_empty + num_migrated < RECOVER_TRIGGER_THR)
+		goto history_verified;
 
 	/*
-	 * est_cc = (first empty + overflow entries - migrated entries) * 10
-	 * without migrated entry:
+	 * est_cc = (first empty + num_misplaced) * 10
 	 *   current cycle count = 781
-	 *   overflow entries = 781/10 - 65 + 1 = 14
 	 *   first empty entry = 3
-	 *   estimated real cycle count = (3 + 14 - 0) * 10 = 170
+	 *   first misplaced entry = 65
+	 *   number of misplacede entries = 781/10 - 65 + 1 = 14
+	 *   estimated real cycle count = (3 + 14) * 10 = 170
 	 *
-	 * with 7 migrated entries:
+	*/
+	num_misplaced = last_cc / EEPROM_DELTA_CYCLE - first_misplaced + 1;
+	est_cc = (first_empty + num_misplaced) * EEPROM_DELTA_CYCLE;
+	/*
+	 * if previous recovery didn't fully migrate last entry,
+	 * determine the number of entries needs to be migrated subsequently.
 	 *   current cycle count = 781
-	 *   overflow entries = 781/10 - 65 + 1 = 14
+	 *   first empty entry = 3
+	 *   first misplaced entry = 75
+	 *   number of overflow entries = 781/10 - 65 + 1 = 14
 	 *   first empty entry = 10 (3 + 7 migrated entries)
 	 *   estimated real cycle count = (10 + 14 - 7) * 10 = 170
 	 */
-	est_cc = (first_empty + num_overflow - num_migrated) * EEPROM_DELTA_CYCLE;
+	if (recovering && first_misplaced == LAST_ENTRY)
+		est_cc = (first_empty + num_overflow - num_migrated) * EEPROM_DELTA_CYCLE;
 	gbms_logbuffer_devlog(chip->ce_log, chip->dev,
 			      LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
-			      "History: fe=%d, fm=%d, lm=%d, tm=%d, est_cc=%d, cc=%d",
-			      first_empty, first_misplaced, last_migrated, num_migrated,
-			      est_cc, last_cc);
+			      "History: fe=%d, fm=%d, migrated=%d-%d, cc=%d->%d",
+			      first_empty, first_misplaced, first_migrated, last_migrated,
+			      last_cc, est_cc);
 
 	if (!fix) {
 		gbms_logbuffer_devlog(chip->monitor_log, chip->dev,
 				      LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
-				      "0x%04X 00:%04X 01:%04X 02:%04X 03:%04X", MONITOR_TAG_HV,
-				      first_empty, first_misplaced, last_cc, est_cc);
+				      "0x%04X %X %X %X %X %X %X %X %X %X %llX", MONITOR_TAG_HV,
+				      MAX1720X_RECOVERY_LOG_INIT, first_empty, first_misplaced,
+				      first_migrated, last_migrated, last_cc, est_cc,
+				      chip->eeprom_cycle, 0, ktime_get_real_seconds());
 		return 0;
 	}
 
-	if (est_cc >= last_cc)
+	if (est_cc > last_cc)
 		return -EINVAL;
 
-	/* check if we already migrated the first_misplaced entry but not erased it yet */
-	if (last_migrated && first_misplaced != LAST_ENTRY) {
+	/* check if last_migrated entry was migrated from first_misplaced entry -> erase it */
+	if (recovering && first_misplaced != LAST_ENTRY) {
 		ret = gbms_storage_read_data(GBMS_TAG_HIST, &hist_migrated, sizeof(hist_migrated),
 					     last_migrated);
 		if (ret != sizeof(hist_migrated))
@@ -1753,7 +1796,6 @@ static int max1720x_check_history(struct max1720x_chip *chip, bool fix)
 		if (ret != sizeof(hist_misplaced))
 			return -EAGAIN;
 
-		/* erase first_misplaced entry and move to next entry if they are identical */
 		if (max1720x_compare_migrated_entry(&hist_migrated, &hist_misplaced)) {
 			ret = max1720x_erase_history(first_misplaced);
 			if (ret < 0)
@@ -1763,31 +1805,40 @@ static int max1720x_check_history(struct max1720x_chip *chip, bool fix)
 		}
 	}
 
-	ret = max1720x_recover_history(chip, &first_empty, &first_misplaced, est_cc);
-	/* log first empty entry, recover result, last cycle count, fixed cycle count */
-	gbms_logbuffer_devlog(chip->monitor_log, chip->dev,
-			      LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
-			      "0x%04X 00:%04X 01:%04X 02:%04X 03:%04X", MONITOR_TAG_HV,
-			      first_empty, ret, last_cc, chip->cycle_count);
+	ret = max1720x_recover_history(chip, &first_empty, &first_misplaced, &first_migrated,
+				       &last_migrated, est_cc);
+	gbms_logbuffer_devlog(chip->monitor_log, chip->dev, LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
+			      "0x%04X %X %X %X %X %X %X %X %X %X %llX", MONITOR_TAG_HV,
+			      MAX1720X_RECOVERY_LOG_TRIGGER, first_empty, first_misplaced,
+			      first_migrated, last_migrated, last_cc, chip->cycle_count,
+			      chip->eeprom_cycle, ret, ktime_get_real_seconds());
 
 	return ret;
-done:
+
+history_verified:
 	chip->history_ok = true;
 
 	/* handle the case that history has been recovered, but reg and eeprom hasn't */
-	if (last_migrated && chip->cycle_count / EEPROM_DELTA_CYCLE > first_empty) {
+	if (recovering) {
 		est_cc = (last_migrated + 1) * EEPROM_DELTA_CYCLE;
 		ret = max1720x_fix_reg_eeprom_cycles(chip, est_cc);
-		if (ret < 0)
-			return ret;
+		gbms_logbuffer_devlog(chip->monitor_log, chip->dev,
+				      LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
+				      "0x%04X %X %X %X %X %X %X %X %X %X %llX", MONITOR_TAG_HV,
+				      MAX1720X_RECOVERY_LOG_TRIGGER, first_empty, first_misplaced,
+				      first_migrated, last_migrated, last_cc, chip->cycle_count,
+				      chip->eeprom_cycle, ret, ktime_get_real_seconds());
+		return ret;
 	}
 
-	/* log if any migrated entry */
+	/* log if cycle count has been fixed */
 	if (last_migrated)
 		gbms_logbuffer_devlog(chip->monitor_log, chip->dev,
 				      LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
-				      "0x%04X 00:%04X 01:%04X 02:%04X 03:%04X", MONITOR_TAG_HV,
-				      0, 0, last_migrated, chip->cycle_count);
+				      "0x%04X %X %X %X %X %X %X %X %X %X %llX", MONITOR_TAG_HV,
+				      MAX1720X_RECOVERY_LOG_REPORT, first_empty, first_misplaced,
+				      first_migrated, last_migrated, last_cc, chip->cycle_count,
+				      chip->eeprom_cycle, 0, ktime_get_real_seconds());
 
 	return 0;
 }
@@ -1966,7 +2017,10 @@ static int max1720x_update_cycle_count(struct max1720x_chip *chip)
 	if (chip->por)
 		return -ECANCELED;
 
-	/* if cycle reg hasn't been restored from storage, restore it before update cycle count */
+	if (chip->recover_cycle_reg && chip->gauge_type == MAX_M5_GAUGE_TYPE)
+		return max1720x_check_history(chip, true);
+
+	/* if cycle reg hasn't been restored/recovered, finish it first */
 	if (!chip->cycle_reg_ok && chip->gauge_type == MAX_M5_GAUGE_TYPE &&
 	    max_m5_recal_state(chip->model_data) == RE_CAL_STATE_IDLE) {
 		err = max1720x_restore_battery_cycle(chip);
@@ -1974,22 +2028,6 @@ static int max1720x_update_cycle_count(struct max1720x_chip *chip)
 			dev_err(chip->dev, "%s cannot restore cycle count (%d)\n", __func__, err);
 
 		return err;
-	}
-
-	/* if history has been recovered but Cycles register/EEPROM cycles has not been corrected */
-	if (chip->update_fixed_cycle) {
-		err = max1720x_fix_reg_eeprom_cycles(chip, chip->update_fixed_cycle);
-		gbms_logbuffer_devlog(chip->monitor_log, chip->dev,
-				      LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
-				      "0x%04X 00:%04X 01:%04X 02:%04X 03:%04X", MONITOR_TAG_HV,
-				      FIX_CC_UPDATE_CYCLES_FAIL, err, chip->update_fixed_cycle,
-				      chip->cycle_count);
-		if (err < 0)
-			return err;
-
-		chip->update_fixed_cycle = 0;
-
-		return chip->cycle_count;
 	}
 
 	err = REGMAP_READ(&chip->regmap, MAX1720X_CYCLES, &reg_cycle);
@@ -2371,6 +2409,28 @@ static int max1720x_current_offset_fix(struct max1720x_chip *chip)
 	return ret;
 }
 
+static int max1720x_monitor_log_learning_extend(char* buf, int len, struct maxfg_regmap *regmap)
+{
+	u16 cotrim, coff;
+	u16 data[2] = { 0 };
+	int rc;
+
+	rc = REGMAP_READ(regmap, MAX_M5_COTRIM, &cotrim);
+	if (rc == 0)
+		rc = REGMAP_READ(regmap, MAX_M5_COFF, &coff);
+	if (rc == 0)
+		rc = regmap_raw_read(regmap->regmap, MAX_M5_UNLOCK_MODEL_ACCESS,
+				     data, sizeof(data));
+	if (rc == 0)
+		len += scnprintf(&buf[len], PAGE_SIZE - len,
+				 " %02X:%04X %02X:%04X %02X:%04X %02X:%04X",
+				 MAX_M5_COTRIM, cotrim, MAX_M5_COFF, coff,
+				 MAX_M5_UNLOCK_MODEL_ACCESS, data[0],
+				 MAX_M5_UNLOCK_MODEL_ACCESS + 1, data[1]);
+
+	return rc;
+}
+
 static int max1720x_monitor_log_learning(struct max1720x_chip *chip, bool force)
 {
 	bool log_it, seed = !chip->cb_lh.latest_entry;
@@ -2408,10 +2468,18 @@ static int max1720x_monitor_log_learning(struct max1720x_chip *chip, bool force)
 
 	mutex_unlock(&chip->cb_lh.cb_wr_lock);
 
-	if (ret > 0)
+	if (ret > 0) {
+		if (chip->gauge_type == MAX_M5_GAUGE_TYPE) {
+			ret = max1720x_monitor_log_learning_extend(buf, ret, &chip->regmap);
+			if (ret < 0)
+				dev_err(chip->dev, "%s: unable to log extended data (%d)\n",
+					 __func__, ret);
+		}
+
 		gbms_logbuffer_devlog(chip->monitor_log, chip->dev,
 				      LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
 				      "0x%04X %s", MONITOR_TAG_LH, buf);
+	}
 
 	kfree(buf);
 
@@ -5227,6 +5295,7 @@ static int max1720x_init_chip(struct max1720x_chip *chip)
 	u8 vreg, vpor;
 	u16 data = 0, tmp;
 	bool force_recall = false;
+	u16 misccfg;
 
 	if (of_property_read_bool(chip->dev->of_node, "maxim,force-hard-reset"))
 		max1720x_full_reset(chip);
@@ -5433,6 +5502,16 @@ static int max1720x_init_chip(struct max1720x_chip *chip)
 		max1720x_update_cycle_count(chip);
 
 	max1720x_restore_battery_qh_capacity(chip);
+
+	ret = maxfg_reg_read(&chip->regmap, MAXFG_TAG_misccfg, &misccfg);
+	if (ret < 0) {
+		dev_err(chip->dev, "Error reading misccfg reg (%d)\n", ret);
+	} else if (chip->aafv_config_limits != 0) {
+		int fus;
+
+		fus = misccfg >> MAX_M5_MISCCFG_OOPSFILTER_SHIFT;
+		chip->aafv_modified_fus = (fus == chip->aafv_cfgs[chip->aafv_cur_idx].fus);
+	}
 
 	return 0;
 }
@@ -5921,11 +6000,9 @@ static int max17x0x_prop_read(gbms_tag_t tag, void *buff, size_t size,
 		if (!chip->history_idx)
 			chip->history_idx = size;
 
-		if (chip->history_idx != size) {
-			ret = maxfg_reset_max_min(&chip->regmap);
-			if (ret == 0)
-				chip->history_idx = size;
-		}
+		if (chip->history_idx != size && maxfg_reset_max_min(&chip->regmap) == 0)
+			chip->history_idx = size;
+
 		mutex_unlock(&chip->model_lock);
 		break;
 
@@ -6068,7 +6145,8 @@ static void max1720x_init_work(struct work_struct *work)
 	if (!chip->por)
 		max1720x_monitor_log_data(chip, true);
 
-	max1720x_update_timer_base(chip);
+	if (chip->gauge_type == MAX_M5_GAUGE_TYPE)
+		max1720x_update_timer_base(chip);
 
 	dev_info(chip->dev, "init_work done\n");
 	if (chip->gauge_type == -1)
@@ -6224,6 +6302,12 @@ static int max1720x_init_fg_capture(struct max1720x_chip *chip)
 	ret = device_create_file(dev, &dev_attr_fg_learning_events);
 	if (ret) {
 		dev_err(dev, "Failed to create fg_learning_events attribute\n");
+		return ret;
+	}
+
+	ret = device_create_file(dev, &dev_attr_full_cap_rep);
+	if (ret) {
+		dev_err(dev, "Failed to create full_cap_rep attribute\n");
 		return ret;
 	}
 

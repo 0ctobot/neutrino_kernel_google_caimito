@@ -1269,6 +1269,7 @@ int maxfg_aafv_apply(struct maxfg_regmap *regmap, int aafv,
 
 	if ( fullsoc_reg == fullsoc) {
 		pr_info("the same aafv(%d) is already applied\n", aafv);
+		*aafv_cur_index = idx;
 		return 0;
 	}
 

@@ -3161,6 +3161,22 @@ static ssize_t fg_learning_events_store(struct device *dev,
 
 static DEVICE_ATTR_RW(fg_learning_events);
 
+static ssize_t full_cap_rep_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct max77779_fg_chip *chip = power_supply_get_drvdata(psy);
+	struct maxfg_regmap *map = &chip->regmap;
+	int rc;
+	u16 data;
+
+	rc = REGMAP_READ(map, MAX77779_FG_FullCapRep, &data);
+	if (rc == 0)
+		rc = reg_to_capacity_uah(data, chip);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", rc);
+}
+
+static DEVICE_ATTR_RO(full_cap_rep);
 
 static int get_dr_vsoc_delta(void *data, u64 *val)
 {
@@ -3575,6 +3591,7 @@ static int max77779_fg_init_chip(struct max77779_fg_chip *chip)
 {
 	int ret;
 	u16 data = 0;
+	u16 misccfg;
 
 	if (of_property_read_bool(chip->dev->of_node, "max77779,force-hard-reset"))
 		max77779_fg_full_reset(chip);
@@ -3670,6 +3687,16 @@ static int max77779_fg_init_chip(struct max77779_fg_chip *chip)
 
 		if (chip->model_ok)
 			max77779_fg_prime_battery_qh_capacity(chip);
+	}
+
+	ret = maxfg_reg_read(&chip->regmap, MAXFG_TAG_misccfg, &misccfg);
+	if (ret < 0) {
+		dev_err(chip->dev, "Error reading misccfg reg (%d)\n", ret);
+	} else if (chip->aafv_config_limits != 0) {
+		int fus;
+
+		fus = _max77779_fg_misccfg_fus_get(misccfg);
+		chip->aafv_modified_fus = (fus == chip->aafv_cfgs[chip->aafv_cur_idx].fus);
 	}
 
 	return 0;
@@ -3892,6 +3919,7 @@ static struct attribute *max77779_fg_attrs[] = {
 	&dev_attr_bypass_chargelimit_fcn_delta.attr,
 	&dev_attr_bypass_chargelimit_cycle_delta.attr,
 	&dev_attr_bypass_chargelimit_mode.attr,
+	&dev_attr_full_cap_rep.attr,
 	NULL,
 };
 
