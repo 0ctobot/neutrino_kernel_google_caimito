@@ -81,7 +81,7 @@ enum {
 #define HSI_STRM_FIFO_STATUS          0x40104100
 #define HSI_CMND_FIFO_STATUS          0x40104104
 
-#define BBD_BUFF_SIZE (PAGE_SIZE * 2)
+#define BBD_BUFF_SIZE (4096 * 2)
 
 struct bbd_device;
 

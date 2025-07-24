@@ -115,8 +115,8 @@ struct bcm_failsafe_data_recordlist {
  *
  *******************/
 
-#define BCM_SPI_READ_BUF_SIZE	(16 * PAGE_SIZE)
-#define BCM_SPI_WRITE_BUF_SIZE	(16 * PAGE_SIZE)
+#define BCM_SPI_READ_BUF_SIZE	(16 * 4096)
+#define BCM_SPI_WRITE_BUF_SIZE	(16 * 4096)
 
 /* TODO: limit max payload to 254 because of exynos3 bug */
 #define MAX_SPI_DREG_FRAME_LEN 254
