@@ -290,8 +290,8 @@ __acquires(&port->port_lock)
 			break;
 	}
 
-	if (do_tty_wake && port->port.tty)
-		tty_wakeup(port->port.tty);
+	if (do_tty_wake)
+		tty_port_tty_wakeup(&port->port);
 	return status;
 }
 
@@ -577,7 +577,7 @@ static int gs_start_io(struct gs_port *port)
 		 * we didn't in gs_start_tx() */
 		if (!port->port.tty)
 			goto out;
-		tty_wakeup(port->port.tty);
+		tty_port_tty_wakeup(&port->port);
 	} else {
 out:
 		/* Free reqs only if we are still connected */
