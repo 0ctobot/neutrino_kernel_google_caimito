@@ -14,6 +14,7 @@
 #include <linux/workqueue.h>
 
 #include <gcip/gcip-mailbox.h>
+#include <gcip/gcip-memory.h>
 
 #include "edgetpu-internal.h"
 #include "edgetpu-mailbox.h"
@@ -28,7 +29,7 @@ struct edgetpu_iif {
 	struct gcip_mailbox *mbx_protocol;
 	/* Interface for accessing the mailbox hardware and the values in their data registers. */
 	struct edgetpu_mailbox *mbx_hardware;
-	struct edgetpu_coherent_mem cmd_queue_mem;
+	struct gcip_memory cmd_queue_mem;
 	struct mutex cmd_queue_lock;
 
 	/*

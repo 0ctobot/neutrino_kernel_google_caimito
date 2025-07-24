@@ -18,10 +18,19 @@
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
 
+#include <gcip/gcip-memory.h>
 #include <gcip/gcip-telemetry.h>
 
-struct gcip_telemetry *gcip_telemetry_select(struct gcip_telemetry_ctx *tel_ctx,
-					     enum gcip_telemetry_type type)
+/**
+ * gcip_telemetry_select() - Get the gcip_telemetry of the specified type.
+ * @tel_ctx: The gcip_telemetry_ctx object to retrieve the desired gcip_telemetry.
+ * @type: The type of the telemetry desired.
+ *
+ * Return: The pointer to the gcip_telemetry of the desired type, or the pointer to a negative errno
+ *         otherwise.
+ */
+static struct gcip_telemetry *gcip_telemetry_select(struct gcip_telemetry_ctx *tel_ctx,
+						    enum gcip_telemetry_type type)
 {
 	switch (type) {
 	case GCIP_TELEMETRY_TYPE_LOG:
@@ -35,8 +44,16 @@ struct gcip_telemetry *gcip_telemetry_select(struct gcip_telemetry_ctx *tel_ctx,
 	}
 }
 
-struct gcip_telemetry_memory *gcip_telemetry_select_mem(struct gcip_telemetry_ctx *tel_ctx,
-							enum gcip_telemetry_type type)
+/**
+ * gcip_telemetry_select_mem() - Get the gcip_memory of the specified type.
+ * @tel_ctx: The gcip_telemetry_ctx object to retrieve the desired gcip_memory.
+ * @type: The type of the telemetry desired.
+ *
+ * Return: The pointer to the gcip_memory of the desired type, or the pointer to a
+ *         negative errno otherwise.
+ */
+static struct gcip_memory *gcip_telemetry_select_mem(struct gcip_telemetry_ctx *tel_ctx,
+						     enum gcip_telemetry_type type)
 {
 	switch (type) {
 	case GCIP_TELEMETRY_TYPE_LOG:
@@ -55,7 +72,7 @@ int gcip_telemetry_kci(struct gcip_telemetry_ctx *tel_ctx, enum gcip_telemetry_t
 		       struct gcip_kci *kci)
 {
 	const struct gcip_telemetry *tel = gcip_telemetry_select(tel_ctx, type);
-	const struct gcip_telemetry_memory *mem = gcip_telemetry_select_mem(tel_ctx, type);
+	const struct gcip_memory *mem = gcip_telemetry_select_mem(tel_ctx, type);
 	const struct gcip_telemetry_kci_args args = {
 		.kci = kci,
 		.addr = mem->dma_addr,
@@ -118,7 +135,14 @@ void gcip_telemetry_unset_event(struct gcip_telemetry_ctx *tel_ctx, enum gcip_te
 		eventfd_ctx_put(prev_ctx);
 }
 
-/* Copy data out of the log buffer with wrapping. */
+/**
+ * copy_with_wrap() - The helper function to copy data out of the log buffer with wrapping.
+ * @header: The telemetry header to read and write the head value.
+ * @dest: The buffer to copy the data to.
+ * @length: The length of the data to be copied.
+ * @size: The size of telemetry buffer.
+ * @start: The start address of the telemetry buffer.
+ */
 static void copy_with_wrap(struct gcip_telemetry_header *header, void *dest, u32 length, u32 size,
 			   void *start)
 {
@@ -138,7 +162,14 @@ static void copy_with_wrap(struct gcip_telemetry_header *header, void *dest, u32
 	}
 }
 
-void gcip_telemetry_fw_log(const struct gcip_telemetry *log)
+/*＊
+ * gcip_telemetry_fw_log() - The fallback function to consume the log buffer.
+ * @log: The log telemetry object.
+ *
+ * This function will consume the log buffer and print it to dmesg from the host CPU. The logging
+ * level depends on the code in the header entry.
+ */
+static void gcip_telemetry_fw_log(const struct gcip_telemetry *log)
 {
 	struct device *dev = log->dev;
 	struct gcip_telemetry_header *header = log->header;
@@ -188,7 +219,13 @@ void gcip_telemetry_fw_log(const struct gcip_telemetry *log)
 	kfree(buffer);
 }
 
-void gcip_telemetry_fw_trace(const struct gcip_telemetry *trace)
+/*＊
+ * gcip_telemetry_fw_trace() - The fallback function to consume the trace buffer.
+ * @trace: The trace telemetry object.
+ *
+ * This function will do nothing but update the value of the head in the header.
+ */
+static void gcip_telemetry_fw_trace(const struct gcip_telemetry *trace)
 {
 	struct gcip_telemetry_header *header = trace->header;
 
@@ -219,7 +256,12 @@ void gcip_telemetry_irq_handler(struct gcip_telemetry_ctx *tel_ctx, enum gcip_te
 	spin_unlock_irqrestore(&tel->state_lock, flags);
 }
 
-void gcip_telemetry_inc_mmap_count(struct gcip_telemetry *tel, int dif)
+/*＊
+ * gcip_telemetry_inc_mmap_count() - Increases the telemetry mmap count.
+ * @tel: The telemetry to add the mmapped_count.
+ * @dif: The number to add the mmapped_count.
+ */
+static void gcip_telemetry_inc_mmap_count(struct gcip_telemetry *tel, int dif)
 {
 	mutex_lock(&tel->mmap_lock);
 	tel->mmapped_count += dif;
@@ -261,7 +303,7 @@ int gcip_telemetry_mmap(struct gcip_telemetry_ctx *tel_ctx, enum gcip_telemetry_
 			struct vm_area_struct *vma)
 {
 	struct gcip_telemetry *tel = gcip_telemetry_select(tel_ctx, type);
-	struct gcip_telemetry_memory *mem = gcip_telemetry_select_mem(tel_ctx, type);
+	struct gcip_memory *mem = gcip_telemetry_select_mem(tel_ctx, type);
 	unsigned long size = vma->vm_end - vma->vm_start;
 	unsigned long orig_pgoff = vma->vm_pgoff;
 	int ret;
@@ -307,7 +349,10 @@ err_unlock:
 	return ret;
 }
 
-/* Worker for processing log/trace buffers. */
+/**
+ * gcip_telemetry_worker() - The worker for processing the log/trace buffers.
+ * @work: The work_struct of the telemetry.
+ */
 static void gcip_telemetry_worker(struct work_struct *work)
 {
 	struct gcip_telemetry *tel = container_of(work, struct gcip_telemetry, work);
@@ -346,7 +391,7 @@ int gcip_telemetry_init(struct gcip_telemetry_ctx *tel_ctx, enum gcip_telemetry_
 {
 	struct gcip_telemetry *tel;
 	const char *name;
-	struct gcip_telemetry_memory *mem;
+	struct gcip_memory *mem;
 	void (*fallback_fn)(const struct gcip_telemetry *tel);
 
 	switch (type) {

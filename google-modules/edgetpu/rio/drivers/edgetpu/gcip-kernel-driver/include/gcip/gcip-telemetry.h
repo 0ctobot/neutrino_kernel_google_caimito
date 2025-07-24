@@ -18,6 +18,8 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
+#include <gcip/gcip-memory.h>
+
 #define GCIP_TELEMETRY_NAME_LOG "telemetry_log"
 #define GCIP_TELEMETRY_NAME_TRACE "telemetry_trace"
 
@@ -88,33 +90,17 @@ struct gcip_telemetry {
 };
 
 /**
- * struct gcip_telemetry_memory - The object to record the mapping of the memory.
- * @virt_addr: The kernel virtual address of the memory.
- * @phys_addr: The physical address of the memory.
- * @dma_addr: The device DMA address of the memory.
- * @host_addr: The host address of the memory.
- * @size: The size of the memory.
- */
-struct gcip_telemetry_memory {
-	void __iomem *virt_addr;
-	phys_addr_t phys_addr;
-	dma_addr_t dma_addr;
-	u64 host_addr;
-	size_t size;
-};
-
-/**
  * struct gcip_telemetry_ctx - The object containing the telemetry contex.
  * @log: The gcip_telemetry for logging.
  * @trace: The gcip_telemetry for tracing.
- * @log_mem: The gcip_telemetry_memory for logging.
- * @trace_mem: The gcip_telemetry_memory for tracing.
+ * @log_mem: The gcip_memory for logging.
+ * @trace_mem: The gcip_memory for tracing.
  */
 struct gcip_telemetry_ctx {
 	struct gcip_telemetry log;
 	struct gcip_telemetry trace;
-	struct gcip_telemetry_memory log_mem;
-	struct gcip_telemetry_memory trace_mem;
+	struct gcip_memory log_mem;
+	struct gcip_memory trace_mem;
 };
 
 struct gcip_kci;
@@ -126,32 +112,14 @@ struct gcip_telemetry_kci_args {
 };
 
 /**
- * gcip_telemetry_select() - Get the gcip_telemetry of the specified type.
- * @tel_ctx: The gcip_telemetry_ctx object to retrieve the desired gcip_telemetry.
- * @type: The type of the telemetry desired.
- *
- * Return: The pointer to the gcip_telemetry of the desired type, or the pointer to a negative errno
- *         otherwise.
- */
-struct gcip_telemetry *gcip_telemetry_select(struct gcip_telemetry_ctx *tel_ctx,
-					     enum gcip_telemetry_type type);
-
-/**
- * gcip_telemetry_select_mem() - Get the gcip_telemetry_memory of the specified type.
- * @tel_ctx: The gcip_telemetry_ctx object to retrieve the desired gcip_telemetry_memory.
- * @type: The type of the telemetry desired.
- *
- * Return: The pointer to the gcip_telemetry_memory of the desired type, or the pointer to a
- *         negative errno otherwise.
- */
-struct gcip_telemetry_memory *gcip_telemetry_select_mem(struct gcip_telemetry_ctx *tel_ctx,
-							enum gcip_telemetry_type type);
-
-/**
  * gcip_telemetry_kci() -  Sends telemetry KCI through send kci callback.
  * @tel_ctx: The object holds the info of the telemetry buffer.
  * @type: The type of telemetry.
- * @send_kci: The callback to send the KCI.
+ * @send_kci: The callback function to send the KCI, which receives gcip_telemetry_kci_args and
+ *            returns:
+ *            0 - Success
+ *            > 0 - Firmware error
+ *            < 0 - Driver error
  * @kci: The pointer to the gcip_kci object to interact with gcip_kci APIs.
  *
  * Return: 0 on success, or a negative errno otherwise.
@@ -178,14 +146,12 @@ int gcip_telemetry_set_event(struct gcip_telemetry_ctx *tel_ctx, enum gcip_telem
  */
 void gcip_telemetry_unset_event(struct gcip_telemetry_ctx *tel_ctx, enum gcip_telemetry_type type);
 
-/* Fallback to log messages from host CPU to dmesg. */
-void gcip_telemetry_fw_log(const struct gcip_telemetry *log);
-/* Fallback to consumes the trace buffer. */
-void gcip_telemetry_fw_trace(const struct gcip_telemetry *trace);
-/* Interrupt handler to schedule the worker when the buffer is not empty. */
+/**
+ * gcip_telemetry_irq_handler() - The interrupt handler to schedule the worker when irq arrives.
+ * @tel_ctx: The object holds the info of the telemetry buffer.
+ * @type: The type of telemetry to be handled.
+ */
 void gcip_telemetry_irq_handler(struct gcip_telemetry_ctx *tel_ctx, enum gcip_telemetry_type type);
-/* Increases the telemetry mmap count. */
-void gcip_telemetry_inc_mmap_count(struct gcip_telemetry *tel, int dif);
 
 /**
  * gcip_telemetry_mmap() - Mmaps the telemetry buffer.

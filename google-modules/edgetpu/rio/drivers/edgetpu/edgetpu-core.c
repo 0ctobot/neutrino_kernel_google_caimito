@@ -686,7 +686,7 @@ void edgetpu_client_remove(struct edgetpu_client *client)
 	 * client->group_lock later.
 	 */
 	if (client->group)
-		edgetpu_device_group_leave(client);
+		edgetpu_device_group_disband(client);
 	/* Cleanup external mailbox/secure client stuff. */
 	edgetpu_ext_client_remove(client);
 

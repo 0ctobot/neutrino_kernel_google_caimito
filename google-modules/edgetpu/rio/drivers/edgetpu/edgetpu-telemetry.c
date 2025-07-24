@@ -8,6 +8,7 @@
 #include <linux/minmax.h>
 #include <linux/mm_types.h>
 
+#include <gcip/gcip-memory.h>
 #include <gcip/gcip-telemetry.h>
 
 #include "edgetpu-internal.h"
@@ -152,7 +153,7 @@ void edgetpu_telemetry_irq_handler(struct edgetpu_dev *etdev)
 	}
 }
 
-static void telemetry_mappings_show(struct gcip_telemetry *tel, struct gcip_telemetry_memory *mem,
+static void telemetry_mappings_show(struct gcip_telemetry *tel, struct gcip_memory *mem,
 				    struct seq_file *s)
 {
 	seq_printf(s, "  %pad %lu %s %#llx\n", &mem->dma_addr, DIV_ROUND_UP(mem->size, PAGE_SIZE),

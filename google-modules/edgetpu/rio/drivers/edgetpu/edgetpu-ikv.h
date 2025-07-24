@@ -14,6 +14,7 @@
 
 #include <gcip/gcip-fence-array.h>
 #include <gcip/gcip-mailbox.h>
+#include <gcip/gcip-memory.h>
 #include <iif/iif-fence.h>
 
 #include "edgetpu-device-group.h"
@@ -92,7 +93,7 @@ struct edgetpu_ikv_response {
 	 */
 	struct iif_fence *iif_dma_fence;
 	/* The coherent buffer for the additional_info to be shared with the firmware. */
-	struct edgetpu_coherent_mem additional_info;
+	struct gcip_memory additional_info;
 	/* Callback to clean-up any data allocated for this command. */
 	void (*release_callback)(void *data);
 	void *release_data;
@@ -106,9 +107,9 @@ struct edgetpu_ikv {
 	/* Interface for accessing the mailbox hardware and the values in their data registers. */
 	struct edgetpu_mailbox *mbx_hardware;
 
-	struct edgetpu_coherent_mem cmd_queue_mem;
+	struct gcip_memory cmd_queue_mem;
 	struct mutex cmd_queue_lock;
-	struct edgetpu_coherent_mem resp_queue_mem;
+	struct gcip_memory resp_queue_mem;
 	spinlock_t resp_queue_lock;
 	unsigned long resp_queue_lock_flags;
 

@@ -145,7 +145,7 @@ void edgetpu_mappings_show(struct edgetpu_mapping_root *mappings,
 	edgetpu_mapping_unlock(mappings);
 }
 
-size_t edgetpu_mappings_total_size(struct edgetpu_mapping_root *mappings)
+size_t edgetpu_mappings_total_size(struct edgetpu_mapping_root *mappings, bool restrict32)
 {
 	struct rb_node *node;
 	size_t total = 0;
@@ -155,6 +155,9 @@ size_t edgetpu_mappings_total_size(struct edgetpu_mapping_root *mappings)
 	for (node = rb_first(&mappings->rb); node; node = rb_next(node)) {
 		struct edgetpu_mapping *map =
 			container_of(node, struct edgetpu_mapping, node);
+
+		if (restrict32 && (map->flags & EDGETPU_MAP_CPU_NONACCESSIBLE))
+			continue;
 
 		total += map->gcip_mapping->size;
 	}

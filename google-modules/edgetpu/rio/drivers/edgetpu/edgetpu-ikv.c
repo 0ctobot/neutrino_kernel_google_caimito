@@ -10,6 +10,7 @@
 
 #include <gcip/gcip-fence-array.h>
 #include <gcip/gcip-mailbox.h>
+#include <gcip/gcip-memory.h>
 
 #include "edgetpu-ikv.h"
 #include "edgetpu-ikv-mailbox-ops.h"
@@ -44,7 +45,7 @@ static int edgetpu_ikv_alloc_queue(struct edgetpu_ikv *etikv, enum gcip_mailbox_
 {
 	struct edgetpu_dev *etdev = etikv->etdev;
 	u32 size;
-	struct edgetpu_coherent_mem *mem;
+	struct gcip_memory *mem;
 	int ret;
 
 	/* Allocate the queues based on the larger litebuf sizes which can handle both formats. */
@@ -139,8 +140,8 @@ int edgetpu_ikv_init(struct edgetpu_mailbox_manager *mgr, struct edgetpu_ikv *et
 		goto err_free_cmd_queue;
 	spin_lock_init(&etikv->resp_queue_lock);
 
-	args.cmd_queue = etikv->cmd_queue_mem.vaddr;
-	args.resp_queue = etikv->resp_queue_mem.vaddr;
+	args.cmd_queue = etikv->cmd_queue_mem.virt_addr;
+	args.resp_queue = etikv->resp_queue_mem.virt_addr;
 	ret = gcip_mailbox_init(etikv->mbx_protocol, &args);
 	if (ret)
 		goto err_free_resp_queue;
@@ -167,8 +168,8 @@ int edgetpu_ikv_reinit(struct edgetpu_ikv *etikv)
 {
 	struct edgetpu_mailbox *mbx_hardware = etikv->mbx_hardware;
 	struct edgetpu_mailbox_manager *mgr;
-	struct edgetpu_coherent_mem *cmd_queue_mem = &etikv->cmd_queue_mem;
-	struct edgetpu_coherent_mem *resp_queue_mem = &etikv->resp_queue_mem;
+	struct gcip_memory *cmd_queue_mem = &etikv->cmd_queue_mem;
+	struct gcip_memory *resp_queue_mem = &etikv->resp_queue_mem;
 	unsigned long flags;
 	int ret;
 

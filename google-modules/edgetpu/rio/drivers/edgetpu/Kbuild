@@ -26,8 +26,7 @@ obj-$(CONFIG_RIO)	+= rio.o
 
 GCIP_DIR=gcip-kernel-driver/drivers/gcip
 
-edgetpu-objs	:= edgetpu-async.o \
-		   edgetpu-dmabuf.o \
+edgetpu-objs	:= edgetpu-dmabuf.o \
 		   edgetpu-firmware-util.o \
 		   edgetpu-iif.o \
 		   edgetpu-ikv-additional-info.o \
@@ -88,5 +87,9 @@ endif
 
 ifneq ($(wildcard $(GMODULE_SRC_PATH)/iif/include),)
 ccflags-y += -I$(GMODULE_SRC_PATH)/iif/include
+endif
+
+ifneq ($(wildcard $(GMODULE_SRC_PATH)/soc/rdo/include),)
+ccflags-y += -I$(GMODULE_SRC_PATH)/soc/rdo/include
 endif
 

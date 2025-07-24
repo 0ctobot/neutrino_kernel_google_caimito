@@ -209,7 +209,7 @@ static int edgetpu_external_mailbox_alloc(struct device *edgetpu_dev,
 					 group->mbox_attr.client_priv);
 	if (ret)
 		goto error_put_group;
-	mutex_lock(&group->lock);
+	down_write(&group->lock);
 	ext_mailbox = group->ext_mailbox;
 	if (!ext_mailbox) {
 		ret = -ENOENT;
@@ -217,7 +217,7 @@ static int edgetpu_external_mailbox_alloc(struct device *edgetpu_dev,
 	}
 	ret = edgetpu_external_mailbox_info_get(info, ext_mailbox);
 unlock:
-	mutex_unlock(&group->lock);
+	up_write(&group->lock);
 error_put_group:
 	edgetpu_device_group_put(group);
 out:
@@ -297,7 +297,7 @@ static int edgetpu_external_start_offload(struct device *edgetpu_dev,
 	group = edgetpu_device_group_get(client->group);
 	mutex_unlock(&client->group_lock);
 
-	mutex_lock(&group->lock);
+	down_write(&group->lock);
 	etdomain = edgetpu_group_domain_locked(group);
 	if (edgetpu_mmu_domain_detached(etdomain)) {
 		ret = -EINVAL;
@@ -311,7 +311,7 @@ static int edgetpu_external_start_offload(struct device *edgetpu_dev,
 		offload_info->client_id = etdomain->pasid;
 
 out_group_unlock:
-	mutex_unlock(&group->lock);
+	up_write(&group->lock);
 	edgetpu_device_group_put(group);
 out:
 	fput(file);

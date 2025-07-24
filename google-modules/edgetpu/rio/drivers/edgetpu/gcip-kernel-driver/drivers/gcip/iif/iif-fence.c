@@ -1252,7 +1252,6 @@ int iif_fence_submit_waiter(struct iif_fence *fence, enum iif_ip_type ip)
 {
 	unsigned long flags;
 	int unsubmitted = iif_fence_unsubmitted_signalers(fence);
-	int status = iif_fence_get_signal_status(fence);
 	int ret;
 
 	might_sleep();
@@ -1262,26 +1261,6 @@ int iif_fence_submit_waiter(struct iif_fence *fence, enum iif_ip_type ip)
 
 	if (unsubmitted)
 		return unsubmitted;
-
-	/*
-	 * If @fence was unblocked with an error, reject submitting waiters.
-	 *
-	 * We don't have hold a lock here since the status cannot be changed to other status once
-	 * it has been set to a negative errno.
-	 *
-	 * Also, even when @status was 0 here, but @fence's status has been just updated to 1
-	 * (unblocked normally) or a negative errno right after this, it is still fine. The meaning
-	 * of the status has become non-zero is that the signaler IP or AP already updated the fence
-	 * table to mark the fence unblock so that waiter IPs can notice that after this function.
-	 * As the kernel drivers are exptected to submit its waiter command to its IP after calling
-	 * this function, the IP will check the fence table when they receive the command and can
-	 * notice the fence unblock.
-	 *
-	 * This logic is for rejecting the command in early stage if the fence has been unblocked
-	 * with an error if possible before taking a longer travel to the IP side.
-	 */
-	if (status < 0)
-		return -EPERM;
 
 	ret = iif_fence_acquire_block_wakelock(fence, ip);
 	if (ret) {

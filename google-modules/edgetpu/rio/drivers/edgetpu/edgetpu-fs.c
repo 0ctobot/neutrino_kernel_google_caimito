@@ -25,11 +25,13 @@
 #include <linux/of.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/sysfs.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
 #include <trace/events/edgetpu.h>
 
 #include <gcip/gcip-fence-array.h>
+#include <gcip/gcip-memory.h>
 #include <iif/iif-dma-fence.h>
 #include <soc/google/tpu-ext.h>
 
@@ -113,10 +115,10 @@ static int edgetpu_ioctl_set_eventfd(struct edgetpu_client *client,
 	int ret;
 	struct edgetpu_event_register eventreg;
 
-	if (copy_from_user(&eventreg, argp, sizeof(eventreg)))
-		return -EFAULT;
 	if (!client->group)
 		return -EINVAL;
+	if (copy_from_user(&eventreg, argp, sizeof(eventreg)))
+		return -EFAULT;
 	ret = edgetpu_group_set_eventfd(client->group, eventreg.event_id, eventreg.eventfd);
 	return ret;
 }
@@ -213,7 +215,7 @@ static int edgetpu_ioctl_create_group(struct edgetpu_client *client,
 	if (copy_from_user(&attr, argp, sizeof(attr)))
 		return -EFAULT;
 
-	group = edgetpu_device_group_alloc(client, &attr);
+	group = edgetpu_device_group_create(client, &attr);
 	if (IS_ERR(group))
 		return PTR_ERR(group);
 
@@ -228,11 +230,11 @@ static int edgetpu_ioctl_map_buffer(struct edgetpu_client *client,
 	struct edgetpu_map_ioctl ibuf;
 	int ret;
 
+	if (!client->group)
+		return -EINVAL;
 	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
 		return -EFAULT;
 
-	if (!client->group)
-		return -EINVAL;
 	/* to prevent group being released when we perform map/unmap later */
 	group = edgetpu_device_group_get(client->group);
 	trace_edgetpu_map_buffer_start(group, &ibuf);
@@ -259,10 +261,10 @@ static int edgetpu_ioctl_unmap_buffer(struct edgetpu_client *client,
 	struct edgetpu_map_ioctl ibuf;
 	int ret;
 
-	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
-		return -EFAULT;
 	if (!client->group)
 		return -EINVAL;
+	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
+		return -EFAULT;
 	trace_edgetpu_unmap_buffer_start(client->group, &ibuf);
 	ret = edgetpu_device_group_unmap(client->group, ibuf.device_address, ibuf.flags);
 	trace_edgetpu_unmap_buffer_end(client->group, &ibuf);
@@ -275,10 +277,10 @@ static int edgetpu_ioctl_sync_buffer(struct edgetpu_client *client,
 	int ret;
 	struct edgetpu_sync_ioctl ibuf;
 
-	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
-		return -EFAULT;
 	if (!client->group)
 		return -EINVAL;
+	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
+		return -EFAULT;
 	ret = edgetpu_device_group_sync_buffer(client->group, &ibuf);
 	return ret;
 }
@@ -291,11 +293,11 @@ edgetpu_ioctl_map_dmabuf(struct edgetpu_client *client,
 	struct edgetpu_map_dmabuf_ioctl ibuf;
 	int ret;
 
+	if (!client->group)
+		return -EINVAL;
 	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
 		return -EFAULT;
 
-	if (!client->group)
-		return -EINVAL;
 	/* to prevent group being released when we perform unmap on fault */
 	group = edgetpu_device_group_get(client->group);
 	trace_edgetpu_map_dmabuf_start(group, &ibuf);
@@ -322,10 +324,10 @@ edgetpu_ioctl_unmap_dmabuf(struct edgetpu_client *client,
 	int ret;
 	struct edgetpu_map_dmabuf_ioctl ibuf;
 
-	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
-		return -EFAULT;
 	if (!client->group)
 		return -EINVAL;
+	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
+		return -EFAULT;
 	trace_edgetpu_unmap_dmabuf_start(client->group, &ibuf);
 	ret = edgetpu_unmap_dmabuf(client->group, ibuf.device_address);
 	trace_edgetpu_unmap_dmabuf_end(client->group, &ibuf);
@@ -339,12 +341,12 @@ static int edgetpu_ioctl_sync_fence_create(
 	struct edgetpu_create_sync_fence_data data;
 	int ret;
 
-	if (copy_from_user(&data, (void __user *)datap, sizeof(data)))
-		return -EFAULT;
 	if (!client->group) {
 		etdev_err(client->etdev, "client creating sync fence not joined to a device group");
 		return -EINVAL;
 	}
+	if (copy_from_user(&data, (void __user *)datap, sizeof(data)))
+		return -EFAULT;
 	ret = edgetpu_sync_fence_create(client->etdev, client->group, &data);
 	if (ret)
 		return ret;
@@ -634,6 +636,8 @@ static int edgetpu_ioctl_vii_command(struct edgetpu_client *client,
 	struct gcip_fence_array *out_fence_array;
 	int ret;
 
+	if (!client->group)
+		return -EINVAL;
 	if (copy_from_user(&command, argp, sizeof(command)))
 		return -EFAULT;
 
@@ -642,11 +646,6 @@ static int edgetpu_ioctl_vii_command(struct edgetpu_client *client,
 	if (!client->etdev->mailbox_manager->use_ikv ||
 	    client->etdev->vii_format != EDGETPU_VII_FORMAT_FLATBUFFER) {
 		ret = -EOPNOTSUPP;
-		goto err_ret;
-	}
-
-	if (!client->group) {
-		ret = -EINVAL;
 		goto err_ret;
 	}
 
@@ -685,16 +684,14 @@ static int edgetpu_ioctl_vii_response(struct edgetpu_client *client,
 	struct edgetpu_vii_response_ioctl ibuf;
 	int ret = 0;
 
+	if (!client->group)
+		return -EINVAL;
+
 	trace_edgetpu_vii_response_start(client);
 
 	if (!client->etdev->mailbox_manager->use_ikv ||
 	    client->etdev->vii_format != EDGETPU_VII_FORMAT_FLATBUFFER) {
 		ret = -EOPNOTSUPP;
-		goto out_end_trace;
-	}
-
-	if (!client->group) {
-		ret = -EINVAL;
 		goto out_end_trace;
 	}
 
@@ -712,7 +709,7 @@ out_end_trace:
 
 struct litebuf_command_iremap_buffer {
 	struct edgetpu_dev *etdev;
-	struct edgetpu_coherent_mem mem;
+	struct gcip_memory mem;
 };
 
 static void release_litebuf_iremap_buffer(void *data)
@@ -808,6 +805,8 @@ static int edgetpu_ioctl_vii_litebuf_command(struct edgetpu_client *client,
 	struct iif_fence *iif_dma_fence = NULL;
 	int ret = 0;
 
+	if (!client->group)
+		return -EINVAL;
 	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
 		return -EFAULT;
 
@@ -816,11 +815,6 @@ static int edgetpu_ioctl_vii_litebuf_command(struct edgetpu_client *client,
 	if (!client->etdev->mailbox_manager->use_ikv ||
 	    client->etdev->vii_format != EDGETPU_VII_FORMAT_LITEBUF) {
 		ret = -EOPNOTSUPP;
-		goto out_end_trace;
-	}
-
-	if (!client->group) {
-		ret = -EINVAL;
 		goto out_end_trace;
 	}
 
@@ -850,7 +844,7 @@ static int edgetpu_ioctl_vii_litebuf_command(struct edgetpu_client *client,
 		if (ret)
 			goto out_free_large_command_buffer;
 
-		if (copy_from_user(iremap_buffer->mem.vaddr, (u8 __user *)ibuf.litebuf_address,
+		if (copy_from_user(iremap_buffer->mem.virt_addr, (u8 __user *)ibuf.litebuf_address,
 				   ibuf.litebuf_size)) {
 			ret = -EFAULT;
 			goto out_free_large_command_iremap;
@@ -930,6 +924,8 @@ edgetpu_ioctl_vii_litebuf_response(struct edgetpu_client *client,
 	struct edgetpu_vii_litebuf_response resp;
 	int ret = 0;
 
+	if (!client->group)
+		return -EINVAL;
 	if (copy_from_user(&ibuf, argp, sizeof(ibuf)))
 		return -EFAULT;
 
@@ -938,11 +934,6 @@ edgetpu_ioctl_vii_litebuf_response(struct edgetpu_client *client,
 	if (!client->etdev->mailbox_manager->use_ikv ||
 	    client->etdev->vii_format != EDGETPU_VII_FORMAT_LITEBUF) {
 		ret = -EOPNOTSUPP;
-		goto out_end_trace;
-	}
-
-	if (!client->group) {
-		ret = -EINVAL;
 		goto out_end_trace;
 	}
 
@@ -1175,15 +1166,12 @@ static int edgetpu_pm_debugfs_set_wakelock(void *data, u64 val)
 {
 	struct edgetpu_dev *etdev = data;
 	uint flags = 0;
-	int ret = 0;
 
 	if (val == 2)
 		flags = EDGETPU_ACQUIRE_WAKELOCK_FLAG_SUSPEND;
 	if (val)
-		ret = debugfs_wakelock_acquire(etdev, flags);
-	else
-		ret = debugfs_wakelock_release(etdev);
-	return ret;
+		return debugfs_wakelock_acquire(etdev, flags);
+	return debugfs_wakelock_release(etdev);
 }
 DEFINE_DEBUGFS_ATTRIBUTE(fops_wakelock, NULL, edgetpu_pm_debugfs_set_wakelock,
 			 "%llu\n");
@@ -1229,43 +1217,36 @@ static ssize_t clients_show(
 {
 	struct edgetpu_dev *etdev = dev_get_drvdata(dev);
 	struct edgetpu_list_device_client *lc;
-	ssize_t len;
 	ssize_t ret = 0;
 
 	mutex_lock(&etdev->clients_lock);
 	for_each_list_device_client(etdev, lc) {
+		int pid = lc->client->pid;
+		int tgid = lc->client->tgid;
+		struct edgetpu_device_group *group = lc->client->group;
 		struct timespec64 curr;
 		struct timespec64 total_plus_curr;
+		unsigned long wakelock_curr_secs = 0;
 
 		total_plus_curr = lc->client->wakelock.total_acquired_time;
 
 		if (lc->client->wakelock.req_count) {
 			ktime_get_ts64(&curr);
 			curr = timespec64_sub(curr, lc->client->wakelock.current_acquire_timestamp);
+			wakelock_curr_secs = (unsigned long)curr.tv_sec;
 			total_plus_curr = timespec64_add(total_plus_curr, curr);
 		}
 
 		if (lc->client == etdev->debugfs_wakelock_client) {
-			len = scnprintf(buf, PAGE_SIZE - ret, "debugfs");
-		} else {
-			struct edgetpu_device_group *group = lc->client->group;
-
-			len = scnprintf(buf, PAGE_SIZE - ret,
-					"pid %d tgid %d group %d",
-					lc->client->pid, lc->client->tgid,
-					group ? group->group_id : -1);
+			pid = -1;
+			tgid = -1;
 		}
 
-		buf += len;
-		ret += len;
-		len = scnprintf(buf, PAGE_SIZE - ret,
-				" wakelock %d %lu %lu %s\n",
-				lc->client->wakelock.req_count,
-				(unsigned long)total_plus_curr.tv_sec,
-				lc->client->wakelock.req_count ? (unsigned long)curr.tv_sec : 0,
-				lc->client->wakelock.suspendable ? "s" : "");
-		buf += len;
-		ret += len;
+		ret += sysfs_emit_at(buf, ret, "%d %d %d %d %lu %lu %u\n",
+				     pid, tgid, group ? group->group_id : -1,
+				     lc->client->wakelock.req_count,
+				     (unsigned long)total_plus_curr.tv_sec,
+				     wakelock_curr_secs, lc->client->wakelock.suspendable);
 	}
 	mutex_unlock(&etdev->clients_lock);
 	return ret;
@@ -1325,7 +1306,7 @@ static ssize_t show_group(struct edgetpu_dev *etdev,
 	len = scnprintf(buf, buflen - ret, "mappings %zd %zdB\n",
 			group->host_mappings.count +
 			group->dmabuf_mappings.count,
-			edgetpu_group_mappings_total_size(group));
+			edgetpu_group_mappings_total_size(group, false));
 	buf += len;
 	ret += len;
 	return ret;

@@ -26,6 +26,7 @@
 
 #include <gcip/gcip-dma-fence.h>
 #include <gcip/gcip-firmware.h>
+#include <gcip/gcip-memory.h>
 #include <gcip/gcip-thermal.h>
 #include <iif/iif-manager.h>
 
@@ -54,15 +55,6 @@
 	dev_warn_once(get_dev_for_logging(etdev), fmt, ##__VA_ARGS__)
 
 typedef u64 tpu_addr_t;
-
-/* "Coherent memory" allocated in iremap region. */
-struct edgetpu_coherent_mem {
-	void *vaddr;		/* kernel VA, no allocation if NULL */
-	dma_addr_t dma_addr;	/* TPU DMA address (default domain) */
-	u64 host_addr;		/* address mapped on host for debugging */
-	u64 phys_addr;		/* physical address, if available */
-	size_t size;
-};
 
 struct edgetpu_device_group;
 struct edgetpu_dev_iface;
@@ -235,6 +227,15 @@ struct edgetpu_dev {
 
 	/* Firmware debug service */
 	struct edgetpu_fw_debug_mem fw_debug_mem;
+
+	/*
+	 * Whether the firmware CPU is running (reset-signal released) or is being held in reset.
+	 *
+	 * This field must only be accessed while holding a PM reference (edgetpu_pm_get()) or
+	 * inside of the gcip_pm power_up/power_down handlers, which are called when the PM
+	 * ref-count goes changes from or to 0 respectively.
+	 */
+	bool firmware_cpu_on;
 };
 
 struct edgetpu_dev_iface {

@@ -18,6 +18,7 @@
 
 #include <gcip/gcip-fault-injection.h>
 #include <gcip/gcip-kci.h>
+#include <gcip/gcip-memory.h>
 
 #include "edgetpu-firmware.h"
 #include "edgetpu-internal.h"
@@ -34,9 +35,9 @@ struct edgetpu_kci {
 	struct gcip_kci *kci;
 	struct edgetpu_mailbox *mailbox;
 	/* Command queue buffer */
-	struct edgetpu_coherent_mem cmd_queue_mem;
+	struct gcip_memory cmd_queue_mem;
 	/* Response queue buffer */
-	struct edgetpu_coherent_mem resp_queue_mem;
+	struct gcip_memory resp_queue_mem;
 };
 
 /* VII response element */

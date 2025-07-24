@@ -126,18 +126,6 @@ static int edgetpu_pm_debugfs_state_get(void *data, u64 *val)
 
 DEFINE_DEBUGFS_ATTRIBUTE(fops_tpu_pwr_state, edgetpu_pm_debugfs_state_get, NULL, "%llu\n");
 
-static int edgetpu_pm_debugfs_cur_freq_get(void *data, u64 *val)
-{
-	struct edgetpu_dev *etdev = (typeof(etdev))data;
-	struct device *dev = etdev->dev;
-
-	*val = edgetpu_soc_pm_get_rate(etdev, 0);
-	dev_dbg(dev, "current tpu state: %llu\n", *val);
-	return 0;
-}
-
-DEFINE_DEBUGFS_ATTRIBUTE(fops_tpu_pwr_cur_freq, edgetpu_pm_debugfs_cur_freq_get, NULL, "%llu\n");
-
 static int mobile_pwr_policy_set(void *data, u64 val)
 {
 	struct edgetpu_dev *etdev = (typeof(etdev))data;
@@ -172,64 +160,6 @@ static int mobile_pwr_policy_get(void *data, u64 *val)
 }
 
 DEFINE_DEBUGFS_ATTRIBUTE(fops_tpu_pwr_policy, mobile_pwr_policy_get, mobile_pwr_policy_set,
-			 "%llu\n");
-
-static int mobile_pwr_min_freq_set(void *data, u64 val)
-{
-	struct edgetpu_dev *etdev = (typeof(etdev))data;
-	u32 min_freq;
-
-	if (val > UINT_MAX) {
-		dev_err(etdev->dev, "Requested debugfs min freq %llu must be <= %u (UINT_MAX)\n",
-			val, UINT_MAX);
-		return -EINVAL;
-	}
-
-	min_freq = (u32)val;
-
-	return edgetpu_pm_set_freq_limits(etdev, &min_freq, NULL);
-}
-
-static int mobile_pwr_min_freq_get(void *data, u64 *val)
-{
-	struct edgetpu_dev *etdev = (typeof(etdev))data;
-
-	mutex_lock(&etdev->pm->freq_limits_lock);
-	*val = etdev->pm->min_freq;
-	mutex_unlock(&etdev->pm->freq_limits_lock);
-	return 0;
-}
-
-DEFINE_DEBUGFS_ATTRIBUTE(fops_tpu_pwr_min_freq, mobile_pwr_min_freq_get, mobile_pwr_min_freq_set,
-			 "%llu\n");
-
-static int mobile_pwr_max_freq_set(void *data, u64 val)
-{
-	struct edgetpu_dev *etdev = (typeof(etdev))data;
-	u32 max_freq;
-
-	if (val > UINT_MAX) {
-		dev_err(etdev->dev, "Requested debugfs max freq %llu must be <= %u (UINT_MAX)\n",
-			val, UINT_MAX);
-		return -EINVAL;
-	}
-
-	max_freq = (u32)val;
-
-	return edgetpu_pm_set_freq_limits(etdev, NULL, &max_freq);
-}
-
-static int mobile_pwr_max_freq_get(void *data, u64 *val)
-{
-	struct edgetpu_dev *etdev = (typeof(etdev))data;
-
-	mutex_lock(&etdev->pm->freq_limits_lock);
-	*val = etdev->pm->max_freq;
-	mutex_unlock(&etdev->pm->freq_limits_lock);
-	return 0;
-}
-
-DEFINE_DEBUGFS_ATTRIBUTE(fops_tpu_pwr_max_freq, mobile_pwr_max_freq_get, mobile_pwr_max_freq_set,
 			 "%llu\n");
 
 static int mobile_power_down(void *data);
@@ -391,7 +321,15 @@ static int mobile_power_down(void *data)
 		edgetpu_kci_cancel_work_queues(etdev->etkci);
 	}
 
-	if (etdev->firmware) {
+	/*
+	 * If this function was called due to a failed power-up, the CPU may never have booted.
+	 * In that case, it's not necessary to attempt to put the CPU into reset here and the block
+	 * should be powered-down.
+	 *
+	 * This also ensures that a failed, unnecessary, CPU reset request failure does not keep the
+	 * block powered-up.
+	 */
+	if (etdev->firmware && etdev->firmware_cpu_on) {
 		res = edgetpu_firmware_reset_cpu(etdev, true);
 
 		if (res == -EAGAIN || res == -EIO)
@@ -445,12 +383,6 @@ static int mobile_pm_after_create(void *data)
 				    &fops_tpu_pwr_state);
 		debugfs_create_file("policy", 0660, etdev->pm->debugfs_dir, etdev,
 				    &fops_tpu_pwr_policy);
-		debugfs_create_file("min_freq", 0660, etdev->pm->debugfs_dir, etdev,
-				    &fops_tpu_pwr_min_freq);
-		debugfs_create_file("max_freq", 0660, etdev->pm->debugfs_dir, etdev,
-				    &fops_tpu_pwr_max_freq);
-		debugfs_create_file("cur_freq", 0440, etdev->pm->debugfs_dir, etdev,
-				    &fops_tpu_pwr_cur_freq);
 	}
 
 	ret = edgetpu_soc_pm_init(etdev);

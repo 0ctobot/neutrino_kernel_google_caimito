@@ -19,6 +19,7 @@
 #include <linux/string.h> /* memcpy */
 
 #include <gcip/gcip-firmware.h>
+#include <gcip/gcip-memory.h>
 #include <gcip/gcip-telemetry.h>
 #include <gcip/gcip-usage-stats.h>
 
@@ -64,8 +65,7 @@ static inline int check_etdev_state(struct edgetpu_kci *etkci, char *opstring)
 }
 
 static int edgetpu_kci_alloc_queue(struct edgetpu_dev *etdev, struct edgetpu_mailbox *mailbox,
-				   enum gcip_mailbox_queue_type type,
-				   struct edgetpu_coherent_mem *mem)
+				   enum gcip_mailbox_queue_type type, struct gcip_memory *mem)
 {
 	u32 queue_size = QUEUE_SIZE;
 	u32 size = queue_size * gcip_kci_queue_element_size(type);
@@ -85,7 +85,7 @@ static int edgetpu_kci_alloc_queue(struct edgetpu_dev *etdev, struct edgetpu_mai
 	return 0;
 }
 
-static void edgetpu_kci_free_queue(struct edgetpu_dev *etdev, struct edgetpu_coherent_mem *mem)
+static void edgetpu_kci_free_queue(struct edgetpu_dev *etdev, struct gcip_memory *mem)
 {
 	edgetpu_iremap_free(etdev, mem);
 }
@@ -240,8 +240,8 @@ static const struct gcip_kci_ops kci_ops = {
 int edgetpu_kci_init(struct edgetpu_mailbox_manager *mgr, struct edgetpu_kci *etkci)
 {
 	struct edgetpu_mailbox *mailbox = edgetpu_mailbox_kci(mgr);
-	struct edgetpu_coherent_mem *cmd_queue_mem = &etkci->cmd_queue_mem;
-	struct edgetpu_coherent_mem *resp_queue_mem = &etkci->resp_queue_mem;
+	struct gcip_memory *cmd_queue_mem = &etkci->cmd_queue_mem;
+	struct gcip_memory *resp_queue_mem = &etkci->resp_queue_mem;
 	struct gcip_kci_args args = {
 		.dev = mgr->etdev->dev,
 		.queue_wrap_bit = CIRC_QUEUE_WRAP_BIT,
@@ -267,21 +267,21 @@ int edgetpu_kci_init(struct edgetpu_mailbox_manager *mgr, struct edgetpu_kci *et
 	if (ret)
 		goto err_free_mailbox;
 
-	etdev_dbg(mgr->etdev, "%s: cmdq kva=%pK dma=%pad", __func__, cmd_queue_mem->vaddr,
+	etdev_dbg(mgr->etdev, "%s: cmdq kva=%pK dma=%pad", __func__, cmd_queue_mem->virt_addr,
 		  &cmd_queue_mem->dma_addr);
 
 	ret = edgetpu_kci_alloc_queue(mgr->etdev, mailbox, GCIP_MAILBOX_RESP_QUEUE, resp_queue_mem);
 	if (ret)
 		goto err_free_cmd_queue;
 
-	etdev_dbg(mgr->etdev, "%s: rspq kva=%pK dma=%pad", __func__,
-		  resp_queue_mem->vaddr, &resp_queue_mem->dma_addr);
+	etdev_dbg(mgr->etdev, "%s: rspq kva=%pK dma=%pad", __func__, resp_queue_mem->virt_addr,
+		  &resp_queue_mem->dma_addr);
 
 	mailbox->handle_irq = edgetpu_kci_handle_irq;
 	mailbox->internal.etkci = etkci;
 
-	args.cmd_queue = cmd_queue_mem->vaddr;
-	args.resp_queue = resp_queue_mem->vaddr;
+	args.cmd_queue = cmd_queue_mem->virt_addr;
+	args.resp_queue = resp_queue_mem->virt_addr;
 	ret = gcip_kci_init(etkci->kci, &args);
 	if (ret)
 		goto err_free_resp_queue;
@@ -304,8 +304,8 @@ int edgetpu_kci_reinit(struct edgetpu_kci *etkci)
 {
 	struct edgetpu_mailbox *mailbox = etkci->mailbox;
 	struct edgetpu_mailbox_manager *mgr;
-	struct edgetpu_coherent_mem *cmd_queue_mem = &etkci->cmd_queue_mem;
-	struct edgetpu_coherent_mem *resp_queue_mem = &etkci->resp_queue_mem;
+	struct gcip_memory *cmd_queue_mem = &etkci->cmd_queue_mem;
+	struct gcip_memory *resp_queue_mem = &etkci->resp_queue_mem;
 	unsigned long flags;
 	int ret;
 
@@ -371,21 +371,21 @@ static int edgetpu_kci_send_cmd_with_data(struct edgetpu_kci *etkci,
 {
 	struct edgetpu_mailbox *mailbox = etkci->mailbox;
 	struct edgetpu_dev *etdev = mailbox->etdev;
-	struct edgetpu_coherent_mem mem;
+	struct gcip_memory mem;
 	int ret;
 
 	ret = edgetpu_iremap_alloc(etdev, size, &mem);
 	if (ret)
 		return ret;
-	memcpy(mem.vaddr, data, size);
+	memcpy(mem.virt_addr, data, size);
 
-	etdev_dbg(etdev, "%s: map kva=%pK dma=%pad", __func__, mem.vaddr, &mem.dma_addr);
+	etdev_dbg(etdev, "%s: map kva=%pK dma=%pad", __func__, mem.virt_addr, &mem.dma_addr);
 
 	cmd->dma.address = mem.dma_addr;
 	cmd->dma.size = size;
 	ret = gcip_kci_send_cmd(etkci->kci, cmd);
 	edgetpu_iremap_free(etdev, &mem);
-	etdev_dbg(etdev, "%s: unmap kva=%pK dma=%pad", __func__, mem.vaddr, &mem.dma_addr);
+	etdev_dbg(etdev, "%s: unmap kva=%pK dma=%pad", __func__, mem.virt_addr, &mem.dma_addr);
 
 	return ret;
 }
@@ -427,7 +427,7 @@ enum gcip_fw_flavor edgetpu_kci_fw_info(struct edgetpu_kci *etkci, struct gcip_f
 			.size = 0,
 		},
 	};
-	struct edgetpu_coherent_mem mem;
+	struct gcip_memory mem;
 	struct gcip_kci_response_element resp;
 	enum gcip_fw_flavor flavor = GCIP_FW_FLAVOR_UNKNOWN;
 	int ret;
@@ -439,14 +439,14 @@ enum gcip_fw_flavor edgetpu_kci_fw_info(struct edgetpu_kci *etkci, struct gcip_f
 		etdev_warn(etdev, "error setting up fw info buffer: %d", ret);
 		memset(fw_info, 0, sizeof(*fw_info));
 	} else {
-		memset(mem.vaddr, 0, sizeof(*fw_info));
+		memset(mem.virt_addr, 0, sizeof(*fw_info));
 		cmd.dma.address = mem.dma_addr;
 		cmd.dma.size = sizeof(*fw_info);
 	}
 
 	ret = gcip_kci_send_cmd_return_resp(etkci->kci, &cmd, &resp);
 	if (cmd.dma.address) {
-		memcpy(fw_info, mem.vaddr, sizeof(*fw_info));
+		memcpy(fw_info, mem.virt_addr, sizeof(*fw_info));
 		edgetpu_iremap_free(etdev, &mem);
 	}
 
@@ -530,7 +530,7 @@ int edgetpu_kci_update_usage_locked(struct edgetpu_dev *etdev)
 			.flags = EDGETPU_USAGE_METRIC_VERSION,
 		},
 	};
-	struct edgetpu_coherent_mem mem;
+	struct gcip_memory mem;
 	struct gcip_kci_response_element resp;
 	int ret;
 
@@ -543,13 +543,13 @@ int edgetpu_kci_update_usage_locked(struct edgetpu_dev *etdev)
 
 	cmd.dma.address = mem.dma_addr;
 	cmd.dma.size = EDGETPU_USAGE_BUFFER_SIZE;
-	memset(mem.vaddr, 0, sizeof(struct gcip_usage_stats_header));
+	memset(mem.virt_addr, 0, sizeof(struct gcip_usage_stats_header));
 	ret = gcip_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
 
 	if (ret == GCIP_KCI_ERROR_UNIMPLEMENTED || ret == GCIP_KCI_ERROR_UNAVAILABLE) {
 		etdev_dbg(etdev, "firmware does not report usage\n");
 	} else if (ret == GCIP_KCI_ERROR_OK) {
-		edgetpu_usage_stats_process_buffer(etdev, mem.vaddr);
+		edgetpu_usage_stats_process_buffer(etdev, mem.virt_addr);
 	} else if (ret != -ETIMEDOUT) {
 		etdev_warn_once(etdev, "fw usage stats error %d", ret);
 	}
@@ -563,8 +563,8 @@ int edgetpu_kci_update_usage_locked(struct edgetpu_dev *etdev)
 void edgetpu_kci_mappings_show(struct edgetpu_dev *etdev, struct seq_file *s)
 {
 	struct edgetpu_kci *etkci = etdev->etkci;
-	struct edgetpu_coherent_mem *cmd_queue_mem = &etkci->cmd_queue_mem;
-	struct edgetpu_coherent_mem *resp_queue_mem = &etkci->resp_queue_mem;
+	struct gcip_memory *cmd_queue_mem = &etkci->cmd_queue_mem;
+	struct gcip_memory *resp_queue_mem = &etkci->resp_queue_mem;
 	struct edgetpu_iommu_domain *default_etdomain = edgetpu_mmu_default_domain(etdev);
 
 	seq_printf(s, "kci pasid %u:\n", default_etdomain->pasid);

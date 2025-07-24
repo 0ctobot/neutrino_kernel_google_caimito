@@ -12,6 +12,7 @@
 #include <linux/errno.h>
 #include <linux/interrupt.h>
 #include <linux/iopoll.h>
+#include <linux/limits.h>
 #include <linux/notifier.h>
 #include <linux/platform_device.h>
 #include <linux/thermal.h>
@@ -431,9 +432,9 @@ void edgetpu_soc_handle_reverse_kci(struct edgetpu_dev *etdev,
 	switch (resp->code) {
 	case RKCI_CODE_PM_QOS_BTS:
 		/* FW indicates to ignore the request by setting them to undefined values. */
-		if (resp->rkci_value2 != (typeof(resp->rkci_value2))~0ull)
+		if (resp->rkci_value2 != U32_MAX)
 			gsx01_set_pm_qos(etdev, resp->rkci_value2);
-		if (resp->rkci_value1 != (typeof(resp->rkci_value1))~0ull)
+		if (resp->rkci_value1 != U16_MAX)
 			gsx01_set_bts(etdev, resp->rkci_value1);
 		ret = edgetpu_kci_resp_rkci_ack(etdev, resp);
 		if (ret)

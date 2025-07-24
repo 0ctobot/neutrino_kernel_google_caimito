@@ -610,7 +610,8 @@ static int gcip_pin_user_pages(struct device *dev, struct page **pages, unsigned
 			       struct mutex *pin_user_pages_lock)
 {
 	int ret, i;
-	struct vm_area_struct **vmas;
+	struct vm_area_struct **vmas = NULL;
+	int tried;
 
 	ret = gcip_pin_user_pages_fast(pages, start_addr, num_pages, gup_flags,
 				       pin_user_pages_lock);
@@ -620,24 +621,35 @@ static int gcip_pin_user_pages(struct device *dev, struct page **pages, unsigned
 	dev_dbg(dev, "Failed to pin user pages in fast mode (ret=%d, addr=%lu, num_pages=%d)", ret,
 		start_addr, num_pages);
 
-	/* Allocate our own vmas array non-contiguous. */
-	vmas = kvmalloc((num_pages * sizeof(*vmas)), GFP_KERNEL | __GFP_NOWARN);
-	if (!vmas)
-		return -ENOMEM;
+	/*
+	 * pin_user_pages may fail due to temporary page reference counts held
+	 * in various areas. Retry under lru_cache_disable to release additional
+	 * reference counts from the LRU cache.
+	 */
+	for (tried = 0; tried < 5; tried++) {
+		if (tried > 0)
+			lru_cache_disable();
+		/* Allocate our own vmas array non-contiguous. */
+		vmas = kvmalloc((num_pages * sizeof(*vmas)), GFP_KERNEL | __GFP_NOWARN);
+		if (!vmas)
+			return -ENOMEM;
+		if (pin_user_pages_lock)
+			mutex_lock(pin_user_pages_lock);
+		mmap_read_lock(current->mm);
 
-	if (pin_user_pages_lock)
-		mutex_lock(pin_user_pages_lock);
-	mmap_read_lock(current->mm);
+		ret = pin_user_pages(start_addr, num_pages, gup_flags, pages, vmas);
 
-	ret = pin_user_pages(start_addr, num_pages, gup_flags, pages, vmas);
+		mmap_read_unlock(current->mm);
+		if (pin_user_pages_lock)
+			mutex_unlock(pin_user_pages_lock);
 
-	mmap_read_unlock(current->mm);
-	if (pin_user_pages_lock)
-		mutex_unlock(pin_user_pages_lock);
+		kvfree(vmas);
+		if (tried > 0)
+			lru_cache_enable();
 
-	kvfree(vmas);
+		if (ret == num_pages)
+			break;
 
-	if (ret < num_pages) {
 		if (ret > 0) {
 			dev_err(dev, "Can only lock %u of %u pages requested", ret, num_pages);
 			for (i = 0; i < ret; i++)
@@ -990,7 +1002,7 @@ static struct page **gcip_iommu_alloc_and_pin_user_pages(struct device *dev, u64
 	if (!(*gup_flags & FOLL_WRITE))
 		goto err_pin_read_only;
 
-	dev_dbg(dev, "pin failed with fault, assuming buffer is read-only");
+	dev_warn_ratelimited(dev, "pin failed (ret=%d), assuming buffer is read-only", ret);
 	*gup_flags &= ~FOLL_WRITE;
 
 	ret = gcip_pin_user_pages(dev, pages, start_addr, num_pages, *gup_flags,
@@ -1179,7 +1191,7 @@ struct gcip_iommu_mapping *gcip_iommu_domain_map_buffer_to_iova(struct gcip_iomm
 		return ERR_CAST(pages);
 	}
 
-	if (!(gup_flags & FOLL_WRITE)) {
+	if (!(gup_flags & FOLL_WRITE) && orig_dir != DMA_TO_DEVICE) {
 		gcip_map_flags &= ~(((BIT(GCIP_MAP_FLAGS_DMA_DIRECTION_BIT_SIZE) - 1)
 				     << GCIP_MAP_FLAGS_DMA_DIRECTION_OFFSET));
 		gcip_map_flags |= GCIP_MAP_FLAGS_DMA_DIRECTION_TO_FLAGS(DMA_TO_DEVICE);

@@ -12,6 +12,7 @@
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/rbtree.h>
+#include <linux/rwsem.h>
 #include <linux/refcount.h>
 #include <linux/seq_file.h>
 #include <linux/spinlock.h>
@@ -95,8 +96,16 @@ struct edgetpu_device_group {
 	/* Number of additional VII commands this client is allowed to enqueue. */
 	atomic_t available_vii_credits;
 
-	/* protects everything in the following comment block */
-	struct mutex lock;
+	/* TODO(b/409706886) Increase parallelism of group->lock holder using down_read. */
+	/*
+	 * Protects everything in the following comment block
+	 *
+	 * Most operations acquire this @lock as a writer. Only a few select operations, which only
+	 * read protected fields and have been tested to verify that they can safely run in
+	 * parallel, acquire @lock as readers. These operations use their own locks to ensure at
+	 * most one instance of each type of allowed operation is running at a time.
+	 */
+	struct rw_semaphore lock;
 	/* fields protected by @lock */
 
 	/* The only client in this group */
@@ -120,6 +129,18 @@ struct edgetpu_device_group {
 	struct list_head dma_fence_list;
 
 	/* end of fields protected by @lock */
+
+	/*
+	 * Used to synchronize any mapping operations for this device group.
+	 * @lock must be held for reading or writing whenever @mapping_lock is held.
+	 */
+	struct mutex mapping_lock;
+
+	/*
+	 * Used to synchronize any VII command sending or response fetching for this device group.
+	 * @lock must be held for reading or writing whenever @vii_lock is held.
+	 */
+	struct mutex vii_lock;
 
 	/* Lists of `struct edgetpu_ikv_response`s for consuming/cleanup respectively */
 	struct list_head ready_ikv_resps;
@@ -253,28 +274,27 @@ edgetpu_device_group_get(struct edgetpu_device_group *group)
 void edgetpu_device_group_put(struct edgetpu_device_group *group);
 
 /*
- * Allocates a device group with @client as the group leader.
+ * Creates a device group for @client.
  *
- * @client must not already belong to another group.
+ * @client must not already have created a group.
  * @client->group will be set as the returned group on success.
  *
  * Call edgetpu_device_group_put() when the returned group is not needed.
  *
- * Returns allocated group, or a negative errno on error.
- * Returns -EINVAL if the client already belongs to a group.
+ * Returns a pointer to the new group, or a negative errno on error.
+ * Returns -EINVAL if the client already created a group.
  */
 struct edgetpu_device_group *
-edgetpu_device_group_alloc(struct edgetpu_client *client,
-			   const struct edgetpu_mailbox_attr *attr);
+edgetpu_device_group_create(struct edgetpu_client *client, const struct edgetpu_mailbox_attr *attr);
 
 /*
- * Let @client leave the group it belongs to.
+ * Disband the device group @client created.
  * The group will be marked as "disbanded".
  *
  * @client->group will be removed from @client->etdev->groups.
  * @client->group will be set as NULL.
  */
-void edgetpu_device_group_leave(struct edgetpu_client *client);
+void edgetpu_device_group_disband(struct edgetpu_client *client);
 
 /*
  * Finalizes the group.
@@ -305,8 +325,15 @@ int edgetpu_device_group_sync_buffer(struct edgetpu_device_group *group,
 /* Clear all mappings for a device group. */
 void edgetpu_mappings_clear_group(struct edgetpu_device_group *group);
 
-/* Return total size of all mappings for the group in bytes */
-size_t edgetpu_group_mappings_total_size(struct edgetpu_device_group *group);
+/*
+ * Return total size of all mappings for the group in bytes
+ * @restrict32: only count mappings restricted to 32-bit CPU-accessible IOVA space.
+ */
+size_t edgetpu_group_mappings_total_size(struct edgetpu_device_group *group, bool restrict32);
+
+/* Log mapping error with additional info for debugging. */
+void edgetpu_device_group_log_map_error(struct edgetpu_device_group *group, size_t size,
+					edgetpu_map_flag_t flags, int errorval);
 
 /*
  * Return IOMMU domain for group mappings.

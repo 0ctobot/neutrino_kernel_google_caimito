@@ -13,6 +13,7 @@
 #include <linux/types.h>
 
 #include <gcip/gcip-mailbox.h>
+#include <gcip/gcip-memory.h>
 
 #include "edgetpu-internal.h"
 #include "edgetpu.h"
@@ -72,8 +73,6 @@ struct edgetpu_mailbox {
 	} internal;
 };
 
-typedef struct edgetpu_coherent_mem edgetpu_queue_mem;
-
 struct edgetpu_vii {
 	/*
 	 * The mailbox this VII uses, can be NULL when uninitialized or mailbox
@@ -81,15 +80,15 @@ struct edgetpu_vii {
 	 */
 	struct edgetpu_mailbox *mailbox;
 	struct edgetpu_dev *etdev;
-	edgetpu_queue_mem cmd_queue_mem;
-	edgetpu_queue_mem resp_queue_mem;
+	struct gcip_memory cmd_queue_mem;
+	struct gcip_memory resp_queue_mem;
 };
 
 /* Structure to hold info about mailbox and its queues. */
 struct edgetpu_mailbox_descriptor {
 	struct edgetpu_mailbox *mailbox;
-	edgetpu_queue_mem cmd_queue_mem;
-	edgetpu_queue_mem resp_queue_mem;
+	struct gcip_memory cmd_queue_mem;
+	struct gcip_memory resp_queue_mem;
 };
 
 enum edgetpu_ext_mailbox_type {
@@ -357,10 +356,9 @@ void edgetpu_mailbox_reset_mailboxes(struct edgetpu_mailbox_manager *mgr);
 
 int edgetpu_mailbox_alloc_queue(struct edgetpu_dev *etdev, struct edgetpu_mailbox *mailbox,
 				u32 queue_size, u32 unit, enum gcip_mailbox_queue_type type,
-				edgetpu_queue_mem *mem);
-void edgetpu_mailbox_free_queue(struct edgetpu_dev *etdev,
-				struct edgetpu_mailbox *mailbox,
-				edgetpu_queue_mem *mem);
+				struct gcip_memory *mem);
+void edgetpu_mailbox_free_queue(struct edgetpu_dev *etdev, struct edgetpu_mailbox *mailbox,
+				struct gcip_memory *mem);
 
 /*
  * Re-programs the CSRs of queue addresses, context, priority etc. to @group's

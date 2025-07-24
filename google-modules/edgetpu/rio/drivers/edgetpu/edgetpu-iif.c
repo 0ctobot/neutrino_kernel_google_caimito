@@ -9,6 +9,8 @@
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
 
+#include <gcip/gcip-memory.h>
+
 #include <iif/iif-fence.h>
 #include <iif/iif-manager.h>
 #include <iif/iif-shared.h>
@@ -125,7 +127,7 @@ static void edgetpu_cancel_iif_unblocked_work(struct edgetpu_iif *etiif)
 
 /* IIF Manager and Dev */
 
-
+/* TODO(b/410689519): remove embedded case */
 static void edgetpu_get_embedded_iif_mgr(struct edgetpu_iif *etiif)
 {
 	struct edgetpu_dev *etdev = etiif->etdev;
@@ -427,7 +429,7 @@ int edgetpu_iif_init_mailbox(struct edgetpu_mailbox_manager *mgr, struct edgetpu
 	}
 	edgetpu_mailbox_set_queue_as_unused(mbx_hardware, GCIP_MAILBOX_RESP_QUEUE);
 	mutex_init(&etiif->cmd_queue_lock);
-	args.cmd_queue = etiif->cmd_queue_mem.vaddr;
+	args.cmd_queue = etiif->cmd_queue_mem.virt_addr;
 
 	ret = gcip_mailbox_init(etiif->mbx_protocol, &args);
 	if (ret)
@@ -439,8 +441,7 @@ int edgetpu_iif_init_mailbox(struct edgetpu_mailbox_manager *mgr, struct edgetpu
 err_free_cmd_queue:
 	edgetpu_iremap_free(etdev, &etiif->cmd_queue_mem);
 err_mailbox_remove:
-	if (mbx_hardware)
-		edgetpu_mailbox_remove(mgr, mbx_hardware);
+	edgetpu_mailbox_remove(mgr, mbx_hardware);
 	etiif->mbx_hardware = NULL;
 
 	return ret;

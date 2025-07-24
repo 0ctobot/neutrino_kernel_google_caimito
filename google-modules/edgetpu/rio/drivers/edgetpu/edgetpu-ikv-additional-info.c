@@ -10,6 +10,8 @@
 #include <linux/sizes.h>
 #include <linux/types.h>
 
+#include <gcip/gcip-memory.h>
+
 #include "edgetpu-ikv-additional-info.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-iremap-pool.h"
@@ -78,7 +80,7 @@ void edgetpu_ikv_additional_info_fill(struct edgetpu_ikv_additional_info *info, 
 
 ssize_t edgetpu_ikv_additional_info_alloc_and_copy(struct edgetpu_dev *etdev,
 						   struct edgetpu_ikv_additional_info *info,
-						   struct edgetpu_coherent_mem *mem)
+						   struct gcip_memory *mem)
 {
 	ssize_t size = info->header.root_offset + info->root.runtime_data_offset +
 		       info->root.runtime_data_size;
@@ -91,24 +93,24 @@ ssize_t edgetpu_ikv_additional_info_alloc_and_copy(struct edgetpu_dev *etdev,
 	}
 
 	/* Copy header. */
-	memcpy(mem->vaddr, &info->header, sizeof(info->header));
+	memcpy(mem->virt_addr, &info->header, sizeof(info->header));
 
 	/* Copy root. */
-	memcpy(mem->vaddr + info->header.root_offset, &info->root, sizeof(info->root));
+	memcpy(mem->virt_addr + info->header.root_offset, &info->root, sizeof(info->root));
 
 	/* Copy in_fences. */
 	if (info->root.in_fences_count)
-		memcpy(mem->vaddr + info->header.root_offset + info->root.in_fences_offset,
+		memcpy(mem->virt_addr + info->header.root_offset + info->root.in_fences_offset,
 		       info->in_fences, sizeof(uint16_t) * info->root.in_fences_count);
 
 	/* Copy out_fences. */
 	if (info->root.out_fences_count)
-		memcpy(mem->vaddr + info->header.root_offset + info->root.out_fences_offset,
+		memcpy(mem->virt_addr + info->header.root_offset + info->root.out_fences_offset,
 		       info->out_fences, sizeof(uint16_t) * info->root.out_fences_count);
 
 	/* Copy runtime-defined additional info. */
 	if (info->root.runtime_data_size)
-		memcpy(mem->vaddr + info->header.root_offset + info->root.runtime_data_offset,
+		memcpy(mem->virt_addr + info->header.root_offset + info->root.runtime_data_offset,
 		       info->runtime_data, info->root.runtime_data_size);
 
 	return size;

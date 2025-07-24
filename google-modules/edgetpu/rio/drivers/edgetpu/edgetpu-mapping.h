@@ -132,8 +132,11 @@ static inline u64 mmu_flag_to_gcip_flags(u32 mmu_flags, enum dma_data_direction 
 	return gcip_map_flags;
 }
 
-/* Return total size of mappings under the supplied root. */
-size_t edgetpu_mappings_total_size(struct edgetpu_mapping_root *mappings);
+/*
+ * Return total size of mappings under the supplied root.
+ * @restrict32: only count mappings restricted to 32-bit CPU-accessible IOVA space.
+ */
+size_t edgetpu_mappings_total_size(struct edgetpu_mapping_root *mappings, bool restrict32);
 
 /*
  * Returns the gcip_map_flags encoded from edgetpu_dma_flags and dma_attrs.

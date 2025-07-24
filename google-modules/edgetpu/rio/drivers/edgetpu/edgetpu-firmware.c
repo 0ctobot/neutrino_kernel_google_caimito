@@ -826,6 +826,7 @@ int edgetpu_firmware_reset_cpu(struct edgetpu_dev *etdev, bool assert_reset)
 		return ret;
 	}
 
+	etdev->firmware_cpu_on = !assert_reset;
 	return 0;
 }
 

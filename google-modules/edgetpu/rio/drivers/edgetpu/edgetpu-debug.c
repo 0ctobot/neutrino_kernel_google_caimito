@@ -22,6 +22,7 @@
 #include <linux/slab.h>
 
 #include <gcip/gcip-alloc-helper.h>
+#include <gcip/gcip-memory.h>
 
 #include "edgetpu-config.h"
 #include "edgetpu-debug.h"
@@ -531,7 +532,7 @@ static int mobile_sscd_generate_dump(struct edgetpu_dev *etdev)
 
 	/* Populate sscd segments */
 	for (i = 0; i < etdev->num_cores; i++) {
-		struct gcip_telemetry_memory *log_mem = &etdev->telemetry[i].log_mem;
+		struct gcip_memory *log_mem = &etdev->telemetry[i].log_mem;
 		struct sscd_segment seg = {
 			.addr = log_mem->virt_addr,
 			.size = log_mem->size,

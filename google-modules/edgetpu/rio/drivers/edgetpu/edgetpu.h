@@ -199,9 +199,9 @@ struct edgetpu_mailbox_attr {
 };
 
 /*
- * Create a new device group with the caller as the master.
+ * Create a new device group for the calling client.
  *
- * EINVAL: If the caller already belongs to a group.
+ * EINVAL: If the caller currently has a group created already.
  * EINVAL: If @cmd_queue_size or @resp_queue_size equals 0.
  * EINVAL: If @sizeof_cmd or @sizeof_resp equals 0.
  * EINVAL: If @cmd_queue_size * 1024 / @sizeof_cmd >= 1024, this is a hardware
@@ -212,9 +212,11 @@ struct edgetpu_mailbox_attr {
 
 /*
  * Join the calling fd to the device group of the supplied fd.
+ * (No longer supported by newer drivers, returns ENOTTY if not supported.)
  *
  * EINVAL: If the caller already belongs to a group.
  * EINVAL: If the supplied FD is not for an open EdgeTPU device file.
+ * ENOTTY: No longer supported by the driver.
  */
 #define EDGETPU_JOIN_GROUP \
 	_IOW(EDGETPU_IOCTL_BASE, 7, __u32)
