@@ -771,6 +771,40 @@ static const struct snd_soc_component_driver soc_codec_dev_cs40l2x = {
 	.num_controls		= ARRAY_SIZE(cs40l2x_controls),
 };
 
+static int cs40l2x_startup(struct snd_pcm_substream *substream,
+	struct snd_soc_dai *dai) {
+	return 0;
+}
+
+static const struct snd_soc_dai_ops cs40l2x_dai_nop_ops = {
+	.startup = cs40l2x_startup,
+};
+
+static const struct snd_kcontrol_new cs40l2x_controls_nop[] = {
+	SOC_SINGLE("HAPTIC Disabled", SND_SOC_NOPM, 0, 0, 0)
+};
+
+static const struct snd_soc_component_driver soc_codec_dev_cs40l2x_nop = {
+	.controls = cs40l2x_controls_nop,
+	.num_controls = ARRAY_SIZE(cs40l2x_controls_nop),
+};
+
+static struct snd_soc_dai_driver cs40l2x_dai_nop[] = {
+	{
+		.name = "cs40l2x-pcm",
+		.id = 0,
+		.playback = {
+			.stream_name = "ASP Playback",
+			.channels_min = 1,
+			.channels_max = 2,
+			.rates = CS40L2X_RATES,
+			.formats = CS40L2X_FORMATS,
+		},
+		.ops = &cs40l2x_dai_nop_ops,
+		.symmetric_rate = 1,
+	},
+};
+
 static int cs40l2x_probe(struct platform_device *pdev)
 {
 	struct cs40l2x_private *core = dev_get_drvdata(pdev->dev.parent);
@@ -788,6 +822,13 @@ static int cs40l2x_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, priv);
 
 	pm_runtime_enable(&pdev->dev);
+
+	if (core->has_probe_failed) {
+		dev_warn(&pdev->dev, "Register NOP codec since haptic probe failed");
+		ret = snd_soc_register_component(&pdev->dev, &soc_codec_dev_cs40l2x_nop,
+					cs40l2x_dai_nop, ARRAY_SIZE(cs40l2x_dai_nop));
+		return ret;
+	}
 
 	ret = snd_soc_register_component(&pdev->dev, &soc_codec_dev_cs40l2x,
 					 cs40l2x_dai, ARRAY_SIZE(cs40l2x_dai));
