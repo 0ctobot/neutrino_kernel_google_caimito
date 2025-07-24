@@ -65,11 +65,6 @@ extern struct kbase_clk_rate_trace_op_conf pixel_clk_rate_trace_ops;
 
 extern struct kbase_platform_funcs_conf platform_funcs;
 
-#ifdef CONFIG_MALI_PIXEL_GPU_SECURE_RENDERING
-#define PLATFORM_PROTECTED_CALLBACKS (&pixel_protected_ops);
-extern struct protected_mode_ops pixel_protected_ops;
-#endif /* CONFIG_MALI_PIXEL_GPU_SECURE_RENDERING */
-
 /**
  * DVFS Utilization evaluation period
  *
@@ -361,10 +356,6 @@ struct pixel_context {
 		unsigned int top_suspend_hysteresis_time_ms;
 #endif /* CONFIG_MALI_PIXEL_GPU_SLEEP */
 	} pm;
-
-#ifdef CONFIG_MALI_PIXEL_GPU_SECURE_RENDERING
-	bool tz_protection_enabled;
-#endif /* CONFIG_MALI_PIXEL_GPU_SECURE_RENDERING */
 
 #ifdef CONFIG_MALI_MIDGARD_DVFS
 	struct {

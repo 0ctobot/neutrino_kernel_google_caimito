@@ -791,6 +791,10 @@ static void *mali_kutf_clk_rate_trace_create_fixture(struct kutf_context *contex
 		return NULL;
 
 	memset(data, 0, sizeof(*data));
+
+	/* Initialize listener's list node */
+	INIT_LIST_HEAD(&data->listener.node);
+
 	pr_debug("Hooking up the test portal to kbdev clk rate trace\n");
 	spin_lock(&kbdev->pm.clk_rtm.lock);
 
