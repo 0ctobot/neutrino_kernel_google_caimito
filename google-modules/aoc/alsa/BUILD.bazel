@@ -1,6 +1,18 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-load("//build/kernel/kleaf:kernel.bzl", "kernel_module")
+load("//build/kernel/kleaf:kernel.bzl", "ddk_uapi_headers", "kernel_module")
+
+ddk_uapi_headers(
+    name = "uapi_headers",
+    srcs = [
+        "//common:include/uapi/sound/asound.h",
+        "//common:include/uapi/sound/compress_offload.h",
+        "//common:include/uapi/sound/compress_params.h",
+    ],
+    out = "alsa-uapi-headers.tar.gz",
+    kernel_build = "//private/devices/google/common:kernel",
+    visibility = ["//private/devices/google:__subpackages__"],
+)
 
 filegroup(
     name = "headers",
