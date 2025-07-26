@@ -107,7 +107,7 @@ typedef struct {
 } aact_limits_profiles_t;
 
 /* the number should be the same as GBMS_AACT_NB_LIMITS_MAX */
-static aact_limits_profiles_t aact_all_limits = {
+static __maybe_unused aact_limits_profiles_t aact_all_limits = {
     .temp_limits = {
         "google,aact-temp-limits",
         "google,aact-temp-limits-1",
