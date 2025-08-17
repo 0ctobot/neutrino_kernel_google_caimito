@@ -2268,9 +2268,7 @@ static int qca_serdev_probe(struct serdev_device *serdev)
 					     PTR_ERR(qcadev->bt_en),
 					     "failed to acquire BT_EN gpio\n");
 
-		if (!qcadev->bt_en &&
-		    (data->soc_type == QCA_WCN6750 ||
-		     data->soc_type == QCA_WCN6855))
+		if (!qcadev->bt_en && data->soc_type == QCA_WCN6750)
 			power_ctrl_enabled = false;
 
 		qcadev->sw_ctrl = devm_gpiod_get_optional(&serdev->dev, "swctrl",
