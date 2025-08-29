@@ -32,6 +32,10 @@
 				tpu_clkdivstep = <0x41>;
 				gpu_con_heavy = <0xfff04381>;
 				gpu_con_light = <0xfff041c1>;
+				cpu2_con_heavy = <0xfff041c0>;
+				cpu2_con_light = <0xfff041c3>;
+				cpu1_con_heavy = <0xfff041c0>;
+				cpu1_con_light = <0xfff041c3>;
 				gpu_clkdivstep = <0x41>;
 				cpu2_clkdivstep = <0x41>;
 				cpu1_clkdivstep = <0x41>;

@@ -258,6 +258,8 @@
         b2_soft_ocp_warn_en = <OCP_WARN_DISABLE>;
         b3_soft_ocp_warn_en = <OCP_WARN_DISABLE>;
         b7_soft_ocp_warn_en = <OCP_WARN_DISABLE>;
+	b7_ocp_warn_lvl = <0>;
+	b7_soft_ocp_warn_lvl = <0>;
 };
 
 &s2mpg15mfd {

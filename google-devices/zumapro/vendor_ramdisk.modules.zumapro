@@ -189,8 +189,6 @@ extra/private/google-modules/display/samsung/panel/panel-samsung-s6e3hc3-c10.ko
 extra/private/google-modules/display/samsung/panel/panel-samsung-s6e3hc4.ko
 extra/private/google-modules/display/samsung/exynos-drm.ko
 extra/private/google-modules/display/samsung/exynos-drm-audio.ko
-extra/private/google-modules/gpu/mali_kbase/mali_kbase.ko
-extra/private/google-modules/gpu/mali_pixel/mali_pixel.ko
 extra/private/google-modules/hdcp/samsung/exynos-hdcp2.ko
 extra/private/google-modules/power/mitigation/google_bcl.ko
 extra/private/google-modules/power/reset/pixel-reboot.ko
