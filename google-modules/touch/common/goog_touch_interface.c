@@ -537,6 +537,10 @@ static ssize_t sensing_enabled_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size);
 static ssize_t test_limits_name_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
+static ssize_t timestamp_correction_enabled_show(struct device *dev,
+		struct device_attribute *attr, char *buf);
+static ssize_t timestamp_correction_enabled_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size);
 static ssize_t v4l2_enabled_show(struct device *dev,
 		struct device_attribute *attr, char *buf);
 static ssize_t v4l2_enabled_store(struct device *dev,
@@ -570,6 +574,7 @@ static DEVICE_ATTR_RW(screen_protector_mode_enabled);
 static DEVICE_ATTR_RO(self_test);
 static DEVICE_ATTR_RW(sensing_enabled);
 static DEVICE_ATTR_RO(test_limits_name);
+static DEVICE_ATTR_RW(timestamp_correction_enabled);
 static DEVICE_ATTR_RW(v4l2_enabled);
 static DEVICE_ATTR_RW(vrr_enabled);
 static DEVICE_ATTR_RW(interactive_calibrate);
@@ -595,6 +600,7 @@ static struct attribute *goog_attributes[] = {
 	&dev_attr_self_test.attr,
 	&dev_attr_sensing_enabled.attr,
 	&dev_attr_test_limits_name.attr,
+	&dev_attr_timestamp_correction_enabled.attr,
 	&dev_attr_v4l2_enabled.attr,
 	&dev_attr_vrr_enabled.attr,
 	&dev_attr_interactive_calibrate.attr,
@@ -1409,6 +1415,33 @@ static ssize_t test_limits_name_show(struct device *dev,
 	GOOG_INFO(gti, "%s", buf);
 
 	return buf_idx;
+}
+
+static ssize_t timestamp_correction_enabled_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	ssize_t buf_idx = 0;
+	struct goog_touch_interface *gti = dev_get_drvdata(dev);
+
+	buf_idx += scnprintf(buf + buf_idx, PAGE_SIZE - buf_idx,
+		"result: %d\n", gti->timestamp_correction_enabled);
+	GOOG_LOGI(gti, "%s", buf);
+
+	return buf_idx;
+}
+
+static ssize_t timestamp_correction_enabled_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	struct goog_touch_interface *gti = dev_get_drvdata(dev);
+
+	if (kstrtobool(buf, &gti->timestamp_correction_enabled))
+		GOOG_LOGE(gti, "error: invalid input!\n");
+	else
+		GOOG_LOGI(gti, "timestamp_correction_enabled= %d\n",
+				gti->timestamp_correction_enabled);
+
+	return size;
 }
 
 static ssize_t v4l2_enabled_show(struct device *dev,
@@ -2646,6 +2679,12 @@ int goog_process_vendor_cmd(struct goog_touch_interface *gti, enum gti_cmd_type 
 	case GTI_CMD_SET_REPORT_RATE:
 		GOOG_INFO(gti, "Set touch report rate as %d Hz", gti->cmd.report_rate_cmd.setting);
 		ret = gti->options.set_report_rate(private_data, &gti->cmd.report_rate_cmd);
+		if (ret == 0) {
+			if (gti->timestamp_correction_enabled) {
+				gti->report_rate = gti->cmd.report_rate_cmd.setting;
+				gti->frame_time = ktime_set(0, NSEC_PER_SEC / gti->report_rate);
+			}
+		}
 		break;
 	case GTI_CMD_SET_SCAN_MODE:
 		ret = gti->options.set_scan_mode(private_data, &gti->cmd.scan_cmd);
@@ -3852,18 +3891,114 @@ void goog_input_unlock(struct goog_touch_interface *gti)
 }
 EXPORT_SYMBOL_GPL(goog_input_unlock);
 
+static int pid_controller_init(struct pid_controller *pid, s64 kp, s64 ki, s64 kd, s64 div)
+{
+	pid->k1 = kp + ki + kd;
+	pid->k2 = -1 * kp - 2 * kd;
+	pid->k3 = kd;
+	pid->div = div;
+	return 0;
+}
+
+static s64 pid_controller_process(struct pid_controller *pid, s64 e)
+{
+	pid->e2 = pid->e1;
+	pid->e1 = pid->e0;
+	pid->e0 = e;
+	return (pid->k1 * pid->e0 + pid->k2 * pid->e1 + pid->k3 * pid->e2) / pid->div;
+}
+
 void goog_input_set_timestamp(
 		struct goog_touch_interface *gti,
 		struct input_dev *dev, ktime_t timestamp)
 {
+	s64 dt = 0;
+	s64 dt_sensing = 0;
+	s64 e = 0;
+	s64 u = 0;
+	ktime_t timestamp_corrected;
+	s64 max_dt = 100 * NSEC_PER_MSEC;
+	s64 u_limit = 100 * NSEC_PER_USEC;
+
 	if (!gti) {
 		input_set_timestamp(dev, timestamp);
 		return;
 	}
+
+	if (gti->timestamp_correction_enabled) {
+		dt = ktime_to_ns(ktime_sub(timestamp, gti->input_timestamp));
+		dt_sensing = gti->sensing_timestamp - gti->last_sensing_timestamp;
+		/*
+		 * 1. If this is first finger down, skip correction.
+		 * 2. If delta time is bigger than 100ms, skip correction. The related time
+		 *    doesn't matter in this case.
+		 * 3. If sensing time is not ready, skip correction.
+		 */
+		if (gti->sensing_timestamp_changed && gti->slot_bit_active &&
+				dt > -max_dt && dt < max_dt &&
+				dt_sensing > -max_dt && dt_sensing < max_dt) {
+			timestamp_corrected = ktime_add_ns(gti->input_timestamp, dt_sensing);
+
+			/*
+			 * Use closed-loop control and pid controller to track host timestamp.
+			 * Because host clock and TIC clock are not synced. There will be a drift
+			 * over time.
+			 *
+			 * input: timestamp
+			 * output: timestamp_corrected
+			 * closed-loop error: e = timestamp - timestamp_corrected
+			 * control signal: u = pid(e)
+			 */
+			e = ktime_to_ns(ktime_sub(timestamp, timestamp_corrected));
+			u = pid_controller_process(&gti->pid, e);
+
+			/*
+			 * Limit the maximum and minimum u to reduce the jitter of report rate.
+			 */
+			if (u > u_limit)
+				u = u_limit;
+			else if (u < -u_limit)
+				u = -u_limit;
+
+			timestamp_corrected = ktime_add_ns(timestamp_corrected, u);
+
+			dt = ktime_to_ns(ktime_sub(timestamp, timestamp_corrected));
+			if (dt > 2 * ktime_to_ns(gti->frame_time)) {
+				timestamp_corrected = ktime_sub_ns(timestamp,
+						2 * ktime_to_ns(gti->frame_time));
+			} else if (dt < -2 * NSEC_PER_MSEC) {
+				timestamp_corrected = ktime_add_ns(timestamp, 2 * NSEC_PER_MSEC);
+			}
+
+			timestamp = timestamp_corrected;
+		}
+	}
+
 	gti->input_timestamp = timestamp;
 	gti->input_timestamp_changed = true;
+	gti->sensing_timestamp_changed = false;
 }
 EXPORT_SYMBOL_GPL(goog_input_set_timestamp);
+
+void goog_input_set_sensing_timestamp(
+		struct goog_touch_interface *gti,
+		struct input_dev *dev, u64 timestamp)
+{
+	if (gti == NULL)
+		return;
+
+	if (timestamp < gti->sensing_timestamp) {
+		GOOG_ERR(gti,
+			"Invalid timestamp. The timestamps must be monotonic, prev: %llu new: %llu\n",
+			gti->sensing_timestamp, timestamp);
+		return;
+	}
+
+	gti->last_sensing_timestamp = gti->sensing_timestamp;
+	gti->sensing_timestamp = timestamp;
+	gti->sensing_timestamp_changed = true;
+}
+EXPORT_SYMBOL_GPL(goog_input_set_sensing_timestamp);
 
 void goog_input_mt_slot(
 		struct goog_touch_interface *gti,
@@ -4216,6 +4351,16 @@ void goog_init_input(struct goog_touch_interface *gti)
 	for (i = 0 ; i < MAX_SLOTS ; i++)
 		gti->debug_input[i].slot = i;
 	gti->debug_warning_limit = TOUCH_OFFLOAD_BUFFER_NUM;
+
+	gti->timestamp_correction_enabled = of_property_read_bool(
+			gti->vendor_dev->of_node, "goog,timestamp-correction-enabled");
+	if (gti->timestamp_correction_enabled) {
+		pid_controller_init(&gti->pid, 1, 20, 1, 500);
+
+		if (of_property_read_u32(gti->vendor_dev->of_node, "goog,default-report-rate",
+				&gti->default_report_rate))
+			gti->default_report_rate = 240;
+	}
 
 	if (gti->vendor_dev && gti->vendor_input_dev) {
 		gti->abs_x_max = input_abs_get_max(gti->vendor_input_dev, ABS_MT_POSITION_X);
@@ -4699,6 +4844,12 @@ void goog_notify_fw_status_changed(struct goog_touch_interface *gti,
 		gti->mf_state = GTI_MF_STATE_FILTERED;
 		goog_input_release_all_fingers(gti);
 		goog_update_fw_settings(gti, true);
+
+		if (gti->timestamp_correction_enabled) {
+			gti->report_rate = gti->default_report_rate;
+			gti->frame_time = ktime_set(0, NSEC_PER_SEC / gti->report_rate);
+		}
+
 		break;
 	case GTI_FW_STATUS_PALM_ENTER:
 		GOOG_INFO(gti, "Enter palm mode\n");

@@ -779,6 +779,28 @@ struct gti_pm {
 };
 
 /**
+ * struct pid_controller - A pid controller.
+ * u = (k1*e(i) + k2*e(i-1) + k3*e(i-2)) / div
+ *
+ * @e0: e(i).
+ * @e1: e(i-1).
+ * @e2: e(i-2).
+ * @k1: the coefficient of e(i).
+ * @k2: the coefficient of e(i-1).
+ * @k3: the coefficient of e(i-2).
+ * @div: for simulate a float value by integer.
+ */
+struct pid_controller {
+	s64 e0;
+	s64 e1;
+	s64 e2;
+	s64 k1;
+	s64 k2;
+	s64 k3;
+	s64 div;
+};
+
+/**
  * struct goog_touch_interface - Google touch interface data for Pixel.
  * @vendor_private_data: the private data pointer that used by touch vendor driver.
  * @vendor_dev: pointer to struct device that used by touch vendor driver.
@@ -904,9 +926,16 @@ struct goog_touch_interface {
 	struct proc_dir_entry *proc_show[GTI_PROC_NUM];
 	struct work_struct set_op_hz_work;
 	struct workqueue_struct *event_wq;
+	struct pid_controller pid;
 	ktime_t input_dev_mono_ktime;
 	ktime_t input_timestamp;
+	u64 sensing_timestamp;
+	u64 last_sensing_timestamp;
+	bool sensing_timestamp_changed;
 	ktime_t mf_downtime;
+	u32 default_report_rate;
+	u32 report_rate;
+	ktime_t frame_time;
 
 	bool vrr_enabled;
 	int report_rate_table_size;
@@ -952,6 +981,7 @@ struct goog_touch_interface {
 	bool reset_after_selftest;
 	bool lptw_triggered;
 	bool lptw_suppress_coords_enabled;
+	bool timestamp_correction_enabled;
 	bool lptw_track_finger;
 	u32 lptw_track_min_x;
 	u32 lptw_track_max_x;
@@ -1035,6 +1065,9 @@ inline void goog_input_unlock(struct goog_touch_interface *gti);
 inline void goog_input_set_timestamp(
 		struct goog_touch_interface *gti,
 		struct input_dev *dev, ktime_t timestamp);
+inline void goog_input_set_sensing_timestamp(
+		struct goog_touch_interface *gti,
+		struct input_dev *dev, u64 timestamp);
 inline void goog_input_mt_slot(
 		struct goog_touch_interface *gti,
 		struct input_dev *dev, int slot);
