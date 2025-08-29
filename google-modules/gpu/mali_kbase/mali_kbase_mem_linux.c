@@ -38,6 +38,7 @@
 #include <linux/math64.h>
 #include <linux/migrate.h>
 #include <linux/version.h>
+#include <linux/version_compat_defs.h>
 #include <mali_kbase.h>
 #include <mali_kbase_io.h>
 #include <mali_kbase_mem_linux.h>
@@ -3482,6 +3483,23 @@ static const struct vm_operations_struct kbase_csf_user_io_pages_vm_ops = {
 	.fault = kbase_csf_user_io_pages_vm_fault
 };
 
+static void user_io_pages_map_fail_cleanup(struct kbase_context *kctx, struct kbase_queue *queue)
+{
+	lockdep_assert_held(&kctx->csf.lock);
+
+	/* The queue should be hooked to kctx list, with its initial ref_count: 1 */
+	WARN_ON(kbase_refcount_read(&queue->refcount) != 1);
+
+	/* Bump-up the ref-count for sharing the use of function
+	 * kbase_csf_queue_unbind_stopped() to place the queue into
+	 * stopped state, pending for final free from user-side, or
+	 * kctx termination.
+	 */
+	kbase_refcount_inc(&queue->refcount);
+
+	kbase_csf_queue_unbind_stopped(queue);
+}
+
 /* Program the client process's page table entries to map the pair of
  * input/output pages & Hw doorbell page. The caller should have validated that
  * vma->vm_pgoff maps to the range of csf cookies.
@@ -3545,13 +3563,11 @@ static int kbase_csf_cpu_mmap_user_io_pages(struct kbase_context *kctx, struct v
 	return 0;
 
 map_failed:
-	/* The queue cannot have got to KBASE_CSF_QUEUE_BOUND state if we
-	 * reached here, so safe to use a variant of unbind that only works on
-	 * stopped queues
-	 *
-	 * This is so we don't enter the CSF scheduler from this path.
+	/* The queue failed to reach KBASE_CSF_QUEUE_BOUND state. It would not be
+	 * runnable from here onwards. The cleanup will unbound the queue and keep
+	 * it unusable, pending for user-side termination (or process exit).
 	 */
-	kbase_csf_queue_unbind_stopped(queue);
+	user_io_pages_map_fail_cleanup(kctx, queue);
 
 	return err;
 }
