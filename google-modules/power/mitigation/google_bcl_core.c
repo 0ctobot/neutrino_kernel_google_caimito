@@ -508,6 +508,17 @@ static int google_init_ratio(struct bcl_device *data, enum SUBSYSTEM_SOURCE idx)
 	if (!smp_load_acquire(&data->initialized))
 		return -EINVAL;
 
+	if (idx == SUBSYSTEM_CPU1 || idx == SUBSYSTEM_CPU2) {
+		if (data->core_conf[idx].con_heavy > 0)
+			cpu_buff_write(data, idx, CPU_BUFF_CON_HEAVY,
+						   data->core_conf[idx].con_heavy);
+		if (data->core_conf[idx].con_light > 0)
+			cpu_buff_write(data, idx, CPU_BUFF_CON_LIGHT,
+						   data->core_conf[idx].con_light);
+
+		return 0;
+	}
+
 	if (!bcl_is_subsystem_on(data, subsystem_pmu[idx]))
 		return -EIO;
 
@@ -1902,7 +1913,12 @@ static int google_set_main_pmic(struct bcl_device *bcl_dev)
 #if IS_ENABLED(CONFIG_REGULATOR_S2MPG14)
 	/* SMPL_WARN = 3.0V */
 	pmic_write(CORE_PMIC_MAIN, bcl_dev, S2MPG14_PM_SMPL_WARN_CTRL, bcl_dev->smpl_ctrl);
+#elif IS_ENABLED(CONFIG_REGULATOR_S2MPG12)
+	pmic_write(CORE_PMIC_MAIN, bcl_dev, S2MPG12_PM_SMPL_WARN_CTRL, bcl_dev->smpl_ctrl);
+#elif IS_ENABLED(CONFIG_REGULATOR_S2MPG10)
+	pmic_write(CORE_PMIC_MAIN, bcl_dev, S2MPG10_PM_SMPL_WARN_CTRL, bcl_dev->smpl_ctrl);
 #endif
+
 
 	ret = google_bcl_register_zones_main(bcl_dev, pdata_main);
 	if (ret < 0)
@@ -2175,6 +2191,14 @@ static void google_bcl_parse_clk_div_dtree(struct bcl_device *bcl_dev)
 	bcl_dev->core_conf[SUBSYSTEM_GPU].con_heavy = ret ? 0 : val;
 	ret = of_property_read_u32(np, "gpu_con_light", &val);
 	bcl_dev->core_conf[SUBSYSTEM_GPU].con_light = ret ? 0 : val;
+	ret = of_property_read_u32(np, "cpu2_con_heavy", &val);
+	bcl_dev->core_conf[SUBSYSTEM_CPU2].con_heavy = ret ? 0 : val;
+	ret = of_property_read_u32(np, "cpu2_con_light", &val);
+	bcl_dev->core_conf[SUBSYSTEM_CPU2].con_light = ret ? 0 : val;
+	ret = of_property_read_u32(np, "cpu1_con_heavy", &val);
+	bcl_dev->core_conf[SUBSYSTEM_CPU1].con_heavy = ret ? 0 : val;
+	ret = of_property_read_u32(np, "cpu1_con_light", &val);
+	bcl_dev->core_conf[SUBSYSTEM_CPU1].con_light = ret ? 0 : val;
 	ret = of_property_read_u32(np, "gpu_clkdivstep", &val);
 	bcl_dev->core_conf[SUBSYSTEM_GPU].clkdivstep = ret ? 0 : val;
 	ret = of_property_read_u32(np, "tpu_clkdivstep", &val);
@@ -2423,6 +2447,8 @@ static int google_bcl_probe(struct platform_device *pdev)
 	smp_store_release(&bcl_dev->hw_mitigation_enabled, true);
 	smp_store_release(&bcl_dev->initialized, true);
 
+	google_init_ratio(bcl_dev, SUBSYSTEM_CPU1);
+	google_init_ratio(bcl_dev, SUBSYSTEM_CPU2);
 	dev_info(bcl_dev->device, "BCL done\n");
 
 	return 0;
