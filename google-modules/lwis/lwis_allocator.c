@@ -16,32 +16,46 @@
 static void allocator_block_pool_free_locked(struct lwis_device *lwis_dev,
 					     struct lwis_allocator_block_pool *block_pool)
 {
-	struct lwis_allocator_block_mgr *block_mgr = lwis_dev->block_mgr;
+	struct lwis_allocator_block *block_to_free;
+	unsigned long flags_alloc;
 
 	if (block_pool == NULL) {
 		dev_err(lwis_dev->dev, "block_pool is NULL\n");
 		return;
 	}
 	if (block_pool->in_use_count != 0 || block_pool->in_use != NULL) {
-		dev_err(lwis_dev->dev, "block_pool %s still has %d block(s) in use\n",
-			block_pool->name, block_pool->in_use_count);
+		dev_warn(lwis_dev->dev,
+			 "block_pool %s still has %d block(s) in use during release\n",
+			 block_pool->name, block_pool->in_use_count);
 	}
 
-	while (block_pool->free != NULL) {
-		struct lwis_allocator_block *curr;
-		struct lwis_allocator_block *block;
-		struct hlist_node *n;
-		int i;
+	/* Loop until the free list is empty */
+	for (;;) {
+		spin_lock_irqsave(&lwis_dev->allocator_lock, flags_alloc);
 
-		curr = block_pool->free;
-		hash_for_each_safe(block_mgr->allocated_blocks, i, n, block, node) {
-			if (block->ptr == curr->ptr)
-				hash_del(&block->node);
+		/* No more blocks to free */
+		if (block_pool->free == NULL) {
+			spin_unlock_irqrestore(&lwis_dev->allocator_lock, flags_alloc);
+			break;
 		}
-		block_pool->free = curr->next;
+
+		block_to_free = block_pool->free;
+
+		/* Unlink from block_pool->free list */
+		block_pool->free = block_to_free->next;
+		if (block_pool->free != NULL) {
+			block_pool->free->prev = NULL;
+		}
 		block_pool->free_count--;
-		kvfree(curr->ptr);
-		kfree(curr);
+
+		/* Remove from the global allocated_blocks hash table */
+		hash_del(&block_to_free->node);
+
+		spin_unlock_irqrestore(&lwis_dev->allocator_lock, flags_alloc);
+
+		/* Perform actual free operations outside the spinlock */
+		kvfree(block_to_free->ptr);
+		kfree(block_to_free);
 	}
 }
 
