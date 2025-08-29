@@ -60,13 +60,13 @@
 		b3_ocp_warn_en = <OCP_WARN_ENABLE>;
 		b3_ocp_warn_cnt = <OCP_WARN_2_CLOCK>;
 		b3_ocp_warn_dvs_mask = <OCP_WARN_NOT_MASKED>;
-		b3_ocp_warn_lvl = <OCP_WARN_LVL_3PH_13_50_A>;
+		b3_ocp_warn_lvl = <OCP_WARN_LVL_3PH_12_A>;
 		b3_ocp_warn_debounce_clk = <3>;
 
 		b7_ocp_warn_en = <OCP_WARN_ENABLE>;
 		b7_ocp_warn_cnt = <OCP_WARN_2_CLOCK>;
 		b7_ocp_warn_dvs_mask = <OCP_WARN_NOT_MASKED>;
-		b7_ocp_warn_lvl = <OCP_WARN_LVL_3PH_13_50_A>;
+		b7_ocp_warn_lvl = <OCP_WARN_LVL_3PH_12_A>;
 		b7_ocp_warn_debounce_clk = <3>;
 
 		b2_soft_ocp_warn_en = <OCP_WARN_ENABLE>;
@@ -78,13 +78,13 @@
 		b3_soft_ocp_warn_en = <OCP_WARN_ENABLE>;
 		b3_soft_ocp_warn_cnt = <OCP_WARN_2_CLOCK>;
 		b3_soft_ocp_warn_dvs_mask = <OCP_WARN_NOT_MASKED>;
-		b3_soft_ocp_warn_lvl = <OCP_WARN_LVL_3PH_13_50_A>;
+		b3_soft_ocp_warn_lvl = <OCP_WARN_LVL_3PH_12_A>;
 		b3_soft_ocp_warn_debounce_clk = <3>;
 
 		b7_soft_ocp_warn_en = <OCP_WARN_ENABLE>;
 		b7_soft_ocp_warn_cnt = <OCP_WARN_2_CLOCK>;
 		b7_soft_ocp_warn_dvs_mask = <OCP_WARN_NOT_MASKED>;
-		b7_soft_ocp_warn_lvl = <OCP_WARN_LVL_3PH_13_50_A>;
+		b7_soft_ocp_warn_lvl = <OCP_WARN_LVL_3PH_8_50_A>;
 		b7_soft_ocp_warn_debounce_clk = <3>;
 
 		/* BUCK OCP Detection */

@@ -77,7 +77,6 @@
 				google,bd-recharge-soc = <79>;
 				/* Enable TEMP-DEFEND */
 				google,bd-temp-enable;
-				google,bd-temp-dry-run;
 
 				google,chg-termination-5v;
 				google,chg-taper-last-tier;
