@@ -14,7 +14,6 @@
 
 #include <gcip/gcip-mailbox.h>
 #include <gcip/gcip-memory.h>
-#include <trace/events/gxp.h>
 
 #include "gxp-mailbox-driver.h"
 #include "gxp-mailbox-regs.h"
@@ -35,8 +34,6 @@ static void data_write(struct gxp_mailbox *mailbox, uint reg_offset, u32 value)
 static irqreturn_t mailbox_irq_handler(int irq, void *arg)
 {
 	struct gxp_mailbox *mailbox = (struct gxp_mailbox *)arg;
-
-	trace_gxp_uci_rsp_start(irq);
 
 	gxp_mailbox_chip_irq_handler(mailbox);
 	return IRQ_HANDLED;

@@ -945,10 +945,12 @@ static int gxp_pm_power_up(void *data)
 	struct gxp_dev *gxp = data;
 	int ret;
 
-	ret = gxp_pm_is_blk_down_timeout(gxp, 5000);
-	if (!ret) {
-		dev_err(gxp->dev, "power up failed, block already on");
-		return -EAGAIN;
+	if (!GXP_ALWAYS_ON) {
+		ret = gxp_pm_is_blk_down_timeout(gxp, 5000);
+		if (!ret) {
+			dev_err(gxp->dev, "power up failed, block already on");
+			return -EAGAIN;
+		}
 	}
 
 	ret = gxp_pm_blk_on(gxp);

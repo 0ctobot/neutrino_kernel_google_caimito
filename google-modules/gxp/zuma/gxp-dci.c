@@ -220,13 +220,6 @@ static u64 gxp_dci_get_cmd_elem_seq(struct gcip_mailbox *mailbox, void *cmd)
 	return elem->seq;
 }
 
-static u32 gxp_dci_get_cmd_elem_code(struct gcip_mailbox *mailbox, void *cmd)
-{
-	struct gxp_dci_command *elem = cmd;
-
-	return elem->code;
-}
-
 static void gxp_dci_set_cmd_elem_seq(struct gcip_mailbox *mailbox, void *cmd,
 				     u64 seq)
 {
@@ -358,7 +351,6 @@ static const struct gcip_mailbox_ops gxp_dci_gcip_mbx_ops = {
 	.release_cmd_queue_lock = gxp_mailbox_gcip_ops_release_cmd_queue_lock,
 	.get_cmd_elem_seq = gxp_dci_get_cmd_elem_seq,
 	.set_cmd_elem_seq = gxp_dci_set_cmd_elem_seq,
-	.get_cmd_elem_code = gxp_dci_get_cmd_elem_code,
 	.get_resp_queue_size = gxp_mailbox_gcip_ops_get_resp_queue_size,
 	.get_resp_queue_head = gxp_mailbox_gcip_ops_get_resp_queue_head,
 	.get_resp_queue_tail = gxp_mailbox_gcip_ops_get_resp_queue_tail,

@@ -5,6 +5,8 @@
  * Copyright (C) 2022 Google LLC
  */
 
+#include <asm/barrier.h>
+
 #include <linux/device.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -37,7 +39,6 @@
 
 #define GET_CMD_ELEM_SEQ(cmd) mailbox->ops->get_cmd_elem_seq(mailbox, cmd)
 #define SET_CMD_ELEM_SEQ(cmd, seq) mailbox->ops->set_cmd_elem_seq(mailbox, cmd, seq)
-#define GET_CMD_ELEM_CODE(cmd) mailbox->ops->get_cmd_elem_code(mailbox, cmd)
 
 #define GET_RESP_QUEUE_SIZE() mailbox->ops->get_resp_queue_size(mailbox)
 #define GET_RESP_QUEUE_HEAD() mailbox->ops->get_resp_queue_head(mailbox)
@@ -161,6 +162,11 @@ static uint gcip_mailbox_inc_seq_num_locked(struct gcip_mailbox *mailbox, uint n
 	return ret;
 }
 
+static inline bool should_maintain_seq_num(u8 mode)
+{
+	return ((mode & GCIP_MAILBOX_MODE_TX_CMD) && (mode & GCIP_MAILBOX_MODE_RX_RSP));
+}
+
 /*
  * Pushes @cmd to the command queue of mailbox and returns. @resp should be passed if the request
  * is synchronous and want to get the response. If @resp is NULL even though the request is
@@ -177,8 +183,10 @@ static int gcip_mailbox_enqueue_cmd(struct gcip_mailbox *mailbox, void *cmd,
 
 	ACQUIRE_CMD_QUEUE_LOCK(false, &atomic);
 
-	if (!(flags & GCIP_MAILBOX_CMD_FLAGS_SKIP_ASSIGN_SEQ))
+	if (should_maintain_seq_num(mailbox->mode) &&
+	    !(flags & GCIP_MAILBOX_CMD_FLAGS_SKIP_ASSIGN_SEQ))
 		SET_CMD_ELEM_SEQ(cmd, mailbox->cur_seq);
+
 	/* Wait until the cmd queue has a space for putting cmd. */
 	ret = mailbox->ops->wait_for_cmd_queue_not_full(mailbox);
 	if (ret)
@@ -214,7 +222,8 @@ static int gcip_mailbox_enqueue_cmd(struct gcip_mailbox *mailbox, void *cmd,
 		}
 	}
 
-	if (!(flags & GCIP_MAILBOX_CMD_FLAGS_SKIP_ASSIGN_SEQ))
+	if (should_maintain_seq_num(mailbox->mode) &&
+	    !(flags & GCIP_MAILBOX_CMD_FLAGS_SKIP_ASSIGN_SEQ))
 		gcip_mailbox_inc_seq_num_locked(mailbox, 1);
 
 out:
@@ -246,17 +255,20 @@ static void gcip_mailbox_handle_response(struct gcip_mailbox *mailbox, void *res
 	struct gcip_mailbox_resp_awaiter *awaiter = NULL;
 	unsigned long flags;
 
-	/* If before_handle_resp is defined and it returns false, don't handle the response */
-	if (mailbox->ops->before_handle_resp && !mailbox->ops->before_handle_resp(mailbox, resp))
-		return;
-
 	spin_lock_irqsave(&mailbox->wait_list_lock, flags);
 
 	list_for_each_entry_safe(cur, nxt, &mailbox->wait_list, list) {
 		if (!does_response_match_waiter(mailbox, resp, cur->async_resp->resp))
 			continue;
-		cur->async_resp->status = GCIP_MAILBOX_STATUS_OK;
 		memcpy(cur->async_resp->resp, resp, mailbox->resp_elem_size);
+
+		/*
+		 * Paired with smp_rmb() in gcip_mailbox_send_cmd().  Ensure all writes to
+		 * *cur->async_resp->resp are complete before setting cur->async_resp->status,
+		 * which tells waiters the async response is complete.
+		 */
+		smp_wmb();
+		cur->async_resp->status = GCIP_MAILBOX_STATUS_OK;
 		list_del(&cur->list);
 		awaiter = cur->awaiter;
 		if (awaiter) {
@@ -291,6 +303,31 @@ static void gcip_mailbox_handle_response(struct gcip_mailbox *mailbox, void *res
 
 	/* Remove the reference of the arrived handler. */
 	gcip_mailbox_awaiter_dec_refs(awaiter);
+}
+
+/**
+ * gcip_mailbox_handle_rx_elem() - Handles the received element according to its type.
+ * @mailbox: The pointer to the gcip mailbox to interact with its interfaces.
+ * @elem: The received element to be handled.
+ *
+ * If both GCIP_MAILBOX_MODE_RX_CMD and GCIP_MAILBOX_MODE_RX_RSP are on, the mailboix ops
+ * is_rx_elem_reversed must be defined and used here.
+ *
+ * If only GCIP_MAILBOX_MODE_RX_CMD or GCIP_MAILBOX_MODE_RX_RSP is on, we can assign the handler
+ * according to the operating mode.
+ *
+ * Context: normal and in_interrupt().
+ */
+static void gcip_mailbox_handle_rx_elem(struct gcip_mailbox *mailbox, void *elem)
+{
+	bool is_reversed_cmd = mailbox->ops->is_rx_elem_reversed ?
+				       mailbox->ops->is_rx_elem_reversed(mailbox, elem) :
+				       (mailbox->mode & GCIP_MAILBOX_MODE_RX_CMD);
+
+	if (is_reversed_cmd)
+		mailbox->ops->handle_reversed_command(mailbox, elem);
+	else
+		gcip_mailbox_handle_response(mailbox, elem);
 }
 
 /*
@@ -506,44 +543,72 @@ static void gcip_mailbox_flush_awaiter(struct gcip_mailbox *mailbox)
 	}
 }
 
-/* Verifies and sets the mailbox operators. */
-static int gcip_mailbox_set_ops(struct gcip_mailbox *mailbox, const struct gcip_mailbox_ops *ops)
+/* Verifies the mailbox operators. */
+static int gcip_mailbox_ops_verify(const struct gcip_mailbox_ops *ops, u8 mode, struct device *dev)
 {
 	if (!ops) {
-		mailbox->ops = NULL;
-		return 0;
-	}
-
-	if (!ops->get_cmd_queue_tail || !ops->inc_cmd_queue_tail || !ops->acquire_cmd_queue_lock ||
-	    !ops->release_cmd_queue_lock || !ops->get_cmd_elem_seq || !ops->set_cmd_elem_seq ||
-	    !ops->get_cmd_elem_code || !ops->wait_for_cmd_queue_not_full) {
-		dev_err(mailbox->dev, "Incomplete mailbox CMD queue ops.\n");
+		dev_err(dev, "Mailbox ops should not be NULL.\n");
 		return -EINVAL;
 	}
 
-	if (!ops->get_resp_queue_size || !ops->get_resp_queue_head || !ops->get_resp_queue_tail ||
-	    !ops->inc_resp_queue_head || !ops->acquire_resp_queue_lock ||
-	    !ops->release_resp_queue_lock || !ops->get_resp_elem_seq || !ops->set_resp_elem_seq) {
-		dev_err(mailbox->dev, "Incomplete mailbox RESP queue ops.\n");
-		return -EINVAL;
+	if ((mode & GCIP_MAILBOX_MODE_TX_CMD) || (mode & GCIP_MAILBOX_MODE_TX_RSP)) {
+		if (!ops->get_cmd_queue_tail || !ops->inc_cmd_queue_tail ||
+		    !ops->acquire_cmd_queue_lock || !ops->release_cmd_queue_lock ||
+		    !ops->wait_for_cmd_queue_not_full) {
+			dev_err(dev, "Incomplete mailbox CMD queue ops.\n");
+			return -EINVAL;
+		}
 	}
 
-	mailbox->ops = ops;
+	if ((mode & GCIP_MAILBOX_MODE_RX_RSP) || (mode & GCIP_MAILBOX_MODE_RX_CMD)) {
+		if (!ops->get_resp_queue_size || !ops->get_resp_queue_head ||
+		    !ops->get_resp_queue_tail || !ops->inc_resp_queue_head ||
+		    !ops->acquire_resp_queue_lock || !ops->release_resp_queue_lock) {
+			dev_err(dev, "Incomplete mailbox RESP queue ops.\n");
+			return -EINVAL;
+		}
+	}
+
+	if (should_maintain_seq_num(mode)) {
+		if (!ops->get_cmd_elem_seq || !ops->set_cmd_elem_seq || !ops->get_resp_elem_seq ||
+		    !ops->set_resp_elem_seq) {
+			dev_err(dev, "Incomplete mailbox sequence number ops.\n");
+			return -EINVAL;
+		}
+	}
+
+	if (mode & GCIP_MAILBOX_MODE_RX_CMD) {
+		if (!ops->handle_reversed_command) {
+			dev_err(dev, "Incomplete mailbox reversed CMD element ops.\n");
+			return -EINVAL;
+		}
+	}
+
+	if ((mode & GCIP_MAILBOX_MODE_RX_RSP) && (mode & GCIP_MAILBOX_MODE_RX_CMD)) {
+		if (!ops->is_rx_elem_reversed) {
+			dev_err(dev, "Incomplete mailbox RX element ops.\n");
+			return -EINVAL;
+		}
+	}
 
 	return 0;
-}
-
-/* Sets the mailbox private data. */
-static inline void gcip_mailbox_set_data(struct gcip_mailbox *mailbox, void *data)
-{
-	mailbox->data = data;
 }
 
 int gcip_mailbox_init(struct gcip_mailbox *mailbox, const struct gcip_mailbox_args *args)
 {
 	int ret;
 
+	if (!args->mode) {
+		dev_err(args->dev, "Mailbox mode cannot be NULL.");
+		return -EINVAL;
+	}
+
+	ret = gcip_mailbox_ops_verify(args->ops, args->mode, args->dev);
+	if (ret)
+		return ret;
+
 	mailbox->dev = args->dev;
+	mailbox->mode = args->mode;
 	mailbox->queue_wrap_bit = args->queue_wrap_bit;
 	mailbox->cmd_queue = args->cmd_queue;
 	mailbox->cmd_elem_size = args->cmd_elem_size;
@@ -551,29 +616,21 @@ int gcip_mailbox_init(struct gcip_mailbox *mailbox, const struct gcip_mailbox_ar
 	mailbox->resp_elem_size = args->resp_elem_size;
 	mailbox->timeout = args->timeout;
 	mailbox->cur_seq = 0;
-	gcip_mailbox_set_data(mailbox, args->data);
-
-	ret = gcip_mailbox_set_ops(mailbox, args->ops);
-	if (ret)
-		goto err_unset_data;
+	mailbox->ops = args->ops;
+	mailbox->data = args->data;
 
 	spin_lock_init(&mailbox->wait_list_lock);
 	INIT_LIST_HEAD(&mailbox->wait_list);
 	init_waitqueue_head(&mailbox->wait_list_waitq);
 
 	return 0;
-
-err_unset_data:
-	gcip_mailbox_set_data(mailbox, NULL);
-
-	return ret;
 }
 
 void gcip_mailbox_release(struct gcip_mailbox *mailbox)
 {
 	gcip_mailbox_flush_awaiter(mailbox);
-	gcip_mailbox_set_ops(mailbox, NULL);
-	gcip_mailbox_set_data(mailbox, NULL);
+	mailbox->ops = NULL;
+	mailbox->data = NULL;
 }
 
 static void gcip_mailbox_do_consume_responses(struct gcip_mailbox *mailbox, bool trylock)
@@ -593,7 +650,8 @@ static void gcip_mailbox_do_consume_responses(struct gcip_mailbox *mailbox, bool
 	}
 
 	for (i = 0; i < count; i++)
-		gcip_mailbox_handle_response(mailbox, responses + mailbox->resp_elem_size * i);
+		gcip_mailbox_handle_rx_elem(mailbox, responses + mailbox->resp_elem_size * i);
+
 	/* Responses handled, wake up threads that are waiting for a response. */
 	wake_up(&mailbox->wait_list_waitq);
 	kfree(responses);
@@ -637,9 +695,16 @@ int gcip_mailbox_send_cmd(struct gcip_mailbox *mailbox, void *cmd, void *resp,
 		ret = -ETIMEDOUT;
 		goto err;
 	}
+
+	/*
+	 * Paired with write barrier in gcip_mailbox_handle_response.  Access to other fields in
+	 * async_resp, plus access to *resp (by caller), must occur after observing
+	 * async_resp.status != GCIP_MAILBOX_STATUS_WAITING_RESPONSE above.
+	 */
+	smp_rmb();
+
 	if (async_resp.status != GCIP_MAILBOX_STATUS_OK) {
-		dev_err(mailbox->dev, "Mailbox cmd %u response status %u", GET_CMD_ELEM_CODE(cmd),
-			async_resp.status);
+		dev_err(mailbox->dev, "Mailbox responded with error status %u", async_resp.status);
 		ret = -ENOMSG;
 		goto err;
 	}
@@ -729,7 +794,7 @@ void gcip_mailbox_consume_one_response(struct gcip_mailbox *mailbox, void *resp)
 	if (!ret)
 		return;
 
-	gcip_mailbox_handle_response(mailbox, resp);
+	gcip_mailbox_handle_rx_elem(mailbox, resp);
 
 	/* Responses handled, wakes up threads that are waiting for a response. */
 	wake_up(&mailbox->wait_list_waitq);

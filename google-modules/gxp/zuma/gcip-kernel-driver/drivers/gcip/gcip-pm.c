@@ -6,6 +6,7 @@
  */
 
 #include <linux/atomic.h>
+#include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
@@ -238,6 +239,34 @@ void gcip_pm_put_async(struct gcip_pm *pm)
 void gcip_pm_flush_put_work(struct gcip_pm *pm)
 {
 	flush_work(&pm->put_async_work);
+}
+
+void gcip_pm_flush_delayed_power_down_work(struct gcip_pm *pm, int retry)
+{
+	mutex_lock(&pm->lock);
+
+	do {
+		mutex_unlock(&pm->lock);
+
+		/*
+		 * As the `flush_delayed_work()` function cancels the delayed timer and schedules
+		 * the work immediately, give enough break time before the work retries the power
+		 * down.
+		 */
+		msleep(GCIP_ASYNC_POWER_DOWN_RETRY_DELAY);
+		flush_delayed_work(&pm->power_down_work);
+
+		mutex_lock(&pm->lock);
+	} while (pm->power_down_pending && retry--);
+
+	/* If the power_down work keeps failing even after retry, cancel the work. */
+	if (pm->power_down_pending) {
+		dev_warn(pm->dev,
+			 "Cancel the power down request, the block might be in the bad state");
+		pm->power_down_pending = false;
+	}
+
+	mutex_unlock(&pm->lock);
 }
 
 int gcip_pm_get_count(struct gcip_pm *pm)

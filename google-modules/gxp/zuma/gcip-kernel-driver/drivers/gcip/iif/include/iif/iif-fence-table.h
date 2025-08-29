@@ -15,6 +15,8 @@
 #ifndef __IIF_IIF_FENCE_TABLE_H__
 #define __IIF_IIF_FENCE_TABLE_H__
 
+#include <linux/bitops.h>
+#include <linux/of.h>
 #include <linux/types.h>
 
 #include <iif/iif-shared.h>

@@ -354,39 +354,46 @@ static int iif_fence_inc_signaled_signalers_locked(struct iif_fence *fence, bool
 }
 
 /*
- * Increases the number of outstanding waiters of @waiter_ip.
+ * Submits a signaler to @fence.
  *
- * The caller must hold the block wakelock of the IP before calling this.
+ * If @complete is true, it will make @fence have finished the signaler submission. This must be
+ * used only when @fence is going to be released before the signaler submission is being finished
+ * and let the IP driver side notice that there was some problem by triggering registered callbacks.
  */
-static int iif_fence_inc_outstanding_waiters_locked(struct iif_fence *fence,
-						    enum iif_ip_type waiter_ip)
+static void iif_fence_submit_signaler_locked(struct iif_fence *fence, bool complete)
 {
+	struct iif_fence_all_signaler_submitted_cb *cur, *tmp;
+
 	lockdep_assert_held(&fence->fence_lock);
 
-	if (iif_fence_has_retired_locked(fence))
-		return -EPERM;
+	if (!complete)
+		fence->submitted_signalers++;
+	else
+		fence->submitted_signalers = fence->params.remaining_signalers;
+
+	/* Notifies the waiters if all signalers have been submitted. */
+	if (iif_fence_unsubmitted_signalers_locked(fence))
+		return;
+
+	list_for_each_entry_safe(cur, tmp, &fence->all_signaler_submitted_cb_list, node) {
+		list_del_init(&cur->node);
+		cur->func(fence, cur);
+	}
+}
+
+/* Submits @waiter_ip as a waiter to @fence. */
+static void iif_fence_submit_waiter_locked(struct iif_fence *fence, enum iif_ip_type waiter_ip)
+{
+	struct iif_fence_params params;
+
+	lockdep_assert_held(&fence->fence_lock);
 
 	fence->outstanding_waiters++;
 	fence->outstanding_waiters_per_ip[waiter_ip]++;
 
-	return 0;
-}
-
-/* Adds @waiter_ip to the waiters list and increases the number of outstanding waiters. */
-static int iif_fence_add_waiter_locked(struct iif_fence *fence, enum iif_ip_type waiter_ip)
-{
-	struct iif_fence_params params;
-	int ret;
-
-	lockdep_assert_held(&fence->fence_lock);
-
-	ret = iif_fence_inc_outstanding_waiters_locked(fence, waiter_ip);
-	if (ret)
-		return ret;
-
 	/* If the waiter is already set, we don't need to update params. */
 	if (fence->params.waiters & BIT(waiter_ip))
-		return 0;
+		return;
 
 	/* Fills @params out with new waiters. */
 	params = fence->params;
@@ -397,8 +404,6 @@ static int iif_fence_add_waiter_locked(struct iif_fence *fence, enum iif_ip_type
 
 	/* Updates @params of the kernel fence object. */
 	fence->params = params;
-
-	return 0;
 }
 
 /* Decreases the number of outstanding waiters of @waiter_ip. */
@@ -424,6 +429,73 @@ static void iif_fence_remove_waiter(struct iif_fence *fence, enum iif_ip_type wa
 	write_unlock_irqrestore(&fence->fence_lock, flags);
 }
 
+/*
+ * Checks whether a signaler can be submitted to @fences.
+ * If all signalers are already submitted, submitting signalers is not allowed anymore.
+ *
+ * Returns 0 on success. Otherwise, a negative errno.
+ */
+static int iif_fences_are_signaler_submittable_locked(struct iif_fence **fences, int num_fences)
+{
+	int i;
+
+	for (i = 0; i < num_fences; i++) {
+		lockdep_assert_held(&fences[i]->fence_lock);
+
+		if (!iif_fence_unsubmitted_signalers_locked(fences[i]) ||
+		    iif_fence_has_retired_locked(fences[i]))
+			return -EPERM;
+	}
+
+	return 0;
+}
+
+/* Submits a signaler to @fences. */
+static void iif_fences_submit_signaler_locked(struct iif_fence **fences, int num_fences)
+{
+	int i;
+
+	for (i = 0; i < num_fences; i++) {
+		lockdep_assert_held(&fences[i]->fence_lock);
+		iif_fence_submit_signaler_locked(fences[i], false);
+	}
+}
+
+/*
+ * Checks whether a waiter can be submitted to @fences.
+ * If there are unsubmitted signalers, the caller should retry submitting waiters later.
+ *
+ * Returns 0 on success. Otherwise, a negative errno.
+ */
+static int iif_fences_are_waiter_submittable_locked(struct iif_fence **fences, int num_fences)
+{
+	int i;
+
+	for (i = 0; i < num_fences; i++) {
+		lockdep_assert_held(&fences[i]->fence_lock);
+
+		if (iif_fence_unsubmitted_signalers_locked(fences[i]))
+			return -EAGAIN;
+
+		if (iif_fence_has_retired_locked(fences[i]))
+			return -EPERM;
+	}
+
+	return 0;
+}
+
+/* Submits a waiter to @fences. */
+static void iif_fences_submit_waiter_locked(struct iif_fence **fences, int num_fences,
+					    enum iif_ip_type waiter_ip)
+{
+	int i;
+
+	for (i = 0; i < num_fences; i++) {
+		lockdep_assert_held(&fences[i]->fence_lock);
+		iif_fence_submit_waiter_locked(fences[i], waiter_ip);
+	}
+}
+
 static int iif_fence_add_sync_point_locked(struct iif_fence *fence, u64 timeline, u64 count)
 {
 	lockdep_assert_held(&fence->fence_lock);
@@ -436,31 +508,6 @@ static int iif_fence_add_sync_point_locked(struct iif_fence *fence, u64 timeline
 	 * For now, as we support direct fences only, skip that and let the iif-direct handles it.
 	 */
 	return iif_fence_ops_fence_add_sync_point(fence, timeline, count);
-}
-
-/*
- * Increases the number of submitted signalers of @fence.
- *
- * If @complete is true, it will make @fence have finished the signaler submission. This must be
- * used only when @fence is going to be released before the signaler submission is being finished
- * and let the IP driver side notice that there was some problem by triggering registered callbacks.
- *
- * Returns 0 on success. Otherwise, a negative errno.
- */
-static int iif_fence_inc_submitted_signalers_locked(struct iif_fence *fence, bool complete)
-{
-	lockdep_assert_held(&fence->fence_lock);
-
-	/* Already all signalers are submitted. No more submission is allowed. */
-	if (fence->submitted_signalers >= fence->params.remaining_signalers)
-		return -EPERM;
-
-	if (!complete)
-		fence->submitted_signalers++;
-	else
-		fence->submitted_signalers = fence->params.remaining_signalers;
-
-	return 0;
 }
 
 /* Notifies poll callbacks for a single-shot fence. */
@@ -535,6 +582,11 @@ static bool iif_fence_set_status_locked(struct iif_fence *fence,
 		}
 	}
 
+	if (unlikely(error > 0 || error < -MAX_ERRNO)) {
+		iif_warn(fence, "The fence has been signaled with an invalid error: %d\n", error);
+		error = -EINVAL;
+	}
+
 	if (unlikely(fence->signal_error && !error)) {
 		iif_warn(fence, "The fence was already errored out, shouldn't revert it\n");
 		error = fence->signal_error;
@@ -607,23 +659,6 @@ static void iif_fence_direct_poll_cb_func(struct iif_fence *iif,
 	iif_fence_notify_poll_cb_locked(iif);
 }
 
-/* Notifies the all_signaler_submitted callbacks registered to @fence. */
-static void iif_fence_notify_all_signaler_submitted_cb_locked(struct iif_fence *fence)
-{
-	struct iif_fence_all_signaler_submitted_cb *cur, *tmp;
-
-	lockdep_assert_held(&fence->fence_lock);
-
-	/* We should notify waiters only if all signalers have been submitted. */
-	if (iif_fence_unsubmitted_signalers_locked(fence))
-		return;
-
-	list_for_each_entry_safe(cur, tmp, &fence->all_signaler_submitted_cb_list, node) {
-		list_del_init(&cur->node);
-		cur->func(fence, cur);
-	}
-}
-
 /*
  * Signals @fence with @error.
  *
@@ -642,6 +677,11 @@ static int iif_fence_signal_with_status_locked(struct iif_fence *fence, int erro
 	if (!force && !iif_fence_outstanding_signalers_locked(fence)) {
 		iif_err(fence, "There is no outstanding signalers\n");
 		return -EPERM;
+	}
+
+	if (error > 0 || error < -MAX_ERRNO) {
+		iif_err(fence, "Invalid fence error: %d\n", error);
+		return -EINVAL;
 	}
 
 	/*
@@ -777,6 +817,87 @@ static void iif_fence_release_all_block_wakelock(struct iif_fence *fence)
 	}
 }
 
+/*
+ * Releases the block wakelock of @ip for multiple fences.
+ *
+ * This function can be called in the normal context only.
+ */
+static void iif_fences_release_block_wakelock(struct iif_fence **fences, int num_fences,
+					      enum iif_ip_type ip)
+{
+	int i;
+
+	for (i = num_fences - 1; i >= 0; i--)
+		iif_fence_release_block_wakelock(fences[i], ip, 1);
+}
+
+/*
+ * Acquires the block wakelock of @ip for multiple fences.
+ *
+ * This function can be called in the normal context only.
+ */
+static int iif_fences_acquire_block_wakelock(struct iif_fence **fences, int num_fences,
+					     enum iif_ip_type ip)
+{
+	int i, ret = 0;
+
+	for (i = 0; i < num_fences; i++) {
+		ret = iif_fence_acquire_block_wakelock(fences[i], ip);
+		if (ret)
+			break;
+	}
+
+	if (ret)
+		iif_fences_release_block_wakelock(fences, i, ip);
+
+	return ret;
+}
+
+/*
+ * Releases the block wakelock of waiters of multiple fences. @wakelock_held should describe which
+ * IP wakelock was held for which fence.
+ *
+ * This function can be called in the normal context only.
+ */
+static void iif_fences_release_block_wakelock_of_waiters(struct iif_fence **fences, int num_fences,
+							 const u16 *wakelock_held)
+{
+	enum iif_ip_type ip;
+	int i, tmp;
+
+	for (i = num_fences - 1; i >= 0; i--) {
+		for_each_ip(wakelock_held[i], ip, tmp)
+			iif_fence_release_block_wakelock(fences[i], ip, 1);
+	}
+}
+
+/*
+ * Acquires the block wakelock of waiters of multiple fences. Which IP wakelock was held for which
+ * fence will be passed to @wakelock_held.
+ *
+ * This function can be called in the normal context only.
+ */
+static int iif_fences_acquire_block_wakelock_of_waiters(struct iif_fence **fences, int num_fences,
+							u16 *wakelock_held)
+{
+	enum iif_ip_type ip;
+	int i, tmp, ret = 0;
+
+	for (i = 0; i < num_fences && !ret; i++) {
+		for_each_ip(fences[i]->params.waiters, ip, tmp) {
+			ret = iif_fence_acquire_block_wakelock(fences[i], ip);
+			if (ret)
+				break;
+			wakelock_held[i] |= BIT(ip);
+		}
+	}
+
+	if (ret)
+		iif_fences_release_block_wakelock_of_waiters(fences, i, wakelock_held);
+
+	return ret;
+}
+
 /* Cleans up @fence which was initialized by the `iif_fence_init` function. */
 static void iif_fence_do_destroy(struct iif_fence *fence)
 {
@@ -797,8 +918,7 @@ static void iif_fence_do_destroy(struct iif_fence *fence)
 	if (!list_empty(&fence->all_signaler_submitted_cb_list) &&
 	    fence->submitted_signalers < fence->params.remaining_signalers) {
 		fence->all_signaler_submitted_error = -EDEADLK;
-		iif_fence_inc_submitted_signalers_locked(fence, true);
-		iif_fence_notify_all_signaler_submitted_cb_locked(fence);
+		iif_fence_submit_signaler_locked(fence, true);
 	}
 
 	if (!iif_fence_all_signalers_signaled_locked(fence)) {
@@ -1186,73 +1306,12 @@ void iif_fence_put_async(struct iif_fence *fence)
 
 int iif_fence_submit_signaler(struct iif_fence *fence)
 {
-	enum iif_ip_type ip;
-	int ret, tmp;
-	unsigned long flags;
-	u16 wakelock_held = 0;
-
-	might_sleep();
-
-	/*
-	 * If there are waiters which were set before sending signaler commands, try to hold the
-	 * block wakelock of waiters. As we don't increase the number of outstanding waiters here,
-	 * the held block wakelocks will be considered as locks which were pended to be released.
-	 * That means they won't be released until there are no more outstanding signalers and
-	 * `iif_fence_waited_work_func()` is called which releases all pended block wakelocks.
-	 *
-	 * We don't need to hold @fence->fence_lock here because:
-	 * - Holding block wakelock usually can be done in the normal context only.
-	 * - If there is a new waiter which were not informed to the IIF driver before submitting
-	 *   signalers, the waiter driver will call `submit_waiter()` before submitting its command
-	 *   to its IP and the block wakelock will be held there. Also, the held block wakelock
-	 *   won't be released until there are no more outstanding signalers.
-	 */
-	for_each_ip(fence->params.waiters, ip, tmp) {
-		ret = iif_fence_acquire_block_wakelock(fence, ip);
-		if (ret)
-			break;
-		wakelock_held |= BIT(ip);
-	}
-
-	if (ret)
-		goto release_block_wakelock;
-
-	write_lock_irqsave(&fence->fence_lock, flags);
-
-	if (iif_fence_has_retired_locked(fence)) {
-		ret = -EPERM;
-		goto unlock_fence_lock;
-	}
-
-	ret = iif_fence_inc_submitted_signalers_locked(fence, false);
-	if (ret)
-		goto unlock_fence_lock;
-
-	/* Notifies the waiters if all signalers have been submitted. */
-	iif_fence_notify_all_signaler_submitted_cb_locked(fence);
-
-	/* Increases the number of outstanding block wakelock held above. */
-	for_each_ip(wakelock_held, ip, tmp)
-		fence->outstanding_block_wakelock[ip]++;
-
-unlock_fence_lock:
-	write_unlock_irqrestore(&fence->fence_lock, flags);
-
-release_block_wakelock:
-	/* Releases all block wakelocks held already on error. */
-	if (ret) {
-		for_each_ip(wakelock_held, ip, tmp)
-			iif_fence_release_block_wakelock(fence, ip, 1);
-	}
-
-	return ret;
+	return iif_fence_submit_signaler_and_waiter(NULL, 0, &fence, 1, 0);
 }
 
 int iif_fence_submit_waiter(struct iif_fence *fence, enum iif_ip_type ip)
 {
-	unsigned long flags;
 	int unsubmitted = iif_fence_unsubmitted_signalers(fence);
-	int ret;
 
 	might_sleep();
 
@@ -1262,26 +1321,7 @@ int iif_fence_submit_waiter(struct iif_fence *fence, enum iif_ip_type ip)
 	if (unsubmitted)
 		return unsubmitted;
 
-	ret = iif_fence_acquire_block_wakelock(fence, ip);
-	if (ret) {
-		iif_err(fence, "Failed to acquire the block wakelock of IP=%d\n", ip);
-		return ret;
-	}
-
-	write_lock_irqsave(&fence->fence_lock, flags);
-
-	ret = iif_fence_add_waiter_locked(fence, ip);
-	if (ret) {
-		write_unlock_irqrestore(&fence->fence_lock, flags);
-		iif_fence_release_block_wakelock(fence, ip, 1);
-		return ret;
-	}
-
-	fence->outstanding_block_wakelock[ip]++;
-
-	write_unlock_irqrestore(&fence->fence_lock, flags);
-
-	return ret;
+	return iif_fence_submit_signaler_and_waiter(&fence, 1, NULL, 0, ip);
 }
 
 int iif_fence_add_sync_point(struct iif_fence *fence, u64 timeline, u64 count)
@@ -1308,23 +1348,29 @@ int iif_fence_submit_signaler_and_waiter(struct iif_fence **in_fences, int num_i
 {
 	enum iif_ip_type ip;
 	u16 *wakelock_held;
-	unsigned long *flags;
+	unsigned long *in_flags, *out_flags;
 	int i, tmp, ret;
 
 	might_sleep();
 
-	if (waiter_ip >= IIF_IP_NUM)
+	/* @waiter_ip must be tested only if there are @in_fences to submit a waiter. */
+	if (num_in_fences && waiter_ip >= IIF_IP_NUM)
 		return -EINVAL;
 
-	flags = kcalloc(num_in_fences > num_out_fences ? num_in_fences : num_out_fences,
-			sizeof(*flags), GFP_KERNEL);
-	if (!flags)
+	in_flags = kcalloc(num_in_fences, sizeof(*in_flags), GFP_KERNEL);
+	if (!in_flags)
 		return -ENOMEM;
+
+	out_flags = kcalloc(num_out_fences, sizeof(*out_flags), GFP_KERNEL);
+	if (!out_flags) {
+		ret = -ENOMEM;
+		goto err_free_in_flags;
+	}
 
 	wakelock_held = kcalloc(num_out_fences, sizeof(*wakelock_held), GFP_KERNEL);
 	if (!wakelock_held) {
 		ret = -ENOMEM;
-		goto err_free_flags;
+		goto err_free_out_flags;
 	}
 
 	ret = iif_fences_sort_by_id(in_fences, num_in_fences);
@@ -1340,93 +1386,83 @@ int iif_fence_submit_signaler_and_waiter(struct iif_fence **in_fences, int num_i
 	if (ret)
 		goto err_free_wakelock_held;
 
-	iif_fences_write_lock(in_fences, num_in_fences, flags);
+	/* Holds the block wakelocks of @waiter_ip for @in_fences. */
+	ret = iif_fences_acquire_block_wakelock(in_fences, num_in_fences, waiter_ip);
+	if (ret)
+		goto err_free_wakelock_held;
+
+	/*
+	 * Holds the block wakelocks of waiters of @out_fences.
+	 *
+	 * If there are waiters which were set before sending signaler commands, try to hold the
+	 * block wakelock of waiters. As we don't increase the number of outstanding waiters here,
+	 * the held block wakelocks will be considered as locks which were pended to be released.
+	 * That means they won't be released until there are no more outstanding signalers and
+	 * `iif_fence_waited_work_func()` is called which releases all pended block wakelocks.
+	 *
+	 * We don't need to hold @out_fences[]->fence_lock here because:
+	 * - Holding block wakelock usually can be done in the normal context only.
+	 * - If there is a new waiter which were not informed to the IIF driver before submitting
+	 *   signalers, the waiter driver will call `submit_waiter()` before submitting its command
+	 *   to its IP and the block wakelock will be held there. Also, the held block wakelock
+	 *   won't be released until there are no more outstanding signalers.
+	 */
+	ret = iif_fences_acquire_block_wakelock_of_waiters(out_fences, num_out_fences,
+							   wakelock_held);
+	if (ret)
+		goto err_release_block_wakelock;
+
+	iif_fences_write_lock(in_fences, num_in_fences, in_flags);
+	iif_fences_write_lock(out_fences, num_out_fences, out_flags);
 
 	/*
 	 * Checks whether we can submit a waiter to @in_fences.
 	 * If there are unsubmitted signalers, the caller should retry submitting waiters later.
 	 */
-	for (i = 0; in_fences && i < num_in_fences; i++) {
-		if (iif_fence_unsubmitted_signalers_locked(in_fences[i])) {
-			iif_fences_write_unlock(in_fences, num_in_fences, flags);
-			ret = -EAGAIN;
-			goto err_free_wakelock_held;
-		}
-
-		if (iif_fence_has_retired_locked(in_fences[i])) {
-			iif_fences_write_unlock(in_fences, num_in_fences, flags);
-			ret = -EPERM;
-			goto err_free_wakelock_held;
-		}
-	}
-
-	/*
-	 * We can release the lock of @in_fences because once they are able to submit a waiter, it
-	 * means that all signalers have been submitted to @in_fences and the fact won't be changed.
-	 * Will submit a waiter to @in_fences if @out_fences are able to submit a signaler.
-	 */
-	iif_fences_write_unlock(in_fences, num_in_fences, flags);
-
-	/* Holds the block wakelocks of waiters of @out_fences. */
-	for (i = 0; out_fences && i < num_out_fences && !ret; i++) {
-		for_each_ip(out_fences[i]->params.waiters, ip, tmp) {
-			ret = iif_fence_acquire_block_wakelock(out_fences[i], ip);
-			if (ret)
-				break;
-			wakelock_held[i] |= BIT(ip);
-		}
-	}
-
+	ret = iif_fences_are_waiter_submittable_locked(in_fences, num_in_fences);
 	if (ret)
-		goto release_block_wakelock;
-
-	iif_fences_write_lock(out_fences, num_out_fences, flags);
+		goto err_unlock_fences;
 
 	/*
 	 * Checks whether we can submit a signaler to @out_fences.
 	 * If all signalers are already submitted, submitting signalers is not allowed anymore.
 	 */
-	for (i = 0; out_fences && i < num_out_fences; i++) {
-		if (!iif_fence_unsubmitted_signalers_locked(out_fences[i]) ||
-		    iif_fence_has_retired_locked(out_fences[i])) {
-			iif_fences_write_unlock(out_fences, num_out_fences, flags);
-			ret = -EPERM;
-			goto release_block_wakelock;
-		}
-	}
+	ret = iif_fences_are_signaler_submittable_locked(out_fences, num_out_fences);
+	if (ret)
+		goto err_unlock_fences;
+
+	/* Submits a waiter to @in_fences. */
+	iif_fences_submit_waiter_locked(in_fences, num_in_fences, waiter_ip);
 
 	/* Submits a signaler to @out_fences. */
-	for (i = 0; out_fences && i < num_out_fences; i++) {
-		iif_fence_inc_submitted_signalers_locked(out_fences[i], false);
+	iif_fences_submit_signaler_locked(out_fences, num_out_fences);
 
-		/* Notifies the waiters if all signalers have been submitted. */
-		iif_fence_notify_all_signaler_submitted_cb_locked(out_fences[i]);
-	}
+	/* Increases the number of outstanding block wakelock held for @in_fences above. */
+	for (i = 0; i < num_in_fences; i++)
+		in_fences[i]->outstanding_block_wakelock[waiter_ip]++;
 
-	/* Increases the number of outstanding block wakelock held above. */
-	for (i = 0; out_fences && i < num_out_fences; i++) {
+	/* Increases the number of outstanding block wakelock held for @out_fences above. */
+	for (i = 0; i < num_out_fences; i++) {
 		for_each_ip(wakelock_held[i], ip, tmp)
 			out_fences[i]->outstanding_block_wakelock[ip]++;
 	}
 
-	iif_fences_write_unlock(out_fences, num_out_fences, flags);
+err_unlock_fences:
+	iif_fences_write_unlock(out_fences, num_out_fences, out_flags);
+	iif_fences_write_unlock(in_fences, num_in_fences, in_flags);
 
-	/* Submits a waiter to @in_fences. */
-	for (i = 0; in_fences && i < num_in_fences; i++)
-		iif_fence_submit_waiter(in_fences[i], waiter_ip);
-
-release_block_wakelock:
-	/* Releases all block wakelocks held already on error. */
-	if (ret) {
-		for (i = 0; out_fences && i < num_out_fences; i++) {
-			for_each_ip(wakelock_held[i], ip, tmp)
-				iif_fence_release_block_wakelock(out_fences[i], ip, 1);
-		}
-	}
+	if (ret)
+		iif_fences_release_block_wakelock_of_waiters(out_fences, num_out_fences,
+							     wakelock_held);
+err_release_block_wakelock:
+	if (ret)
+		iif_fences_release_block_wakelock(in_fences, num_in_fences, waiter_ip);
 err_free_wakelock_held:
 	kfree(wakelock_held);
-err_free_flags:
-	kfree(flags);
+err_free_out_flags:
+	kfree(out_flags);
+err_free_in_flags:
+	kfree(in_flags);
 
 	return ret;
 }

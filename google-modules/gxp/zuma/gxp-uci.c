@@ -178,13 +178,6 @@ static u64 gxp_uci_get_cmd_elem_seq(struct gcip_mailbox *mailbox, void *cmd)
 	return elem->seq;
 }
 
-static u32 gxp_uci_get_cmd_elem_code(struct gcip_mailbox *mailbox, void *cmd)
-{
-	struct gxp_uci_command *elem = cmd;
-
-	return (u32)elem->type;
-}
-
 static void gxp_uci_set_cmd_elem_seq(struct gcip_mailbox *mailbox, void *cmd,
 				     u64 seq)
 {
@@ -346,6 +339,8 @@ static void gxp_uci_push_async_response(struct gxp_uci_async_response *async_res
 		errno = -EIO;
 	}
 
+	trace_gxp_uci_signal_outfence_before(resp_seq);
+
 	gcip_fence_array_signal_async(out_fences, errno);
 	gcip_fence_array_put_async(out_fences);
 
@@ -440,7 +435,6 @@ static const struct gcip_mailbox_ops gxp_uci_gcip_mbx_ops = {
 	.release_cmd_queue_lock = gxp_mailbox_gcip_ops_release_cmd_queue_lock,
 	.get_cmd_elem_seq = gxp_uci_get_cmd_elem_seq,
 	.set_cmd_elem_seq = gxp_uci_set_cmd_elem_seq,
-	.get_cmd_elem_code = gxp_uci_get_cmd_elem_code,
 	.get_resp_queue_size = gxp_mailbox_gcip_ops_get_resp_queue_size,
 	.get_resp_queue_head = gxp_mailbox_gcip_ops_get_resp_queue_head,
 	.get_resp_queue_tail = gxp_mailbox_gcip_ops_get_resp_queue_tail,

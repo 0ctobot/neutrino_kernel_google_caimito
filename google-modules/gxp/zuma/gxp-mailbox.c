@@ -16,6 +16,7 @@
 #include <uapi/linux/sched/types.h>
 
 #include <gcip/gcip-mailbox.h>
+#include <trace/events/gxp.h>
 
 #include "gxp-config.h"
 #include "gxp-dma.h"
@@ -73,6 +74,8 @@ static void gxp_mailbox_irq_handler(struct gxp_mailbox *mailbox)
 		gcip_kci_handle_irq(mailbox->mbx_impl.gcip_kci);
 		kthread_queue_work(&mailbox->response_worker, &mailbox->response_work);
 	} else if (mailbox->type == GXP_MBOX_TYPE_GENERAL) {
+		/* Pass an unused variable as placeholder because it is requested by the macro */
+		trace_gxp_uci_rsp_start(0);
 		gcip_mailbox_consume_responses_work(mailbox->mbx_impl.gcip_mbx);
 	}
 #endif /* GXP_HAS_MCU */
@@ -199,6 +202,7 @@ static int init_gcip_mailbox(struct gxp_mailbox *mailbox)
 {
 	const struct gcip_mailbox_args args = {
 		.dev = mailbox->gxp->dev,
+		.mode = GCIP_MAILBOX_MODE_FORWARD,
 		.queue_wrap_bit = mailbox->queue_wrap_bit,
 		.cmd_queue = mailbox->cmd_queue_buf.vaddr,
 		.cmd_elem_size = mailbox->cmd_elem_size,

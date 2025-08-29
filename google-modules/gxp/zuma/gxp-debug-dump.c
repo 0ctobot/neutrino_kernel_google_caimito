@@ -88,44 +88,28 @@ static void gxp_debug_dump_cache_flush(struct gxp_dev *gxp)
 	/* Debug dump carveout is currently coherent. NO-OP. */
 }
 
-__maybe_unused static u32 gxp_read_sync_barrier_shadow(struct gxp_dev *gxp, uint index)
+static u32 gxp_read_sync_barrier_shadow(struct gxp_dev *gxp, uint index)
 {
 	return gxp_read_32(gxp, GXP_REG_SYNC_BARRIER_SHADOW(index));
 }
 
-static void gxp_get_common_registers(struct gxp_dev *gxp,
-				     struct gxp_seg_header *seg_header,
-				     struct gxp_common_registers *common_regs)
+static void gxp_get_ac_disabled_common_reg(struct gxp_dev *gxp,
+					   struct gxp_common_registers *common_regs)
 {
-	__maybe_unused int i;
+	int i;
 
-	dev_dbg(gxp->dev, "Getting common registers\n");
-
-	seg_header->type = COMMON_REGISTERS;
-	seg_header->valid = 1;
-	seg_header->size = sizeof(*common_regs);
-
-	/* Get Aurora Top registers */
-	common_regs->aurora_revision =
-		gxp_read_32(gxp, GXP_REG_AURORA_REVISION);
-#ifndef GXP_RFW_AC_POLICY_ENABLED
 #if GXP_DUMP_INTERRUPT_POLARITY_REGISTER
-	common_regs->common_int_pol_0 =
-		gxp_read_32(gxp, GXP_REG_COMMON_INT_POL_0);
-	common_regs->common_int_pol_1 =
-		gxp_read_32(gxp, GXP_REG_COMMON_INT_POL_1);
-	common_regs->dedicated_int_pol =
-		gxp_read_32(gxp, GXP_REG_DEDICATED_INT_POL);
+	common_regs->common_int_pol_0 = gxp_read_32(gxp, GXP_REG_COMMON_INT_POL_0);
+	common_regs->common_int_pol_1 = gxp_read_32(gxp, GXP_REG_COMMON_INT_POL_1);
+	common_regs->dedicated_int_pol = gxp_read_32(gxp, GXP_REG_DEDICATED_INT_POL);
 #endif /* GXP_DUMP_INTERRUPT_POLARITY_REGISTER */
 	common_regs->raw_ext_int = gxp_read_32(gxp, GXP_REG_RAW_EXT_INT);
 
 	for (i = 0; i < GXP_NUM_CORES; i++)
 		common_regs->core_pd[i] = gxp_read_32(gxp, GXP_REG_CORE_PD(i));
 
-	common_regs->global_counter_low =
-		gxp_read_32(gxp, GXP_REG_GLOBAL_COUNTER_LOW);
-	common_regs->global_counter_high =
-		gxp_read_32(gxp, GXP_REG_GLOBAL_COUNTER_HIGH);
+	common_regs->global_counter_low = gxp_read_32(gxp, GXP_REG_GLOBAL_COUNTER_LOW);
+	common_regs->global_counter_high = gxp_read_32(gxp, GXP_REG_GLOBAL_COUNTER_HIGH);
 	common_regs->wdog_control = gxp_read_32(gxp, GXP_REG_WDOG_CONTROL);
 	common_regs->wdog_value = gxp_read_32(gxp, GXP_REG_WDOG_VALUE);
 
@@ -141,10 +125,24 @@ static void gxp_get_common_registers(struct gxp_dev *gxp,
 
 	/* Get Sync Barrier registers */
 	for (i = 0; i < SYNC_BARRIER_COUNT; i++)
-		common_regs->sync_barrier[i] =
-			gxp_read_sync_barrier_shadow(gxp, i);
-#endif /* GXP_RFW_AC_POLICY_ENABLED */
+		common_regs->sync_barrier[i] = gxp_read_sync_barrier_shadow(gxp, i);
+}
 
+static void gxp_get_common_registers(struct gxp_dev *gxp,
+				     struct gxp_seg_header *seg_header,
+				     struct gxp_common_registers *common_regs)
+{
+	dev_dbg(gxp->dev, "Getting common registers\n");
+
+	seg_header->type = COMMON_REGISTERS;
+	seg_header->valid = 1;
+	seg_header->size = sizeof(*common_regs);
+
+	/* Get Aurora Top registers */
+	common_regs->aurora_revision =
+		gxp_read_32(gxp, GXP_REG_AURORA_REVISION);
+	if (!GXP_RFW_AC_POLICY_ENABLED)
+		gxp_get_ac_disabled_common_reg(gxp, common_regs);
 	dev_dbg(gxp->dev, "Done getting common registers\n");
 }
 

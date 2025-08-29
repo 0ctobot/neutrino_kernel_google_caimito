@@ -51,13 +51,6 @@ static u64 gcip_kci_get_cmd_elem_seq(struct gcip_mailbox *mailbox, void *cmd)
 	return elem->seq;
 }
 
-static u32 gcip_kci_get_cmd_elem_code(struct gcip_mailbox *mailbox, void *cmd)
-{
-	struct gcip_kci_command_element *elem = cmd;
-
-	return elem->code;
-}
-
 static void gcip_kci_set_cmd_elem_seq(struct gcip_mailbox *mailbox, void *cmd, u64 seq)
 {
 	struct gcip_kci_command_element *elem = cmd;
@@ -205,22 +198,25 @@ static int gcip_reverse_kci_add_resp(struct gcip_kci *kci,
 	return ret;
 }
 
-static bool gcip_kci_before_handle_resp(struct gcip_mailbox *mailbox, const void *resp)
+static bool gcip_kci_is_rx_elem_reversed(struct gcip_mailbox *mailbox, const void *rx_elem)
+{
+	const struct gcip_kci_response_element *elem = rx_elem;
+
+	return elem->seq & GCIP_KCI_REVERSE_FLAG;
+}
+
+static int gcip_kci_handle_reversed_command(struct gcip_mailbox *mailbox, const void *reversed_cmd)
 {
 	struct gcip_kci *kci = gcip_mailbox_get_data(mailbox);
-	const struct gcip_kci_response_element *elem = resp;
+	const struct gcip_kci_response_element *elem = reversed_cmd;
+	int ret;
 
-	if (elem->seq & GCIP_KCI_REVERSE_FLAG) {
-		int ret = gcip_reverse_kci_add_resp(kci, elem);
+	ret = gcip_reverse_kci_add_resp(kci, elem);
+	if (ret)
+		dev_warn_ratelimited(kci->dev, "Failed to handle reverse KCI code %u (%d)\n",
+				     elem->code, ret);
 
-		if (ret)
-			dev_warn_ratelimited(kci->dev,
-					     "Failed to handle reverse KCI code %u (%d)\n",
-					     elem->code, ret);
-		return false;
-	}
-
-	return true;
+	return ret;
 }
 
 static inline bool gcip_kci_is_block_off(struct gcip_mailbox *mailbox)
@@ -245,7 +241,6 @@ static const struct gcip_mailbox_ops gcip_mailbox_ops = {
 	.release_cmd_queue_lock = gcip_kci_release_cmd_queue_lock,
 	.get_cmd_elem_seq = gcip_kci_get_cmd_elem_seq,
 	.set_cmd_elem_seq = gcip_kci_set_cmd_elem_seq,
-	.get_cmd_elem_code = gcip_kci_get_cmd_elem_code,
 	.get_resp_queue_size = gcip_kci_get_resp_queue_size,
 	.get_resp_queue_head = gcip_kci_get_resp_queue_head,
 	.get_resp_queue_tail = gcip_kci_get_resp_queue_tail,
@@ -255,9 +250,10 @@ static const struct gcip_mailbox_ops gcip_mailbox_ops = {
 	.get_resp_elem_seq = gcip_kci_get_resp_elem_seq,
 	.set_resp_elem_seq = gcip_kci_set_resp_elem_seq,
 	.wait_for_cmd_queue_not_full = gcip_kci_wait_for_cmd_queue_not_full,
+	.is_rx_elem_reversed = gcip_kci_is_rx_elem_reversed,
+	.handle_reversed_command = gcip_kci_handle_reversed_command,
 	.after_enqueue_cmd = gcip_kci_after_enqueue_cmd,
 	.after_fetch_resps = gcip_kci_after_fetch_resps,
-	.before_handle_resp = gcip_kci_before_handle_resp,
 	.is_block_off = gcip_kci_is_block_off,
 	.on_error = gcip_kci_on_error,
 };
@@ -279,10 +275,12 @@ int gcip_kci_send_cmd_return_resp(struct gcip_kci *kci, struct gcip_kci_command_
 		flags |= GCIP_MAILBOX_CMD_FLAGS_SKIP_ASSIGN_SEQ;
 
 	ret = gcip_mailbox_send_cmd(&kci->mailbox, cmd, resp, flags);
-	if (ret || !resp)
+	if (ret) {
+		dev_err(kci->dev, "Sending KCI command %d returned error: %d", cmd->code, ret);
 		return ret;
+	}
 
-	return resp->code;
+	return resp ? resp->code : 0;
 }
 
 int gcip_kci_send_cmd(struct gcip_kci *kci, struct gcip_kci_command_element *cmd)
@@ -465,6 +463,7 @@ int gcip_kci_init(struct gcip_kci *kci, const struct gcip_kci_args *args)
 		goto err_unset_ops;
 
 	mailbox_args.dev = args->dev;
+	mailbox_args.mode = GCIP_MAILBOX_MODE_ALL;
 	mailbox_args.queue_wrap_bit = args->queue_wrap_bit;
 	mailbox_args.cmd_queue = args->cmd_queue;
 	mailbox_args.cmd_elem_size = sizeof(struct gcip_kci_command_element);

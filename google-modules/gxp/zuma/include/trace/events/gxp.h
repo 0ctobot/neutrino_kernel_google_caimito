@@ -239,17 +239,18 @@ TRACE_EVENT(gxp_uci_cmd_end,
 
 	    TP_printk("seq = %llu", __entry->seq));
 
+/* Use a fake argument placeholder because the macro requires user to pass in some variables. */
 TRACE_EVENT(gxp_uci_rsp_start,
 
-	    TP_PROTO(int irq),
+	    TP_PROTO(int placeholder),
 
-	    TP_ARGS(irq),
+	    TP_ARGS(placeholder),
 
-	    TP_STRUCT__entry(__field(int, irq)),
+	    TP_STRUCT__entry(),
 
-	    TP_fast_assign(__entry->irq = irq;),
+	    TP_fast_assign(),
 
-	    TP_printk("irq = %d", __entry->irq));
+	    TP_printk("%s", "irq triggered"));
 
 TRACE_EVENT(gxp_uci_rsp_end,
 
@@ -262,6 +263,54 @@ TRACE_EVENT(gxp_uci_rsp_end,
 	    TP_fast_assign(__entry->seq = seq;),
 
 	    TP_printk("seq = %llu", __entry->seq));
+
+TRACE_EVENT(gxp_uci_signal_outfence_before,
+
+	    TP_PROTO(u64 seq),
+
+	    TP_ARGS(seq),
+
+	    TP_STRUCT__entry(__field(u64, seq)),
+
+	    TP_fast_assign(__entry->seq = seq;),
+
+	    TP_printk("seq = %llu", __entry->seq));
+
+TRACE_EVENT(gxp_iif_unblocked_start,
+
+	TP_PROTO(int id, int signal_error),
+
+	TP_ARGS(id, signal_error),
+
+	TP_STRUCT__entry(
+		__field(int, id)
+		__field(int, signal_error)
+	),
+
+	TP_fast_assign(
+		__entry->id = id;
+		__entry->signal_error = signal_error;
+	),
+
+	TP_printk("fence id = %d, signal_error = %d", __entry->id, __entry->signal_error)
+);
+
+TRACE_EVENT(gxp_iif_unblocked_end,
+
+	TP_PROTO(u32 fence_id),
+
+	TP_ARGS(fence_id),
+
+	TP_STRUCT__entry(
+		__field(u32, fence_id)
+	),
+
+	TP_fast_assign(
+		__entry->fence_id = fence_id;
+	),
+
+	TP_printk("fence id = %u", __entry->fence_id)
+);
 
 #endif /* _TRACE_GXP_H */
 

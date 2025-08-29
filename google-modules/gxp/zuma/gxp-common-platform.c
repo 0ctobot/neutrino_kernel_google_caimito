@@ -2106,12 +2106,17 @@ err_remove_debugdir:
 static void gxp_common_platform_remove(struct platform_device *pdev)
 {
 	struct gxp_dev *gxp = platform_get_drvdata(pdev);
+	int power_down_retry = 5;
 
 	/*
-	 * This may power off the BLK, so should do it first before releasing
-	 * any resource.
+	 * This may power off the BLK, so should do it first before releasing any resource. Note
+	 * that if the power down request fails even after retry, gcip-pm will give up the request
+	 * and the block might be in a bad state. This case ideally won't happen in the real
+	 * production, but could happen at the development phase. It is inevitable if the kernel
+	 * driver cannot properly power block down, otherwise, any unpredictable error such as
+	 * kernel panic can occur.
 	 */
-	gcip_pm_flush_put_work(gxp->power_mgr->pm);
+	gcip_pm_flush_work(gxp->power_mgr->pm, power_down_retry);
 	gxp_device_remove(gxp);
 	gxp_debug_dump_exit(gxp);
 	if (gxp->before_remove)

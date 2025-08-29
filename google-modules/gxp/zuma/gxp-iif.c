@@ -12,6 +12,8 @@
 #include <linux/spinlock.h>
 #include <linux/workqueue.h>
 
+#include <trace/events/gxp.h>
+
 #include <gcip/gcip-memory.h>
 
 #include <iif/iif-fence.h>
@@ -49,6 +51,8 @@ static void gxp_iif_unblocked_handler(struct iif_fence *fence, void *data)
 	struct gxp_dev *gxp = data;
 	struct gxp_iif *giif = gxp_mcu_of(gxp)->giif;
 	struct gxp_iif_unblocked *unblocked;
+
+	trace_gxp_iif_unblocked_start(fence->id, fence->signal_error);
 
 	if (fence->signal_error)
 		dev_warn(gxp->dev, "IIF has been unblocked with an error, id=%d, error=%d",
@@ -108,6 +112,7 @@ static void gxp_iif_unblocked_work_func(struct work_struct *work)
 			gxp_iif_send_unblock_notification(giif, cur->fence_id);
 		else
 			gxp_uci_send_iif_unblock_noti(&giif->mcu->uci, cur->fence_id);
+		trace_gxp_iif_unblocked_end(cur->fence_id);
 		kfree(cur);
 	}
 }
@@ -303,10 +308,6 @@ static void gxp_iif_set_cmd_elem_seq(struct gcip_mailbox *mb, void *cmd, u64 seq
 {
 	/* Not Implemented */
 }
-static u32 gxp_iif_get_cmd_elem_code(struct gcip_mailbox *mb, void *cmd)
-{
-	return 0;
-}
 
 /* IIF signal commands have no responses. */
 static u32 gxp_iif_get_resp_queue_size(struct gcip_mailbox *mb)
@@ -345,7 +346,6 @@ const struct gcip_mailbox_ops gxp_iif_gcip_mbx_ops = {
 	.release_cmd_queue_lock = gxp_mailbox_gcip_ops_release_cmd_queue_lock,
 	.get_cmd_elem_seq = gxp_iif_get_cmd_elem_seq,
 	.set_cmd_elem_seq = gxp_iif_set_cmd_elem_seq,
-	.get_cmd_elem_code = gxp_iif_get_cmd_elem_code,
 	.get_resp_queue_size = gxp_iif_get_resp_queue_size,
 	.get_resp_queue_head = gxp_iif_get_resp_queue_head,
 	.get_resp_queue_tail = gxp_iif_get_resp_queue_tail,
@@ -441,6 +441,21 @@ static int gxp_iif_mailbox_init(struct gxp_iif *giif)
 	return 0;
 }
 
+static void gxp_clear_carveout_iif_signal_region(struct gxp_dev *gxp)
+{
+	void *buffer_vaddr;
+
+	buffer_vaddr = memremap(GXP_CARVEOUT_IIF_SIGNAL_REGION_ADDRESS,
+				GXP_CARVEOUT_IIF_SIGNAL_REGION_SIZE, MEMREMAP_WC);
+	if (!buffer_vaddr) {
+		dev_err(gxp->dev, "memmap failed for iif signal region.");
+		return;
+	}
+
+	memset(buffer_vaddr, 0x0, GXP_CARVEOUT_IIF_SIGNAL_REGION_SIZE);
+	memunmap(buffer_vaddr);
+}
+
 int gxp_iif_init(struct gxp_mcu *mcu)
 {
 	struct gxp_dev *gxp = mcu->gxp;
@@ -469,6 +484,9 @@ int gxp_iif_init(struct gxp_mcu *mcu)
 		dev_warn(gxp->dev, "Failed to register IIF ops, IIF disabled (ret=%d)", ret);
 		goto cancel_unblocked_work;
 	}
+
+	if (GXP_CLEAR_CARVEOUT_IIF_SIGNAL_REGION && !IS_GXP_TEST)
+		gxp_clear_carveout_iif_signal_region(gxp);
 
 	return 0;
 
