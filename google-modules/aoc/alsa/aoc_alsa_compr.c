@@ -359,8 +359,7 @@ static int aoc_compr_playback_open(struct snd_compr_stream *cstream)
 	alsa_stream->eof_reach = 0;
 	alsa_stream->gapless_offload_enable = chip->gapless_offload_enable;
 
-	if (!IS_ENABLED(CONFIG_SOC_GS101) && !IS_ENABLED(CONFIG_SOC_GS201) &&
-	    chip->mmap_offload_enable)
+	if (!chip->skip_mmap_offload && chip->mmap_offload_enable)
 		alsa_stream->stream_type = MMAPED;
 
 	snd_compr_use_pause_in_draining(cstream);

@@ -332,6 +332,7 @@ struct aoc_chip {
 
 	bool hotword_supported;
 	bool chre_supported;
+	bool skip_mmap_offload;
 
 	struct AUDIO_OUTPUT_BT_A2DP_ENC_CFG a2dp_encoder_cfg;
 	struct CMD_AUDIO_OUTPUT_USB_CONFIG usb_sink_cfg;

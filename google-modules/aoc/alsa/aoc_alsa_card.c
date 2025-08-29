@@ -1889,6 +1889,7 @@ static int snd_aoc_init(struct aoc_chip *chip)
 
 	chip->hotword_supported = of_property_read_bool(aoc_node, "hotword-supported");
 	chip->chre_supported = of_property_read_bool(aoc_node, "chre-supported");
+	chip->skip_mmap_offload = of_property_read_bool(aoc_node, "skip-mmap-offload");
 
 	of_node_put(aoc_node);
 	return 0;
