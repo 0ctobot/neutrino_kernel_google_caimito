@@ -25,6 +25,7 @@
 #define EDGETPU_DOMAIN_TOKEN_END	(1 + EDGETPU_NUM_VCIDS)
 #define EDGETPU_DOMAIN_TOKEN_INVALID	(EDGETPU_DOMAIN_TOKEN_END + 1)
 struct edgetpu_iommu_domain {
+	struct edgetpu_dev *etdev;
 	/*
 	 * IOMMU PASID, set by edgetpu_mmu_attach_domain().
 	 * This field should be set as IOMMU_PASID_INVALID in

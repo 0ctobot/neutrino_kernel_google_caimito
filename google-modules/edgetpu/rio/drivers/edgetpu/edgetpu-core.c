@@ -439,7 +439,7 @@ int edgetpu_device_add(struct edgetpu_dev *etdev,
 	mutex_init(&etdev->groups_lock);
 	INIT_LIST_HEAD(&etdev->groups);
 	etdev->n_groups = 0;
-	etdev->group_join_lockout = false;
+	etdev->group_create_lockout = false;
 	mutex_init(&etdev->clients_lock);
 	INIT_LIST_HEAD(&etdev->clients);
 	etdev->vcid_pool = (1u << EDGETPU_NUM_VCIDS) - 1;
@@ -616,12 +616,15 @@ struct edgetpu_client *edgetpu_client_add(struct edgetpu_dev_iface *etiface)
 	edgetpu_wakelock_init(etdev, &client->wakelock);
 	client->pid = current->pid;
 	client->tgid = current->tgid;
+	client->limited_pid = -1;
+	client->limited_tgid = -1;
 	client->etdev = etdev;
 	client->etiface = etiface;
 	mutex_init(&client->group_lock);
 	/* equivalent to edgetpu_client_get() */
 	refcount_set(&client->count, 1);
 	client->perdie_events = 0;
+	mutex_init(&client->limited_interface_lock);
 	mutex_lock(&etdev->clients_lock);
 	l->client = client;
 	list_add_tail(&l->list, &etdev->clients);

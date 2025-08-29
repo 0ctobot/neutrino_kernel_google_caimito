@@ -139,6 +139,8 @@ static int edgetpu_mobile_platform_probe(struct platform_device *pdev)
 		{ .name = NULL },
 		/* Common name for embedded SoC devices */
 		{ .name = "edgetpu-soc" },
+		/* Limited interface for map/unmap only */
+		{ .name = "edgetpu-limited", .limited = true },
 	};
 
 	/* Ensure any drivers relied upon have already probed. */

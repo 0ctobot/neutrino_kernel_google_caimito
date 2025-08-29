@@ -11,6 +11,7 @@
 #include <linux/dma-direction.h>
 #include <linux/dma-map-ops.h>
 #include <linux/iommu.h>
+#include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/rbtree.h>
 #include <linux/scatterlist.h>
@@ -26,16 +27,21 @@ struct edgetpu_mapping_root {
 	struct rb_root rb;
 	struct mutex lock;
 	size_t count;
+	/* List of mappings in this tree that are trimmable by the Pixel trim subsystem. */
+	struct list_head trimmable_mappings;
 };
 
 struct edgetpu_mapping {
 	struct gcip_iommu_mapping *gcip_mapping;
 	struct rb_node node;
-	u64 host_address;
 	edgetpu_map_flag_t flags; /* the flag passed by the runtime */
 	u32 mmu_flags;
 	/* Private data set by whom created this mapping. */
 	void *priv;
+	/* List of mappings in this tree that are trimmable by the Pixel trim subsystem. */
+	struct list_head trimmable_list;
+	/* Mapping with @flags EDGETPU_MAP_TRIMMABLE has been trimmed. */
+	bool trimmed;
 	/*
 	 * This callback will be called when the mappings in
 	 * edgetpu_mapping_root are wiped out, i.e. in edgetpu_mapping_clear().
@@ -60,6 +66,11 @@ struct edgetpu_mapping {
 	 * will be skipped on showing.
 	 */
 	void (*show)(struct edgetpu_mapping *map, struct seq_file *s);
+	/*
+	 * Whether this mapping was created on behalf of a limited interface.
+	 * This is used to make sure a limited interface can only unmap mappings it created.
+	 */
+	bool mapped_by_limited;
 };
 
 static inline void edgetpu_mapping_lock(struct edgetpu_mapping_root *root)
@@ -86,13 +97,15 @@ int edgetpu_mapping_add(struct edgetpu_mapping_root *mappings,
 /*
  * Finds the mapping previously added with edgetpu_mapping_add().
  *
+ * If @limited is true, a found mapping will only be returned if that mapping was created on behalf
+ * of a limited client, that is if the mapping's mapped_by_limited field is true.
+ *
  * Caller holds the mappings lock.
  *
  * Returns NULL if the mapping is not found.
  */
-struct edgetpu_mapping *
-edgetpu_mapping_find_locked(struct edgetpu_mapping_root *mappings,
-			    tpu_addr_t iova);
+struct edgetpu_mapping *edgetpu_mapping_find_locked(struct edgetpu_mapping_root *mappings,
+						    tpu_addr_t iova, bool limited);
 
 /*
  * Removes @map from @mappings.
@@ -135,8 +148,10 @@ static inline u64 mmu_flag_to_gcip_flags(u32 mmu_flags, enum dma_data_direction 
 /*
  * Return total size of mappings under the supplied root.
  * @restrict32: only count mappings restricted to 32-bit CPU-accessible IOVA space.
+ * @cow_only: only count mappings for Copy-on-Write areas (and may have been copied).
  */
-size_t edgetpu_mappings_total_size(struct edgetpu_mapping_root *mappings, bool restrict32);
+size_t edgetpu_mappings_total_size(struct edgetpu_mapping_root *mappings, bool restrict32,
+				   bool cow_only);
 
 /*
  * Returns the gcip_map_flags encoded from edgetpu_dma_flags and dma_attrs.

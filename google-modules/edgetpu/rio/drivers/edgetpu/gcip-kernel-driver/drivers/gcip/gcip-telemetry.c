@@ -162,7 +162,7 @@ static void copy_with_wrap(struct gcip_telemetry_header *header, void *dest, u32
 	}
 }
 
-/*＊
+/**
  * gcip_telemetry_fw_log() - The fallback function to consume the log buffer.
  * @log: The log telemetry object.
  *
@@ -219,7 +219,7 @@ static void gcip_telemetry_fw_log(const struct gcip_telemetry *log)
 	kfree(buffer);
 }
 
-/*＊
+/**
  * gcip_telemetry_fw_trace() - The fallback function to consume the trace buffer.
  * @trace: The trace telemetry object.
  *
@@ -256,7 +256,7 @@ void gcip_telemetry_irq_handler(struct gcip_telemetry_ctx *tel_ctx, enum gcip_te
 	spin_unlock_irqrestore(&tel->state_lock, flags);
 }
 
-/*＊
+/**
  * gcip_telemetry_inc_mmap_count() - Increases the telemetry mmap count.
  * @tel: The telemetry to add the mmapped_count.
  * @dif: The number to add the mmapped_count.

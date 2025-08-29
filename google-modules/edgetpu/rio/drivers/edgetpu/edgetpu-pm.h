@@ -60,12 +60,32 @@ static inline int edgetpu_pm_get(struct edgetpu_dev *etdev)
 }
 
 /*
+ * Increases power up count and powers up the device if currently off.
+ * Passes gcip_pm_flags @flags.
+ * Wrapper for gcip_pm_get_flags.
+ */
+static inline int edgetpu_pm_get_flags(struct edgetpu_dev *etdev, enum gcip_pm_flags flags)
+{
+	return gcip_pm_get_flags(etdev->pm->gpm, flags);
+}
+
+/*
  * Decreases @pm->count and powers off the device if @pm->count reaches zero.
  * Wrapper for gcip_pm_put.
  */
 static inline void edgetpu_pm_put(struct edgetpu_dev *etdev)
 {
 	gcip_pm_put(etdev->pm->gpm);
+}
+
+/*
+ * Decreases @pm->count and powers off the device if @pm->count reaches zero.
+ * Passes gcip_pm_flags @flags.
+ * Wrapper for gcip_pm_put_flags.
+ */
+static inline void edgetpu_pm_put_flags(struct edgetpu_dev *etdev, enum gcip_pm_flags flags)
+{
+	gcip_pm_put_flags(etdev->pm->gpm, flags);
 }
 
 /* Gets the power up counter. Note that this is checked without PM lock. */

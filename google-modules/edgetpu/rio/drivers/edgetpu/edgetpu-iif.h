@@ -97,10 +97,8 @@ void edgetpu_iif_release_mailbox(struct edgetpu_iif *etiif);
  *
  * This function is used when the TPU device is reset, it re-programs CSRs related to the IIF
  * mailbox.
- *
- * Returns 0 on success, -errno on error.
  */
-int edgetpu_iif_reinit_mailbox(struct edgetpu_iif *etiif);
+void edgetpu_iif_reinit_mailbox(struct edgetpu_iif *etiif);
 
 
 /*

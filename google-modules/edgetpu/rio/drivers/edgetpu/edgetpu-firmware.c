@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Edge TPU firmware loader.
  *
- * Copyright (C) 2019-2021,2024 Google, Inc.
+ * Copyright (C) 2019-2025 Google LLC
  */
 
 #include <linux/delay.h>
@@ -424,24 +424,24 @@ static int edgetpu_firmware_gsa_authenticate(struct edgetpu_dev *etdev, const st
 	}
 
 	/* Copy the firmware image to the carveout, skipping the header */
-	memcpy(image_vaddr, fw->data + EDGETPU_FW_HEADER_SIZE, fw->size - EDGETPU_FW_HEADER_SIZE);
+	memcpy(image_vaddr, fw->data + GCIP_FW_HEADER_SIZE, fw->size - GCIP_FW_HEADER_SIZE);
 
 	/* Allocate coherent memory for the image header */
-	header_vaddr = dma_alloc_coherent(et_fw->gsa_dev, EDGETPU_FW_HEADER_SIZE, &header_dma_addr,
+	header_vaddr = dma_alloc_coherent(et_fw->gsa_dev, GCIP_FW_HEADER_SIZE, &header_dma_addr,
 					  GFP_KERNEL);
 	if (!header_vaddr) {
 		etdev_err(etdev, "Failed to allocate coherent memory for header\n");
 		return -ENOMEM;
 	}
 
-	memcpy(header_vaddr, fw->data, EDGETPU_FW_HEADER_SIZE);
+	memcpy(header_vaddr, fw->data, GCIP_FW_HEADER_SIZE);
 	etdev_dbg(etdev, "Requesting GSA image load. meta = %pad payload = %pap", &header_dma_addr,
 		  &et_fw->fw_region_paddr);
 	ret = gsa_load_tpu_fw_image(et_fw->gsa_dev, header_dma_addr, et_fw->fw_region_paddr);
 	if (ret)
 		etdev_err(etdev, "GSA authentication failed: %d\n", ret);
 
-	dma_free_coherent(et_fw->gsa_dev, EDGETPU_FW_HEADER_SIZE, header_vaddr, header_dma_addr);
+	dma_free_coherent(et_fw->gsa_dev, GCIP_FW_HEADER_SIZE, header_vaddr, header_dma_addr);
 	return ret;
 }
 
@@ -547,7 +547,7 @@ static int edgetpu_firmware_update_remapped_data_region(struct edgetpu_dev *etde
 					 /* Size */
 					 et_fw->shared_data_size - iremap_pool_mem_offset,
 					 /* Granularity */
-					 PAGE_SIZE);
+					 EDGETPU_CPU_CACHE_LINE_SIZE);
 	if (ret) {
 		etdev_err(etdev, "failed to initialize remapped memory pool: %d", ret);
 		goto out_memunmap;
@@ -643,17 +643,26 @@ size_t edgetpu_firmware_fw_region_size(struct edgetpu_dev *etdev)
 	return et_fw->fw_region_size;
 }
 
+/* Resets KCI, IKV, and IIF mailboxes before starting f/w, don't process anything old. */
+static void edgetpu_firmware_reset_mailboxes(struct edgetpu_dev *etdev)
+{
+	edgetpu_mailbox_reset(etdev->etkci->mailbox);
+	EDGETPU_MAILBOX_CONTEXT_WRITE(etdev->etkci->mailbox, config_spare_0,
+				      EDGETPU_DRIVER_FW_INTERFACE_VERSION);
+	/* Need to check if in-kernel VII was enabled */
+	if (etdev->etikv->mbx_hardware)
+		edgetpu_mailbox_reset(etdev->etikv->mbx_hardware);
+	if (etdev->etiif->mbx_hardware)
+		edgetpu_mailbox_reset(etdev->etiif->mbx_hardware);
+	edgetpu_iif_reinit_mailbox(etdev->etiif);
+}
+
 static int edgetpu_firmware_prepare_run(struct edgetpu_firmware *et_fw)
 {
 	struct edgetpu_dev *etdev = et_fw->etdev;
 	int ret;
 
-	/* Reset KCI and IKV mailboxes before starting f/w, don't process anything old.*/
-	edgetpu_mailbox_reset(etdev->etkci->mailbox);
-	/* Need to check if in-kernel VII was enabled */
-	if (etdev->etikv->mbx_hardware)
-		edgetpu_mailbox_reset(etdev->etikv->mbx_hardware);
-
+	edgetpu_firmware_reset_mailboxes(etdev);
 	ret = edgetpu_firmware_update_remapped_data_region(etdev);
 	if (ret)
 		return ret;
@@ -691,9 +700,9 @@ static int edgetpu_firmware_setup_image(struct edgetpu_firmware *et_fw, const st
 	struct gcip_image_config_parser *cfg_parser = edgetpu_firmware_get_img_cfg_parser(et_fw);
 	phys_addr_t image_start, image_end, carveout_start, carveout_end;
 
-	if (fw->size < EDGETPU_FW_HEADER_SIZE) {
+	if (fw->size < GCIP_FW_HEADER_SIZE) {
 		etdev_err(etdev, "Invalid firmware image size: %zu < %d\n",
-			  fw->size, EDGETPU_FW_HEADER_SIZE);
+			  fw->size, GCIP_FW_HEADER_SIZE);
 		return -EINVAL;
 	}
 
@@ -745,8 +754,7 @@ static int edgetpu_firmware_setup_image(struct edgetpu_firmware *et_fw, const st
 		etdev_dbg(etdev, "No GSA device available, but firmware is non-secure.");
 		etdev_dbg(etdev, "Continuing without authentication.");
 		/* Copy the firmware image to the target location, skipping the header. */
-		memcpy(image_vaddr, fw->data + EDGETPU_FW_HEADER_SIZE,
-		       fw->size - EDGETPU_FW_HEADER_SIZE);
+		memcpy(image_vaddr, fw->data + GCIP_FW_HEADER_SIZE, fw->size - GCIP_FW_HEADER_SIZE);
 	} else {
 		etdev_err(etdev,
 			  "Cannot load firmware at privilege level %d with no authentication\n",
@@ -1008,7 +1016,7 @@ int edgetpu_firmware_trylock(struct edgetpu_dev *etdev)
  * Grab firmware lock to protect against firmware state changes.
  * Locks out firmware loading / unloading while caller performs ops that are
  * incompatible with a change in firmware status.  Does not care whether or not
- * the device is joined to a group.
+ * any client has created a group for the device.
  */
 int edgetpu_firmware_lock(struct edgetpu_dev *etdev)
 {
@@ -1031,8 +1039,8 @@ void edgetpu_firmware_unlock(struct edgetpu_dev *etdev)
 }
 
 /*
- * Lock firmware for loading.  Disallow group join for device during load.
- * Fails if device is already joined to a group and is in use.
+ * Lock firmware for loading.  Disallow group creation for the device during load.
+ * Fails if any client has already created a group for the device and the group is in use.
  * See documentation for edgetpu_firmware_lock() for rules on locking vs. pm_lock.
  */
 static int edgetpu_firmware_load_lock(struct edgetpu_dev *etdev)
@@ -1047,8 +1055,8 @@ static int edgetpu_firmware_load_lock(struct edgetpu_dev *etdev)
 	}
 	mutex_lock(&et_fw->fw_state_lock);
 
-	/* Disallow group join while loading, fail if already joined */
-	if (!edgetpu_set_group_join_lockout(etdev, true)) {
+	/* Disallow group creation while loading, fail if a group is already created */
+	if (!edgetpu_set_group_create_lockout(etdev, true)) {
 		etdev_err(
 			etdev,
 			"Cannot load firmware because device is in use");
@@ -1058,7 +1066,7 @@ static int edgetpu_firmware_load_lock(struct edgetpu_dev *etdev)
 	return 0;
 }
 
-/* Unlock firmware after lock held for loading, re-allow group join. */
+/* Unlock firmware after lock held for loading, re-allow group creation. */
 static void edgetpu_firmware_load_unlock(struct edgetpu_dev *etdev)
 {
 	struct edgetpu_firmware *et_fw = etdev->firmware;
@@ -1068,13 +1076,8 @@ static void edgetpu_firmware_load_unlock(struct edgetpu_dev *etdev)
 			  "Unlock firmware when no loader available\n");
 		return;
 	}
-	edgetpu_set_group_join_lockout(etdev, false);
+	edgetpu_set_group_create_lockout(etdev, false);
 	mutex_unlock(&et_fw->fw_state_lock);
-}
-
-static void edgetpu_firmware_reset_boot_stage(struct edgetpu_firmware *et_fw)
-{
-	EDGETPU_MAILBOX_CONTEXT_WRITE(et_fw->etdev->etkci->mailbox, config_spare_1, 0);
 }
 
 #define FLATBUFFER_MIN_VII_VERSION	0
@@ -1144,7 +1147,6 @@ static int edgetpu_firmware_run_locked(struct edgetpu_firmware *et_fw, const cha
 	edgetpu_firmware_set_loading(et_fw);
 	edgetpu_sw_wdt_stop(et_fw->etdev);
 	ret = edgetpu_firmware_load(et_fw, name);
-	edgetpu_firmware_reset_boot_stage(et_fw);
 	if (ret)
 		goto out_failed;
 
@@ -1260,12 +1262,9 @@ int edgetpu_firmware_restart_locked(struct edgetpu_dev *etdev, bool force_reset)
 
 	edgetpu_firmware_set_loading(et_fw);
 	edgetpu_sw_wdt_stop(etdev);
-	edgetpu_firmware_reset_boot_stage(et_fw);
 	if (et_fw->sanitizer_status)
 		edgetpu_firmware_clear_bctcm(etdev);
-	/* Reset KCI mailbox before starting f/w, don't process anything old.*/
-	edgetpu_mailbox_reset(etdev->etkci->mailbox);
-	edgetpu_iif_reinit_mailbox(etdev->etiif);
+	edgetpu_firmware_reset_mailboxes(etdev);
 
 	/*
 	 * Try restarting the firmware first, fall back to normal firmware start
@@ -1609,6 +1608,7 @@ int edgetpu_firmware_setup_fw_region(struct edgetpu_dev *etdev, phys_addr_t fw_r
 		ret = -ENOMEM;
 		goto out_free_et_fw;
 	}
+	memset(et_fw->shared_data_vaddr, 0, et_fw->shared_data_size);
 
 	ret = edgetpu_iremap_pool_create(etdev,
 					 /* Base virtual address (kernel address space) */
@@ -1620,7 +1620,7 @@ int edgetpu_firmware_setup_fw_region(struct edgetpu_dev *etdev, phys_addr_t fw_r
 					 /* Size */
 					 et_fw->shared_data_size - EDGETPU_POOL_MEM_OFFSET,
 					 /* Granularity */
-					 PAGE_SIZE);
+					 EDGETPU_CPU_CACHE_LINE_SIZE);
 	if (ret) {
 		etdev_err(etdev, "failed to initialize fw remapped memory pool: %d", ret);
 		goto out_unmap_fw;

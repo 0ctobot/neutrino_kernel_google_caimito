@@ -27,6 +27,9 @@
 /* Number of TPU clusters for metrics handling. */
 #define EDGETPU_TPU_CLUSTER_COUNT 3
 
+/* Size of IKV queues (in unit number of elements). */
+#define EDGETPU_IKV_QUEUE_SIZE 1023
+
 /*
  * TZ Mailbox ID for secure workloads.  Must match firmware kTzMailboxId value for the chip,
  * but note firmware uses a zero-based index vs. kernel passing a one-based value here.

@@ -221,6 +221,10 @@ void edgetpu_mailbox_reset(struct edgetpu_mailbox *mailbox)
 	edgetpu_mailbox_set_cmd_queue_tail(mailbox, 0);
 	edgetpu_mailbox_set_resp_queue_head(mailbox, 0);
 	EDGETPU_MAILBOX_RESP_QUEUE_WRITE(mailbox, tail, 0);
+	EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, config_spare_0, 0);
+	EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, config_spare_1, 0);
+	EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, config_spare_2, 0);
+	EDGETPU_MAILBOX_CONTEXT_WRITE(mailbox, config_spare_3, 0);
 	edgetpu_mailbox_enable(mailbox);
 }
 
@@ -763,23 +767,23 @@ void edgetpu_mailbox_restore_active_mailbox_queues(struct edgetpu_dev *etdev)
 	/*
 	 * We are not holding @etdev->groups_lock, what may race is:
 	 *   1. The group is disbanding and being removed from @etdev.
-	 *   2. A new group is adding to @etdev
+	 *   2. A new group is added to @etdev and is not yet ready.
+	 *   3. A new group is added to @etdev and just became ready.
 	 *
 	 * For (1.) the group will be marked as DISBANDED, so we check whether
-	 * the group is finalized before performing VII re-init.
+	 * the group is READY before performing VII re-init.
+	 * For (2.), the same check also skips groups still in INITIALIZING state.
+	 * For (3.), this re-init is redundant but isn't harmful.  We hold the PM lock and the
+	 * racing client must wait for us to release the PM lock before adding a new power up
+	 * request / accessing hardware.
 	 *
-	 * For (2.), adding group to @etdev (edgetpu_device_group_add()) has
-	 * nothing to do with VII, its VII will be set when the group is
-	 * finalized.
+	 * A new group being added that is not captured in groups[] will initialize VII /
+	 * external mailbox as usual.
 	 */
 	for (i = 0; i < n; i++) {
 		group = groups[i];
 		down_write(&group->lock);
-		/*
-		 * If the group is just finalized or has mailbox attached in
-		 * another process, this re-init is redundant but isn't harmful.
-		 */
-		if (edgetpu_group_finalized_and_attached(group)) {
+		if (edgetpu_group_ready_and_attached(group)) {
 			edgetpu_mailbox_reinit_vii(group);
 			edgetpu_mailbox_reinit_external_mailbox(group);
 		}
@@ -987,7 +991,7 @@ static int edgetpu_mailbox_external_alloc(struct edgetpu_device_group *group,
 	struct edgetpu_mailbox_attr attr;
 	unsigned long flags;
 
-	if (!edgetpu_device_group_is_finalized(group))
+	if (!edgetpu_device_group_is_ready(group))
 		return -EINVAL;
 
 	if (group->ext_mailbox)

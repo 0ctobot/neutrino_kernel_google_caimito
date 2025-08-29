@@ -50,8 +50,7 @@ static const struct dma_fence_ops edgetpu_dma_fence_ops;
 /*
  * Clean resources recorded in @dmap.
  *
- * Caller holds the lock of group (map->priv) and ensures the group is in
- * the finalized state.
+ * Caller holds the lock of group (map->priv) and ensures the group is in the ready state.
  */
 static void dmabuf_mapping_destroy(struct edgetpu_mapping *mapping)
 {
@@ -102,10 +101,10 @@ static struct edgetpu_mapping *dmabuf_mapping_create(struct edgetpu_device_group
 
 	down_read(&group->lock);
 	mutex_lock(&group->mapping_lock);
-	if (!edgetpu_device_group_is_finalized(group)) {
+	if (!edgetpu_device_group_is_ready(group)) {
 		ret = edgetpu_group_errno(group);
 		etdev_dbg(group->etdev,
-			  "%s: edgetpu_device_group_is_finalized returns %d\n",
+			  "%s: edgetpu_device_group_is_ready returns %d\n",
 			  __func__, ret);
 		mutex_unlock(&group->mapping_lock);
 		up_read(&group->lock);
@@ -169,7 +168,7 @@ int edgetpu_unmap_dmabuf(struct edgetpu_device_group *group, tpu_addr_t tpu_addr
 	struct edgetpu_mapping *map;
 
 	edgetpu_mapping_lock(mappings);
-	map = edgetpu_mapping_find_locked(mappings, tpu_addr);
+	map = edgetpu_mapping_find_locked(mappings, tpu_addr, /*limited=*/false);
 	if (!map) {
 		edgetpu_mapping_unlock(mappings);
 		etdev_err(group->etdev, "unmap group=%u tpu_addr=%pad not found",

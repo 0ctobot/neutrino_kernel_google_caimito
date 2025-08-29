@@ -198,10 +198,10 @@ struct edgetpu_mailbox_context_csr {
 	u32 resp_queue_address_low;
 	u32 resp_queue_address_high;
 	u32 resp_queue_size;
-	u32 config_spare_0;
-	u32 config_spare_1;
-	u32 config_spare_2;
-	u32 config_spare_3;
+	u32 config_spare_0; /* For KCI, kernel driver version; unused for others. */
+	u32 config_spare_1; /* For KCI, firmware boot stage; unused for others. */
+	u32 config_spare_2; /* unused for now */
+	u32 config_spare_3; /* unused for now */
 } __packed;
 
 /* CSRs that can be accessed by AP runtime */

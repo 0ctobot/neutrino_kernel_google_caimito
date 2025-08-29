@@ -39,15 +39,14 @@ struct edgetpu_list_group_client {
 };
 
 enum edgetpu_device_group_status {
-	/* Waiting to be finalized. */
-	EDGETPU_DEVICE_GROUP_WAITING,
-	/* Most operations can only apply on a finalized group. */
-	EDGETPU_DEVICE_GROUP_FINALIZED,
+	/* Temporary status while a group is being created but not yet READY. */
+	EDGETPU_DEVICE_GROUP_INITIALIZING,
+	/* Ready for use. */
+	EDGETPU_DEVICE_GROUP_READY,
 	/*
-	 * When a fatal error occurs, groups in FINALIZED status are transformed
-	 * into this state. Operations on groups with this status mostly return
-	 * ECANCELED. Once the client leaves an ERRORED group, the status is
-	 * transitioned to DISBANDED.
+	 * When a fatal error occurs, groups in READY status are transformed into this state.
+	 * Operations on groups with this status mostly return ECANCELED. Once the client leaves an
+	 * ERRORED group, the status transitions to DISBANDED until the group is released.
 	 */
 	EDGETPU_DEVICE_GROUP_ERRORED,
 	/* No operations except client leaving can be performed. */
@@ -190,25 +189,14 @@ struct edgetpu_list_group {
 	list_for_each_entry(c, &group->clients, list)
 
 /*
- * Returns if the group is waiting to be finalized.
+ * Returns if the group is ready.
  *
  * Caller holds @group->lock.
  */
 static inline bool
-edgetpu_device_group_is_waiting(const struct edgetpu_device_group *group)
+edgetpu_device_group_is_ready(const struct edgetpu_device_group *group)
 {
-	return group->status == EDGETPU_DEVICE_GROUP_WAITING;
-}
-
-/*
- * Returns if the group is finalized.
- *
- * Caller holds @group->lock.
- */
-static inline bool
-edgetpu_device_group_is_finalized(const struct edgetpu_device_group *group)
-{
-	return group->status == EDGETPU_DEVICE_GROUP_FINALIZED;
+	return group->status == EDGETPU_DEVICE_GROUP_READY;
 }
 
 /*
@@ -297,26 +285,25 @@ edgetpu_device_group_create(struct edgetpu_client *client, const struct edgetpu_
 void edgetpu_device_group_disband(struct edgetpu_client *client);
 
 /*
- * Finalizes the group.
- *
- * Returns 0 on success.
- */
-int edgetpu_device_group_finalize(struct edgetpu_device_group *group);
-
-/*
  * Maps buffer to a device group.
  *
  * @arg->device_address will be set as the mapped TPU VA on success.
  *
+ * @limited must be true if being called on behalf of a limited interface.
+ *
  * Returns zero on success or a negative errno on error.
  */
-int edgetpu_device_group_map(struct edgetpu_device_group *group,
-			     struct edgetpu_map_ioctl *arg);
+int edgetpu_device_group_map(struct edgetpu_device_group *group, struct edgetpu_map_ioctl *arg,
+			     bool limited);
 
-/* Unmap a userspace buffer from a device group. */
-int edgetpu_device_group_unmap(struct edgetpu_device_group *group,
-			       tpu_addr_t tpu_addr,
-			       edgetpu_map_flag_t flags);
+/*
+ * Unmap a userspace buffer from a device group.
+ *
+ * @limited must be true if being called on behalf of a limited interface. If the mapping pointed
+ * to by @tpu_addr was not mapped with @limited == true, the unmap will fail and return -EINVAL.
+ */
+int edgetpu_device_group_unmap(struct edgetpu_device_group *group, tpu_addr_t tpu_addr,
+			       edgetpu_map_flag_t flags, bool limited);
 
 /* Sync the buffer previously mapped by edgetpu_device_group_map. */
 int edgetpu_device_group_sync_buffer(struct edgetpu_device_group *group,
@@ -326,10 +313,12 @@ int edgetpu_device_group_sync_buffer(struct edgetpu_device_group *group,
 void edgetpu_mappings_clear_group(struct edgetpu_device_group *group);
 
 /*
- * Return total size of all mappings for the group in bytes
+ * Return total size of all mappings for the group in bytes.
  * @restrict32: only count mappings restricted to 32-bit CPU-accessible IOVA space.
+ * @cow_only: only count mappings for Copy-on-Write areas (and may have been copied).
  */
-size_t edgetpu_group_mappings_total_size(struct edgetpu_device_group *group, bool restrict32);
+size_t edgetpu_group_mappings_total_size(struct edgetpu_device_group *group, bool restrict32,
+					 bool cow_only);
 
 /* Log mapping error with additional info for debugging. */
 void edgetpu_device_group_log_map_error(struct edgetpu_device_group *group, size_t size,
@@ -407,11 +396,11 @@ void edgetpu_group_notify(struct edgetpu_device_group *group, uint event_id);
 bool edgetpu_in_any_group(struct edgetpu_dev *etdev);
 
 /*
- * Enable or disable device group join lockout (as during f/w load).
- * Returns false if attempting to lockout group join but device is already
- * joined to a group.
+ * Enable or disable device group create lockout (as during f/w load).
+ * Returns false if attempting to lockout group creates, but a client has already created a group
+ * for this device..
  */
-bool edgetpu_set_group_join_lockout(struct edgetpu_dev *etdev, bool lockout);
+bool edgetpu_set_group_create_lockout(struct edgetpu_dev *etdev, bool lockout);
 
 /* Notify @group about a fatal error for that group. */
 void edgetpu_group_fatal_error_notify(struct edgetpu_device_group *group,
@@ -465,14 +454,14 @@ edgetpu_group_mailbox_detached_locked(const struct edgetpu_device_group *group)
 }
 
 /*
- * Returns whether @group is finalized and has mailbox attached.
+ * Returns whether @group is ready and has mailbox attached.
  *
  * Caller holds @group->lock.
  */
 static inline bool
-edgetpu_group_finalized_and_attached(const struct edgetpu_device_group *group)
+edgetpu_group_ready_and_attached(const struct edgetpu_device_group *group)
 {
-	return edgetpu_device_group_is_finalized(group) &&
+	return edgetpu_device_group_is_ready(group) &&
 	       !edgetpu_group_mailbox_detached_locked(group);
 }
 
@@ -502,10 +491,25 @@ void edgetpu_device_group_untrack_fence_task(struct edgetpu_device_group *group,
 
 /*
  * Handle IOMMU fault: check client mappings for valid IOVA, log status.
- * Always returns a negative error code to tell caller to propceed with page fault error
+ * Always returns a negative error code to tell caller to proceed with page fault error
  * processing for now.
  * TODO(b/264449079): Fault in page if appropriate, tell caller to retry TPU access.
+ *
+ * @etdev: device incurring an IOMMU fault
+ * @iova: IOVA reported for the fault
+ * @pasid: PASID reported for the fault
+ * @write: true if writeable access reported
  */
-int edgetpu_device_group_handle_fault(struct edgetpu_dev *etdev, u64 iova, uint pasid);
+int edgetpu_device_group_handle_fault(struct edgetpu_dev *etdev, u64 iova, uint pasid, bool write);
+
+/* Trim all trimmable buffers. */
+void edgetpu_trim_buffers(struct edgetpu_dev *etdev);
+
+/*
+ * Remap trimmed buffers for the @client.  On successful return, all trimmable buffers have been
+ * remapped at the same IOVA as previously mapped.  If an error is returned, at least one buffer
+ * was not successfully remapped.
+ */
+int edgetpu_group_remap_buffers(struct edgetpu_client *client);
 
 #endif /* __EDGETPU_DEVICE_GROUP_H__ */

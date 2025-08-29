@@ -45,6 +45,7 @@ struct edgetpu_iommu {
 	 * The implementation will fall back to dynamically allocated domains otherwise.
 	 */
 	struct gcip_iommu_domain_pool domain_pool;
+
 };
 
 bool edgetpu_mmu_is_domain_default_domain(struct edgetpu_dev *etdev,
@@ -69,32 +70,35 @@ static void report_page_fault(struct edgetpu_dev *etdev, u64 addr, u32 pasid, u3
 }
 #endif
 
-static int edgetpu_check_fault(struct edgetpu_dev *etdev, struct iommu_fault *fault)
+static int edgetpu_check_dev_fault(struct edgetpu_dev *etdev, struct iommu_fault *fault)
 {
 	u64 iova;
 	uint pasid;
+	u32 perm;
 
 	if (fault->type == IOMMU_FAULT_PAGE_REQ) {
 		iova = fault->prm.addr;
 		pasid = fault->prm.pasid;
+		perm = fault->prm.perm;
 	} else if (fault->type == IOMMU_FAULT_DMA_UNRECOV) {
 		iova = fault->event.addr;
 		pasid = fault->event.pasid;
+		perm = fault->event.perm;
 	} else {
 		return -EAGAIN;
 	}
 
-	edgetpu_device_group_handle_fault(etdev, iova, pasid);
+	edgetpu_device_group_handle_fault(etdev, iova, pasid, !!(perm & IOMMU_FAULT_PERM_WRITE));
 	return -EAGAIN;
 }
 
 static int edgetpu_iommu_dev_fault_handler(struct iommu_fault *fault, void *token)
 {
-	struct edgetpu_dev *etdev = (struct edgetpu_dev *)token;
+	struct edgetpu_dev *etdev = token;
 	static DEFINE_RATELIMIT_STATE(rs, DEFAULT_RATELIMIT_INTERVAL, DEFAULT_RATELIMIT_BURST);
 
 	/* Optional debugging info / other fixup/handling for an IOMMU fault. */
-	edgetpu_check_fault(etdev, fault);
+	edgetpu_check_dev_fault(etdev, fault);
 	/* Ignore return, continue on with error reporting. */
 
 	if (!__ratelimit(&rs))
@@ -118,22 +122,35 @@ static int edgetpu_iommu_dev_fault_handler(struct iommu_fault *fault, void *toke
 
 static int edgetpu_register_iommu_device_fault_handler(struct edgetpu_dev *etdev)
 {
-	etdev_dbg(etdev, "Registering IOMMU device fault handler\n");
 	return iommu_register_device_fault_handler(etdev->dev, edgetpu_iommu_dev_fault_handler,
 						   etdev);
 }
 
 static int edgetpu_unregister_iommu_device_fault_handler(struct edgetpu_dev *etdev)
 {
-	etdev_dbg(etdev, "Unregistering IOMMU device fault handler\n");
 	return iommu_unregister_device_fault_handler(etdev->dev);
 }
 
-static void edgetpu_init_etdomain(struct edgetpu_iommu_domain *etdomain, struct edgetpu_dev *etdev,
-				  struct gcip_iommu_domain *gdomain)
+static int edgetpu_iommu_fault_handler(struct iommu_domain *domain, struct device *dev,
+				       unsigned long iova, int flags, void *token)
 {
+	struct edgetpu_iommu_domain *etdomain = token;
+	struct edgetpu_dev *etdev = etdomain->etdev;
+	uint pasid = etdomain->pasid;
+
+	/* Log debugging info */
+	edgetpu_device_group_handle_fault(etdev, iova, pasid, !!(flags & IOMMU_FAULT_WRITE));
+	/* Tell IOMMU driver we handled the fault, no need to dump SMMU event. */
+	return 0;
+}
+
+static void edgetpu_init_etdomain(struct edgetpu_iommu_domain *etdomain, struct edgetpu_dev *etdev,
+				  struct gcip_iommu_domain *gdomain, uint pasid)
+{
+	etdomain->etdev = etdev;
 	etdomain->gdomain = gdomain;
-	etdomain->pasid = IOMMU_PASID_INVALID;
+	etdomain->pasid = pasid;
+	iommu_set_fault_handler(etdomain->gdomain->domain, edgetpu_iommu_fault_handler, etdomain);
 }
 
 /*
@@ -168,8 +185,7 @@ static int check_default_domain(struct edgetpu_dev *etdev,
 	}
 
 out:
-	etiommu->default_etdomain.pasid = 0;
-	etiommu->default_etdomain.gdomain = gdomain;
+	edgetpu_init_etdomain(&etiommu->default_etdomain, etdev, gdomain, 0);
 	etiommu->attached_etdomains[0] = &etiommu->default_etdomain;
 	return 0;
 }
@@ -358,7 +374,7 @@ struct edgetpu_iommu_domain *edgetpu_mmu_alloc_domain(struct edgetpu_dev *etdev)
 		return NULL;
 	}
 
-	edgetpu_init_etdomain(etdomain, etdev, gdomain);
+	edgetpu_init_etdomain(etdomain, etdev, gdomain, IOMMU_PASID_INVALID);
 	return etdomain;
 }
 

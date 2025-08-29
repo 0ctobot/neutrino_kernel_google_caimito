@@ -8,6 +8,7 @@
 #include <linux/delay.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
+#include <trace/events/edgetpu.h>
 
 #include <gcip/gcip-memory.h>
 
@@ -41,6 +42,8 @@ static void edgetpu_iif_unblocked(struct iif_fence *fence, void *data)
 	struct edgetpu_dev *etdev = data;
 	struct edgetpu_iif *etiif = etdev->etiif;
 	struct edgetpu_iif_unblocked *unblocked;
+
+	trace_edgetpu_iif_unblocked_start(fence);
 
 	if (fence->signal_error)
 		etdev_warn(etdev, "IIF has been unblocked with an error, id=%d, error=%d",
@@ -244,16 +247,6 @@ static void edgetpu_iif_release_cmd_queue_lock(struct gcip_mailbox *mailbox)
 	mutex_unlock(&etiif->cmd_queue_lock);
 }
 
-static int edgetpu_iif_acquire_resp_queue_lock(struct gcip_mailbox *mailbox, bool try, bool *atomic)
-{
-	/*
-	 * Since the IIF mailbox has no response queue this function should never be called.
-	 * As a protection against bugs, this function returns 0 (failure to acquire lock) so that
-	 * any caller knows they cannot access the mailbox response queue, which is NULL.
-	 */
-	return 0;
-}
-
 static int edgetpu_iif_wait_for_cmd_queue_not_full(struct gcip_mailbox *mailbox)
 {
 	struct edgetpu_iif *etiif = gcip_mailbox_get_data(mailbox);
@@ -298,42 +291,20 @@ static int edgetpu_iif_wait_for_cmd_queue_not_full(struct gcip_mailbox *mailbox)
 static int edgetpu_iif_after_enqueue_cmd(struct gcip_mailbox *mailbox, void *cmd)
 {
 	struct edgetpu_iif *etiif = gcip_mailbox_get_data(mailbox);
+	u32 fence_id = ((struct edgetpu_vii_litebuf_command *)cmd)->signal_fence_command.fence_id;
 
 	EDGETPU_MAILBOX_CMD_QUEUE_WRITE_SYNC(etiif->mbx_hardware, doorbell_set, 1);
 
+	trace_edgetpu_iif_unblocked_end(fence_id);
+
 	return 0;
 }
-
-/* IIF signal commands have no sequence numbers nor command codes. */
-static u64 edgetpu_iif_get_cmd_elem_seq(struct gcip_mailbox *mb, void *cmd) { return 0; }
-static void edgetpu_iif_set_cmd_elem_seq(struct gcip_mailbox *mb, void *cmd, u64 seq) { return; }
-static u32 edgetpu_iif_get_cmd_elem_code(struct gcip_mailbox *mb, void *cmd) { return 0; }
-
-/* IIF signal commands have no responses. */
-static u32 edgetpu_iif_get_resp_queue_size(struct gcip_mailbox *mb) { return 0; }
-static u32 edgetpu_iif_get_resp_queue_head(struct gcip_mailbox *mb) { return 0; }
-static u32 edgetpu_iif_get_resp_queue_tail(struct gcip_mailbox *mb) { return 0; }
-static void edgetpu_iif_inc_resp_queue_head(struct gcip_mailbox *mb, u32 inc) { return; }
-static void edgetpu_iif_release_resp_queue_lock(struct gcip_mailbox *mb) { return; }
-static u64 edgetpu_iif_get_resp_elem_seq(struct gcip_mailbox *mb, void *resp) { return 0; }
-static void edgetpu_iif_set_resp_elem_seq(struct gcip_mailbox *mb, void *resp, u64 seq) { return; }
 
 const struct gcip_mailbox_ops iif_mailbox_ops = {
 	.get_cmd_queue_tail = edgetpu_iif_get_cmd_queue_tail,
 	.inc_cmd_queue_tail = edgetpu_iif_inc_cmd_queue_tail,
 	.acquire_cmd_queue_lock = edgetpu_iif_acquire_cmd_queue_lock,
 	.release_cmd_queue_lock = edgetpu_iif_release_cmd_queue_lock,
-	.get_cmd_elem_seq = edgetpu_iif_get_cmd_elem_seq,
-	.set_cmd_elem_seq = edgetpu_iif_set_cmd_elem_seq,
-	.get_cmd_elem_code = edgetpu_iif_get_cmd_elem_code,
-	.get_resp_queue_size = edgetpu_iif_get_resp_queue_size,
-	.get_resp_queue_head = edgetpu_iif_get_resp_queue_head,
-	.get_resp_queue_tail = edgetpu_iif_get_resp_queue_tail,
-	.inc_resp_queue_head = edgetpu_iif_inc_resp_queue_head,
-	.acquire_resp_queue_lock = edgetpu_iif_acquire_resp_queue_lock,
-	.release_resp_queue_lock = edgetpu_iif_release_resp_queue_lock,
-	.get_resp_elem_seq = edgetpu_iif_get_resp_elem_seq,
-	.set_resp_elem_seq = edgetpu_iif_set_resp_elem_seq,
 	.wait_for_cmd_queue_not_full = edgetpu_iif_wait_for_cmd_queue_not_full,
 	.after_enqueue_cmd = edgetpu_iif_after_enqueue_cmd,
 };
@@ -383,6 +354,7 @@ int edgetpu_iif_init_mailbox(struct edgetpu_mailbox_manager *mgr, struct edgetpu
 	struct edgetpu_mailbox *mbx_hardware;
 	struct gcip_mailbox_args args = {
 		.dev = mgr->etdev->dev,
+		.mode = GCIP_MAILBOX_MODE_TX_CMD,
 		.queue_wrap_bit = CIRC_QUEUE_WRAP_BIT,
 		.cmd_elem_size = sizeof(struct edgetpu_vii_litebuf_command),
 		/* No responses are to be sent for IIF signal commands. */
@@ -476,13 +448,12 @@ void edgetpu_iif_release_mailbox(struct edgetpu_iif *etiif)
 	etiif->mbx_hardware = NULL;
 }
 
-int edgetpu_iif_reinit_mailbox(struct edgetpu_iif *etiif)
+void edgetpu_iif_reinit_mailbox(struct edgetpu_iif *etiif)
 {
-	int ret;
 	unsigned long flags;
 
 	if (!etiif->mbx_protocol)
-		return 0;
+		return;
 
 	flush_pending_iif_commands(etiif);
 	spin_lock_irqsave(&etiif->flush_lock, flags);
@@ -491,15 +462,15 @@ int edgetpu_iif_reinit_mailbox(struct edgetpu_iif *etiif)
 
 	edgetpu_mailbox_disable_doorbells(etiif->mbx_hardware);
 	edgetpu_mailbox_clear_doorbells(etiif->mbx_hardware);
-	ret = edgetpu_mailbox_set_queue(etiif->mbx_hardware, GCIP_MAILBOX_CMD_QUEUE,
-					etiif->cmd_queue_mem.dma_addr, QUEUE_SIZE);
-	if (ret)
-		return ret;
+	/*
+	 * This function only fails on invalid arguments. We have already checked them during init
+	 * hence here should always succeed.
+	 */
+	edgetpu_mailbox_set_queue(etiif->mbx_hardware, GCIP_MAILBOX_CMD_QUEUE,
+				  etiif->cmd_queue_mem.dma_addr, QUEUE_SIZE);
 	edgetpu_mailbox_set_queue_as_unused(etiif->mbx_hardware, GCIP_MAILBOX_RESP_QUEUE);
 	edgetpu_mailbox_init_doorbells(etiif->mbx_hardware);
 	edgetpu_mailbox_enable(etiif->mbx_hardware);
-
-	return 0;
 }
 
 void edgetpu_iif_send_unblock_notification(struct edgetpu_iif *etiif, int fence_id)

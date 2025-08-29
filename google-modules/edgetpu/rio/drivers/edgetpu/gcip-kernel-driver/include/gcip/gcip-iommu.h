@@ -102,6 +102,21 @@ enum gcip_iommu_mapping_type {
 	GCIP_IOMMU_MAPPING_DMA_BUF,
 };
 
+/**
+ * enum gcip_map_debug_flags - Mapping status flags for debugging, noting various attributes of the
+ *                             mapping used for diagnosis of access problems.
+ * GCIP_MAP_DEBUG_COW: VMA is copy-on-write, writeable mappings may have made a copy of pages
+ * GCIP_MAP_DEBUG_OVRRD_RDDIR: map direction override to read-only, writable page pin failed
+ * GCIP_MAP_DEBUG_VMA_NF: VMA for host addr not found, so initially assumed writeable by default
+ * GCIP_MAP_DEBUG_ASSUME_RDONLY: writable page pin failed, assuming read-only
+ */
+enum gcip_map_debug_flags {
+	GCIP_MAP_DEBUG_COW = 0x1,
+	GCIP_MAP_DEBUG_OVRRD_RDDIR = 0x2,
+	GCIP_MAP_DEBUG_VMA_NF = 0x4,
+	GCIP_MAP_DEBUG_ASSUME_RDONLY = 0x8,
+};
+
 /* Operaters for `struct gcip_iommu_mapping`. */
 struct gcip_iommu_mapping_ops {
 	/*
@@ -123,13 +138,16 @@ struct gcip_iommu_mapping_ops {
  *       information to the given domain received from the custom IOVA allocator.
  *       If the given domain is the default domain, the pointer will be set to the sgt received from
  *       default allocator.
+ *       If NULL then the mapping has no pages resident due to being trimmed.
  * @dir: The dma data direction may be adjusted due to the system or hardware limit.
  *       This value is the real one that was used for mapping and should be the same as the one
  *       encoded in gcip_map_flags.
  *       This field should be used in revert functions and dma sync functions.
  * @gcip_map_flags: The flags used to create the mapping, which can be encoded with
  *                  gcip_iommu_encode_gcip_map_flags() or `GCIP_MAP_FLAGS_DMA_*_TO_FLAGS` macros.
- * @owning_mm: For holding a reference to MM.
+ * @host_address: Start address of buffer in the virtual address space of the mapping process, for
+ *                buffer mappings only.
+ * @owning_mm: Holds a reference to the owning process MM, for buffer mappings only.
  * @user_specified_daddr: If true, its IOVA address was specified by the user from the `*_to_iova`
  *                        mapping functions and it won't free that when it's going to be unmapped.
  *                        It's user's responsibility to manage the IOVA region.
@@ -141,14 +159,15 @@ struct gcip_iommu_mapping {
 	struct gcip_iommu_domain *domain;
 	dma_addr_t device_address;
 	size_t size;
-	uint num_pages;
 	struct sg_table *sgt;
 	enum dma_data_direction dir;
 	u64 gcip_map_flags;
+	enum gcip_map_debug_flags map_debug_flags;
 	/*
-	 * TODO(b/302510715): Use another wrapper struct to contain this because it is used in
-	 *                    buffer mapping only.
+	 * TODO(b/302510715): Use another wrapper struct to contain the following 2 fields because
+	 *                    these are used for buffer mappings only.
 	 */
+	u64 host_address;
 	struct mm_struct *owning_mm;
 	bool user_specified_daddr;
 	const struct gcip_iommu_mapping_ops *ops;
@@ -426,6 +445,18 @@ void gcip_iommu_domain_unmap_sgt_from_iova(struct gcip_iommu_domain *domain, str
  */
 struct gcip_iommu_domain *gcip_iommu_get_domain_for_dev(struct device *dev);
 
+/*
+ * Returns a default GCIP IOMMU domain associated with the domain pool.
+ *
+ * @dev: Device where to fetch the default IOMMU domain.
+ * @pool: IOMMU domain pool.
+ *
+ * Since this domain is associated with the domain pool, it supports to be called with
+ * gcip_iommu_domain_map_buffer() to map a buffer on a iova allocated by the domain pool.
+ */
+struct gcip_iommu_domain *
+gcip_iommu_get_domain_for_dev_from_pool(struct device *dev, struct gcip_iommu_domain_pool *pool);
+
 /*  Encodes the gcip_map_flags from dma_data_direct, coherent, dma_attrs, and restrict_iova info. */
 u64 gcip_iommu_encode_gcip_map_flags(enum dma_data_direction dir, bool coherent,
 				     unsigned long dma_attrs, bool restrict_iova);
@@ -481,7 +512,7 @@ struct gcip_iommu_mapping *gcip_iommu_domain_map_dma_buf_to_iova(struct gcip_iom
  * @size: The size of the buffer.
  * @gcip_map_flags: The flags used to create the mapping, which can be encoded with
  *                  gcip_iommu_encode_gcip_map_flags() or `GCIP_MAP_FLAGS_DMA_*_TO_FLAGS` macros.
- * @pin_user_pages_lock: The lock for pinning user pages.
+ * @pin_user_pages_lock: The lock for pinning user pages, or NULL if none.
  *
  * Following things are done in this function:
  * 1. Pin user pages.
@@ -521,6 +552,30 @@ struct gcip_iommu_mapping *gcip_iommu_domain_map_buffer_to_iova(struct gcip_iomm
  * direction, coherent, and iova_restrict.
  */
 void gcip_iommu_mapping_unmap(struct gcip_iommu_mapping *mapping);
+
+/**
+ * gcip_iommu_mapping_trim() - Trim a buffer mapping, unpinning pages and unmapping from TPU,
+ *                             but leaving the IOVA allocation and mapping metadata in place.
+ * @mapping: The mapping instance to be trimmed.
+ *
+ * @mapping->sgt is set to NULL, indicating no pages currently mapped to TPU (or pinned).
+ * The full mapping may be restored via gcip_iommu_mapping_remap().
+ *
+ * Only implemented for buffer, not dma-buf, mappings.
+ */
+void gcip_iommu_mapping_trim(struct gcip_iommu_mapping *mapping);
+
+/**
+ * gcip_iommu_mapping_remap() - Remap a previously trimmed buffer mapping, re-pinning pages and
+ *                              remapping to the TPU at the same IOVA as previous.
+ * @mapping: The mapping instance to be remapped.
+ * @pin_user_pages_lock: The lock for pinning user pages, or NULL if none.
+ *
+ * @mapping->sgt is set to the new scatter-gather list.
+ *
+ * Only implemented for buffer, not dma-buf, mappings.
+ */
+int gcip_iommu_mapping_remap(struct gcip_iommu_mapping *mapping, struct mutex *pin_user_pages_lock);
 
 /**
  * gcip_iommu_alloc_iova() - Allocates IOVA with size @size.

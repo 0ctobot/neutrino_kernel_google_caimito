@@ -10,6 +10,7 @@
 
 #include <linux/list.h>
 #include <linux/mutex.h>
+#include <linux/seq_file.h>
 #include <linux/spinlock.h>
 
 #include <gcip/gcip-fence-array.h>
@@ -232,5 +233,10 @@ void edgetpu_ikv_cancel(struct edgetpu_device_group *group, int reason);
  * the unblocked callback.
  */
 void edgetpu_ikv_send_iif_unblock_notification(struct edgetpu_ikv *etikv, int fence_id);
+
+/*
+ * Dumps in-kernel VII queue addresses for debug mappings.
+ */
+void edgetpu_ikv_mappings_show(struct edgetpu_ikv *etikv, struct seq_file *s);
 
 #endif /* __EDGETPU_IKV_H__*/

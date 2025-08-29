@@ -117,30 +117,6 @@ enum gcip_reverse_kci_code {
 	GCIP_RKCI_GENERIC_CODE_LAST = 0xFFFF,
 };
 
-/*
- * Definition of code in response elements.
- * It is a 16-bit unsigned integer.
- */
-enum gcip_kci_error {
-	GCIP_KCI_ERROR_OK = 0, /* Not an error; returned on success. */
-	GCIP_KCI_ERROR_CANCELLED = 1,
-	GCIP_KCI_ERROR_UNKNOWN = 2,
-	GCIP_KCI_ERROR_INVALID_ARGUMENT = 3,
-	GCIP_KCI_ERROR_DEADLINE_EXCEEDED = 4,
-	GCIP_KCI_ERROR_NOT_FOUND = 5,
-	GCIP_KCI_ERROR_ALREADY_EXISTS = 6,
-	GCIP_KCI_ERROR_PERMISSION_DENIED = 7,
-	GCIP_KCI_ERROR_RESOURCE_EXHAUSTED = 8,
-	GCIP_KCI_ERROR_FAILED_PRECONDITION = 9,
-	GCIP_KCI_ERROR_ABORTED = 10,
-	GCIP_KCI_ERROR_OUT_OF_RANGE = 11,
-	GCIP_KCI_ERROR_UNIMPLEMENTED = 12,
-	GCIP_KCI_ERROR_INTERNAL = 13,
-	GCIP_KCI_ERROR_UNAVAILABLE = 14,
-	GCIP_KCI_ERROR_DATA_LOSS = 15,
-	GCIP_KCI_ERROR_UNAUTHENTICATED = 16,
-};
-
 /* Type of the chip of the offload vmbox to be linked. */
 enum gcip_kci_offload_chip_type {
 	GCIP_KCI_OFFLOAD_CHIP_TYPE_TPU = 0,
@@ -342,20 +318,6 @@ void gcip_kci_handle_irq(struct gcip_kci *kci);
  * of update_usage in struct gcip_kci_ops.
  */
 void gcip_kci_update_usage_async(struct gcip_kci *kci);
-
-/**
- * gcip_kci_error_to_errno() - Converts the firmware returned kci error code to the kernel
- *                             equivalent error code.
- *
- * IP driver should use this function internally to convert KCI errors received from the
- * firmware to the kernel error to be propagated as a IOCTL or any other system call error.
- *
- * @dev: Reference to the device struct.
- * @code: GCIP KCI error code.
- *
- * Return: Negative error code.
- */
-int gcip_kci_error_to_errno(struct device *dev, enum gcip_kci_error code);
 
 /* Gets the KCI private data. */
 static inline void *gcip_kci_get_data(struct gcip_kci *kci)

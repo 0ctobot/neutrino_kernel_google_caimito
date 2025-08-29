@@ -26,6 +26,8 @@ enum edgetpu_vii_litebuf_command_type {
 	EDGETPU_VII_LITEBUF_LARGE_RUNTIME_COMMAND = 1,
 	/* A signal IIF command. */
 	EDGETPU_VII_LITEBUF_SIGNAL_FENCE_COMMAND = 2,
+	/* A NULL command that does nothing on the firmware side. */
+	EDGETPU_VII_LITEBUF_NULL_COMMAND = 3,
 };
 
 struct edgetpu_vii_litebuf_large_runtime_command {

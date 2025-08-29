@@ -10,6 +10,9 @@
 #include <linux/scatterlist.h>
 #include <linux/seq_file.h>
 
+#include <gcip/gcip-iommu.h>
+
+#include "edgetpu.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-mapping.h"
 
@@ -35,6 +38,7 @@ void edgetpu_mapping_init(struct edgetpu_mapping_root *mappings)
 	mappings->rb = RB_ROOT;
 	mappings->count = 0;
 	mutex_init(&mappings->lock);
+	INIT_LIST_HEAD(&mappings->trimmable_mappings);
 }
 
 int edgetpu_mapping_add(struct edgetpu_mapping_root *mappings,
@@ -68,14 +72,16 @@ int edgetpu_mapping_add(struct edgetpu_mapping_root *mappings,
 	mappings->count++;
 	ret = 0;
 
+	if (map->flags & EDGETPU_MAP_TRIMMABLE)
+		list_add_tail(&map->trimmable_list, &mappings->trimmable_mappings);
+
 out:
 	edgetpu_mapping_unlock(mappings);
 	return ret;
 }
 
-struct edgetpu_mapping *
-edgetpu_mapping_find_locked(struct edgetpu_mapping_root *mappings,
-			    tpu_addr_t iova)
+struct edgetpu_mapping *edgetpu_mapping_find_locked(struct edgetpu_mapping_root *mappings,
+						    tpu_addr_t iova, bool limited)
 {
 	struct rb_node *node = mappings->rb.rb_node;
 
@@ -84,12 +90,16 @@ edgetpu_mapping_find_locked(struct edgetpu_mapping_root *mappings,
 			container_of(node, struct edgetpu_mapping, node);
 		const int cmp = compare(map, iova);
 
-		if (cmp > 0)
+		if (cmp > 0) {
 			node = node->rb_left;
-		else if (cmp < 0)
+		} else if (cmp < 0) {
 			node = node->rb_right;
-		else
-			return map;
+		} else {
+			if (limited && !map->mapped_by_limited)
+				return NULL;
+			else
+				return map;
+		}
 	}
 
 	return NULL;
@@ -100,6 +110,8 @@ void edgetpu_mapping_unlink(struct edgetpu_mapping_root *mappings,
 {
 	rb_erase(&map->node, &mappings->rb);
 	mappings->count--;
+	if (map->flags & EDGETPU_MAP_TRIMMABLE)
+		list_del(&map->trimmable_list);
 }
 
 struct edgetpu_mapping *
@@ -145,7 +157,8 @@ void edgetpu_mappings_show(struct edgetpu_mapping_root *mappings,
 	edgetpu_mapping_unlock(mappings);
 }
 
-size_t edgetpu_mappings_total_size(struct edgetpu_mapping_root *mappings, bool restrict32)
+size_t edgetpu_mappings_total_size(struct edgetpu_mapping_root *mappings, bool restrict32,
+				   bool cow_only)
 {
 	struct rb_node *node;
 	size_t total = 0;
@@ -157,6 +170,9 @@ size_t edgetpu_mappings_total_size(struct edgetpu_mapping_root *mappings, bool r
 			container_of(node, struct edgetpu_mapping, node);
 
 		if (restrict32 && (map->flags & EDGETPU_MAP_CPU_NONACCESSIBLE))
+			continue;
+
+		if (cow_only && !(map->gcip_mapping->map_debug_flags & GCIP_MAP_DEBUG_COW))
 			continue;
 
 		total += map->gcip_mapping->size;

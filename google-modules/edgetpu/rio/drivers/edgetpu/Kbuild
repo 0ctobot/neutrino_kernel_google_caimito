@@ -31,7 +31,6 @@ edgetpu-objs	:= edgetpu-dmabuf.o \
 		   edgetpu-iif.o \
 		   edgetpu-ikv-additional-info.o \
 		   edgetpu-ikv-mailbox-ops.o \
-		   edgetpu-ikv.o \
 		   edgetpu-iremap-pool.o \
 		   edgetpu-mailbox.o \
 		   edgetpu-mapping.o \
@@ -50,8 +49,9 @@ rio-objs	:= rio-core.o \
 		   rio-external.o \
 		   rio-firmware.o \
 		   rio-fs.o \
-		   rio-kci.o \
+		   rio-ikv.o \
 		   rio-iommu.o \
+		   rio-kci.o \
 		   rio-platform.o \
 		   rio-pm.o \
 		   rio-soc.o \
@@ -59,20 +59,21 @@ rio-objs	:= rio-core.o \
 		   rio-vii-packet.o \
 		   $(edgetpu-objs)
 
-CFLAGS_rio-fs.o := -DCONFIG_RIO=1
 CFLAGS_rio-core.o := -DCONFIG_RIO=1
+CFLAGS_rio-debug.o := -DCONFIG_RIO=1
 CFLAGS_rio-devfreq.o := -DCONFIG_RIO=1
 CFLAGS_rio-device-group.o := -DCONFIG_RIO=1
+CFLAGS_rio-external.o := -DCONFIG_RIO=1
 CFLAGS_rio-firmware.o := -DCONFIG_RIO=1
+CFLAGS_rio-fs.o := -DCONFIG_RIO=1
+CFLAGS_rio-ikv.o := -DCONFIG_RIO=1
 CFLAGS_rio-iommu.o := -DCONFIG_RIO=1
 CFLAGS_rio-kci.o := -DCONFIG_RIO=1
 CFLAGS_rio-platform.o := -DCONFIG_RIO=1
 CFLAGS_rio-pm.o := -DCONFIG_RIO=1
-CFLAGS_rio-debug.o := -DCONFIG_RIO=1
+CFLAGS_rio-soc.o := -DCONFIG_RIO=1
 CFLAGS_rio-usage-stats.o := -DCONFIG_RIO=1
 CFLAGS_rio-vii-packet.o := -DCONFIG_RIO=1
-CFLAGS_rio-external.o := -DCONFIG_RIO=1
-CFLAGS_rio-soc.o := -DCONFIG_RIO=1
 
 
 

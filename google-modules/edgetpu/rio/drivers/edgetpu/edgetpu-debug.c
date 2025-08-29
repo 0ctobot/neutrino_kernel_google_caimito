@@ -23,6 +23,7 @@
 
 #include <gcip/gcip-alloc-helper.h>
 #include <gcip/gcip-memory.h>
+#include <gcip/gcip-status-code.h>
 
 #include "edgetpu-config.h"
 #include "edgetpu-debug.h"
@@ -142,9 +143,9 @@ static void fw_debug_release_flush(struct edgetpu_dev *etdev, struct file *file)
 	dma_sync_sgtable_for_device(etdev->dev, etdev->fw_debug_mem.sgt, DMA_BIDIRECTIONAL);
 	etdev->fw_debug_mem.data_len = 0;
 	ret = edgetpu_kci_fw_debug_cmd(etdev, FW_DEBUG_BUFFER_IOVA, data_len);
-	if (ret == GCIP_KCI_ERROR_UNAVAILABLE)
+	if (ret == GCIP_STATUS_CODE_UNAVAILABLE)
 		etdev->fw_debug_mem.async_resp_pending = true;
-	else if (ret != GCIP_KCI_ERROR_OK)
+	else if (ret != GCIP_STATUS_CODE_OK)
 		etdev_warn_ratelimited(etdev, "fw debug command error %d", ret);
 }
 

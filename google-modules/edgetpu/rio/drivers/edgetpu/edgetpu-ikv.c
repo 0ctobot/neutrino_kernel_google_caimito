@@ -1,19 +1,21 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Virtual Inference Interface, implements the protocol between AP kernel and TPU firmware.
  *
- * Copyright (C) 2023 Google LLC
+ * Copyright (C) 2023-2025 Google LLC
  */
 
 #include <linux/kthread.h>
+#include <linux/seq_file.h>
 #include <linux/slab.h>
 
 #include <gcip/gcip-fence-array.h>
 #include <gcip/gcip-mailbox.h>
 #include <gcip/gcip-memory.h>
 
-#include "edgetpu-ikv.h"
+#include "edgetpu-config.h"
 #include "edgetpu-ikv-mailbox-ops.h"
+#include "edgetpu-ikv.h"
 #include "edgetpu-iremap-pool.h"
 #include "edgetpu-mailbox.h"
 #include "edgetpu-pm.h"
@@ -23,9 +25,6 @@
 
 static unsigned int user_ikv_timeout;
 module_param(user_ikv_timeout, uint, 0660);
-
-/* size of queue for in-kernel VII mailbox */
-#define QUEUE_SIZE CIRC_QUEUE_MAX_SIZE(CIRC_QUEUE_WRAP_BIT)
 
 static void edgetpu_ikv_handle_irq(struct edgetpu_mailbox *mailbox)
 {
@@ -51,11 +50,11 @@ static int edgetpu_ikv_alloc_queue(struct edgetpu_ikv *etikv, enum gcip_mailbox_
 	/* Allocate the queues based on the larger litebuf sizes which can handle both formats. */
 	switch (type) {
 	case GCIP_MAILBOX_CMD_QUEUE:
-		size = QUEUE_SIZE * VII_CMD_SIZE_BYTES;
+		size = EDGETPU_IKV_QUEUE_SIZE * VII_CMD_SIZE_BYTES;
 		mem = &etikv->cmd_queue_mem;
 		break;
 	case GCIP_MAILBOX_RESP_QUEUE:
-		size = QUEUE_SIZE * VII_RESP_SIZE_BYTES;
+		size = EDGETPU_IKV_QUEUE_SIZE * VII_RESP_SIZE_BYTES;
 		mem = &etikv->resp_queue_mem;
 		break;
 	}
@@ -68,7 +67,7 @@ static int edgetpu_ikv_alloc_queue(struct edgetpu_ikv *etikv, enum gcip_mailbox_
 	if (ret)
 		return ret;
 
-	ret = edgetpu_mailbox_set_queue(etikv->mbx_hardware, type, mem->dma_addr, QUEUE_SIZE);
+	ret = edgetpu_mailbox_set_queue(etikv->mbx_hardware, type, mem->dma_addr, EDGETPU_IKV_QUEUE_SIZE);
 	if (ret) {
 		etdev_err(etikv->etdev, "failed to set mailbox queue: %d", ret);
 		edgetpu_iremap_free(etdev, mem);
@@ -98,6 +97,7 @@ int edgetpu_ikv_init(struct edgetpu_mailbox_manager *mgr, struct edgetpu_ikv *et
 	const unsigned int timeout = user_ikv_timeout ? user_ikv_timeout : IKV_TIMEOUT;
 	struct gcip_mailbox_args args = {
 		.dev = mgr->etdev->dev,
+		.mode = GCIP_MAILBOX_MODE_FORWARD,
 		.queue_wrap_bit = CIRC_QUEUE_WRAP_BIT,
 		.cmd_elem_size = edgetpu_vii_command_packet_size(mgr->etdev),
 		.resp_elem_size = edgetpu_vii_response_packet_size(mgr->etdev),
@@ -184,12 +184,12 @@ int edgetpu_ikv_reinit(struct edgetpu_ikv *etikv)
 	edgetpu_mailbox_clear_doorbells(mbx_hardware);
 
 	ret = edgetpu_mailbox_set_queue(mbx_hardware, GCIP_MAILBOX_CMD_QUEUE,
-					cmd_queue_mem->dma_addr, QUEUE_SIZE);
+					cmd_queue_mem->dma_addr, EDGETPU_IKV_QUEUE_SIZE);
 	if (ret)
 		return ret;
 
 	ret = edgetpu_mailbox_set_queue(mbx_hardware, GCIP_MAILBOX_RESP_QUEUE,
-					resp_queue_mem->dma_addr, QUEUE_SIZE);
+					resp_queue_mem->dma_addr, EDGETPU_IKV_QUEUE_SIZE);
 	if (ret)
 		return ret;
 
@@ -658,4 +658,18 @@ void edgetpu_ikv_send_iif_unblock_notification(struct edgetpu_ikv *etikv, int fe
 	}
 
 	edgetpu_pm_put(etikv->etdev);
+}
+
+void edgetpu_ikv_mappings_show(struct edgetpu_ikv *etikv, struct seq_file *s)
+{
+	struct gcip_memory *cmd_queue_mem = &etikv->cmd_queue_mem;
+	struct gcip_memory *resp_queue_mem = &etikv->resp_queue_mem;
+
+	if (!etikv->enabled)
+		return;
+
+	seq_printf(s, "  %pad %lu ikv cmdq\n", &cmd_queue_mem->dma_addr,
+		   DIV_ROUND_UP(cmd_queue_mem->size, PAGE_SIZE));
+	seq_printf(s, "  %pad %lu ikv rspq\n", &resp_queue_mem->dma_addr,
+		   DIV_ROUND_UP(resp_queue_mem->size, PAGE_SIZE));
 }
