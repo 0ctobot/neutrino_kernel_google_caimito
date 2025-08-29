@@ -730,6 +730,7 @@ enum gbms_charger_modes {
 	GBMS_USB_OTG_ON 	= 0x31,
 	GBMS_USB_OTG_FRS_ON	= 0x32,
 
+	GBMS_CHGR_MODE_WLC_RX	= 0x39,
 	GBMS_CHGR_MODE_WLC_TX	= 0x40,
 
 	GBMS_POGO_VIN		= 0x50,

@@ -527,6 +527,15 @@ static int max77779_foreach_callback(void *data, const char *reason,
 		pr_debug("%s: WLC_TX vote=%x\n", __func__, mode);
 		cb_data->wlc_tx += 1;
 		break;
+
+	/* WLC_RX */
+	case GBMS_CHGR_MODE_WLC_RX:
+		if (!cb_data->wlc_rx)
+			cb_data->reason = reason;
+		pr_debug("%s: WLC_RX vote=%x\n", __func__, mode);
+		cb_data->wlc_rx += 1;
+		break;
+
 	case GBMS_CHGR_MODE_FWUPDATE_BOOST_ON:
 		pr_debug("%s: FWUPDATE vote=%x\n", __func__, mode);
 		cb_data->fwupdate_on = true;
@@ -991,9 +1000,6 @@ static int max77779_mode_callback(struct gvotable_election *el,
 	cb_data.reg = reg;	/* current */
 	cb_data.el = el;	/* election */
 
-	/* read directly instead of using the vote */
-	cb_data.wlc_rx = (max77779_wcin_is_online(data) &&
-			 !data->wcin_input_suspend) || data->wlc_spoof;
 	cb_data.wlcin_off = !!data->wcin_input_suspend;
 
 	pr_debug("%s: wcin_is_online=%d data->wcin_input_suspend=%d data->wlc_spoof=%d\n", __func__,
@@ -1002,7 +1008,8 @@ static int max77779_mode_callback(struct gvotable_election *el,
 	/* now scan all the reasons, accumulate in cb_data */
 	gvotable_election_for_each(el, max77779_foreach_callback, &cb_data);
 
-	cb_data.wlc_rx = cb_data.wlc_rx && !cb_data.pogo_vout;
+	cb_data.wlc_rx = (cb_data.wlc_rx && !cb_data.pogo_vout && !data->wcin_input_suspend) ||
+			  data->wlc_spoof;
 
 	nope = !cb_data.use_raw && !cb_data.stby_on && !cb_data.dc_on &&
 	       !cb_data.chgr_on && !cb_data.buck_on &&

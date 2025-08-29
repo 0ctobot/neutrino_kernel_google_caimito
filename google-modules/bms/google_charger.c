@@ -240,6 +240,9 @@ struct bd_data {
 	ktime_t bd_pretrigger_stats_last_update;
 	struct gbms_ce_tier_stats bd_resume_stats;
 	ktime_t bd_resume_stats_last_update;
+
+	/* notify bd_event */
+	struct power_supply *bat_psy;
 };
 
 struct chg_drv {
@@ -1538,6 +1541,10 @@ static void bd_reset(struct bd_data *bd_state)
 			    bd_state->bd_trigger_temp &&
 			    bd_state->bd_temp_enable &&
 			    can_resume;
+
+	/* notify google_battery the time to aware reset */
+	if (bd_state->bat_psy)
+		GPSY_SET_INT64_PROP(bd_state->bat_psy, GBMS_PROP_BD_TIME_SUM, bd_state->time_sum);
 }
 
 /* Defender */
@@ -1789,6 +1796,11 @@ static int bd_update_stats(struct chg_drv *chg_drv)
 				bd_state->temp_sum);
 		bd_state->time_sum += elap;
 		bd_state->temp_sum += temp * elap;
+		/* notify google_battery the time to aware pre-trigger */
+		ret = GPSY_SET_INT64_PROP(chg_drv->bat_psy, GBMS_PROP_BD_TIME_SUM,
+					  bd_state->time_sum);
+		if (ret < 0)
+			pr_warn("fail to notify time_sum:%lld, ret=%d\n", bd_state->time_sum, ret);
 	}
 
 	bd_state->last_voltage = vbatt;
@@ -5724,6 +5736,20 @@ static int chg_get_psy(struct chg_drv *chg_drv, const char *psy_name, struct pow
 	return 0;
 }
 
+static void chg_init_charge_level(struct chg_drv *chg_drv)
+{
+	/*
+	 * If charge_stop_level and charge_start_level are zero,
+	 * this indicates they haven't been properly initialized
+	 * (e.g., overwritten by a user space write before driver init).
+	 * Reset them to their default values.
+	 */
+	if (chg_drv->charge_stop_level == 0 && chg_drv->charge_start_level == 0) {
+		chg_drv->charge_stop_level = DEFAULT_CHARGE_STOP_LEVEL;
+		chg_drv->charge_start_level = DEFAULT_CHARGE_START_LEVEL;
+	}
+}
+
 static void google_charger_init_work(struct work_struct *work)
 {
 	struct chg_drv *chg_drv = container_of(work, struct chg_drv,
@@ -5740,8 +5766,10 @@ static void google_charger_init_work(struct work_struct *work)
 
 	if (!chg_drv->bat_psy && chg_get_psy(chg_drv, chg_drv->bat_psy_name, &bat_psy))
 		goto retry_init_work;
-	if (!chg_drv->bat_psy)
+	if (!chg_drv->bat_psy) {
 		chg_drv->bat_psy = bat_psy;
+		chg_drv->bd_state.bat_psy = bat_psy;
+	}
 
 	if (!chg_drv->usb_psy && chg_drv->usb_psy_name)	/* usb_psy_name is optional */
 		ret_usb = chg_get_psy(chg_drv, chg_drv->usb_psy_name, &usb_psy);
@@ -5820,9 +5848,8 @@ static void google_charger_init_work(struct work_struct *work)
 		pr_info("dead battery mode\n");
 
 	chg_init_state(chg_drv);
+	chg_init_charge_level(chg_drv);
 	chg_drv->stop_charging = -1;
-	chg_drv->charge_stop_level = DEFAULT_CHARGE_STOP_LEVEL;
-	chg_drv->charge_start_level = DEFAULT_CHARGE_START_LEVEL;
 	chg_drv->charging_policy = CHARGING_POLICY_DEFAULT;
 	mutex_init(&chg_drv->stats_lock);
 	thermal_stats_init(chg_drv);

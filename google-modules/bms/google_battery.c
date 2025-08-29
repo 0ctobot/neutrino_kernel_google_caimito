@@ -532,6 +532,51 @@ struct batt_temp_filter {
 	int resume_delay_time;
 	int last_idx;
 };
+
+#define DR_SAMPLE_PERIOD	300
+#define DR_BUFFER_SIZE		30
+struct drain_rate_data {
+	int cc_buffer[DR_BUFFER_SIZE];
+	ktime_t time_buffer[DR_BUFFER_SIZE];
+	int sample_period;
+	int drain_rate;
+	int head;
+};
+
+struct ca_rate {
+	int impact_light;
+	int impact_med;
+	int impact_high;
+};
+
+struct ca_rate ca_drain_rates[] = {
+	[POWER_SUPPLY_CAPACITY_LEVEL_UNKNOWN] = {0, 0, 0},
+	[POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL] = {0, 0, 0},
+	[POWER_SUPPLY_CAPACITY_LEVEL_LOW] = {0, 0, 0},
+	[POWER_SUPPLY_CAPACITY_LEVEL_NORMAL] = {10, 15, 20}, // 15 means 1.5%
+	[POWER_SUPPLY_CAPACITY_LEVEL_HIGH] = {20, 30, 40},
+	[POWER_SUPPLY_CAPACITY_LEVEL_FULL] = {0, 0, 0},
+};
+
+struct ca_rate ca_csi_rates[] = {
+	[POWER_SUPPLY_CAPACITY_LEVEL_UNKNOWN] = {0, 0, 0},
+	[POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL] = {0, 0, 0},
+	[POWER_SUPPLY_CAPACITY_LEVEL_LOW] = {0, 0, 0},
+	[POWER_SUPPLY_CAPACITY_LEVEL_NORMAL] = {90, 85, 70},
+	[POWER_SUPPLY_CAPACITY_LEVEL_HIGH] = {100, 70, 50},
+	[POWER_SUPPLY_CAPACITY_LEVEL_FULL] = {100, 70, 50},
+};
+
+#define THERM_LEVEL_LOW		1
+#define THERM_LEVEL_MEDIUM	2
+#define THERM_LEVEL_HIGH	3
+struct ca_rate ca_thermal_rates = {THERM_LEVEL_LOW, THERM_LEVEL_MEDIUM, THERM_LEVEL_HIGH};
+
+#define TEMPD_TIME_SUM_LOW	7200	// 2 hours
+#define TEMPD_TIME_SUM_MEDIUM	14400	// 4 hours
+#define TEMPD_TIME_SUM_HIGH	21600	// 6 hours
+struct ca_rate ca_bd_rates = {TEMPD_TIME_SUM_LOW, TEMPD_TIME_SUM_MEDIUM, TEMPD_TIME_SUM_HIGH};
+
 #define NB_FAN_BT_LIMITS 4
 /* battery driver state */
 struct batt_drv {
@@ -769,6 +814,12 @@ struct batt_drv {
 	int force_fcr_update_ops;
 
 	char serial_number[SN_MAX];
+
+	/* drain rate */
+	struct drain_rate_data dr;
+
+	/* collect temp-defend time sum */
+	ktime_t bd_time_sum;
 };
 
 static void batt_update_charging_policy(struct batt_drv *batt_drv, const char *reason,
@@ -3080,6 +3131,8 @@ log_and_done:
 		const int cc = GPSY_GET_PROP(batt_drv->fg_psy, POWER_SUPPLY_PROP_CHARGE_COUNTER);
 		ktime_t res = 0;
 		const int max_ratio = batt_ttf_estimate(&res, batt_drv);
+		char buff[LOG_BUFFER_ENTRY_SIZE];
+		int len = 0;
 		u64 hours = 0;
 		u32 remaining_sec = 0;
 
@@ -3088,15 +3141,20 @@ log_and_done:
 		if (res > 0)
 			hours = div_u64_rem(res, 3600, &remaining_sec);
 
-		gbms_logbuffer_prlog(batt_drv->ttf_stats.ttf_log, LOGLEVEL_INFO, 0, LOGLEVEL_DEBUG,
-				     "ssoc=%d temp=%d CSI[speed=%d,%d,%d type=%d status=%d lvl=%d,%d"
-				     " TTF[cc=%d time=%lld %lld:%d:%d (est=%lld max_ratio=%d)]",
-				     csi_stats->ssoc, batt_drv->batt_temp, csi_speed_avg,
-				     csi_stats->csi_speed_min, csi_stats->csi_speed_max,
-				     csi_stats->csi_current_type, csi_stats->csi_current_status,
-				     csi_stats->thermal_lvl_min, csi_stats->thermal_lvl_max,
-				     cc / 1000, right_now, hours, remaining_sec / 60,
-				     remaining_sec % 60, res, max_ratio);
+		len += scnprintf(&buff[len], sizeof(buff) - len,
+				"ssoc=%d temp=%d CSI[speed=%d,%d,%d type=%d status=%d lvl=%d,%d ",
+				csi_stats->ssoc, batt_drv->batt_temp, csi_speed_avg,
+				csi_stats->csi_speed_min, csi_stats->csi_speed_max,
+				csi_stats->csi_current_type, csi_stats->csi_current_status,
+				csi_stats->thermal_lvl_min, csi_stats->thermal_lvl_max);
+		len += scnprintf(&buff[len], sizeof(buff) - len,
+				 "TTF[cc=%d time=%lld %lld:%d:%d (est=%lld max_ratio=%d)] ",
+				 cc / 1000, right_now, hours, remaining_sec / 60,
+				 remaining_sec % 60, res, max_ratio);
+		len += scnprintf(&buff[len], sizeof(buff) - len, "bd_time=%lld",
+				 batt_drv->bd_time_sum);
+		gbms_logbuffer_prlog(batt_drv->ttf_stats.ttf_log, LOGLEVEL_INFO, 0,
+				     LOGLEVEL_DEBUG, buff);
 
 	}
 
@@ -4052,15 +4110,15 @@ done_no_op:
 	if (!changed)
 		return false;
 
+	gbms_logbuffer_prlog(batt_drv->bd_log, LOGLEVEL_INFO, 0, LOGLEVEL_DEBUG,
+			     "MSC_HEALTH: now=%lld deadline=%lld aon_soc=%d ttf=%lld state=%d->%d fv_uv=%d->%d, cc_max=%d->%d safety_margin=%d active_time:%lld",
+			     now, rest->rest_deadline, rest->always_on_soc, ttf, rest->rest_state,
+			     rest_state, rest->rest_fv_uv, fv_uv, rest->rest_cc_max, cc_max,
+			     batt_drv->health_safety_margin, rest->active_time);
+
 	/* msc_logic_* will vote on cc_max and fv_uv. */
 	rest->rest_cc_max = cc_max;
 	rest->rest_fv_uv = fv_uv;
-	gbms_logbuffer_prlog(batt_drv->bd_log, LOGLEVEL_INFO, 0, LOGLEVEL_DEBUG,
-			     "MSC_HEALTH: now=%lld deadline=%lld aon_soc=%d ttf=%lld state=%d->%d fv_uv=%d, cc_max=%d safety_margin=%d active_time:%lld",
-			     now, rest->rest_deadline, rest->always_on_soc, ttf, rest->rest_state,
-			     rest_state, fv_uv, cc_max, batt_drv->health_safety_margin,
-			     rest->active_time);
-
 	rest->rest_state = rest_state;
 	memcpy(&batt_drv->ce_data.ce_health, &batt_drv->chg_health,
 			sizeof(batt_drv->ce_data.ce_health));
@@ -4550,7 +4608,7 @@ static int bhi_algo_apply_bounds(int algo, int capacity_health, int cycle_count,
 	u_bound = bhi_get_capacity_bound(cycle_count, &bhi_data->upper_bound.limit[0]);
 
 	cap = max(capacity_health, l_bound);
-	cap = min(capacity_health, u_bound);
+	cap = min(cap, u_bound);
 
 	pr_debug("%s: algo=%d l_bound=%d u_bound=%d\n", __func__, algo, l_bound, u_bound);
 
@@ -7093,6 +7151,7 @@ static ssize_t debug_set_first_usage_date(struct file *filp,
 }
 
 BATTERY_DEBUG_ATTRIBUTE(debug_first_usage_date_fops, 0, debug_set_first_usage_date);
+
 
 static ssize_t chg_profile_switch_show(struct device *dev,
 				       struct device_attribute *attr,
@@ -10278,6 +10337,162 @@ static ssize_t sr_state_show(struct device *dev,
 
 static DEVICE_ATTR_RW(sr_state);
 
+static ssize_t capacity_level_drain_sample_period_store(struct device *dev,
+							struct device_attribute *attr,
+							const char *buf, size_t count)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct batt_drv *batt_drv = power_supply_get_drvdata(psy);
+	int value, ret = 0;
+
+	ret = kstrtoint(buf, 0, &value);
+	if (ret < 0)
+		return ret;
+
+	if (value >= 0)
+		batt_drv->dr.sample_period = value;
+
+	return count;
+}
+
+static ssize_t capacity_level_drain_sample_period_show(struct device *dev,
+						       struct device_attribute *attr, char *buf)
+{
+	struct power_supply *psy = container_of(dev, struct power_supply, dev);
+	struct batt_drv *batt_drv = power_supply_get_drvdata(psy);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", batt_drv->dr.sample_period);
+}
+
+static DEVICE_ATTR_RW(capacity_level_drain_sample_period);
+
+#define CA_SIZE 6 // (POWER_SUPPLY_CAPACITY_LEVEL_FULL + 1)
+static ssize_t capacity_level_drain_rate_threshold_store(struct device *dev,
+							 struct device_attribute *attr,
+							 const char *buf, size_t count)
+{
+	int cnt, i, light[CA_SIZE], med[CA_SIZE], high[CA_SIZE];
+
+	cnt = sscanf(buf, "0:%d,%d,%d;1:%d,%d,%d;2:%d,%d,%d;3:%d,%d,%d;4:%d,%d,%d;5:%d,%d,%d;",
+		     &light[0], &med[0], &high[0], &light[1], &med[1], &high[1],
+		     &light[2], &med[2], &high[2], &light[3], &med[3], &high[3],
+		     &light[4], &med[4], &high[4], &light[5], &med[5], &high[5]);
+	if (cnt != CA_SIZE * 3)
+		return -ERANGE;
+
+	for (i = 0; i <= POWER_SUPPLY_CAPACITY_LEVEL_FULL; i++) {
+		ca_drain_rates[i].impact_light = light[i];
+		ca_drain_rates[i].impact_med = med[i];
+		ca_drain_rates[i].impact_high = high[i];
+	}
+
+	return count;
+}
+
+static ssize_t capacity_level_drain_rate_threshold_show(struct device *dev,
+							struct device_attribute *attr, char *buf)
+{
+	ssize_t cnt = 0;
+	int i;
+
+	for (i = 0; i <= POWER_SUPPLY_CAPACITY_LEVEL_FULL; i++)
+		cnt += sysfs_emit_at(buf, cnt, "%d:%d,%d,%d;", i, ca_drain_rates[i].impact_light,
+				     ca_drain_rates[i].impact_med, ca_drain_rates[i].impact_high);
+
+	return cnt;
+}
+
+static DEVICE_ATTR_RW(capacity_level_drain_rate_threshold);
+
+static ssize_t capacity_level_chg_speed_threshold_store(struct device *dev,
+							struct device_attribute *attr,
+							const char *buf, size_t count)
+{
+	int cnt, i, light[CA_SIZE], med[CA_SIZE], high[CA_SIZE];
+
+	cnt = sscanf(buf, "0:%d,%d,%d;1:%d,%d,%d;2:%d,%d,%d;3:%d,%d,%d;4:%d,%d,%d;5:%d,%d,%d;",
+		     &light[0], &med[0], &high[0], &light[1], &med[1], &high[1],
+		     &light[2], &med[2], &high[2], &light[3], &med[3], &high[3],
+		     &light[4], &med[4], &high[4], &light[5], &med[5], &high[5]);
+	if (cnt != CA_SIZE * 3)
+		return -ERANGE;
+
+	for (i = 0; i <= POWER_SUPPLY_CAPACITY_LEVEL_FULL; i++) {
+		ca_csi_rates[i].impact_light = light[i];
+		ca_csi_rates[i].impact_med = med[i];
+		ca_csi_rates[i].impact_high = high[i];
+	}
+
+	return count;
+}
+
+static ssize_t capacity_level_chg_speed_threshold_show(struct device *dev,
+						       struct device_attribute *attr, char *buf)
+{
+	ssize_t cnt = 0;
+	int i;
+
+	for (i = 0; i <= POWER_SUPPLY_CAPACITY_LEVEL_FULL; i++)
+		cnt += sysfs_emit_at(buf, cnt, "%d:%d,%d,%d;", i, ca_csi_rates[i].impact_light,
+				     ca_csi_rates[i].impact_med, ca_csi_rates[i].impact_high);
+
+	return cnt;
+}
+
+static DEVICE_ATTR_RW(capacity_level_chg_speed_threshold);
+
+static ssize_t capacity_level_thermal_threshold_store(struct device *dev,
+						      struct device_attribute *attr,
+						      const char *buf, size_t count)
+{
+	int cnt, light, med, high;
+
+	cnt = sscanf(buf, "%d,%d,%d", &light, &med, &high);
+	if (cnt != 3)
+		return -ERANGE;
+
+	ca_thermal_rates.impact_light = light;
+	ca_thermal_rates.impact_med = med;
+	ca_thermal_rates.impact_high = high;
+
+	return count;
+}
+
+static ssize_t capacity_level_thermal_threshold_show(struct device *dev,
+						     struct device_attribute *attr, char *buf)
+{
+	return sysfs_emit_at(buf, 0, "%d,%d,%d\n", ca_thermal_rates.impact_light,
+			     ca_thermal_rates.impact_med, ca_thermal_rates.impact_high);
+}
+
+static DEVICE_ATTR_RW(capacity_level_thermal_threshold);
+
+static ssize_t capacity_level_bd_threshold_store(struct device *dev,
+						 struct device_attribute *attr,
+						 const char *buf, size_t count)
+{
+	int cnt, light, med, high;
+
+	cnt = sscanf(buf, "%d,%d,%d", &light, &med, &high);
+	if (cnt != 3)
+		return -ERANGE;
+
+	ca_bd_rates.impact_light = light;
+	ca_bd_rates.impact_med = med;
+	ca_bd_rates.impact_high = high;
+
+	return count;
+}
+
+static ssize_t capacity_level_bd_threshold_show(struct device *dev,
+						struct device_attribute *attr, char *buf)
+{
+	return sysfs_emit_at(buf, 0, "%d,%d,%d\n", ca_bd_rates.impact_light,
+			     ca_bd_rates.impact_med, ca_bd_rates.impact_high);
+}
+
+static DEVICE_ATTR_RW(capacity_level_bd_threshold);
+
 /* ------------------------------------------------------------------------- */
 
 static struct attribute *batt_attrs[] = {
@@ -10362,6 +10577,11 @@ static struct attribute *batt_attrs[] = {
 	&dev_attr_chg_profile_switch.attr,
 	&dev_attr_force_fcr_update_ops.attr,
 	&dev_attr_sr_state.attr,
+	&dev_attr_capacity_level_drain_sample_period.attr,
+	&dev_attr_capacity_level_drain_rate_threshold.attr,
+	&dev_attr_capacity_level_chg_speed_threshold.attr,
+	&dev_attr_capacity_level_thermal_threshold.attr,
+	&dev_attr_capacity_level_bd_threshold.attr,
 	NULL,
 };
 
@@ -10542,11 +10762,15 @@ static bool gbatt_check_dead_battery(const struct batt_drv *batt_drv)
 #define VBATT_CRITICAL_LEVEL		3300000
 #define VBATT_CRITICAL_DEADLINE_SEC	40
 
-static bool gbatt_check_critical_level(const struct batt_drv *batt_drv,
-				       int fg_status)
+static bool gbatt_check_critical_level(const struct batt_drv *batt_drv)
 {
 	const struct batt_ssoc_state *ssoc_state = &batt_drv->ssoc_state;
 	const int soc = ssoc_get_real(ssoc_state);
+	int fg_status, ret;
+
+	fg_status = GPSY_GET_INT_PROP(batt_drv->fg_psy, POWER_SUPPLY_PROP_STATUS, &ret);
+	if (ret < 0)
+		return false;
 
 	if (fg_status == POWER_SUPPLY_STATUS_UNKNOWN)
 		return true;
@@ -10588,43 +10812,204 @@ exit_done:
 	return ssoc_state->buck_enabled == 0 || fg_status != POWER_SUPPLY_STATUS_CHARGING;
 }
 
-#define SSOC_LEVEL_FULL		SSOC_SPOOF
-#define SSOC_LEVEL_HIGH		80
-#define SSOC_LEVEL_NORMAL	30
-#define SSOC_LEVEL_LOW		0
-
-/*
- * could also use battery temperature, age.
- * NOTE: this implementation looks at the SOC% but it might be looking to
- * other quantities or flags.
- * NOTE: CRITICAL_LEVEL implies BATTERY_DEAD but BATTERY_DEAD doesn't imply
- * CRITICAL.
- */
-static int gbatt_get_capacity_level(const struct batt_drv *batt_drv,
-				    int fg_status)
+static void gbatt_reset_drain_rate(struct drain_rate_data *dr)
 {
-	const struct batt_ssoc_state *ssoc_state = &batt_drv->ssoc_state;
-	const int soc = ssoc_get_real(ssoc_state);
-	int capacity_level;
+	for (int i = 0; i < DR_BUFFER_SIZE; i++) {
+		dr->cc_buffer[i] = 0;
+		dr->time_buffer[i] = 0;
+	}
+	dr->drain_rate = 0;
+	dr->head = 0;
+}
 
-	if (soc >= SSOC_LEVEL_FULL) {
-		capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_FULL;
-	} else if (soc > SSOC_LEVEL_HIGH) {
-		capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
-	} else if (soc > SSOC_LEVEL_NORMAL) {
-		capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
-	} else if (soc > SSOC_LEVEL_LOW) {
-		capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
-	} else if (ssoc_state->buck_enabled == -1) {
-		/* only at startup, this should not happen */
-		capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_UNKNOWN;
-	} else if (gbatt_check_critical_level(batt_drv, fg_status)) {
-		capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
-	} else {
-		capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+static void gbatt_update_drain_rate(struct batt_drv *batt_drv)
+{
+	u32 capacity_ma = batt_drv->chg_profile.capacity_ma;
+	struct drain_rate_data *dr = &batt_drv->dr;
+	int current_cc, cc_delta, pre_idx;
+	ktime_t time_delta;
+
+	if (!chg_state_is_disconnected(&batt_drv->chg_state)) {
+		gbatt_reset_drain_rate(&batt_drv->dr);
+		return;
 	}
 
-	return capacity_level;
+	current_cc = GPSY_GET_PROP(batt_drv->fg_psy, POWER_SUPPLY_PROP_CHARGE_COUNTER);
+	if (current_cc < 0)
+		return;
+
+	dr->cc_buffer[dr->head] = current_cc;
+	dr->time_buffer[dr->head] = get_boot_sec();
+
+	for (int i = 1; i < DR_BUFFER_SIZE; i++) {
+		pre_idx = (dr->head - i + DR_BUFFER_SIZE) % DR_BUFFER_SIZE;
+		if (dr->cc_buffer[pre_idx] == 0)
+			break;
+
+		time_delta = dr->time_buffer[dr->head] - dr->time_buffer[pre_idx];
+		if (time_delta >= dr->sample_period) {
+			cc_delta = dr->cc_buffer[pre_idx] - dr->cc_buffer[dr->head];
+			dr->drain_rate = cc_delta * 3600 / (time_delta * capacity_ma);
+			break;
+		}
+	}
+
+	dr->head = (dr->head + 1 + DR_BUFFER_SIZE) % DR_BUFFER_SIZE;
+}
+
+static int gbatt_capacity_level_bound(const int level_now)
+{
+	return level_now > POWER_SUPPLY_CAPACITY_LEVEL_LOW ?
+	       level_now : POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+}
+
+static int gbatt_capacity_level_drain(int level_now, int drain_rate)
+{
+	if (drain_rate <= ca_drain_rates[level_now].impact_light)
+		return level_now;
+
+	if (drain_rate <= ca_drain_rates[level_now].impact_med)
+		level_now -= 1;
+	else if (drain_rate <= ca_drain_rates[level_now].impact_high)
+		level_now -= 2;
+	else
+		return POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+
+	return gbatt_capacity_level_bound(level_now);
+}
+
+#define SSOC_LEVEL_FULL		100
+#define SSOC_LEVEL_HIGH		80
+#define SSOC_LEVEL_NORMAL	40
+#define SSOC_LEVEL_LOW		0
+static int gbatt_capacity_level_soc(const int soc)
+{
+	if (soc >= SSOC_LEVEL_FULL)
+		return POWER_SUPPLY_CAPACITY_LEVEL_FULL;
+
+	if (soc >= SSOC_LEVEL_HIGH)
+		return POWER_SUPPLY_CAPACITY_LEVEL_HIGH;
+
+	if (soc >= SSOC_LEVEL_NORMAL)
+		return POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
+
+	if (soc > SSOC_LEVEL_LOW)
+		return POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+
+	return POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
+}
+
+
+static int gbatt_capacity_level_thermal(int level_now, const int thermal)
+{
+	if (thermal >= ca_thermal_rates.impact_high)
+		return POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+
+	if (thermal >= ca_thermal_rates.impact_med)
+		level_now -= 1;
+
+	return gbatt_capacity_level_bound(level_now);
+}
+
+static int gbatt_capacity_level_tempd(int level_now, const bool tempd_triggered,
+				      const ktime_t bd_time_sum)
+{
+	if (tempd_triggered)
+		return POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+
+	if (bd_time_sum >= ca_bd_rates.impact_high)
+		level_now -= 3;
+	else if (bd_time_sum >= ca_bd_rates.impact_med)
+		level_now -= 2;
+	else if (bd_time_sum >= ca_bd_rates.impact_light)
+		level_now -= 1;
+
+	return gbatt_capacity_level_bound(level_now);
+}
+
+#define TBAT_LEVEL_WARM	40
+static int gbatt_capacity_level_tbat(int level_now, const int tbat)
+{
+	if (tbat > TBAT_LEVEL_WARM)
+		level_now -= 1;
+
+	return gbatt_capacity_level_bound(level_now);
+}
+
+#define EP_LEVEL_SOC_MIN	50
+#define EP_LEVEL_SOC_MED	80 // TODO: 5% and 10% impact
+static int gbatt_capacity_level_ep(int level_now, const int soc, const int csi_speed)
+{
+	/* not affect charging time to 50% standard */
+	if (soc <= EP_LEVEL_SOC_MIN)
+		return POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+
+	if (csi_speed <= 0)
+		return level_now;
+
+	if (csi_speed >= ca_csi_rates[level_now].impact_light)
+		return level_now;
+
+	if (csi_speed > ca_csi_rates[level_now].impact_med)
+		level_now -= 1;
+	else if (csi_speed > ca_csi_rates[level_now].impact_high)
+		level_now -= 2;
+	else
+		return POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+
+	return gbatt_capacity_level_bound(level_now);
+}
+
+static int gbatt_get_capacity_level(struct batt_drv *batt_drv)
+{
+	const bool is_tempd = batt_drv->batt_health == POWER_SUPPLY_HEALTH_OVERHEAT;
+	const bool is_disconnected = chg_state_is_disconnected(&batt_drv->chg_state);
+	const int soc = ssoc_get_capacity(&batt_drv->ssoc_state);
+	int bca, bca_soc, bca_therm, bca_tempd, bca_tbat, bca_ep, bca_drain;
+	int thermal;
+
+	bca_soc = gbatt_capacity_level_soc(soc);
+
+	/* avoid power on shutdown in case 0% & charging */
+	if (bca_soc == POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL) {
+		if (gbatt_check_critical_level(batt_drv))
+			bca = POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
+		else
+			bca = POWER_SUPPLY_CAPACITY_LEVEL_LOW;
+		goto done;
+	}
+
+	thermal = batt_get_thermal_level(batt_drv);
+	bca_therm = gbatt_capacity_level_thermal(bca_soc, thermal);
+
+	if (is_disconnected) {
+		bca_drain = gbatt_capacity_level_drain(bca_therm, batt_drv->dr.drain_rate);
+		bca = bca_drain;
+		goto done;
+	}
+
+	/* handle charging case */
+	bca_tempd = gbatt_capacity_level_tempd(bca_therm, is_tempd, batt_drv->bd_time_sum);
+	bca_tbat = gbatt_capacity_level_tbat(bca_tempd, batt_drv->batt_temp / 10);
+	bca_ep = gbatt_capacity_level_ep(bca_tbat, soc, batt_drv->csi_current_speed);
+	bca = bca_ep;
+
+done:
+	if (bca == batt_drv->capacity_level)
+		return bca;
+
+	if (is_disconnected)
+		gbms_logbuffer_prlog(batt_drv->ssoc_log, LOGLEVEL_INFO, 0, LOGLEVEL_DEBUG,
+			"capacity level: %d->%d soc:%d mdis:%d drain:%d(drain_rate:%d.%d%%)",
+			batt_drv->capacity_level, bca, bca_soc, bca_therm, bca_drain,
+			batt_drv->dr.drain_rate / 10, batt_drv->dr.drain_rate % 10);
+	else
+		gbms_logbuffer_prlog(batt_drv->ttf_stats.ttf_log, LOGLEVEL_INFO, 0, LOGLEVEL_DEBUG,
+			"capacity level: %d->%d soc:%d mdis:%d tempd:%d tbat:%d ep:%d(speed:%d)",
+			batt_drv->capacity_level, bca, bca_soc, bca_therm, bca_tempd,
+			bca_tbat, bca_ep, batt_drv->csi_current_speed);
+
+	return bca;
 }
 
 static int gbatt_get_temp(struct batt_drv *batt_drv, int *temp)
@@ -11216,7 +11601,8 @@ static void google_battery_work(struct work_struct *work)
 		 * same behavior during the transition 99 -> 100 -> Full
 		 */
 
-		level = gbatt_get_capacity_level(batt_drv, fg_status);
+		gbatt_update_drain_rate(batt_drv);
+		level = gbatt_get_capacity_level(batt_drv);
 		if (level != batt_drv->capacity_level) {
 			pr_debug("%s: change of capacity level %d->%d\n",
 				 __func__, batt_drv->capacity_level,
@@ -12046,6 +12432,10 @@ static int gbatt_gbms_set_property(struct power_supply *psy,
 				     "AACP: set logbuffer_bd addr");
 		break;
 
+	case GBMS_PROP_BD_TIME_SUM:
+		batt_drv->bd_time_sum = val->int64val;
+		break;
+
 	default:
 		pr_debug("%s: route to gbatt_set_property, psp:%d\n", __func__, psp);
 		return -ENODATA;
@@ -12069,6 +12459,7 @@ static int gbatt_gbms_property_is_writeable(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_TIME_TO_FULL_NOW:
 	case POWER_SUPPLY_PROP_HEALTH:
 	case GBMS_PROP_LOGBUFFER_BD:
+	case GBMS_PROP_BD_TIME_SUM:
 		return 1;
 	default:
 		break;
@@ -12396,6 +12787,7 @@ static void google_battery_init_work(struct work_struct *work)
 	batt_drv->fake_battery_present = -1;
 	batt_drv->boot_to_os_attempts = 0;
 	batt_drv->charging_policy = CHARGING_POLICY_DEFAULT;
+	batt_drv->dr.sample_period = DR_SAMPLE_PERIOD;
 	batt_reset_chg_drv_state(batt_drv);
 
 	mutex_init(&batt_drv->chg_lock);

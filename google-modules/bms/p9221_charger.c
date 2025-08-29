@@ -1746,7 +1746,7 @@ static const char *p9221_get_tx_id_str(struct p9221_charger_data *charger)
 {
 	int ret;
 
-	if (!p9221_is_online(charger))
+	if (!charger->online)
 		return NULL;
 
 	pm_runtime_get_sync(charger->dev);
@@ -3787,6 +3787,14 @@ static void p9221_notifier_check_dc(struct p9221_charger_data *charger)
 	}
 
 	dev_info(&charger->client->dev, "dc status is %d\n", dc_in);
+
+	if (!charger->chg_mode_votable)
+		charger->chg_mode_votable =
+			gvotable_election_get_handle(GBMS_MODE_VOTABLE);
+	if (charger->chg_mode_votable)
+		gvotable_cast_long_vote(charger->chg_mode_votable,
+					P9221_WLC_VOTER,
+					GBMS_CHGR_MODE_WLC_RX, dc_in);
 	charger->check_dc = false;
 	/*
 	 * We now have confirmation from DC_IN, kill the timer, charger->online
