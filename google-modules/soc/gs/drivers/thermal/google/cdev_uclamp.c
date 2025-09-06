@@ -17,7 +17,14 @@
 #include <linux/workqueue.h>
 
 #include "thermal_core.h"
+#if IS_ENABLED(CONFIG_VH_SCHED)
 #include "../../soc/google/vh/include/sched.h"
+#else
+static inline int sched_thermal_freq_cap(unsigned int cpu, unsigned int freq)
+{
+	return 0;
+}
+#endif
 
 struct thermal_uclamp_cdev {
 	unsigned int cpu;
