@@ -9,6 +9,7 @@ export KCONFIG_EXT_PREFIX := google-devices/zumapro/
 export KCONFIG_EXT_SUFFIX := .zumapro
 export KCONFIG_SOC_GS_PREFIX := google-modules/soc/gs/
 export KCONFIG_EXT_MODULES_PREFIX := ./
+export KBUILD_BUILD_TIMESTAMP := Mon Oct 6 16:50:48 UTC 2025
 KCFLAGS += -D__ANDROID_COMMON_KERNEL__
 
 ifeq ($(MAKECMDGOALS),)
