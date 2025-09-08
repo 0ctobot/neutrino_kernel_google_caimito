@@ -27,7 +27,7 @@ config THERMAL_SENSOR_STS4X
 
 config THERMAL_UCLAMP_COOLING_DEVICE
 	tristate "Thermal cooling device for scheduler auto uclamp"
-	depends on THERMAL && VH_SCHED
+	depends on THERMAL
 	help
 	  This module will register cooling device to place thermal auto uclamp max
 	  for each cluster. There will be one cooling device per cluster and thermal
