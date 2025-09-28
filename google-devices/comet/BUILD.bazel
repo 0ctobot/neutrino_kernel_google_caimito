@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+load("//private/devices/google/common/kleaf:device_build.bzl", "device_build")
+load("//private/devices/google/zuma:constants.bzl", "ZUMA_DTBS")
+load("//private/devices/google/zumapro:constants.bzl", "ZUMAPRO_DTBS", "ZUMAPRO_MODULE_OUTS")
+load(":constants.bzl", "COMET_DTBOS")
+
+device_build(
+    name = "comet",
+    base_device = "//private/devices/google/zumapro:zumapro_base",
+    build_configs = ["build.config.comet"],
+    build_dtb = True,
+    build_dtbo = True,
+    build_system_dlkm = True,
+    build_vendor_dlkm = True,
+    build_vendor_kernel_boot = True,
+    defconfig_fragments = ["comet_defconfig"],
+    dtb_outs = ZUMA_DTBS + ZUMAPRO_DTBS,
+    dtbo_outs = COMET_DTBOS,
+    dts_makefile = "dts/Makefile",
+    dts_srcs = glob(["dts/**"]) + [
+        "//private/google-modules/soc/gs:gs.dt-bindings",
+    ],
+    ext_modules = [
+        # keep sorted
+        "//private/devices/google/comet/display:drm_panel.google",
+        "//private/google-modules/amplifiers/cs35l41",
+        "//private/google-modules/amplifiers/cs40l26",
+        "//private/google-modules/amplifiers/snd_soc_wm_adsp:snd-soc-wm-adsp",
+        "//private/google-modules/bluetooth/broadcom:bluetooth.broadcom",
+        "//private/google-modules/fingerprint/fpc",
+        "//private/google-modules/gps/broadcom/bcm47765",
+        "//private/google-modules/nfc",
+        "//private/google-modules/radio/samsung/s5400:cpif",
+        "//private/google-modules/sensors/hall_sensor",
+        "//private/google-modules/touch/common:touch.common",
+        "//private/google-modules/touch/goodix",
+        "//private/google-modules/touch/sec",
+        "//private/google-modules/touch/synaptics/syna_gtd:syna_touch",
+        "//private/google-modules/uwb/qorvo/qm35/qm35s:uwb.qm35",
+        "//private/google-modules/wlan/bcm4390:bcmdhd4390",
+        "//private/google-modules/wlan/wlan_ptracker",
+    ],
+    insmod_cfgs = glob(["insmod_cfg/*.cfg"]),
+    kconfig_exts = ["Kconfig.ext.comet"],
+    kconfigs = [
+        # keep sorted
+        "//private/google-modules/radio/samsung/s5400:cpif.kconfig",
+        "//private/google-modules/touch/common:touch.common.kconfig",
+        "//private/google-modules/touch/sec:sec.kconfig",
+    ],
+    module_outs = ZUMAPRO_MODULE_OUTS,
+    vendor_dlkm_modules_blocklists = ["vendor_dlkm.blocklist.comet"],
+    vendor_ramdisk_modules_lists = ["vendor_ramdisk.modules.comet"],
+)
+
+# For compatibility
+alias(
+    name = "zumapro_comet_dist",
+    actual = ":comet/dist",
+)
+
+alias(
+    name = "zumapro_comet_abi_update_symbol_list",
+    actual = ":comet/kernel_abi_update_symbol_list",
+)
+
+alias(
+    name = "kernel",
+    actual = ":comet/kernel",
+)
+
+alias(
+    name = "kernel_abi_update_symbol_list",
+    actual = ":comet/kernel_abi_update_symbol_list",
+)
+
+alias(
+    name = "kernel_compile_commands",
+    actual = ":comet/kernel_compile_commands",
+)
