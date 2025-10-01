@@ -32,9 +32,32 @@
 #include <linux/fs_context.h>
 #include <linux/shmem_fs.h>
 #include <linux/mnt_idmapping.h>
+#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)
+#include <linux/susfs_def.h>
+#endif
 
 #include "pnode.h"
 #include "internal.h"
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+extern bool susfs_is_current_ksu_domain(void);
+extern bool susfs_is_current_zygote_domain(void);
+extern bool susfs_is_boot_completed_triggered;
+static DEFINE_IDA(susfs_ksu_mnt_group_ida);
+#define CL_COPY_MNT_NS BIT(25)
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+extern void susfs_auto_add_sus_ksu_default_mount(const char __user *to_pathname);
+bool susfs_is_auto_add_sus_ksu_default_mount_enabled = true;
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+extern void susfs_auto_add_sus_bind_mount(const char *pathname, struct path *path_target);
+bool susfs_is_auto_add_sus_bind_mount_enabled = true;
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+extern void susfs_auto_add_try_umount_for_bind_mount(struct path *path);
+bool susfs_is_auto_add_try_umount_for_bind_mount_enabled = true;
+#endif
 
 /* Maximum number of mounts in a mount namespace */
 static unsigned int sysctl_mount_max __read_mostly = 100000;
@@ -135,6 +158,21 @@ static int mnt_alloc_id(struct mount *mnt)
 
 static void mnt_free_id(struct mount *mnt)
 {
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	/* Check if susfs_mnt_id_backup
+	 * is >= DEFAULT_KSU_MNT_ID */
+	if (mnt->mnt.susfs_mnt_id_backup == DEFAULT_KSU_MNT_ID) {
+		return;
+	}
+
+	/* Check if susfs_mnt_id_backup
+	 * was set after mnt_id reorder */
+	if (likely(mnt->mnt.susfs_mnt_id_backup)) {
+		ida_free(&mnt_id_ida, mnt->mnt.susfs_mnt_id_backup);
+		return;
+	}
+
+#endif
 	ida_free(&mnt_id_ida, mnt->mnt_id);
 }
 
@@ -143,7 +181,19 @@ static void mnt_free_id(struct mount *mnt)
  */
 static int mnt_alloc_group_id(struct mount *mnt)
 {
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	int res;
+
+	/* Custom mnt_group_id may be assigned to ksu mounts before boot completion */
+	if (!susfs_is_boot_completed_triggered && mnt->mnt_id >= DEFAULT_KSU_MNT_ID) {
+		res = ida_alloc_min(&susfs_ksu_mnt_group_ida, DEFAULT_KSU_MNT_GROUP_ID, GFP_KERNEL);
+		goto bypass_orig_flow;
+	}
+	res = ida_alloc_min(&mnt_group_ida, 1, GFP_KERNEL);
+bypass_orig_flow:
+#else
 	int res = ida_alloc_min(&mnt_group_ida, 1, GFP_KERNEL);
+#endif
 
 	if (res < 0)
 		return res;
@@ -156,6 +206,16 @@ static int mnt_alloc_group_id(struct mount *mnt)
  */
 void mnt_release_group_id(struct mount *mnt)
 {
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	/* Following boot completion sus mnt_group_id will not be freed, umounting
+	 * in global mnt namespace will result in harmless ida_free() errors */
+	if (!susfs_is_boot_completed_triggered &&
+	    mnt->mnt_group_id >= DEFAULT_KSU_MNT_GROUP_ID) {
+		ida_free(&susfs_ksu_mnt_group_ida, mnt->mnt_group_id);
+		mnt->mnt_group_id = 0;
+		return;
+	}
+#endif
 	ida_free(&mnt_group_ida, mnt->mnt_group_id);
 	mnt->mnt_group_id = 0;
 }
@@ -193,6 +253,112 @@ int mnt_get_count(struct mount *mnt)
 #endif
 }
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+/* A copy of alloc_vfsmnt() that allocates the original mnt_id */
+static struct mount *susfs_reuse_sus_vfsmnt(const char *name, int orig_mnt_id)
+{
+	struct mount *mnt = kmem_cache_zalloc(mnt_cache, GFP_KERNEL);
+	if (mnt) {
+		mnt->mnt_id = orig_mnt_id;
+
+		if (name) {
+			mnt->mnt_devname = kstrdup_const(name,
+			                                 GFP_KERNEL_ACCOUNT);
+			if (!mnt->mnt_devname)
+				goto out_free_cache;
+		}
+
+#ifdef CONFIG_SMP
+		mnt->mnt_pcp = alloc_percpu(struct mnt_pcp);
+		if (!mnt->mnt_pcp)
+			goto out_free_devname;
+
+		this_cpu_add(mnt->mnt_pcp->mnt_count, 1);
+#else
+		mnt->mnt_count = 1;
+		mnt->mnt_writers = 0;
+#endif
+		/* Determine if mnt_id should be freed */
+		mnt->mnt.susfs_mnt_id_backup = DEFAULT_KSU_MNT_ID;
+
+		INIT_HLIST_NODE(&mnt->mnt_hash);
+		INIT_LIST_HEAD(&mnt->mnt_child);
+		INIT_LIST_HEAD(&mnt->mnt_mounts);
+		INIT_LIST_HEAD(&mnt->mnt_list);
+		INIT_LIST_HEAD(&mnt->mnt_expire);
+		INIT_LIST_HEAD(&mnt->mnt_share);
+		INIT_LIST_HEAD(&mnt->mnt_slave_list);
+		INIT_LIST_HEAD(&mnt->mnt_slave);
+		INIT_HLIST_NODE(&mnt->mnt_mp_list);
+		INIT_LIST_HEAD(&mnt->mnt_umounting);
+		INIT_HLIST_HEAD(&mnt->mnt_stuck_children);
+		mnt->mnt.mnt_userns = &init_user_ns;
+	}
+	return mnt;
+
+#ifdef CONFIG_SMP
+out_free_devname:
+	kfree_const(mnt->mnt_devname);
+#endif
+out_free_cache:
+	kmem_cache_free(mnt_cache, mnt);
+	return NULL;
+}
+#endif
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+/* A copy of alloc_vfsmnt() that allocates the sus mnt_id */
+static struct mount *susfs_alloc_sus_vfsmnt(const char *name)
+{
+	struct mount *mnt = kmem_cache_zalloc(mnt_cache, GFP_KERNEL);
+	if (mnt) {
+		mnt->mnt_id = DEFAULT_KSU_MNT_ID;
+
+		if (name) {
+			mnt->mnt_devname = kstrdup_const(name,
+			                                 GFP_KERNEL_ACCOUNT);
+			if (!mnt->mnt_devname)
+				goto out_free_cache;
+		}
+
+#ifdef CONFIG_SMP
+		mnt->mnt_pcp = alloc_percpu(struct mnt_pcp);
+		if (!mnt->mnt_pcp)
+			goto out_free_devname;
+
+		this_cpu_add(mnt->mnt_pcp->mnt_count, 1);
+#else
+		mnt->mnt_count = 1;
+		mnt->mnt_writers = 0;
+#endif
+		/* Determine if mnt_id should be freed */
+		mnt->mnt.susfs_mnt_id_backup = DEFAULT_KSU_MNT_ID;
+
+		INIT_HLIST_NODE(&mnt->mnt_hash);
+		INIT_LIST_HEAD(&mnt->mnt_child);
+		INIT_LIST_HEAD(&mnt->mnt_mounts);
+		INIT_LIST_HEAD(&mnt->mnt_list);
+		INIT_LIST_HEAD(&mnt->mnt_expire);
+		INIT_LIST_HEAD(&mnt->mnt_share);
+		INIT_LIST_HEAD(&mnt->mnt_slave_list);
+		INIT_LIST_HEAD(&mnt->mnt_slave);
+		INIT_HLIST_NODE(&mnt->mnt_mp_list);
+		INIT_LIST_HEAD(&mnt->mnt_umounting);
+		INIT_HLIST_HEAD(&mnt->mnt_stuck_children);
+		mnt->mnt.mnt_userns = &init_user_ns;
+	}
+	return mnt;
+
+#ifdef CONFIG_SMP
+out_free_devname:
+	kfree_const(mnt->mnt_devname);
+#endif
+out_free_cache:
+	kmem_cache_free(mnt_cache, mnt);
+	return NULL;
+}
+#endif
+
 static struct mount *alloc_vfsmnt(const char *name)
 {
 	struct mount *mnt = kmem_cache_zalloc(mnt_cache, GFP_KERNEL);
@@ -219,6 +385,10 @@ static struct mount *alloc_vfsmnt(const char *name)
 #else
 		mnt->mnt_count = 1;
 		mnt->mnt_writers = 0;
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+		/* Make sure mnt->mnt.susfs_mnt_id_backup is initialized */
+		mnt->mnt.susfs_mnt_id_backup = 0;
 #endif
 
 		INIT_HLIST_NODE(&mnt->mnt_hash);
@@ -1010,7 +1180,18 @@ struct vfsmount *vfs_create_mount(struct fs_context *fc)
 	if (!fc->root)
 		return ERR_PTR(-EINVAL);
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	/* Only check for KSU process */
+	if (susfs_is_current_ksu_domain()) {
+		mnt = susfs_alloc_sus_vfsmnt(fc->source ?: "none");
+		goto bypass_orig_flow;
+	}
+#endif
+
 	mnt = alloc_vfsmnt(fc->source ?: "none");
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+bypass_orig_flow:
+#endif
 	if (!mnt)
 		return ERR_PTR(-ENOMEM);
 
@@ -1097,7 +1278,37 @@ static struct mount *clone_mnt(struct mount *old, struct dentry *root,
 	struct mount *mnt;
 	int err;
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	/* Don't check for KSU process if boot completed */
+	if (susfs_is_boot_completed_triggered) {
+		goto skip_checking_for_ksu_proc;
+	}
+
+	/* Check for KSU process */
+	if (susfs_is_current_ksu_domain()) {
+		/* Reuse old->mnt_id if unsharing */
+		if (flag & CL_COPY_MNT_NS) {
+			mnt = susfs_reuse_sus_vfsmnt(old->mnt_devname, old->mnt_id);
+			goto bypass_orig_flow;
+		}
+		/* Otherwise, assign sus mnt_id */
+		mnt = susfs_alloc_sus_vfsmnt(old->mnt_devname);
+		goto bypass_orig_flow;
+	}
+
+skip_checking_for_ksu_proc:
+	/* All other processes where old->mnt_id is >=
+	 * DEFAULT_KSU_MNT_ID receive sus mnt_id */
+	if (old->mnt_id == DEFAULT_KSU_MNT_ID) {
+		mnt = susfs_alloc_sus_vfsmnt(old->mnt_devname);
+		goto bypass_orig_flow;
+	}
+#endif
+
 	mnt = alloc_vfsmnt(old->mnt_devname);
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+bypass_orig_flow:
+#endif
 	if (!mnt)
 		return ERR_PTR(-ENOMEM);
 
@@ -2475,6 +2686,22 @@ static int do_loopback(struct path *path, const char *old_name,
 		umount_tree(mnt, UMOUNT_SYNC);
 		unlock_mount_hash();
 	}
+#if defined(CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT) || defined(CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT)
+	/* Automatically umount bind mounted paths in ksu domain */
+	if (susfs_is_current_ksu_domain()) {
+#if defined(CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT)
+		if (susfs_is_auto_add_sus_bind_mount_enabled) {
+		    susfs_auto_add_sus_bind_mount(old_name, &old_path);
+		}
+#endif
+#if defined(CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT)
+		if (susfs_is_auto_add_try_umount_for_bind_mount_enabled) {
+		    susfs_auto_add_try_umount_for_bind_mount(path);
+		}
+#endif
+	}
+#endif
+
 out2:
 	unlock_mount(mp);
 out:
@@ -3506,6 +3733,9 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 	copy_flags = CL_COPY_UNBINDABLE | CL_EXPIRE;
 	if (user_ns != ns->user_ns)
 		copy_flags |= CL_SHARED_TO_SLAVE;
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	copy_flags |= CL_COPY_MNT_NS;
+#endif
 	new = copy_tree(old, old->mnt.mnt_root, copy_flags);
 	if (IS_ERR(new)) {
 		namespace_unlock();
@@ -3618,6 +3848,15 @@ SYSCALL_DEFINE5(mount, char __user *, dev_name, char __user *, dir_name,
 		goto out_data;
 
 	ret = do_mount(kernel_dev, dir_name, kernel_type, flags, options);
+
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+	/* KSU magic mount compatibility */
+	if (!susfs_is_boot_completed_triggered && !ret &&
+	    susfs_is_auto_add_sus_ksu_default_mount_enabled &&
+	    susfs_is_current_ksu_domain()) {
+		susfs_auto_add_sus_ksu_default_mount(dir_name);
+	}
+#endif
 
 	kfree(options);
 out_data:
@@ -3841,6 +4080,15 @@ out_to:
 	path_put(&to_path);
 out_from:
 	path_put(&from_path);
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+	/* KSU legacy compatibility */
+	if (!susfs_is_boot_completed_triggered && !ret &&
+	    susfs_is_auto_add_sus_ksu_default_mount_enabled &&
+	    susfs_is_current_ksu_domain()) {
+		susfs_auto_add_sus_ksu_default_mount(to_pathname);
+	}
+#endif
+
 	return ret;
 }
 
@@ -4753,3 +5001,42 @@ static int __init init_fs_namespace_sysctls(void)
 fs_initcall(init_fs_namespace_sysctls);
 
 #endif /* CONFIG_SYSCTL */
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+/* Reorder mnt_id after all sus mounts are umounted */
+void susfs_reorder_mnt_id(void) {
+	struct mnt_namespace *mnt_ns = current->nsproxy->mnt_ns;
+	struct mount *mnt;
+	int first_mnt_id = 0;
+
+	if (!mnt_ns) {
+		return;
+	}
+
+	get_mnt_ns(mnt_ns);
+	first_mnt_id = list_first_entry(&mnt_ns->list, struct mount, mnt_list)->mnt_id;
+	list_for_each_entry(mnt, &mnt_ns->list, mnt_list) {
+		/* Don't reorder sus mount if not umounted */
+		if (mnt->mnt_id == DEFAULT_KSU_MNT_ID) {
+			continue;
+		}
+		mnt->mnt.susfs_mnt_id_backup = mnt->mnt_id;
+		mnt->mnt_id = first_mnt_id++;
+	}
+	put_mnt_ns(mnt_ns);
+}
+#endif
+#ifdef CONFIG_KSU_SUSFS
+bool susfs_is_mnt_devname_ksu(struct path *path) {
+	struct mount *mnt;
+
+	if (path && path->mnt) {
+		mnt = real_mount(path->mnt);
+		if (mnt && mnt->mnt_devname &&
+		    !strcmp(mnt->mnt_devname, "KSU")) {
+			return true;
+		}
+	}
+	return false;
+}
+#endif
