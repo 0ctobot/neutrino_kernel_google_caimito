@@ -131,8 +131,6 @@ struct wbrc_pvt_data {
 
 #define WBRC_CHKCHIP(chipid) ((chipid) != (0x4390))
 
-#define	MIN(a, b)	(((a) < (b)) ? (a) : (b))
-
 #ifdef WBRC_HW_QUIRKS
 static void
 wbrc_delay(uint msec)
