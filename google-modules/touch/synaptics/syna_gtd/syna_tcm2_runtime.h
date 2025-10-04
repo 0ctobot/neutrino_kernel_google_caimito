@@ -108,28 +108,6 @@ extern struct device *syna_request_managed_device(void);
 #define LOGW(log, ...) pr_warn(log, ##__VA_ARGS__)
 #define LOGE(log, ...) pr_err(log, ##__VA_ARGS__)
 
-/*
- * @section: Data Comparison helpers
- *
- * @brief: MAX
- *         Find the maximum value between
- *
- * @brief: MIN:
- *         Find the minimum value between
- *
- * @brief: GET_BIT
- *         Return the value of target bit
- */
-#define MAX(a, b) \
-	({__typeof__(a) _a = (a); \
-	__typeof__(b) _b = (b); \
-	_a > _b ? _a : _b; })
-
-#define MIN(a, b) \
-	({__typeof__(a) _a = (a); \
-	__typeof__(b) _b = (b); \
-	_a < _b ? _a : _b; })
-
 #define GET_BIT(var, pos) \
 	(((var) & (1 << (pos))) >> (pos))
 
