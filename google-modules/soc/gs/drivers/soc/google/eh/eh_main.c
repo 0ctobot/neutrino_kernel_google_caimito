@@ -32,6 +32,7 @@
 #endif
 
 #include "eh_internal.h"
+#include "zcomp.h"
 #include <asm/atomic.h>
 #include <asm/cacheflush.h>
 #include <asm/irqflags.h>
@@ -113,86 +114,11 @@ enum eh_cdesc_status {
 static LIST_HEAD(eh_dev_list);
 static DEFINE_SPINLOCK(eh_dev_list_lock);
 
-static DECLARE_WAIT_QUEUE_HEAD(eh_compress_wait);
-static unsigned int eh_default_fifo_size = 512;
-
-#define EH_SW_FIFO_SIZE	(1 << 16)
-
-#define first_to_eh_request(head) (list_entry((head)->prev, \
-					      struct eh_request, list))
-
-static void destroy_sw_fifo(struct eh_device *eh_dev)
-{
-	struct eh_request *req;
-
-	WARN_ON(!list_empty(&eh_dev->sw_fifo.head));
-
-	while (!list_empty(&eh_dev->pool.head)) {
-		req = first_to_eh_request(&eh_dev->pool.head);
-		list_del(&req->list);
-		kfree(req);
-	}
-}
-
-static int create_sw_fifo(struct eh_device *eh_dev, int fifo_size)
-{
-	int i;
-	struct eh_request *req;
-
-	spin_lock_init(&eh_dev->pool.lock);
-	INIT_LIST_HEAD(&eh_dev->pool.head);
-
-	spin_lock_init(&eh_dev->sw_fifo.lock);
-	INIT_LIST_HEAD(&eh_dev->sw_fifo.head);
-
-	for (i = 0; i < fifo_size; i++) {
-		req = kmalloc(sizeof(struct eh_request), GFP_KERNEL);
-		if (!req)
-			goto err;
-		list_add(&req->list, &eh_dev->pool.head);
-	}
-	eh_dev->pool.count = i;
-	eh_dev->sw_fifo.count = 0;
-	eh_dev->sw_fifo_size = fifo_size;
-
-	return 0;
-err:
-	destroy_sw_fifo(eh_dev);
-	return -ENOMEM;
-}
-
-static struct eh_request *pool_alloc(struct eh_request_pool *pool)
-{
-	struct eh_request *req = NULL;
-
-	spin_lock(&pool->lock);
-	if (!list_empty(&pool->head)) {
-		req = list_entry(pool->head.next, struct eh_request, list);
-		list_del(&req->list);
-		pool->count--;
-	}
-	spin_unlock(&pool->lock);
-
-	return req;
-}
-
-static void pool_free(struct eh_request_pool *pool, struct eh_request *req)
-{
-	spin_lock(&pool->lock);
-	list_add(&req->list, &pool->head);
-	pool->count++;
-	spin_unlock(&pool->lock);
-}
+static unsigned int eh_default_fifo_size = 4096;
 
 static bool sw_fifo_empty(struct eh_sw_fifo *fifo)
 {
-	bool ret;
-
-	spin_lock(&fifo->lock);
-	ret = fifo->count;
-	spin_unlock(&fifo->lock);
-
-	return ret == 0;
+	return !fifo->has_reqs;
 }
 
 /*
@@ -249,11 +175,6 @@ static inline unsigned int fifo_write_index(struct eh_device *eh_dev)
 	return eh_dev->write_index & eh_dev->fifo_index_mask;
 }
 
-static inline unsigned int fifo_complete_index(struct eh_device *eh_dev)
-{
-	return eh_dev->complete_index & eh_dev->fifo_index_mask;
-}
-
 static inline void update_fifo_write_index(struct eh_device *eh_dev)
 {
 	unsigned int next_write_idx = (eh_dev->write_index + 1) &
@@ -265,19 +186,13 @@ static inline void update_fifo_write_index(struct eh_device *eh_dev)
 
 static inline void update_fifo_complete_index(struct eh_device *eh_dev)
 {
-	smp_store_release(&eh_dev->complete_index,
-			  (eh_dev->complete_index + 1) &
-			  eh_dev->fifo_color_mask);
+	eh_dev->complete_index = (eh_dev->complete_index + 1) &
+				  eh_dev->fifo_color_mask;
 }
 
 static bool fifo_full(struct eh_device *eh_dev)
 {
-	unsigned int write_idx = fifo_write_index(eh_dev);
-	unsigned int complete_idx = fifo_complete_index(eh_dev);
-
-	if (write_idx != complete_idx)
-		return false;
-	return  eh_dev->write_index != eh_dev->complete_index;
+	return atomic_read(&eh_dev->nr_request) == eh_dev->fifo_size;
 }
 
 /* index of the next descriptor to be completed by hardware */
@@ -342,6 +257,8 @@ static void eh_setup_descriptor(struct eh_device *eh_dev, struct page *src_page,
 	eh_setup_src_addr(desc, src_page);
 	/* mark it as pend for hardware */
 	desc->status = EH_CDESC_PENDING;
+	/* Generate an interrupt upon completing a compression */
+	desc->intr_request = 1;
 	/*
 	 * Skip setting other fields of the descriptor for the performance
 	 * reason. It's doable since they are never changed once they are
@@ -412,51 +329,30 @@ static void init_compression_descriptor(struct eh_device *eh_dev)
 /*
  * - Primitive functions for Emerald Hill SW
  */
-static long eh_congestion_wait(struct eh_device *eh_dev, unsigned long timeout)
+static void request_to_sw_fifo(struct eh_device *eh_dev, struct page *page,
+			       struct zcomp_cookie *cookie)
 {
-	long ret;
-	DEFINE_WAIT(wait);
-	wait_queue_head_t *wqh = &eh_compress_wait;
-
-	atomic64_inc(&eh_dev->nr_stall);
-
-	prepare_to_wait(wqh, &wait, TASK_UNINTERRUPTIBLE);
-	ret = io_schedule_timeout(timeout);
-	finish_wait(wqh, &wait);
-
-	return ret;
-}
-
-static void clear_eh_congested(void)
-{
-	if (waitqueue_active(&eh_compress_wait))
-		wake_up(&eh_compress_wait);
-}
-
-static void request_to_sw_fifo(struct eh_device *eh_dev,
-			    struct page *page, void *priv)
-{
-	struct eh_request *req;
 	struct eh_sw_fifo *fifo = &eh_dev->sw_fifo;
 
-	while ((req = pool_alloc(&eh_dev->pool)) == NULL)
-		eh_congestion_wait(eh_dev, HZ/10);
-
-	req->page = page;
-	req->priv = priv;
-
 	spin_lock(&fifo->lock);
-	list_add_tail(&req->list, &fifo->head);
-	fifo->count++;
+	list_add_tail(&cookie->list, &fifo->head);
+	fifo->has_reqs = true;
 	spin_unlock(&fifo->lock);
-	wake_up(&eh_dev->comp_wq);
+
+	/* spin_unlock() provides a barrier before waitqueue_active() */
+	if (waitqueue_active(&eh_dev->comp_wq))
+		wake_up(&eh_dev->comp_wq);
 }
 
-static int request_to_hw_fifo(struct eh_device *eh_dev, struct page *page,
-			      void *priv, bool wake_up)
+static int request_to_hw_fifo(struct eh_device *eh_dev,
+			      struct zcomp_cookie *cookie, bool wake_up)
 {
 	unsigned int write_idx;
 	struct eh_completion *compl;
+
+	/* Check if the fifo is full locklessly first, to elide the lock */
+	if (fifo_full(eh_dev))
+		return -EBUSY;
 
 	spin_lock(&eh_dev->fifo_prod_lock);
 	if (fifo_full(eh_dev)) {
@@ -469,68 +365,60 @@ static int request_to_hw_fifo(struct eh_device *eh_dev, struct page *page,
 #endif
 	write_idx = fifo_write_index(eh_dev);
 
-	eh_setup_descriptor(eh_dev, page, write_idx);
+	eh_setup_descriptor(eh_dev, cookie->page, write_idx);
 
 	compl = &eh_dev->completions[write_idx];
-	compl->priv = priv;
+	compl->priv = cookie;
 
+	/*
+	 * Ensure nr_request is incremented before kicking off compression, so
+	 * that the correct order is observed by the compression thread. This
+	 * isn't needed when running from the compression thread itself.
+	 */
 	atomic_inc(&eh_dev->nr_request);
 	if (wake_up)
-		wake_up(&eh_dev->comp_wq);
+		smp_mb__after_atomic();
 
 	/* write barrier to force writes to be visible everywhere */
 	wmb();
 	update_fifo_write_index(eh_dev);
 	spin_unlock(&eh_dev->fifo_prod_lock);
 
+	/* spin_unlock() provides a barrier before waitqueue_active() */
+	if (wake_up && waitqueue_active(&eh_dev->comp_wq))
+		wake_up(&eh_dev->comp_wq);
+
 	return 0;
-}
-
-static void flush_sw_fifo(struct eh_device *eh_dev)
-{
-	struct eh_sw_fifo *fifo = &eh_dev->sw_fifo;
-	int nr_processed = 0;
-	LIST_HEAD(list);
-
-	spin_lock(&fifo->lock);
-	list_splice_init(&fifo->head, &list);
-	spin_unlock(&fifo->lock);
-
-	while (!list_empty(&list)) {
-		struct eh_request *req;
-
-		req = first_to_eh_request(&list);
-		if (request_to_hw_fifo(eh_dev, req->page, req->priv, false))
-			break;
-		list_del(&req->list);
-		pool_free(&eh_dev->pool, req);
-		nr_processed++;
-	}
-
-	spin_lock(&fifo->lock);
-	list_splice(&list, &fifo->head);
-	fifo->count -= nr_processed;
-	spin_unlock(&fifo->lock);
-	clear_eh_congested();
 }
 
 static void refill_hw_fifo(struct eh_device *eh_dev)
 {
 	struct eh_sw_fifo *fifo = &eh_dev->sw_fifo;
+	struct zcomp_cookie *c;
+	int ret;
 
 	spin_lock(&fifo->lock);
-	if (!list_empty(&fifo->head)) {
-		struct eh_request *req;
+	while ((c = list_first_entry_or_null(&fifo->head, typeof(*c), list))) {
+		/*
+		 * Take the cookie off the list since it can't be touched once
+		 * it's passed onto the compression thread.
+		 */
+		list_del(&c->list);
+		spin_unlock(&fifo->lock);
 
-		req = first_to_eh_request(&fifo->head);
-		if (!request_to_hw_fifo(eh_dev, req->page, req->priv, false)) {
-			list_del(&req->list);
-			fifo->count -= 1;
-			pool_free(&eh_dev->pool, req);
+		/* Attempt to pass the cookie onto the hardware fifo */
+		ret = request_to_hw_fifo(eh_dev, c, false);
+
+		spin_lock(&fifo->lock);
+		if (ret) {
+			/* Add the cookie back to the front */
+			list_add(&c->list, &fifo->head);
+			break;
 		}
 	}
+	if (!c)
+		fifo->has_reqs = false;
 	spin_unlock(&fifo->lock);
-	clear_eh_congested();
 }
 
 static irqreturn_t eh_error_irq(int irq, void *data)
@@ -551,6 +439,34 @@ static irqreturn_t eh_error_irq(int irq, void *data)
 		eh_write_register(eh_dev, EH_REG_INTRP_STS_ERROR, error);
 	}
 
+	return IRQ_HANDLED;
+}
+
+static void eh_clear_cintr_status(struct eh_device *eh_dev)
+{
+	/*
+	 * Loop until the interrupt status is fully cleared in hardware. The
+	 * writeq() can be relaxed since there is a control dependency on the
+	 * same address, plus readq() still executes a read barrier afterwards
+	 * which prevents any later loads from being hoisted before the readq().
+	 */
+	do {
+		writeq_relaxed(1, eh_dev->regs + EH_REG_INTRP_STS_CMP);
+	} while (readq(eh_dev->regs + EH_REG_INTRP_STS_CMP));
+}
+
+static irqreturn_t eh_compress_irq(int irq, void *data)
+{
+	struct eh_device *eh_dev = data;
+
+	/* Clear the interrupt status */
+	eh_clear_cintr_status(eh_dev);
+
+	/* Mask the interrupt and wake the compression thread if it's waiting */
+	if (swait_active(&eh_dev->cirq_wq)) {
+		writeq_relaxed(~0UL, eh_dev->regs + EH_REG_INTRP_MASK_CMP);
+		swake_up_one(&eh_dev->cirq_wq);
+	}
 	return IRQ_HANDLED;
 }
 
@@ -644,35 +560,118 @@ static int eh_process_completed_descriptor(struct eh_device *eh_dev,
 
 	/* set the descriptor back to IDLE */
 	desc->status = EH_CDESC_IDLE;
+
+	/* Ensure the fifo slot is all freed before decrementing nr_request */
+	smp_mb__before_atomic();
 	atomic_dec(&eh_dev->nr_request);
 
 	update_fifo_complete_index(eh_dev);
 	return ret;
 }
 
-static int eh_process_compress(struct eh_device *eh_dev)
+static unsigned int eh_wait_next_index(struct eh_device *eh_dev, unsigned int i)
 {
-	int ret = 0;
-	int nr_handled = 0;
-	unsigned int start = eh_dev->complete_index;
-	unsigned int end = fifo_next_complete_index(eh_dev);
-	unsigned int i, index;
+	DECLARE_SWAITQUEUE(wait);
+	unsigned int end;
 
-	for (i = start; i != end; i = (i + 1) & eh_dev->fifo_color_mask) {
-		index = i & eh_dev->fifo_index_mask;
-		ret = eh_process_completed_descriptor(eh_dev, index);
-		if (ret)
-			break;
-		nr_handled++;
-		/*
-		 * Since we have available space in hw_fifo, put the next
-		 * compression request immediately from sw_fifo to make
-		 * EH busy.
-		 */
-		refill_hw_fifo(eh_dev);
+	/* Check if there are compressions finished before attempting to wait */
+	if ((end = fifo_next_complete_index(eh_dev)) != i)
+		return end;
+
+	/*
+	 * We need to make sure the IRQ handler isn't running if we decided not
+	 * to wait for it to wake us up. This prevents a race where the IRQ
+	 * handler may be running the next time eh_wait_next_index() is called,
+	 * such that the IRQ handler masks the interrupt right after we unmask
+	 * it. This can lead to the compression thread sleeping forever waiting
+	 * for an interrupt that'll never come because the interrupt is masked.
+	 */
+	if (eh_dev->sync_comp_irq) {
+		eh_dev->sync_comp_irq = false;
+		synchronize_irq(eh_dev->comp_irq);
 	}
 
-	return ret < 0 ? ret : nr_handled;
+	/*
+	 * In order to reduce the number of compression interrupts fired as much
+	 * as possible, the compression interrupt is only enabled on demand when
+	 * we observe that there aren't any compressions completed, and
+	 * therefore need to wait. This is extremely racy because we avoid doing
+	 * synchronization with the IRQ handler itself, though it is very fast
+	 * and efficient!
+	 *
+	 * Now, prepare to wait for the interrupt to signal compression
+	 * completion. We must recheck fifo_next_complete_index() _after_ the
+	 * interrupt is unmasked and _before_ sleeping to avoid a race:
+	 *
+	 *  1. fifo_next_complete_index() == i, need to wait for completion
+	 *  2. fifo_next_complete_index() changes but interrupt is masked
+	 *  3. interrupt is unmasked
+	 *  4. we sleep on cirq_wq and never receive an interrupt to wake up
+	 *
+	 * This can be avoided by checking fifo_next_complete_index() before
+	 * calling schedule() to sleep. This check must be done _after_
+	 * preparing to wait, so that swait_active() is true and therefore the
+	 * IRQ handler observes that we are waiting.
+	 */
+	prepare_to_swait_exclusive(&eh_dev->cirq_wq, &wait, TASK_IDLE);
+
+	/* Clear the interrupt status and then unmask the interrupt */
+	eh_clear_cintr_status(eh_dev);
+	writeq(0, eh_dev->regs + EH_REG_INTRP_MASK_CMP);
+
+	/*
+	 * The interrupt unmask must occur _before_ reading the next completed
+	 * index to avoid the race described above.
+	 */
+	__iomb();
+
+	/* Recheck the next completed index and sleep if nothing's ready */
+	if ((end = fifo_next_complete_index(eh_dev)) != i) {
+		/* Didn't need to wait for the interrupt, so mask it again */
+		writeq_relaxed(~0UL, eh_dev->regs + EH_REG_INTRP_MASK_CMP);
+		eh_dev->sync_comp_irq = true;
+	} else {
+		/*
+		 * Wait for the interrupt. No need to mask the interrupt
+		 * afterwards because it'll mask itself just before waking us.
+		 */
+		schedule();
+		end = fifo_next_complete_index(eh_dev);
+	}
+	finish_swait(&eh_dev->cirq_wq, &wait);
+
+	return end;
+}
+
+static int eh_process_compress(struct eh_device *eh_dev)
+{
+	unsigned int i = eh_dev->complete_index, end, index;
+	int ret;
+
+	/* Flush sw_fifo in case hw_fifo is empty */
+	if (!atomic_read(&eh_dev->nr_request))
+		refill_hw_fifo(eh_dev);
+
+	do {
+		/* Wait for the next completed index */
+		end = eh_wait_next_index(eh_dev, i);
+
+		/* Process the completed compression requests */
+		do {
+			index = i & eh_dev->fifo_index_mask;
+			ret = eh_process_completed_descriptor(eh_dev, index);
+			if (ret)
+				return ret;
+			/*
+			 * Since we have available space in hw_fifo, put the
+			 * next compression request immediately from sw_fifo to
+			 * make EH busy.
+			 */
+			refill_hw_fifo(eh_dev);
+		} while ((i = (i + 1) & eh_dev->fifo_color_mask) != end);
+	} while (atomic_read(&eh_dev->nr_request));
+
+	return 0;
 }
 
 static void eh_abort_incomplete_descriptors(struct eh_device *eh_dev)
@@ -694,30 +693,16 @@ static void eh_abort_incomplete_descriptors(struct eh_device *eh_dev)
 	}
 }
 
-static bool ready_to_run(struct eh_device *eh_dev, bool *slept)
-{
-	if (atomic_read(&eh_dev->nr_request) || !sw_fifo_empty(&eh_dev->sw_fifo))
-		return true;
-
-	*slept = true;
-	return false;
-}
-
-static int eh_comp_thread(void *data)
+static int __noreturn eh_comp_thread(void *data)
 {
 	struct eh_device *eh_dev = data;
-	struct sched_attr attr = {
-		.sched_policy = SCHED_NORMAL,
-		.sched_nice = -10,
-	};
 
-	WARN_ON_ONCE(sched_setattr_nocheck(current, &attr) != 0);
+	sched_set_fifo_low(current);
 	current->flags |= PF_MEMALLOC;
 	set_freezable();
 
-	while (!kthread_should_stop()) {
+	while (1) {
 		int ret;
-		bool slept = false;
 
 #ifdef CONFIG_SOC_ZUMA
 		/*
@@ -731,15 +716,12 @@ static int eh_comp_thread(void *data)
 		 */
 		exynos_update_ip_idle_status(eh_dev->ip_index, 1);
 #endif
-		wait_event_freezable(eh_dev->comp_wq, ready_to_run(eh_dev, &slept));
-
-		/*
-		 * The condition check above is racy so the schedule
-		 * couldn't schedule out the process but it should be
-		 * rare and the stat doesn't need to be precise.
-		 */
-		if (slept)
-			eh_dev->nr_run++;
+		cpu_latency_qos_update_request(&eh_dev->pm_qos_req,
+					       PM_QOS_DEFAULT_VALUE);
+		wait_event_freezable(eh_dev->comp_wq,
+			atomic_read(&eh_dev->nr_request) ||
+			!sw_fifo_empty(&eh_dev->sw_fifo));
+		cpu_latency_qos_update_request(&eh_dev->pm_qos_req, 100);
 #ifdef CONFIG_SOC_ZUMA
 		exynos_update_ip_idle_status(eh_dev->ip_index, 0);
 #endif
@@ -753,7 +735,7 @@ static int eh_comp_thread(void *data)
 				       error);
 				eh_dump_regs(eh_dev);
 				eh_abort_incomplete_descriptors(eh_dev);
-				break;
+				BUG();
 			}
 
 			/*
@@ -762,52 +744,51 @@ static int eh_comp_thread(void *data)
 			 */
 			WARN_ON(1);
 		}
-
-		/*
-		 * Take a little nap if EH didn't finish the compression yet
-		 * rather than CPU burn.
-		 */
-		if (ret == 0)
-			usleep_range(5, 10);
-		else
-			eh_dev->nr_compressed += ret;
-
-		if (!fifo_full(eh_dev))
-			flush_sw_fifo(eh_dev);
 	}
 
 #ifdef CONFIG_SOC_ZUMA
 	exynos_update_ip_idle_status(eh_dev->ip_index, 1);
 #endif
-	return 0;
 }
 
 /* Initialize SW related stuff */
-static int eh_sw_init(struct eh_device *eh_dev, int error_irq,
-		      unsigned int fifo_size)
+static int eh_sw_init(struct eh_device *eh_dev, int error_irq, int comp_irq)
 {
 	int ret;
 
-	ret = create_sw_fifo(eh_dev, fifo_size);
-	if (ret)
+	spin_lock_init(&eh_dev->sw_fifo.lock);
+	INIT_LIST_HEAD(&eh_dev->sw_fifo.head);
+	init_swait_queue_head(&eh_dev->cirq_wq);
+
+	/* Request the compression IRQ */
+	ret = request_irq(comp_irq, eh_compress_irq, IRQF_NO_THREAD,
+			  "eh_compress", eh_dev);
+	if (ret) {
+		pr_err("comp irq %u request failed, ret %d\n", comp_irq, ret);
 		return ret;
+	}
+	eh_dev->comp_irq = comp_irq;
 
 	/* the error interrupt */
 	ret = request_threaded_irq(error_irq, NULL, eh_error_irq, IRQF_ONESHOT,
 				   EH_ERR_IRQ, eh_dev);
 	if (ret) {
 		pr_err("unable to request irq %u ret %d\n", error_irq, ret);
-		goto destroy_sw_fifo;
+		goto free_comp_irq;
 	}
 	eh_dev->error_irq = error_irq;
 
 	atomic_set(&eh_dev->nr_request, 0);
 	init_waitqueue_head(&eh_dev->comp_wq);
 
+	eh_dev->pm_qos_req.type = PM_QOS_REQ_AFFINE_IRQ;
+	eh_dev->pm_qos_req.irq = eh_dev->comp_irq;
+	cpu_latency_qos_add_request(&eh_dev->pm_qos_req, PM_QOS_DEFAULT_VALUE);
+
 	eh_dev->comp_thread = kthread_run(eh_comp_thread, eh_dev, "eh_comp_thread");
 	if (IS_ERR(eh_dev->comp_thread)) {
 		ret = PTR_ERR(eh_dev->comp_thread);
-		goto free_irq;
+		goto free_error_irq;
 	}
 
 	spin_lock(&eh_dev_list_lock);
@@ -816,11 +797,11 @@ static int eh_sw_init(struct eh_device *eh_dev, int error_irq,
 
 	return 0;
 
-free_irq:
+free_error_irq:
+	cpu_latency_qos_remove_request(&eh_dev->pm_qos_req);
 	free_irq(eh_dev->error_irq, eh_dev);
-destroy_sw_fifo:
-	destroy_sw_fifo(eh_dev);
-
+free_comp_irq:
+	free_irq(eh_dev->comp_irq, eh_dev);
 	return ret;
 }
 
@@ -952,19 +933,6 @@ static void eh_hw_deinit(struct eh_device *eh_dev)
 	eh_dev->regs = NULL;
 }
 
-static void eh_sw_deinit(struct eh_device *eh_dev)
-{
-	if (eh_dev->error_irq) {
-		free_irq(eh_dev->error_irq, eh_dev);
-		eh_dev->error_irq = 0;
-	}
-
-	if (eh_dev->comp_thread) {
-		kthread_stop(eh_dev->comp_thread);
-		eh_dev->comp_thread = NULL;
-	}
-}
-
 /* Initialize HW related stuff */
 static int eh_hw_init(struct eh_device *eh_dev, unsigned short fifo_size,
 		      phys_addr_t regs, unsigned short quirks)
@@ -1029,75 +997,10 @@ iounmap:
 	return ret;
 }
 
-#define EH_ATTR_RO(_name) \
-	static struct kobj_attribute _name##_attr = __ATTR_RO(_name)
-
-static ssize_t nr_stall_show(struct kobject *kobj, struct kobj_attribute *attr,
-			  char *buf)
-{
-	struct eh_device *eh_dev = container_of(kobj, struct eh_device, kobj);
-
-	return sysfs_emit(buf, "%llu\n", atomic64_read(&eh_dev->nr_stall));
-}
-EH_ATTR_RO(nr_stall);
-
-static ssize_t nr_run_show(struct kobject *kobj,
-		struct kobj_attribute *attr,
-		char *buf)
-{
-	struct eh_device *eh_dev = container_of(kobj, struct eh_device, kobj);
-
-	return sysfs_emit(buf, "%lu\n", eh_dev->nr_run);
-}
-EH_ATTR_RO(nr_run);
-
-static ssize_t nr_compressed_show(struct kobject *kobj,
-		struct kobj_attribute *attr,
-		char *buf)
-{
-	struct eh_device *eh_dev = container_of(kobj, struct eh_device, kobj);
-
-	return sysfs_emit(buf, "%lu\n", eh_dev->nr_compressed);
-}
-EH_ATTR_RO(nr_compressed);
-
-static ssize_t sw_fifo_size_show(struct kobject *kobj, struct kobj_attribute *attr,
-		char *buf)
-{
-	struct eh_device *eh_dev = container_of(kobj, struct eh_device, kobj);
-
-	return sysfs_emit(buf, "%u\n", eh_dev->sw_fifo_size);
-}
-EH_ATTR_RO(sw_fifo_size);
-
-static struct attribute *eh_attrs[] = {
-	&nr_stall_attr.attr,
-	&nr_run_attr.attr,
-	&nr_compressed_attr.attr,
-	&sw_fifo_size_attr.attr,
-	NULL,
-};
-ATTRIBUTE_GROUPS(eh);
-
-static void eh_kobj_release(struct kobject *kobj)
-{
-	struct eh_device *eh_dev = container_of(kobj, struct eh_device, kobj);
-
-	eh_sw_deinit(eh_dev);
-	eh_hw_deinit(eh_dev);
-	kfree(eh_dev);
-}
-
-static struct kobj_type eh_ktype = {
-	.release = eh_kobj_release,
-	.sysfs_ops = &kobj_sysfs_ops,
-	.default_groups = eh_groups,
-};
-
 /* EmeraldHill initialization entry */
 static int eh_init(struct device *device, struct eh_device *eh_dev,
-		   unsigned short fifo_size, unsigned int sw_fifo_size,
-		   phys_addr_t regs, int error_irq, unsigned short quirks)
+		   unsigned short fifo_size, phys_addr_t regs, int error_irq,
+		   int comp_irq, unsigned short quirks)
 {
 	int ret;
 
@@ -1112,18 +1015,13 @@ static int eh_init(struct device *device, struct eh_device *eh_dev,
 	if (ret)
 		return ret;
 
-	ret = eh_sw_init(eh_dev, error_irq, sw_fifo_size);
+	ret = eh_sw_init(eh_dev, error_irq, comp_irq);
 	if (ret) {
 		eh_hw_deinit(eh_dev);
 		return ret;
 	}
 
-	ret = kobject_init_and_add(&eh_dev->kobj, &eh_ktype,
-				   kernel_kobj, "%s", "eh");
-	if (ret)
-		kobject_put(&eh_dev->kobj);
-
-	return ret;
+	return 0;
 }
 
 static void eh_setup_dcmd(struct eh_device *eh_dev, unsigned int index,
@@ -1196,7 +1094,7 @@ int eh_compress_page(struct eh_device *eh_dev, struct page *page, void *priv)
 	 * If it fail to add the request into hw fifo, fallback it to
 	 * sw fifo.
 	 */
-	if (!request_to_hw_fifo(eh_dev, page, priv, true))
+	if (!request_to_hw_fifo(eh_dev, priv, true))
 		return 0;
 
 req_to_sw_fifo:
@@ -1292,11 +1190,9 @@ static int eh_of_probe(struct platform_device *pdev)
 {
 	struct eh_device *eh_dev;
 	struct resource *mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	int ret = 0;
-	int error_irq = 0;
+	int irqs[2], nr_irqs = 0, ret = 0;
 	unsigned short quirks = 0;
 	struct clk *clk;
-	int sw_fifo_size = EH_SW_FIFO_SIZE;
 
 	pr_info("starting probing\n");
 
@@ -1319,8 +1215,12 @@ static int eh_of_probe(struct platform_device *pdev)
 		goto disable_pm_runtime;
 	}
 
-	error_irq = irq_of_parse_and_map(pdev->dev.of_node, 0);
-	if (error_irq == 0) {
+	do {
+		irqs[nr_irqs] = irq_of_parse_and_map(pdev->dev.of_node, nr_irqs);
+	} while (irqs[nr_irqs] && ++nr_irqs < ARRAY_SIZE(irqs));
+
+	/* There should be an error IRQ and a compression IRQ */
+	if (nr_irqs < ARRAY_SIZE(irqs)) {
 		ret = -EINVAL;
 		goto put_pm_runtime;
 	}
@@ -1345,9 +1245,8 @@ static int eh_of_probe(struct platform_device *pdev)
 		goto put_disable_clk;
 	}
 
-	of_property_read_u32(pdev->dev.of_node, "eh,sw-fifo-size", &sw_fifo_size);
-	ret = eh_init(&pdev->dev, eh_dev, eh_default_fifo_size, sw_fifo_size,
-		      mem->start, error_irq, quirks);
+	ret = eh_init(&pdev->dev, eh_dev, eh_default_fifo_size, mem->start,
+		      irqs[0], irqs[1], quirks);
 	if (ret)
 		goto free_ehdev;
 #ifdef CONFIG_SOC_ZUMA
@@ -1387,8 +1286,6 @@ static int eh_of_remove(struct platform_device *pdev)
 	clk_put(eh_dev->clk);
 	pm_runtime_put_sync(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
-
-	kobject_put(&eh_dev->kobj);
 	return 0;
 }
 
@@ -1405,7 +1302,6 @@ static int eh_suspend(struct device *dev)
 
 	/* disable all interrupts */
 	eh_write_register(eh_dev, EH_REG_INTRP_MASK_ERROR, ~0UL);
-	eh_write_register(eh_dev, EH_REG_INTRP_MASK_CMP, ~0UL);
 	eh_write_register(eh_dev, EH_REG_INTRP_MASK_DCMP, ~0UL);
 
 	/* disable compression FIFO */
@@ -1432,7 +1328,6 @@ static int eh_resume(struct device *dev)
 
 	/* re-enable all interrupts */
 	eh_write_register(eh_dev, EH_REG_INTRP_MASK_ERROR, 0);
-	eh_write_register(eh_dev, EH_REG_INTRP_MASK_CMP, 0);
 	eh_write_register(eh_dev, EH_REG_INTRP_MASK_DCMP, 0);
 
 	dev_dbg(dev, "EH resumed\n");
