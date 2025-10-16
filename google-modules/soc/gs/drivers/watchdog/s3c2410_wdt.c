@@ -720,7 +720,7 @@ static int proportion_in_1_digit(u64 dividend, u64 divisor)
 void s3c2410wdt_print_schedstat(const char *loglvl)
 {
 	int cpu;
-	char buf[max(NR_CPUS, PRINT_CPUS_LIMIT)];
+	char buf[PRINT_CPUS_LIMIT];
 	char *bufp;
 	u64 duration;
 	struct s3c2410_wdt *wdt = s3c_wdt[LITTLE_CLUSTER];
