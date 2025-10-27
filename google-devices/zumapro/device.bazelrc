@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Copyright (C) 2024 Google LLC
+
+build:zumapro_base --//private/google-modules/soc/gs:gs_soc_module=//private/devices/google/zumapro:zumapro_soc
+
+build:zumapro --config=zumapro_base
+build:zumapro --//private/devices/google/common:kernel=//private/devices/google/zumapro:zumapro/kernel
