@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+
+load("//private/devices/google/common/kleaf:device_build.bzl", "device_build")
+load("//private/devices/google/zuma:constants.bzl", "ZUMA_DPM_DTBOS", "ZUMA_DTBS")
+load("//private/devices/google/zumapro:constants.bzl", "ZUMAPRO_DPM_DTBOS", "ZUMAPRO_DTBS", "ZUMAPRO_MODULE_OUTS")
+load(":constants.bzl", "CAIMITO_DTBOS")
+
+device_build(
+    name = "caimito",
+    base_device = "//private/devices/google/zumapro:zumapro_base",
+    build_configs = ["build.config.caimito"],
+    build_dtb = True,
+    build_dtbo = True,
+    build_system_dlkm = True,
+    build_vendor_dlkm = True,
+    build_vendor_kernel_boot = True,
+    defconfig_fragments = ["caimito_defconfig"],
+    dtb_outs = ZUMA_DTBS + ZUMAPRO_DTBS,
+    dtbo_additional_outs = ZUMA_DPM_DTBOS + ZUMAPRO_DPM_DTBOS,
+    dtbo_outs = CAIMITO_DTBOS,
+    dts_makefile = "dts/Makefile",
+    dts_srcs = glob(["dts/**"]) + [
+        "//private/google-modules/soc/gs:gs.dt-bindings",
+    ],
+    ext_modules = [
+        # keep sorted
+        "//private/google-modules/amplifiers/cs35l41",
+        "//private/google-modules/amplifiers/cs40l26",
+        "//private/google-modules/amplifiers/snd_soc_wm_adsp:snd-soc-wm-adsp",
+        "//private/google-modules/bluetooth/broadcom:bluetooth.broadcom",
+        "//private/google-modules/display/common/panel_tests",
+        "//private/google-modules/display/common/panels",
+        "//private/google-modules/display/panels/caimito:panel-gs-cm4",
+        "//private/google-modules/display/panels/caimito:panel-gs-km4",
+        "//private/google-modules/display/panels/caimito:panel-gs-tk4a",
+        "//private/google-modules/display/panels/caimito:panel-gs-tk4b",
+        "//private/google-modules/display/panels/caimito:panel-gs-tk4c",
+        "//private/google-modules/display/panels/caimito:panel-gs-tk4c-test",
+        "//private/google-modules/fingerprint/qcom/qfs4008:qbt_handler",
+        "//private/google-modules/gps/broadcom/bcm47765",
+        "//private/google-modules/nfc",
+        "//private/google-modules/radio/samsung/s5400:cpif",
+        "//private/google-modules/touch/common:touch.common",
+        "//private/google-modules/touch/sec",
+        "//private/google-modules/touch/synaptics/syna_gtd:syna_touch",
+        "//private/google-modules/uwb/qorvo/qm35/qm35s:uwb.qm35",
+        "//private/google-modules/wlan/bcm4390:bcmdhd4390",
+        "//private/google-modules/wlan/wlan_ptracker",
+    ],
+    insmod_cfgs = glob(["insmod_cfg/*.cfg"]),
+    kconfig_exts = ["Kconfig.ext.caimito"],
+    kconfigs = [
+        # keep sorted
+        "//private/google-modules/display/common:common.kconfig",
+        "//private/google-modules/fingerprint/qcom/qfs4008:qbt_handler.kconfig",
+        "//private/google-modules/radio/samsung/s5400:cpif.kconfig",
+        "//private/google-modules/touch/common:touch.common.kconfig",
+        "//private/google-modules/touch/sec:sec.kconfig",
+    ],
+    module_outs = ZUMAPRO_MODULE_OUTS,
+    vendor_dlkm_modules_blocklists = ["vendor_dlkm.blocklist.caimito"],
+    vendor_ramdisk_modules_lists = ["vendor_ramdisk.modules.caimito"],
+)
+
+# For compatibility
+alias(
+    name = "zumapro_caimito_dist",
+    actual = ":caimito/dist",
+)
+
+alias(
+    name = "zumapro_caimito_abi_update_symbol_list",
+    actual = ":caimito/kernel_abi_update_symbol_list",
+)
+
+alias(
+    name = "kernel",
+    actual = ":caimito/kernel",
+)
+
+alias(
+    name = "kernel_abi_update_symbol_list",
+    actual = ":caimito/kernel_abi_update_symbol_list",
+)
+
+alias(
+    name = "kernel_compile_commands",
+    actual = ":caimito/kernel_compile_commands",
+)
