@@ -35,10 +35,8 @@
 #include "google_dc_pps.h"
 #include "google_psy.h"
 
-#ifdef CONFIG_DEBUG_FS
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
-#endif
 
 #if IS_ENABLED(CONFIG_GOOGLE_CRASH_DEBUG_DUMP)
 #include <soc/google/google-cdd.h>
@@ -3566,12 +3564,13 @@ bd_state_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct chg_drv *chg_drv = dev_get_drvdata(dev);
 	struct bd_data *bd_state = &chg_drv->bd_state;
-	long long temp_avg;
+	long long temp_avg = 0;
 	ssize_t len;
 
 	mutex_lock(&chg_drv->bd_lock);
 
-	temp_avg = div64_s64(bd_state->temp_sum, bd_state->time_sum);
+	if (bd_state->time_sum)
+		temp_avg = div64_s64(bd_state->temp_sum, bd_state->time_sum);
 	len = scnprintf(buf, PAGE_SIZE,
 		       "t_sum=%lld, time_sum=%lld t_avg=%lld lst_v=%d lst_t=%d lst_u=%lld, dt=%lld, t=%d e=%d\n",
 		       bd_state->temp_sum, bd_state->time_sum, temp_avg,
@@ -3777,8 +3776,6 @@ static int chg_vote_input_suspend(struct chg_drv *chg_drv,
 
 	return 0;
 }
-
-#ifdef CONFIG_DEBUG_FS
 
 static int chg_get_input_suspend(void *data, u64 *val)
 {
@@ -4048,9 +4045,6 @@ static int bd_enabled_set(void *data, u64 val)
 
 DEFINE_SIMPLE_ATTRIBUTE(bd_enabled_fops, bd_enabled_get,
 			bd_enabled_set, "%lld\n");
-
-
-#endif
 
 static int debug_get_pps_cc_tolerance(void *data, u64 *val)
 {
@@ -5389,8 +5383,6 @@ state2power_table_show(struct device *dev, struct device_attribute *attr, char *
 
 static DEVICE_ATTR_RO(state2power_table);
 
-#ifdef CONFIG_DEBUG_FS
-
 static ssize_t tm_store(struct chg_thermal_device *tdev,
 			const char __user *user_buf,
 			size_t count, loff_t *ppos)
@@ -5459,8 +5451,6 @@ static ssize_t dc_tm_store(struct file *filp, const char __user *user_buf,
 }
 
 DEBUG_ATTRIBUTE_WO(dc_tm);
-
-#endif // CONFIG_DEBUG_FS
 
 static int chg_init_mdis_stats_map(struct chg_drv *chg_drv, const char *name) {
 	int rc, byte_len;

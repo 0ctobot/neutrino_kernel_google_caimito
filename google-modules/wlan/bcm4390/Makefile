@@ -23,11 +23,9 @@
 # Path to the module source
 M ?= $(shell pwd)
 
-ifneq ($(KERNEL_SRC),)
-  KBUILD_OPTIONS += BCMDHD_ROOT=$(shell cd $(KERNEL_SRC); readlink -e $(M))
-  -include $(KERNEL_SRC)/../private/google-modules/soc/gs/Makefile.include
-  EXTRA_CFLAGS+="-Wno-missing-prototypes"
-endif
+KBUILD_OPTIONS += BCMDHD_ROOT=$(srctree)/$(src)
+-include $(KERNEL_SRC)/../private/google-modules/soc/gs/Makefile.include
+EXTRA_CFLAGS+="-Wno-missing-prototypes"
 
 
 # Define and "all" target, which isn't really needed but doesn't hurt.

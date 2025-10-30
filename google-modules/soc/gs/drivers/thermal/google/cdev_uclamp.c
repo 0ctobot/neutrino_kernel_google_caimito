@@ -17,7 +17,14 @@
 #include <linux/workqueue.h>
 
 #include "thermal_core.h"
+#if IS_ENABLED(CONFIG_VH_SCHED)
 #include "../../soc/google/vh/include/sched.h"
+#else
+static inline int sched_thermal_freq_cap(unsigned int cpu, unsigned int freq)
+{
+	return 0;
+}
+#endif
 
 struct thermal_uclamp_cdev {
 	unsigned int cpu;
@@ -152,7 +159,7 @@ static struct thermal_cooling_device_ops thermal_uclamp_cdev_ops = {
 	.power2state = thermal_uclamp_power2state,
 };
 
-ssize_t
+static ssize_t
 state2power_table_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct thermal_cooling_device *cdev = to_cooling_device(dev);

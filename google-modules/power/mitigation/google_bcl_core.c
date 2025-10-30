@@ -48,10 +48,8 @@
 #include <soc/google/exynos-pm.h>
 #include <soc/google/exynos-pmu-if.h>
 #include "bcl.h"
-#if IS_ENABLED(CONFIG_DEBUG_FS)
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
-#endif
 
 #include <max77759_regs.h>
 #include <max77779.h>
@@ -2596,6 +2594,11 @@ static int google_bcl_probe(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct bcl_device *bcl_dev;
+	struct power_supply *batt_psy;
+
+	batt_psy = power_supply_get_by_phandle(pdev->dev.of_node, PSY_NAME);
+	if (IS_ERR_OR_NULL(batt_psy))
+		return -EPROBE_DEFER;
 
 	bcl_dev = devm_kzalloc(&pdev->dev, sizeof(*bcl_dev), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(bcl_dev))
