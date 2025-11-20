@@ -207,9 +207,6 @@ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
 int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
                         void *envp, int *flags)
 {
-    if (ksu_handle_execveat_ksud(fd, filename_ptr, argv, envp, flags)) {
-        return 0;
-    }
     return ksu_handle_execveat_sucompat(fd, filename_ptr, argv, envp,
                                         flags);
 }

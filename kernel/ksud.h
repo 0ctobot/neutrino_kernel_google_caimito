@@ -21,6 +21,10 @@ extern bool ksu_module_mounted;
 extern bool ksu_boot_completed;
 
 #ifdef CONFIG_KSU_SUSFS
+extern bool ksu_execveat_hook __read_mostly;
+extern int ksu_handle_pre_ksud(const char *filename);
+extern int ksu_handle_bprm_ksud(const char *filename, const char *argv1);
+
 #define MAX_ARG_STRINGS 0x7FFFFFFF
 struct user_arg_ptr {
 #ifdef CONFIG_COMPAT

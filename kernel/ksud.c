@@ -25,6 +25,9 @@
 #include "util.h"
 #include "selinux/selinux.h"
 #include "throne_tracker.h"
+#ifdef CONFIG_KSU_SUSFS
+#include "kernel_compat.h"
+#endif
 
 bool ksu_module_mounted __read_mostly = false;
 bool ksu_boot_completed __read_mostly = false;
@@ -122,7 +125,93 @@ void on_boot_completed(void)
     track_throne(true);
 }
 
-#ifndef CONFIG_KSU_SUSFS
+#ifdef CONFIG_KSU_SUSFS
+// bprm_check LSM hook handlers - extract argv from mm_struct
+// Android 10+ only: /system/bin/init second_stage detection
+
+int ksu_handle_bprm_ksud(const char *filename, const char *argv1)
+{
+    static const char app_process[] = "/system/bin/app_process";
+    static const char system_bin_init[] = "/system/bin/init";
+    static bool first_app_process = true;
+    static bool init_second_stage_executed = false;
+
+    // return early when disabled
+    if (!ksu_execveat_hook)
+        return 0;
+
+    if (!filename)
+        return 0;
+
+    pr_info("%s: filename: %s argv1: %s\n", __func__, filename, argv1);
+
+    if (init_second_stage_executed)
+        goto first_app_process;
+
+    // /system/bin/init with "second_stage" argument (Android 10+)
+    if (!init_second_stage_executed && 
+        !memcmp(filename, system_bin_init, sizeof(system_bin_init) - 1)) {
+        if (argv1 && !strcmp(argv1, "second_stage")) {
+            pr_info("%s: /system/bin/init second_stage executed\n", __func__);
+            apply_kernelsu_rules();
+            setup_ksu_cred();
+            init_second_stage_executed = true;
+        }
+    }
+
+first_app_process:
+    if (first_app_process && 
+        !memcmp(filename, app_process, sizeof(app_process) - 1)) {
+        first_app_process = false;
+        pr_info("%s: exec app_process, /data prepared, second_stage: %d\n", 
+                __func__, init_second_stage_executed);
+        on_post_fs_data();
+        stop_execve_hook();
+    }
+
+    return 0;
+}
+
+int ksu_handle_pre_ksud(const char *filename)
+{
+    if (likely(!ksu_execveat_hook))
+        return 0;
+
+    // Filter early - only interested in /system/bin/init and app_process
+    if (likely(strcmp(filename, "/system/bin/init") && 
+               !strstarts(filename, "/system/bin/app_process")))
+        return 0;
+
+    if (!current || !current->mm)
+        return 0;
+
+    // Extract argv from mm_struct
+    unsigned long arg_start = current->mm->arg_start;
+    unsigned long arg_end = current->mm->arg_end;
+
+    size_t arg_len = arg_end - arg_start;
+
+    if (arg_len <= 0)
+        return 0;
+
+    #define ARGV_MAX 32
+    char args[ARGV_MAX];
+    size_t argv_copy_len = (arg_len > ARGV_MAX) ? ARGV_MAX : arg_len;
+
+    // Copy argv - can't use strncpy as it stops at \0
+    if (ksu_copy_from_user_retry(args, (void __user *)arg_start, argv_copy_len))
+        return 0;
+
+    args[ARGV_MAX - 1] = '\0';
+
+    // Extract argv[1] - it's after the first null terminator
+    char *argv1 = args + strlen(args) + 1;
+    if (argv1 >= args + argv_copy_len)
+        argv1 = "";
+
+    return ksu_handle_bprm_ksud(filename, argv1);
+}
+#else
 #define MAX_ARG_STRINGS 0x7FFFFFFF
 struct user_arg_ptr {
 #ifdef CONFIG_COMPAT
