@@ -5,6 +5,9 @@ kernelsu-objs += apk_sign.o
 kernelsu-objs += sucompat.o
 ifneq ($(CONFIG_KSU_SUSFS), y)
 kernelsu-objs += syscall_hook_manager.o
+else
+kernelsu-objs += kernel_compat.o
+kernelsu-objs += lsm_hooks.o
 endif
 kernelsu-objs += throne_tracker.o
 kernelsu-objs += pkg_observer.o

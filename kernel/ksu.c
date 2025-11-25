@@ -5,6 +5,7 @@
 #include <linux/workqueue.h>
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs.h>
+#include "lsm_hooks.h"
 #endif
 
 #include "allowlist.h"
@@ -44,6 +45,10 @@ int __init kernelsu_init(void)
     ksu_feature_init();
 
     ksu_supercalls_init();
+
+#ifdef CONFIG_KSU_SUSFS
+    ksu_lsm_hooks_init();
+#endif
 
 #ifndef CONFIG_KSU_SUSFS
     ksu_syscall_hook_manager_init();
