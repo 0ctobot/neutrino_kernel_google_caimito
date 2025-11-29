@@ -77,7 +77,7 @@ static int do_get_info(void __user *arg)
 {
     struct ksu_get_info_cmd cmd = { .version = KERNEL_SU_VERSION, .flags = 0 };
 
-#ifdef MODULE
+#if defined(MODULE) || defined(CONFIG_KSU_SUSFS)
     cmd.flags |= 0x1;
 #endif
 
