@@ -4297,7 +4297,7 @@ static int batt_init_aacr_profile(struct batt_drv *batt_drv)
 	 */
 
 	ret = of_property_read_u32(node, "google,aacr-config",
-				   &batt_drv->aacr_state);
+				   (u32 *)&batt_drv->aacr_state);
 	if (ret < 0)
 		batt_drv->aacr_state = profile->aacr_nb_limits ?
 			BATT_AACR_DISABLED : BATT_AACR_UNKNOWN;
@@ -5306,7 +5306,7 @@ static int batt_init_aafv_profile(struct batt_drv *batt_drv)
 
 	/* NOTE: might need to be BRID specific */
 	ret = of_property_read_u32(node, "google,aafv-config",
-				   &batt_drv->aafv_state);
+				   (u32 *)&batt_drv->aafv_state);
 	if (ret < 0)
 		batt_drv->aafv_state = profile->aafv_nb_limits ?
 			BATT_AAFV_DISABLED : BATT_AAFV_UNKNOWN;
@@ -6075,11 +6075,11 @@ static int batt_init_aact_profile(struct batt_drv *batt_drv)
 	int ret;
 
 	ret = of_property_read_u32(gbms_batt_id_node(node), "google,aact-config",
-				   &batt_drv->aact_state);
+				   (u32 *)&batt_drv->aact_state);
 	/* google,aact-config does not exist in the child_node */
 	if (ret < 0)
 		ret = of_property_read_u32(node, "google,aact-config",
-					   &batt_drv->aact_state);
+					   (u32 *)&batt_drv->aact_state);
 	if (ret < 0)
 		batt_drv->aact_state = BATT_AACT_UNKNOWN;
 
@@ -6743,8 +6743,6 @@ static ssize_t charge_full_estimate_show(struct device *dev, struct device_attri
 
 static DEVICE_ATTR_RO(charge_full_estimate);
 
-#ifdef CONFIG_DEBUG_FS
-
 static int cycle_count_bins_store(void *data, u64 val)
 {
 	struct batt_drv *batt_drv = (struct batt_drv *)data;
@@ -7222,8 +7220,6 @@ static int debug_ravg_fops_write(void *data, u64 val)
 }
 
 DEFINE_SIMPLE_ATTRIBUTE(debug_ravg_fops, NULL, debug_ravg_fops_write, "%llu\n");
-
-#endif
 
 /* ------------------------------------------------------------------------- */
 
@@ -11791,7 +11787,7 @@ static enum batt_paired_state batt_check_pairing_state(struct batt_drv *batt_drv
 		}
 
 	/* recycled battery */
-	} else if (strncmp(dev_info, dev_info_check, strlen(dev_info_check))) {
+	} else if (strncmp(dev_info, dev_info_check, GBMS_DINF_LEN)) {
 		pr_warn("Battery paired to a different device\n");
 
 		return BATT_PAIRING_MISMATCH;
