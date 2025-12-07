@@ -41,6 +41,20 @@ static int su_compat_feature_get(u64 *value)
 static int su_compat_feature_set(u64 value)
 {
     bool enable = value != 0;
+
+#ifdef CONFIG_KSU_SUSFS
+    if (enable == ksu_su_compat_enabled) {
+        pr_info("su_compat: no need to change\n");
+        return 0;
+    }
+
+    if (enable) {
+        ksu_sucompat_enable();
+    } else {
+        ksu_sucompat_disable();
+    }
+#endif
+
     ksu_su_compat_enabled = enable;
     pr_info("su_compat: set to %d\n", enable);
     return 0;
@@ -173,6 +187,8 @@ int ksu_handle_execve_sucompat(const char __user **filename_user,
     return 0;
 }
 #else
+static bool ksu_sucompat_enabled __read_mostly = true;
+
 static const char sh_path[] = SH_PATH;
 static const char su_path[] = SU_PATH;
 static const char ksud_path[] = KSUD_PATH;
@@ -183,6 +199,8 @@ __attribute__((hot, no_stack_protector))
 static __always_inline bool is_su_allowed(const void **ptr_to_check)
 {
     barrier();
+    if (!ksu_sucompat_enabled)
+        return false;
 
     if (likely(!ksu_is_allow_uid_for_current(current_uid().val)))
         return false;
@@ -278,6 +296,10 @@ int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
 int ksu_handle_devpts(struct inode *inode)
 {
         barrier();
+        if (!ksu_sucompat_enabled) {
+                return 0;
+        }
+
         if (susfs_is_current_proc_umounted()) {
                 return 0;
         }
@@ -303,6 +325,18 @@ int ksu_handle_devpts(struct inode *inode)
 
         return 0;
 }
+
+void ksu_sucompat_enable()
+{
+	ksu_sucompat_enabled = true;
+	pr_info("%s: hooks enabled: exec, faccessat, stat, devpts\n", __func__);
+}
+
+void ksu_sucompat_disable()
+{
+	ksu_sucompat_enabled = false;
+	pr_info("%s: hooks disabled: exec, faccessat, stat, devpts\n", __func__);
+}
 #endif
 
 // sucompat: permitted process can execute 'su' to gain root access.
@@ -311,9 +345,19 @@ void ksu_sucompat_init()
     if (ksu_register_feature_handler(&su_compat_handler)) {
         pr_err("Failed to register su_compat feature handler\n");
     }
+#ifdef CONFIG_KSU_SUSFS
+    if (ksu_su_compat_enabled) {
+        ksu_sucompat_enable();
+    }
+#endif
 }
 
 void ksu_sucompat_exit()
 {
+#ifdef CONFIG_KSU_SUSFS
+    if (ksu_su_compat_enabled) {
+        ksu_sucompat_disable();
+    }
+#endif
     ksu_unregister_feature_handler(KSU_FEATURE_SU_COMPAT);
 }
