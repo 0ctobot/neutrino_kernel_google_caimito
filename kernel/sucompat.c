@@ -15,6 +15,7 @@
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/namei.h>
 #include <linux/susfs_def.h>
+#include "kernel_compat.h"
 #include "objsec.h"
 #endif
 #include "allowlist.h"
@@ -177,71 +178,81 @@ static const char ksud_path[] = KSUD_PATH;
 
 extern bool ksu_kernel_umount_enabled;
 
-// execve_handler_pre does not pass correct values for the __never_use_* arguments
-// these parameters are kept only for consistency with manually patched code
-int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
-                                 void *__never_use_argv, void *__never_use_envp,
-                                 int *__never_use_flags)
+__attribute__((hot, no_stack_protector))
+static __always_inline bool is_su_allowed(const void **ptr_to_check)
 {
-    struct filename *filename;
+    barrier();
 
-    if (unlikely(!filename_ptr))
-        return 0;
+    if (likely(!ksu_is_allow_uid_for_current(current_uid().val)))
+        return false;
 
-    filename = *filename_ptr;
-    if (IS_ERR(filename)) {
-        return 0;
-    }
+    // first check the pointer-to-pointer
+    if (unlikely(!(volatile void *)ptr_to_check))
+        return false;
 
-    if (likely(memcmp(filename->name, su_path, sizeof(su_path))))
-        return 0;
+    // now dereference to check actual pointer
+    if (unlikely(!(volatile void *)*ptr_to_check))
+        return false;
 
-    pr_info("do_execveat_common su found\n");
-    memcpy((void *)filename->name, ksud_path, sizeof(ksud_path));
-
-    escape_with_root_profile();
-
-    return 0;
+    return true;
 }
 
-int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
-                        void *envp, int *flags)
+static int ksu_sucompat_user_common(const char __user **filename_user,
+                                    const char *syscall_name,
+                                    const bool escalate)
 {
-    return ksu_handle_execveat_sucompat(fd, filename_ptr, argv, envp,
-                                        flags);
-}
+    const char su[] = SU_PATH;
+    char path[sizeof(su)];
+    
+    if (ksu_copy_from_user_retry(path, *filename_user, sizeof(path)))
+        return 0;
 
-int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
-                         int *__unused_flags)
-{
-    char path[sizeof(su_path) + 1] = {0};
+    path[sizeof(path) - 1] = '\0';
 
-    strncpy_from_user_nofault(path, *filename_user, sizeof(path));
+    if (memcmp(path, su, sizeof(su)))
+        return 0;
 
-    if (unlikely(!memcmp(path, su_path, sizeof(su_path)))) {
-        pr_info("faccessat su->sh!\n");
+    if (escalate) {
+        pr_info("%s su found\n", syscall_name);
+        *filename_user = ksud_user_path();
+        escape_with_root_profile();
+    } else {
+        pr_info("%s su->sh!\n", syscall_name);
         *filename_user = sh_user_path();
     }
 
     return 0;
 }
 
-int ksu_handle_stat(int *dfd, struct filename **filename, int *flags) {
-    if (unlikely(IS_ERR(*filename) || (*filename)->name == NULL)) {
+// execve_handler_pre does not pass correct values for the __never_use_* arguments
+// these parameters are kept only for consistency with manually patched code
+int ksu_handle_execve_sucompat(int *fd, const char __user **filename_user,
+                               void *__never_use_argv, void *__never_use_envp,
+                               int *__never_use_flags)
+{
+    if (!is_su_allowed((const void **)filename_user))
         return 0;
-    }
+    return ksu_sucompat_user_common(filename_user, "sys_execve", true);
+}
 
-    if (likely(memcmp((*filename)->name, su_path, sizeof(su_path)))) {
+int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
+                         int *__unused_flags)
+{
+    if (!is_su_allowed((const void **)filename_user))
         return 0;
-    }
+    return ksu_sucompat_user_common(filename_user, "faccessat", false);
+}
 
-    pr_info("ksu_handle_stat: su->sh!\n");
-    memcpy((void *)((*filename)->name), sh_path, sizeof(sh_path));
-    return 0;
+int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
+{
+    if (!is_su_allowed((const void **)filename_user))
+        return 0;
+    return ksu_sucompat_user_common(filename_user, "newfstatat", false);
 }
 
 int ksu_handle_devpts(struct inode *inode)
 {
+        barrier();
         if (susfs_is_current_proc_umounted()) {
                 return 0;
         }
