@@ -6,6 +6,7 @@
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs.h>
 #include "lsm_hooks.h"
+#include "sucompat.h"
 #endif
 
 #include "allowlist.h"
@@ -62,6 +63,7 @@ int __init kernelsu_init(void)
     ksu_throne_tracker_init();
 
 #ifdef CONFIG_KSU_SUSFS
+    ksu_sucompat_init();
     susfs_init();
 #endif
 
