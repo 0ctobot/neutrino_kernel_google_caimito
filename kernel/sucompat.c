@@ -242,6 +242,10 @@ int ksu_handle_stat(int *dfd, struct filename **filename, int *flags) {
 
 int ksu_handle_devpts(struct inode *inode)
 {
+        if (susfs_is_current_proc_umounted()) {
+                return 0;
+        }
+        
         if (!current->mm) {
                 return 0;
         }
