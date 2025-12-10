@@ -17,6 +17,7 @@
 #include <linux/susfs_def.h>
 #include "kernel_compat.h"
 #include "objsec.h"
+#include "selinux/selinux.h"
 #endif
 #include "allowlist.h"
 #include "feature.h"
@@ -224,12 +225,36 @@ static int ksu_sucompat_user_common(const char __user **filename_user,
     return 0;
 }
 
+static int ksu_handle_init_domain_ksud(const char __user *filename_user)
+{
+    if (current->pid == 1 || !is_init(get_current_cred()))
+        return 0;
+    
+    char path[sizeof(ksud_path)];
+    
+    if (ksu_copy_from_user_retry(path, filename_user, sizeof(path)))
+        return 0;
+    
+    path[sizeof(path) - 1] = '\0';
+    
+    if (unlikely(strcmp(path, ksud_path) == 0)) {
+        pr_info("sys_execve: escape to root for init executing ksud: %d\n",
+                current->pid);
+        escape_to_root_for_init();
+        return 1;
+    }
+    
+    return 0;
+}
+
 // execve_handler_pre does not pass correct values for the __never_use_* arguments
 // these parameters are kept only for consistency with manually patched code
 int ksu_handle_execve_sucompat(int *fd, const char __user **filename_user,
                                void *__never_use_argv, void *__never_use_envp,
                                int *__never_use_flags)
 {
+    ksu_handle_init_domain_ksud(*filename_user);
+
     if (!is_su_allowed((const void **)filename_user))
         return 0;
     return ksu_sucompat_user_common(filename_user, "sys_execve", true);
