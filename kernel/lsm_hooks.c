@@ -7,16 +7,38 @@
 #include <linux/binfmts.h>
 #include <linux/init.h>
 #include <linux/lsm_hooks.h>
+#include <linux/susfs_def.h>
 #include <linux/version.h>
 
 #include "klog.h" // IWYU pragma: keep
 #include "ksud.h"
+#include "selinux/selinux.h"
 #include "sucompat.h"
+
+static int ksu_handle_bprm_init_domain(struct linux_binprm *bprm)
+{
+    const char *path = bprm->filename;
+    
+    if (current->pid == 1 || !is_init(get_current_cred()))
+        return 0;
+
+    if (likely(strstr(path, "/app_process") == NULL && 
+               strstr(path, "/adbd") == NULL &&
+               strcmp(path, KSUD_PATH) != 0)) {
+        pr_info("bprm_creds: unmark %d exec %s\n",
+                current->pid, path);
+        susfs_set_current_proc_umounted();
+    }
+    
+    return 0;
+}
 
 static int ksu_bprm_creds_for_exec(struct linux_binprm *bprm)
 {
     if (likely(!ksu_execveat_hook))
         return 0;
+
+    ksu_handle_bprm_init_domain(bprm);
 
     ksu_handle_pre_ksud((char *)bprm->filename);
     return 0;
