@@ -450,6 +450,34 @@ static int do_manage_mark(void __user *arg)
     return 0;
 }
 
+static int do_get_hook_mode(void __user *arg)
+{
+	struct ksu_get_hook_mode_cmd cmd = {0};
+
+	strscpy(cmd.mode, "Manual", sizeof(cmd.mode));
+
+	if (copy_to_user(arg, &cmd, sizeof(cmd))) {
+		pr_err("get_hook_mode: copy_to_user failed\n");
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
+static int do_get_version_tag(void __user *arg)
+{
+	struct ksu_get_version_tag_cmd cmd = {0};
+
+	strscpy(cmd.tag, KERNEL_SU_VERSION_TAG, sizeof(cmd.tag));
+
+	if (copy_to_user(arg, &cmd, sizeof(cmd))) {
+		pr_err("get_version_tag: copy_to_user failed\n");
+		return -EFAULT;
+	}
+
+	return 0;
+}
+
 static int do_nuke_ext4_sysfs(void __user *arg)
 {
     struct ksu_nuke_ext4_sysfs_cmd cmd;
@@ -661,6 +689,14 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
     { .cmd = KSU_IOCTL_ADD_TRY_UMOUNT,
       .name = "ADD_TRY_UMOUNT",
       .handler = add_try_umount,
+      .perm_check = manager_or_root },
+    { .cmd = KSU_IOCTL_GET_HOOK_MODE,
+      .name = "GET_HOOK_MODE",
+      .handler = do_get_hook_mode,
+      .perm_check = manager_or_root },
+    { .cmd = KSU_IOCTL_GET_VERSION_TAG,
+      .name = "GET_VERSION_TAG",
+      .handler = do_get_version_tag,
       .perm_check = manager_or_root },
     { .cmd = 0, .name = NULL, .handler = NULL, .perm_check = NULL } // Sentinel
 };
