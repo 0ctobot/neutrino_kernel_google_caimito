@@ -37,7 +37,9 @@ NEUTRINO := $(findstring -NeutrinoKernel,$(CONFIG_LOCALVERSION))
 # Hardcode KSU_VERSION for Neutrino
 ifeq ($(NEUTRINO),-NeutrinoKernel)
 KSU_VERSION=32241
+KSU_VERSION_TAG=v3.0.0-neutrino
 $(info -- KernelSU version: $(KSU_VERSION))
+$(info -- KernelSU-Next tag: $(KSU_VERSION_TAG))
 else
   # Check if this is a git repository
   # For in-tree build: check $(srctree)/$(src)/../.git
@@ -63,10 +65,12 @@ else
     # If there is no .git directory, use default version
     $(warning "KSU_GIT_VERSION not defined! It is better to make KernelSU a git repository!")
     KSU_VERSION = 16
+    KSU_VERSION_TAG=v0.0.0
   endif
 endif
 
 ccflags-y += -DKSU_VERSION=$(KSU_VERSION)
+ccflags-y += -DKSU_VERSION_TAG=\"$(KSU_VERSION_TAG)\"
 
 ifndef KOWSU_EXPECTED_SIZE
 KOWSU_EXPECTED_SIZE := 0x375
