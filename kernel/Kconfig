@@ -2,11 +2,9 @@ menu "KernelSU"
 
 config KSU
 	tristate "KernelSU function support"
-	depends on KPROBES
 	default y
 	help
 	  Enable kernel-level root privileges on Android System.
-	  Requires CONFIG_KPROBES for kernel hooking support.
 	  To compile as a module, choose M here: the
 	  module will be called kernelsu.
 
@@ -16,5 +14,51 @@ config KSU_DEBUG
 	default n
 	help
 	  Enable KernelSU debug mode.
+
+menu "KernelSU - SUSFS"
+
+config KSU_SUSFS
+	bool "KernelSU addon - SUSFS"
+	depends on KSU
+	depends on THREAD_INFO_IN_TASK
+	default y
+	help
+	  An addon root hiding service for KernelSU.
+
+config KSU_SUSFS_SUS_MOUNT
+	bool "Hide suspicious mounts"
+	depends on KSU_SUSFS
+	default y
+	help
+	  Allow hiding user-defined mount points from
+	  /proc/self/mount*, effective on all processes. Mount
+	  points from processes in KSU domain are assigned the
+	  dev name "KSU".
+      
+config KSU_SUSFS_ENABLE_LOG
+	bool "Enable SUSFS kernel logging"
+	depends on KSU_SUSFS
+	default y
+	help
+	  Allow SUSFS kernel logging, select 'n' to disable.
+
+config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+	bool "Hide KSU and SUSFS symbols from /proc/kallsyms"
+	depends on KSU_SUSFS
+	default y
+	help
+	  Automatically hide KSU and SUSFS symbols from
+	  '/proc/kallsyms', effective on all processes.
+
+config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+	bool "Spoof /proc/(bootconfig|cmdline)"
+	depends on KSU_SUSFS
+	default y
+	help
+	  Allow spoofing the output of /proc/bootconfig (GKI),
+	  or /proc/cmdline (non-GKI) with user-defined values,
+	  effective on all processes.
+
+endmenu
 
 endmenu
