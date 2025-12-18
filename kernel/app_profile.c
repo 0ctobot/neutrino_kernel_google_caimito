@@ -80,7 +80,7 @@ static void disable_seccomp(void)
 #endif
 }
 
-void escape_with_root_profile(void)
+static void escape_to_root(bool is_kthread)
 {
     struct cred *cred;
 #ifndef CONFIG_KSU_SUSFS
@@ -94,7 +94,7 @@ void escape_with_root_profile(void)
         return;
     }
 
-    if (cred->euid.val == 0) {
+    if (!is_kthread && cred->euid.val == 0) {
         pr_warn("Already root, don't escape!\n");
         abort_creds(cred);
         return;
@@ -149,4 +149,14 @@ void escape_with_root_profile(void)
 void escape_to_root_for_init(void)
 {
     setup_selinux(KERNEL_SU_CONTEXT);
+}
+
+void escape_with_root_profile(void)
+{
+	escape_to_root(false);
+}
+
+void kthread_escape(void)
+{
+	escape_to_root(true);
 }

@@ -1,5 +1,7 @@
+#include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/fs.h>
+#include <linux/kthread.h>
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -7,12 +9,14 @@
 #include <linux/version.h>
 
 #include "allowlist.h"
+#include "app_profile.h"
 #include "klog.h" // IWYU pragma: keep
 #include "manager.h"
 #include "throne_tracker.h"
 
 uid_t ksu_manager_appid = KSU_INVALID_APPID;
 
+static struct task_struct *throne_thread;
 #define SYSTEM_PACKAGES_LIST_PATH "/data/system/packages.list"
 
 struct uid_data {
@@ -104,7 +108,7 @@ struct apk_path_hash {
     struct list_head list;
 };
 
-static struct list_head apk_path_hash_list = LIST_HEAD_INIT(apk_path_hash_list);
+static struct list_head apk_path_hash_list;
 
 struct my_dir_context {
     struct dir_context ctx;
@@ -211,6 +215,7 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
     int i, stop = 0;
     struct list_head data_path_list;
     INIT_LIST_HEAD(&data_path_list);
+    INIT_LIST_HEAD(&apk_path_hash_list);
     unsigned long data_app_magic = 0;
 
     // Initialize APK cache list
@@ -238,7 +243,7 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
             struct file *file;
 
             if (!stop) {
-                file = filp_open(pos->dirpath, O_RDONLY | O_NOFOLLOW, 0);
+                file = filp_open(pos->dirpath, O_RDONLY | O_NOFOLLOW | O_DIRECTORY, 0);
                 if (IS_ERR(file)) {
                     pr_err("Failed to open directory: %s, err: %ld\n",
                            pos->dirpath, PTR_ERR(file));
@@ -300,14 +305,29 @@ static bool is_uid_exist(uid_t uid, char *package, void *data)
     return exist;
 }
 
-void track_throne(bool prune_only)
+static void throne_tracker_fn(bool prune_only)
 {
-    struct file *fp = filp_open(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
+    struct file *fp;
+    int tries = 0;
+
+    // Wait for packages.list to be stable
+    while (tries++ < 10) {
+        if (!is_lock_held(SYSTEM_PACKAGES_LIST_PATH)) {
+            fp = filp_open(SYSTEM_PACKAGES_LIST_PATH, O_RDONLY, 0);
+            if (!IS_ERR(fp))
+                break;
+        }
+        
+        pr_info("%s: waiting for %s\n", __func__, SYSTEM_PACKAGES_LIST_PATH);
+        msleep(100);
+    }
+    
     if (IS_ERR(fp)) {
         pr_err("%s: open " SYSTEM_PACKAGES_LIST_PATH " failed: %ld\n", __func__,
                PTR_ERR(fp));
         return;
-    }
+    } else
+        pr_info("%s: %s found!\n", __func__, SYSTEM_PACKAGES_LIST_PATH);
 
     struct list_head uid_list;
     INIT_LIST_HEAD(&uid_list);
@@ -388,6 +408,40 @@ out:
     list_for_each_entry_safe (np, n, &uid_list, list) {
         list_del(&np->list);
         kfree(np);
+    }
+}
+
+static int throne_tracker_thread(void *data)
+{
+    // Cast void* back to bool
+    bool prune_only = (bool)data;
+    kthread_escape();
+    pr_info("throne_tracker: pid: %d started\n", current->pid);
+    
+    throne_tracker_fn(prune_only);
+    
+    throne_thread = NULL;
+    smp_mb();
+    
+    pr_info("throne_tracker: pid: %d exit\n", current->pid);
+    return 0;
+}
+
+void track_throne(bool prune_only)
+{
+    smp_mb();
+    
+    // Single instance check - don't spawn multiple threads
+    if (throne_thread != NULL)
+        return;
+
+    // Spawn kthread (cast bool to void* - it's just 0 or 1)
+    throne_thread = kthread_run(throne_tracker_thread, (void *)prune_only, 
+                                "throne_tracker");
+    if (IS_ERR(throne_thread)) {
+        pr_err("Failed to create throne_tracker thread\n");
+        throne_thread = NULL;
+        return;
     }
 }
 
