@@ -36,7 +36,7 @@ NEUTRINO := $(findstring -NeutrinoKernel,$(CONFIG_LOCALVERSION))
 
 # Hardcode KSU_VERSION for Neutrino
 ifeq ($(NEUTRINO),-NeutrinoKernel)
-KSU_VERSION=32241
+KSU_VERSION=32857
 KSU_VERSION_TAG=v3.0.0-neutrino
 $(info -- KernelSU version: $(KSU_VERSION))
 $(info -- KernelSU-Next tag: $(KSU_VERSION_TAG))
