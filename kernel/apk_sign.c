@@ -1,3 +1,4 @@
+#include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/fs.h>
 #include <linux/gfp.h>
@@ -16,6 +17,7 @@
 
 #include "apk_sign.h"
 #include "klog.h" // IWYU pragma: keep
+#include "throne_tracker.h"
 
 struct sdesc {
     struct shash_desc shash;
@@ -181,9 +183,20 @@ static __always_inline bool check_v2_signature(char *path,
     bool v3_1_signing_exist = false;
 
     int i;
+    struct path kpath;
+    if (kern_path(path, 0, &kpath))
+        return false;
+
+    if (inode_is_locked(kpath.dentry->d_inode)) {
+        pr_info("%s: inode is locked for %s\n", __func__, path);
+        path_put(&kpath);
+        return false;
+    }
+
+    path_put(&kpath);
+
     struct file *fp = filp_open(path, O_RDONLY, 0);
     if (IS_ERR(fp)) {
-        pr_err("open %s error.\n", path);
         return false;
     }
 
@@ -308,6 +321,21 @@ module_param_cb(ksu_debug_manager_appid, &expected_size_ops,
 
 bool is_manager_apk(char *path)
 {
+    int tries = 0;
+
+    // Wait for file to become stable
+    while (tries++ < 10) {
+        if (!is_lock_held(path))
+            break;
+
+        pr_info("%s: waiting for %s\n", __func__, path);
+        msleep(100);
+    }
+
+    if (tries == 10) {
+        pr_info("%s: timeout for %s\n", __func__, path);
+        return false;
+    }
 #ifndef CONFIG_KSU_SUSFS
     return check_v2_signature(path, EXPECTED_KSU_SIZE, EXPECTED_KSU_HASH);
 #else
