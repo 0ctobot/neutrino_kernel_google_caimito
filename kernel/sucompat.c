@@ -27,6 +27,10 @@
 #include "app_profile.h"
 #include "util.h"
 
+#ifdef CONFIG_KSU_SUSFS
+extern void write_sulog(uint8_t sym);
+#endif
+
 #define SU_PATH "/system/bin/su"
 #define SH_PATH "/system/bin/sh"
 
@@ -218,7 +222,8 @@ static __always_inline bool is_su_allowed(const void **ptr_to_check)
 
 static int ksu_sucompat_user_common(const char __user **filename_user,
                                     const char *syscall_name,
-                                    const bool escalate)
+                                    const bool escalate,
+                                    const uint8_t log_symbol)
 {
     const char su[] = SU_PATH;
     char path[sizeof(su)];
@@ -230,6 +235,8 @@ static int ksu_sucompat_user_common(const char __user **filename_user,
 
     if (memcmp(path, su, sizeof(su)))
         return 0;
+
+    write_sulog(log_symbol);
 
     if (escalate) {
         pr_info("%s su found\n", syscall_name);
@@ -275,7 +282,7 @@ int ksu_handle_execve_sucompat(int *fd, const char __user **filename_user,
 
     if (!is_su_allowed((const void **)filename_user))
         return 0;
-    return ksu_sucompat_user_common(filename_user, "sys_execve", true);
+    return ksu_sucompat_user_common(filename_user, "sys_execve", true, 'x');
 }
 
 int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
@@ -283,14 +290,14 @@ int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
 {
     if (!is_su_allowed((const void **)filename_user))
         return 0;
-    return ksu_sucompat_user_common(filename_user, "faccessat", false);
+    return ksu_sucompat_user_common(filename_user, "faccessat", false, 'a');
 }
 
 int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)
 {
     if (!is_su_allowed((const void **)filename_user))
         return 0;
-    return ksu_sucompat_user_common(filename_user, "newfstatat", false);
+    return ksu_sucompat_user_common(filename_user, "newfstatat", false, 's');
 }
 
 int ksu_handle_devpts(struct inode *inode)

@@ -156,6 +156,7 @@ void ksu_supercalls_exit(void);
 #define CHANGE_MANAGER_UID 10006
 #define KSU_UMOUNT_GETSIZE 107  // Query total buffer size for mount list
 #define KSU_UMOUNT_GETLIST 108  // Retrieve mount list entries
+#define GET_SULOG_DUMP_V2 10010 // Retrieve SU escalation log (250 entries max)
 #endif
 
 #endif // __KSU_H_SUPERCALLS

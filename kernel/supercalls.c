@@ -29,6 +29,8 @@
 #include "file_wrapper.h"
 #ifndef CONFIG_KSU_SUSFS
 #include "syscall_hook_manager.h"
+#else
+#include "tiny_sulog.c"
 #endif
 
 #ifdef CONFIG_KSU_SUSFS
@@ -66,6 +68,9 @@ bool allowed_for_su(void)
 static int do_grant_root(void __user *arg)
 {
     // we already check uid above on allowed_for_su()
+#ifdef CONFIG_KSU_SUSFS
+    write_sulog('i');  // Log IOCTL escalation
+#endif
 
     pr_info("allow root for: %d\n", current_uid().val);
     escape_with_root_profile();
@@ -891,6 +896,24 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user 
         return 0;
     }
 
+#ifdef CONFIG_KSU_SUSFS
+    // Extension: Retrieve SU escalation log (root-only)
+    if (magic2 == GET_SULOG_DUMP_V2) {
+        u64 reply = (u64)*arg;
+
+        // Only root is allowed for this command
+        if (current_uid().val != 0)
+            return 0;
+
+        if (send_sulog_dump(*arg))
+            return 0;
+
+        if (copy_to_user((void __user *)*arg, &reply, sizeof(reply)))
+            return 0;
+
+        return 0;
+    }
+#endif
     return 0;
 }
 #endif
@@ -912,6 +935,8 @@ void ksu_supercalls_init(void)
     } else {
         pr_info("reboot kprobe registered successfully\n");
     }
+#else
+    sulog_init_heap();
 #endif
 }
 
