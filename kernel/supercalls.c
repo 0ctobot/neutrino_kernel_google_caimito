@@ -606,6 +606,55 @@ static int add_try_umount(void __user *arg)
         return 0;
     }
 
+#ifdef CONFIG_KSU_SUSFS
+    // Return total buffer size required for list retrieval
+    case KSU_UMOUNT_GETSIZE: {
+        if (!cmd.arg)
+            return -EFAULT;
+
+        size_t total_size = 0;
+
+        down_read(&mount_list_lock);
+        list_for_each_entry(entry, &mount_list, list) {
+            total_size += strlen(entry->umountable) + 1; // Include null terminator
+        }
+        up_read(&mount_list_lock);
+
+        pr_info("cmd_add_try_umount: total_size: %zu\n", total_size);
+
+        if (copy_to_user((size_t __user *)cmd.arg, &total_size, sizeof(total_size)))
+            return -EFAULT;
+
+        return 0;
+    }
+
+    // Copy mount list to userspace buffer via pointer walking
+    // Avoids kernel-side kmalloc and maintains API compatibility
+    // Userspace must provide pre-allocated buffer from GETSIZE result
+    case KSU_UMOUNT_GETLIST: {
+        if (!cmd.arg)
+            return -EFAULT;
+
+        void *user_buf = (void *)cmd.arg;
+
+        down_read(&mount_list_lock);
+        list_for_each_entry(entry, &mount_list, list) {
+            pr_info("cmd_add_try_umount: entry: %s\n", entry->umountable);
+
+            if (copy_to_user(user_buf, entry->umountable, strlen(entry->umountable) + 1)) {
+                up_read(&mount_list_lock);
+                return -EFAULT;
+            }
+
+            // Advance buffer pointer past null terminator
+            user_buf += strlen(entry->umountable) + 1;
+        }
+        up_read(&mount_list_lock);
+
+        return 0;
+    }
+#endif
+
     default: {
         pr_err("cmd_add_try_umount: invalid operation %u\n", cmd.mode);
         return -EINVAL;

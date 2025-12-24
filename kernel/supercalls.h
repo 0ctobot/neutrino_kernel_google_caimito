@@ -154,6 +154,8 @@ void ksu_supercalls_exit(void);
 #ifdef CONFIG_KSU_SUSFS
 // Extensions
 #define CHANGE_MANAGER_UID 10006
+#define KSU_UMOUNT_GETSIZE 107  // Query total buffer size for mount list
+#define KSU_UMOUNT_GETLIST 108  // Retrieve mount list entries
 #endif
 
 #endif // __KSU_H_SUPERCALLS
