@@ -95,7 +95,6 @@ DEFINE_DEBUGFS_ATTRIBUTE(fops_gcip_firmware_tracing_request, gcip_firmware_traci
 struct gcip_fw_tracing *gcip_firmware_tracing_create(const struct gcip_fw_tracing_args *args)
 {
 	struct gcip_fw_tracing *fw_tracing;
-	struct dentry *dentry;
 
 	if (!args->dev || !args->set_level)
 		return ERR_PTR(-EINVAL);
@@ -112,9 +111,8 @@ struct gcip_fw_tracing *gcip_firmware_tracing_create(const struct gcip_fw_tracin
 	fw_tracing->request_level = GCIP_FW_TRACING_DEFAULT_VOTE;
 	mutex_init(&fw_tracing->lock);
 
-	dentry = debugfs_create_dir("fw_tracing", args->dentry);
-	fw_tracing->dentry = dentry;
-	if (!IS_ERR(dentry)) {
+	fw_tracing->dentry = debugfs_create_dir("fw_tracing", args->dentry);
+	if (!IS_ERR(fw_tracing->dentry)) {
 		debugfs_create_file("active", 0440, fw_tracing->dentry, fw_tracing,
 				    &fops_gcip_firmware_tracing_active);
 		debugfs_create_file("request", 0660, fw_tracing->dentry, fw_tracing,

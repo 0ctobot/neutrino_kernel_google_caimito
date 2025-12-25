@@ -404,7 +404,6 @@ static int edgetpu_firmware_gsa_authenticate(struct edgetpu_dev *etdev, const st
 	void *header_vaddr;
 	dma_addr_t header_dma_addr;
 	int tpu_state;
-	size_t fw_header_size;
 	int ret = 0;
 
 	tpu_state = gsa_send_tpu_cmd(et_fw->gsa_dev, GSA_TPU_GET_STATE);
@@ -425,25 +424,24 @@ static int edgetpu_firmware_gsa_authenticate(struct edgetpu_dev *etdev, const st
 	}
 
 	/* Copy the firmware image to the carveout, skipping the header */
-	fw_header_size = gcip_common_get_fw_header_size(fw->data, EDGETPU_FW_MAGIC);
-	memcpy(image_vaddr, fw->data + fw_header_size, fw->size - fw_header_size);
+	memcpy(image_vaddr, fw->data + GCIP_FW_HEADER_SIZE, fw->size - GCIP_FW_HEADER_SIZE);
 
 	/* Allocate coherent memory for the image header */
-	header_vaddr = dma_alloc_coherent(et_fw->gsa_dev, fw_header_size, &header_dma_addr,
+	header_vaddr = dma_alloc_coherent(et_fw->gsa_dev, GCIP_FW_HEADER_SIZE, &header_dma_addr,
 					  GFP_KERNEL);
 	if (!header_vaddr) {
 		etdev_err(etdev, "Failed to allocate coherent memory for header\n");
 		return -ENOMEM;
 	}
 
-	memcpy(header_vaddr, fw->data, fw_header_size);
+	memcpy(header_vaddr, fw->data, GCIP_FW_HEADER_SIZE);
 	etdev_dbg(etdev, "Requesting GSA image load. meta = %pad payload = %pap", &header_dma_addr,
 		  &et_fw->fw_region_paddr);
 	ret = gsa_load_tpu_fw_image(et_fw->gsa_dev, header_dma_addr, et_fw->fw_region_paddr);
 	if (ret)
 		etdev_err(etdev, "GSA authentication failed: %d\n", ret);
 
-	dma_free_coherent(et_fw->gsa_dev, fw_header_size, header_vaddr, header_dma_addr);
+	dma_free_coherent(et_fw->gsa_dev, GCIP_FW_HEADER_SIZE, header_vaddr, header_dma_addr);
 	return ret;
 }
 
@@ -558,15 +556,15 @@ static int edgetpu_firmware_update_remapped_data_region(struct edgetpu_dev *etde
 	if (ret)
 		goto out_iremap_pool_destroy;
 
-	ret = edgetpu_kci_init(etdev, etdev->etkci);
+	ret = edgetpu_kci_init(etdev->mailbox_manager, etdev->etkci);
 	if (ret)
 		goto out_telemetry_exit;
 
-	ret = edgetpu_ikv_init(etdev, etdev->etikv);
+	ret = edgetpu_ikv_init(etdev->mailbox_manager, etdev->etikv);
 	if (ret)
 		goto out_kci_release;
 
-	ret = edgetpu_iif_init_mailbox(etdev, etdev->etiif);
+	ret = edgetpu_iif_init_mailbox(etdev->mailbox_manager, etdev->etiif);
 	if (ret)
 		goto out_ikv_release;
 
@@ -694,7 +692,6 @@ static int edgetpu_firmware_restart(struct edgetpu_firmware *et_fw, bool force_r
  */
 static int edgetpu_firmware_setup_image(struct edgetpu_firmware *et_fw, const struct firmware *fw)
 {
-	size_t fw_header_size;
 	int ret = 0;
 	void *image_vaddr;
 	struct edgetpu_dev *etdev = et_fw->etdev;
@@ -702,9 +699,9 @@ static int edgetpu_firmware_setup_image(struct edgetpu_firmware *et_fw, const st
 	struct gcip_image_config_parser *cfg_parser = edgetpu_firmware_get_img_cfg_parser(et_fw);
 	phys_addr_t image_start, image_end, carveout_start, carveout_end;
 
-	if (fw->size < GCIP_FW_MAX_HEADER_SIZE) {
+	if (fw->size < GCIP_FW_HEADER_SIZE) {
 		etdev_err(etdev, "Invalid firmware image size: %zu < %d\n",
-			  fw->size, GCIP_FW_MAX_HEADER_SIZE);
+			  fw->size, GCIP_FW_HEADER_SIZE);
 		return -EINVAL;
 	}
 
@@ -756,8 +753,7 @@ static int edgetpu_firmware_setup_image(struct edgetpu_firmware *et_fw, const st
 		etdev_dbg(etdev, "No GSA device available, but firmware is non-secure.");
 		etdev_dbg(etdev, "Continuing without authentication.");
 		/* Copy the firmware image to the target location, skipping the header. */
-		fw_header_size = gcip_common_get_fw_header_size(fw->data, EDGETPU_FW_MAGIC);
-		memcpy(image_vaddr, fw->data + fw_header_size, fw->size - fw_header_size);
+		memcpy(image_vaddr, fw->data + GCIP_FW_HEADER_SIZE, fw->size - GCIP_FW_HEADER_SIZE);
 	} else {
 		etdev_err(etdev,
 			  "Cannot load firmware at privilege level %d with no authentication\n",
@@ -911,7 +907,6 @@ static int edgetpu_firmware_handshake(struct edgetpu_firmware *et_fw)
 		   etdev->fw_version.major_version,
 		   etdev->fw_version.minor_version,
 		   et_fw->fw_info.fw_changelist);
-	/* Tell fw about log, trace, and optionally hwtrace buffers. */
 	ret = edgetpu_telemetry_kci(etdev);
 	if (ret)
 		etdev_warn(etdev, "telemetry KCI error: %d", ret);
@@ -1385,7 +1380,7 @@ void edgetpu_firmware_watchdog_restart(struct edgetpu_dev *etdev, bool in_powerd
 	 * groups the CLOSE_DEVICE and RELEASE_VMBOX KCIs won't be sent.
 	 */
 	edgetpu_handshake_clear_fw_state(&etdev->mailbox_manager->open_devices);
-	edgetpu_ikv_clear_active_clients(etdev->etikv);
+	edgetpu_handshake_clear_fw_state(&etdev->mailbox_manager->enabled_pasids);
 
 	if (!in_powerdown) {
 		/* Another procedure is loading the firmware, let it do the work. */

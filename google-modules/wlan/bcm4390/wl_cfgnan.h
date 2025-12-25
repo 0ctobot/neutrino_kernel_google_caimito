@@ -23,7 +23,6 @@
 
 #ifndef _wl_cfgnan_h_
 #define _wl_cfgnan_h_
-#include <nan.h>
 
 /* NAN structs versioning b/w DHD and HAL
 * define new version if any change in any of the shared structs
@@ -56,8 +55,6 @@
 #define NAN_MAX_SOCIAL_CHANNELS	3
 #define NAN_MAX_COOKIE_LEN		255u
 #define NAN_IDENTITY_KEY_LEN            16u
-#define NAN_PAIRING_TIMEOUT		7u	  /* Bootstrapping + Pairing timeout of 7 sec */
-#define NAN_PAIRING_TIMEOUT_VERIFICATION  4u	  /* Pairing timeout of 4 sec */
 
 /* Keeping RSSI threshold value to be -70dBm */
 #define NAN_DEF_RSSI_NOTIF_THRESH -70
@@ -99,8 +96,8 @@
 #define NMR2STR(a) (a)[0], (a)[1], (a)[2], (a)[3], (a)[4], (a)[5], (a)[6], (a)[7]
 #define NMRSTR "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x"
 
-#define NAN_DBG_ENTER() {WL_DBG(("Enter: %s\n", __FUNCTION__)); }
-#define NAN_DBG_EXIT() {WL_DBG(("Exit: %s\n", __FUNCTION__)); }
+#define NAN_DBG_ENTER() {WL_DBG(("Enter: %s\n", __FUNCTION__));}
+#define NAN_DBG_EXIT() {WL_DBG(("Exit: %s\n", __FUNCTION__));}
 
 /* Service Control Type length */
 #define NAN_SVC_CONTROL_TYPE_MASK	((1 << NAN_SVC_CONTROL_TYPE_LEN) - 1)
@@ -153,8 +150,7 @@
 #define MAX_NDP_SESSIONS			5u
 #define MAX_APP_INFO_LEN			255u
 #define	MAX_QUEUED_TX_FOLLOUP_MSGS		10u
-/* Updating to carry ethernet payload of 1500 bytes */
-#define	MAX_SDEA_SVC_INFO_LEN			1500u
+#define	MAX_SDEA_SVC_INFO_LEN			255u
 #define	MAX_SUBSCRIBE_ADDRESS			10u
 #define	CIPHER_SUITE_SUPPORTED			1u
 #define	MAX_SCID_LEN				0u
@@ -247,18 +243,7 @@
 #define NAN_DISC_BCN_INTERVAL_2G_DEF 128u
 #define NAN_DISC_BCN_INTERVAL_5G_DEF 176u
 #define NAN_RAND_MAC_RETRIES 10
-
-/* AWARE NMI interface name */
-#ifndef CUSTOM_NMI_IFNAME
-#define NMI_IFNAME              "aware_nmi0"
-#else
-#define NMI_IFNAME              CUSTOM_NMI_IFNAME
-#endif /* !CUSTOM_NMI_IFNAME */
-
-#define IS_NDI_IFACE(ifname) strstr(ifname, "aware_data")
-#define IS_NMI_IFACE(ifname) strstr(ifname, NMI_IFNAME)
-
-#define NAN_GEOFENCE_RTT_DEFAULT_INTVL	512u
+#define IS_NDI_IFACE(ifname) strstr(ifname, "aware")
 
 typedef uint32 nan_data_path_id;
 
@@ -309,7 +294,6 @@ typedef struct nan_svc_info {
 	uint8 tx_match_filter[MAX_MATCH_FILTER_LEN];        /* TX match filter */
 	uint8 tx_match_filter_len;
 	uint8 svc_range_status; /* For managing any svc range status flags */
-	uint8 csia_cap;		/* SVC cipher suite info attribute capablity */
 } nan_svc_info_t;
 
 /* NAN Peer DP state */
@@ -411,7 +395,7 @@ enum nan_pairing_bs_role {
 	NAN_PAIRING_BS_ROLE_RESPONDER = 1
 };
 
-#define NAN_MAX_BOOTSTRAPPING_ENTRIES	10u
+#define NAN_MAX_BOOTSTRAPPING_ENTRIES	40u
 
 #define NAN_NIRA_NONCE_LEN		8u
 #define NAN_NIRA_TAG_LEN		8u
@@ -526,8 +510,6 @@ typedef struct nan_discover_cmd_data {
 	nan_str_data_t local_nik;	/* Local NIK of device */
 	uint32	  comeback_delay;	/* Bootstrapping comaback delay */
 	uint32	  bootstrapping_id;
-	uint8	  gtk_csid;
-	uint8	  csia_cap;
 } nan_discover_cmd_data_t;
 
 typedef struct nan_datapath_cmd_data {
@@ -554,8 +536,6 @@ typedef struct nan_datapath_cmd_data {
 	uint8 duration;
 	char ndp_iface[IFNAMSIZ+1];
 	nan_str_data_t scid;        /* security context information */
-	uint8 gtk_csid;
-	uint8 csia_cap;
 } nan_datapath_cmd_data_t;
 
 typedef struct nan_pairing_bs_cmd_data {
@@ -682,9 +662,6 @@ typedef struct nan_event_data {
 	uint8	enable_pairing_cache;
 	uint8	pairing_setup_supported;
 	uint8	nan_akm;		/* Pairing AKM - SAE/PASN */
-	uint8	csia_cap;		/* Cipher sec info attribute capability */
-	uint8	gtk_required;		/* flag to let if GTK is required for a service */
-	uint8	peer_gtk_csid;		/* Peer GTK CSID */
 	uint16  pairing_id;
 	uint32  bootstrapping_id;
 	uint32  peer_bs_methods;
@@ -819,7 +796,6 @@ typedef struct {
 	int8 publish_rssi;
 	uint8 peer_cipher_suite;
 	uint8 security;
-	uint8 csia_cap;
 	nan_str_data_t svc_info;        /* service info */
 	nan_str_data_t vend_info;       /* vendor info */
 	nan_str_data_t sde_svc_info;	/* extended service information */
@@ -873,9 +849,6 @@ typedef struct nan_bootstrapping_entry
 	uint16	txs_token;	    /* Waiting for TXS of Tx-fup sent */
 	uint8	state;		    /* State of Bootstrapping exchange */
 	uint8	status;		    /* Status of Bootstrapping exchange */
-	uint8	lcl_csia;	    /* Local svc Cipher sec info attribute capability */
-	uint8	peer_csia;	    /* Peer svc Cipher sec info attribute capability */
-	uint8	setup_bip;	    /* flag to send IGTK/BIGTK KDEs in FUP post pairing */
 } nan_bootstrapping_entry_t;
 
 /* Google mobile platforms have 2 processors which can request NAN
@@ -934,7 +907,6 @@ typedef struct wl_nancfg
 	nan_bootstrapping_entry_t *nan_bs_entries;
 	uint16 bs_txs_pend_token;	  /* Bootstrapping Tx-fup is waiting for TXS with token */
 	uint8 pairing_cfm_pend_cnt;	  /* Pending cnt for pairing confirm */
-	uint8 pairing_in_prog;
 	/* nan timestamps for latency calculation */
 	uint64  rng_nan_enab_start_ts;
 	uint64  rng_nan_enabled_ts;
@@ -943,9 +915,6 @@ typedef struct wl_nancfg
 	uint64  rng_subscribe_match_ts;
 	uint64  rng_start_ts;
 	uint64  rng_end_ts;
-	struct	delayed_work nan_pairing; /* WQ for pairing event timeout handling */
-	uint32	nan_pairing_timeout;
-	uint32  pending_txs_token; /* Pending txs followup token */
 } wl_nancfg_t;
 
 #define NAN_RTT_ENABLED(cfg) (wl_cfgnan_is_enabled(cfg) && \
@@ -1028,7 +997,7 @@ int wl_cfgnan_trigger_geofencing_ranging(struct net_device *dev,
 	struct ether_addr *peer_addr);
 int wl_cfgnan_suspend_geofence_rng_session(struct net_device *ndev,
 	struct ether_addr *peer, int suspend_reason, u8 cancel_flags);
-bool wl_cfgnan_suspend_all_geofence_rng_sessions(struct net_device *ndev,
+void wl_cfgnan_suspend_all_geofence_rng_sessions(struct net_device *ndev,
 	int suspend_reason, u8 cancel_flags);
 int wl_cfgnan_terminate_directed_rtt_sessions(struct net_device *ndev, struct bcm_cfg80211 *cfg);
 void wl_cfgnan_reset_geofence_ranging(struct bcm_cfg80211 *cfg,
@@ -1045,8 +1014,6 @@ bool wl_cfgnan_check_role_concurrency(struct bcm_cfg80211 *cfg,
 bool wl_cfgnan_update_geofence_target_idx(struct bcm_cfg80211 *cfg);
 bool wl_cfgnan_ranging_is_in_prog_for_peer(struct bcm_cfg80211 *cfg,
 	struct ether_addr *peer_addr);
-int32 wl_cfgnan_handle_directed_rtt_report(struct bcm_cfg80211 *cfg,
-	nan_ranging_inst_t *rng_inst);
 #else
 static INLINE bool wl_cfgnan_ranging_allowed(struct bcm_cfg80211 *cfg) { return FALSE; }
 #endif /* RTT_SUPPORT */
@@ -1216,9 +1183,7 @@ typedef enum {
 	NAN_ATTRIBUTE_ENAB_PAIRING_SETUP                = 246,
 	NAN_ATTRIBUTE_ENAB_PAIRING_VERIFICATION         = 247,
 	NAN_ATTRIBUTE_KEY_DATA_PASSPHRASE		= 248,
-	NAN_ATTRIBUTE_GTK_CSID				= 249,
-	NAN_ATTRIBUTE_CSIA_CAPABILITIES			= 250,
-	NAN_ATTRIBUTE_MAX				= 251
+	NAN_ATTRIBUTE_MAX				= 249
 } NAN_ATTRIBUTE;
 
 enum geofence_suspend_reason {

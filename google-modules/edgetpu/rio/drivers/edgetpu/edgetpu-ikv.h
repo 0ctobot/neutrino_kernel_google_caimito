@@ -108,10 +108,6 @@ struct edgetpu_ikv {
 	/* Interface for accessing the mailbox hardware and the values in their data registers. */
 	struct edgetpu_mailbox *mbx_hardware;
 
-	/* Bit-field tracking which PASIDs have been activated with firmware for VII. */
-	u32 enabled_pasids;
-	struct mutex enabled_pasids_lock;
-
 	struct gcip_memory cmd_queue_mem;
 	struct mutex cmd_queue_lock;
 	struct gcip_memory resp_queue_mem;
@@ -135,9 +131,9 @@ struct edgetpu_ikv {
 /*
  * Initializes a VII object.
  *
- * Will find the IKV mailbox and allocate an edgetpu_mailbox and cmd/resp queues for it.
+ * Will request a mailbox from @mgr and allocate cmd/resp queues.
  */
-int edgetpu_ikv_init(struct edgetpu_dev *etdev, struct edgetpu_ikv *etikv);
+int edgetpu_ikv_init(struct edgetpu_mailbox_manager *mgr, struct edgetpu_ikv *etikv);
 
 /*
  * Re-initializes the initialized VII object.
@@ -156,33 +152,6 @@ int edgetpu_ikv_reinit(struct edgetpu_ikv *etikv);
  * released.
  */
 void edgetpu_ikv_release(struct edgetpu_dev *etdev, struct edgetpu_ikv *etikv);
-
-/*
- * Activates VII for the client with @vcid, using the page table specified by @pasid.
- *
- * Notifies firmware of the activation with the ALLOCATE_VMBOX KCI command.
- *
- * If VII is already activated for @pasid, no KCI is sent and this function returns 0.
- *
- * Returns what edgetpu_kci_open_device() returned.
- * Caller ensures device is powered on.
- */
-int edgetpu_ikv_activate_client(struct edgetpu_ikv *etikv, u32 pasid, u32 client_priv, u16 vcid,
-				bool first_open);
-
-/*
- * Deactivates VII for a client, previously activated by edgetpu_ikv_activate_client().
- *
- * Sends the RELEASE_VMBOX KCI command to firmware.
- */
-void edgetpu_ikv_deactivate_client(struct edgetpu_ikv *etikv, u32 pasid);
-
-/*
- * Clears internal state tracking which PASIDs have been activated for clients.
- *
- * This function must be called if firmware is restarted unexpectedly, causing it to lose state.
- */
-void edgetpu_ikv_clear_active_clients(struct edgetpu_ikv *etikv);
 
 /*
  * Sends a VII command

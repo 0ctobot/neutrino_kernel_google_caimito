@@ -68,7 +68,7 @@ typedef volatile struct srregs srregs_t;
 	sr_eng_##regname##__##regfield##_SHIFT
 
 #define SR_ENG_REG_ADDR(regbase, regname) \
-	((volatile uint32 *)((uintptr)(regbase) + SR_ENG_REG_OFF(regname)))
+	(volatile uint32 *)((uintptr)(regbase) + SR_ENG_REG_OFF(regname))
 
 /* For some sr_eng revs (e.g. 12) a register may have changed just its name, so to avoid invalid
  * accesses, map the register's address to the changed name.

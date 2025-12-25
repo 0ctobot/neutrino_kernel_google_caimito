@@ -229,10 +229,6 @@ struct kbase_hwcnt_csf_physical_layout {
  * @block_states:               Pointer to array of block_state values for all
  *                              blocks.
  * @to_user_block_states:       Block state buffer for client user.
- * @accum_all_blk_stt:          Block state to accumulate for all known blocks
- *                              on next sample.
- * @sampled_all_blk_stt:        Block State to accumulate for all known blocks
- *                              into the current sample.
  * @watchdog_last_seen_insert_idx: The insert index which watchdog has last
  *                                 seen, to check any new firmware automatic
  *                                 samples generated during the watchdog
@@ -279,8 +275,6 @@ struct kbase_hwcnt_backend_csf {
 	u32 *old_sample_buf;
 	blk_stt_t *block_states;
 	blk_stt_t *to_user_block_states;
-	blk_stt_t accum_all_blk_stt;
-	blk_stt_t sampled_all_blk_stt;
 	u32 watchdog_last_seen_insert_idx;
 	struct kbase_hwcnt_backend_csf_if_ring_buf *ring_buf;
 	void *ring_buf_cpu_base;
@@ -469,8 +463,7 @@ static void kbasep_hwcnt_backend_csf_init_layout(
 }
 
 static void
-kbasep_hwcnt_backend_csf_reset_internal_buffers(struct kbase_hwcnt_backend_csf *backend_csf,
-						bool user_bufs)
+kbasep_hwcnt_backend_csf_reset_internal_buffers(struct kbase_hwcnt_backend_csf *backend_csf)
 {
 	size_t user_buf_bytes = backend_csf->info->metadata->dump_buf_bytes;
 	size_t block_state_bytes = backend_csf->phys_layout.block_cnt *
@@ -480,10 +473,17 @@ kbasep_hwcnt_backend_csf_reset_internal_buffers(struct kbase_hwcnt_backend_csf *
 	backend_csf->accumulated = false;
 	memset(backend_csf->old_sample_buf, 0, backend_csf->info->prfcnt_info.dump_bytes);
 	memset(backend_csf->block_states, 0, block_state_bytes);
-	if (user_bufs) {
-		memset(backend_csf->to_user_buf, 0, user_buf_bytes);
-		memset(backend_csf->to_user_block_states, 0, block_state_bytes);
-	}
+}
+
+static void
+kbasep_hwcnt_backend_csf_reset_consumed_buffers(struct kbase_hwcnt_backend_csf *backend_csf)
+{
+	size_t user_buf_bytes = backend_csf->info->metadata->dump_buf_bytes;
+	size_t block_state_bytes = backend_csf->phys_layout.block_cnt *
+				   KBASE_HWCNT_BLOCK_STATE_BYTES * KBASE_HWCNT_BLOCK_STATE_STRIDE;
+
+	memset(backend_csf->to_user_buf, 0, user_buf_bytes);
+	memset(backend_csf->to_user_block_states, 0, block_state_bytes);
 }
 
 static void
@@ -520,13 +520,17 @@ kbasep_hwcnt_backend_csf_zero_all_prfcnt_en_header(struct kbase_hwcnt_backend_cs
 
 static void kbasep_hwcnt_backend_csf_update_user_sample(struct kbase_hwcnt_backend_csf *backend_csf)
 {
-	size_t user_buf_bytes = backend_csf->info->metadata->dump_buf_bytes;
-	size_t block_state_bytes = backend_csf->phys_layout.block_cnt *
-				   KBASE_HWCNT_BLOCK_STATE_BYTES * KBASE_HWCNT_BLOCK_STATE_STRIDE;
+	const size_t user_buf_bytes = backend_csf->info->metadata->dump_buf_bytes;
+	const size_t block_cnt = backend_csf->phys_layout.block_cnt;
+	const size_t block_state_bytes =
+		block_cnt * KBASE_HWCNT_BLOCK_STATE_BYTES * KBASE_HWCNT_BLOCK_STATE_STRIDE;
+	size_t i;
 
 	/* Copy the data into the sample and wait for the user to get it. */
 	memcpy(backend_csf->to_user_buf, backend_csf->accum_buf, user_buf_bytes);
-	memcpy(backend_csf->to_user_block_states, backend_csf->block_states, block_state_bytes);
+	for (i = 0; i < block_cnt; i++)
+		kbase_hwcnt_block_state_append(&backend_csf->to_user_block_states[i],
+					       backend_csf->block_states[i]);
 
 	/* After copied data into user sample, clear the accumulator values to
 	 * prepare for the next accumulator, such as the next request or
@@ -1096,7 +1100,7 @@ kbasep_hwcnt_backend_csf_get_physical_enable(struct kbase_hwcnt_backend_csf *bac
 					     struct kbase_hwcnt_backend_csf_if_enable *enable)
 {
 	enum kbase_hwcnt_physical_set phys_counter_set;
-	struct kbase_hwcnt_physical_enable_map phys_enable_map;
+	struct kbase_hwcnt_physical_enable_map phys_enable_map = { 0 };
 
 	kbase_hwcnt_gpu_enable_map_to_physical(&phys_enable_map, enable_map);
 
@@ -1116,6 +1120,16 @@ kbasep_hwcnt_backend_csf_get_physical_enable(struct kbase_hwcnt_backend_csf *bac
 	enable->csg_bm = phys_enable_map.csg_bm;
 	enable->counter_set = phys_counter_set;
 	enable->clk_enable_map = enable_map->clk_enable_map;
+}
+
+static void
+kbasep_hwcnt_backend_csf_append_block_states(struct kbase_hwcnt_backend_csf *backend_csf,
+					     blk_stt_t block_state)
+{
+	size_t i;
+
+	for (i = 0; i < backend_csf->phys_layout.block_cnt; i++)
+		kbase_hwcnt_block_state_append(&backend_csf->to_user_block_states[i], block_state);
 }
 
 /* CSF backend implementation of kbase_hwcnt_backend_dump_enable_nolock_fn */
@@ -1142,7 +1156,8 @@ kbasep_hwcnt_backend_csf_dump_enable_nolock(struct kbase_hwcnt_backend *backend,
 	 * cases where the caller requested such information. This is to handle when a
 	 * dump_enable() happens in between dump_wait() and dump_get().
 	 */
-	kbase_hwcnt_block_state_append(&backend_csf->accum_all_blk_stt, KBASE_HWCNT_STATE_OFF);
+	kbasep_hwcnt_backend_csf_append_block_states(backend_csf, KBASE_HWCNT_STATE_OFF);
+
 	kbasep_hwcnt_backend_csf_get_physical_enable(backend_csf, enable_map, &enable);
 
 	/* enable_state should be DISABLED before we transfer it to enabled */
@@ -1310,7 +1325,7 @@ static void kbasep_hwcnt_backend_csf_dump_disable(struct kbase_hwcnt_backend *ba
 	 * Update the block state information in the block state accumulator to show this, so that
 	 * in the next dump blocks will have been seen as powered off for some of the time.
 	 */
-	kbase_hwcnt_block_state_append(&backend_csf->accum_all_blk_stt, KBASE_HWCNT_STATE_OFF);
+	kbasep_hwcnt_backend_csf_append_block_states(backend_csf, KBASE_HWCNT_STATE_OFF);
 
 	if (dump_buffer) {
 		/* In some use-cases, the caller will need the information whilst the counters are
@@ -1322,25 +1337,21 @@ static void kbasep_hwcnt_backend_csf_dump_disable(struct kbase_hwcnt_backend *ba
 		 * real dump_get() had happened), then transfer ownership of that to the caller
 		 * (i.e. erasing our copy of it).
 		 */
-		kbase_hwcnt_block_state_accumulate(&backend_csf->sampled_all_blk_stt,
-						   &backend_csf->accum_all_blk_stt);
-		kbase_hwcnt_dump_buffer_block_state_update(dump_buffer, enable_map,
-							   backend_csf->sampled_all_blk_stt);
+		kbase_hwcnt_dump_buffer_append_block_states(dump_buffer, enable_map,
+							    backend_csf->to_user_block_states);
+
 		/* Now the block state has been passed out into the caller's own accumulation
 		 * buffer, clear our own accumulated and sampled block state - ownership has been
 		 * transferred.
 		 */
-		kbase_hwcnt_block_state_set(&backend_csf->sampled_all_blk_stt,
-					    KBASE_HWCNT_STATE_UNKNOWN);
-		kbase_hwcnt_block_state_set(&backend_csf->accum_all_blk_stt,
-					    KBASE_HWCNT_STATE_UNKNOWN);
+		kbasep_hwcnt_backend_csf_reset_consumed_buffers(backend_csf);
 	}
 
 	/* Reset accumulator, old_sample_buf and block_states to all-0 to prepare for next enable.
 	 * Reset user buffers if ownership is transferred to the caller (i.e. dump_buffer
 	 * is provided).
 	 */
-	kbasep_hwcnt_backend_csf_reset_internal_buffers(backend_csf, dump_buffer);
+	kbasep_hwcnt_backend_csf_reset_internal_buffers(backend_csf);
 }
 
 /* CSF backend implementation of kbase_hwcnt_backend_dump_request_fn */
@@ -1367,8 +1378,8 @@ static int kbasep_hwcnt_backend_csf_dump_request(struct kbase_hwcnt_backend *bac
 		/* There is a possibility that the transition to enabled state will remain
 		 * during multiple dumps, hence append the OFF state.
 		 */
-		kbase_hwcnt_block_state_append(&backend_csf->accum_all_blk_stt,
-					       KBASE_HWCNT_STATE_OFF);
+		kbasep_hwcnt_backend_csf_append_block_states(backend_csf, KBASE_HWCNT_STATE_OFF);
+
 		backend_csf->user_requested = true;
 		backend_csf->info->csf_if->unlock(backend_csf->info->csf_if->ctx, flags);
 		return 0;
@@ -1479,16 +1490,6 @@ static int kbasep_hwcnt_backend_csf_dump_wait(struct kbase_hwcnt_backend *backen
 
 	backend_csf->info->csf_if->unlock(backend_csf->info->csf_if->ctx, flags);
 
-	/* Now that we've completed a sample, also sample+clear the accumulated block state.
-	 *
-	 * This is to ensure that a dump_enable() that happens in between dump_wait() and
-	 * dump_get() is reported on the _next_ dump, not the _current_ dump. That is, the block
-	 * state is reported at the actual time that counters are being sampled.
-	 */
-	kbase_hwcnt_block_state_accumulate(&backend_csf->sampled_all_blk_stt,
-					   &backend_csf->accum_all_blk_stt);
-	kbase_hwcnt_block_state_set(&backend_csf->accum_all_blk_stt, KBASE_HWCNT_STATE_UNKNOWN);
-
 	return errcode;
 }
 
@@ -1547,22 +1548,11 @@ static int kbasep_hwcnt_backend_csf_dump_get(struct kbase_hwcnt_backend *backend
 				       backend_csf->num_l2_slices,
 				       backend_csf->powered_shader_core_mask, accumulate);
 
-	/* If no error occurred (zero ret value), then update block state for all blocks in the
-	 * accumulation with the current sample's block state.
-	 */
-	if (!ret) {
-		*dump_time_ns = backend_csf->dump_time_ns;
-		kbase_hwcnt_dump_buffer_block_state_update(dst, dst_enable_map,
-							   backend_csf->sampled_all_blk_stt);
-		kbase_hwcnt_block_state_set(&backend_csf->sampled_all_blk_stt,
-					    KBASE_HWCNT_STATE_UNKNOWN);
-	}
+	if (ret)
+		return ret;
 
-	/* Clear consumed user buffers. */
-	memset(backend_csf->to_user_buf, 0, backend_csf->info->metadata->dump_buf_bytes);
-	memset(backend_csf->to_user_block_states, 0,
-	       backend_csf->phys_layout.block_cnt * KBASE_HWCNT_BLOCK_STATE_BYTES *
-		       KBASE_HWCNT_BLOCK_STATE_STRIDE);
+	*dump_time_ns = backend_csf->dump_time_ns;
+	kbasep_hwcnt_backend_csf_reset_consumed_buffers(backend_csf);
 
 	return ret;
 }
@@ -1687,8 +1677,6 @@ static int kbasep_hwcnt_backend_csf_create(struct kbase_hwcnt_backend_csf_info *
 	complete_all(&backend_csf->dump_completed);
 	backend_csf->user_requested = false;
 	backend_csf->watchdog_last_seen_insert_idx = 0;
-	kbase_hwcnt_block_state_set(&backend_csf->accum_all_blk_stt, KBASE_HWCNT_STATE_UNKNOWN);
-	kbase_hwcnt_block_state_set(&backend_csf->sampled_all_blk_stt, KBASE_HWCNT_STATE_UNKNOWN);
 
 	*out_backend = backend_csf;
 	return 0;

@@ -1778,10 +1778,8 @@ uint wf_mcs_to_rate(uint mcs, uint nss, uint bw, int sgi);
 uint wf_he_mcs_to_rate(uint mcs, uint nss, uint bw, uint gi, bool dcm);
 uint wf_eht_mcs_to_rate(uint mcs, uint nss, uint bw, uint gi);
 
-#define wf_mcs_to_Ndbps wf_mcs_to_ndbps
-uint wf_mcs_to_ndbps(uint mcs, uint nss, uint bw);
-#define wf_he_mcs_to_Ndbps wf_he_mcs_to_ndbps
-uint wf_he_mcs_to_ndbps(uint mcs, uint nss, uint bw, bool dcm);
+uint wf_mcs_to_Ndbps(uint mcs, uint nss, uint bw);
+uint wf_he_mcs_to_Ndbps(uint mcs, uint nss, uint bw, bool dcm);
 uint32 wf_he_mcs_ru_to_ndbps(uint8 mcs, uint8 nss, bool dcm, uint8 ru_index);
 uint wf_eht_mcs_to_ndbps(uint mcs, uint nss, uint bw);
 uint wf_eht_ru_to_ndbps(uint mcs, uint nss, uint8 ru_idx);

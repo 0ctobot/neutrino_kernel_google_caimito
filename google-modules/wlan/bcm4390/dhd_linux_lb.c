@@ -24,9 +24,8 @@
 
 #include <dhd_linux_priv.h>
 #include <dhd_plat.h>
-#include <dhd_proto.h>
 
-extern dhd_pub_t *g_dhd_pub;
+extern dhd_pub_t* g_dhd_pub;
 
 #if defined(DHD_LB)
 
@@ -35,20 +34,11 @@ extern dhd_pub_t *g_dhd_pub;
 #define DHD_NAPI_LATENCY_SIZE (sizeof(uint64) * DHD_NUM_NAPI_LATENCY_ROWS)
 #endif /* DHD_LB_STATS */
 
-#if defined(DHD_LB_RXPOST)
-static int dhd_lb_rxpost_thread(void *data);
-#endif /* DHD_LB_RXPOST */
-
 void
 dhd_lb_set_default_cpus(dhd_info_t *dhd)
 {
 	/* Default CPU allocation for the jobs */
-#if defined(DHD_LB_RXPOST)
-	atomic_set(&dhd->rx_napi_cpu, 3);
-	atomic_set(&dhd->rxpost_cpu, 1);
-#else
 	atomic_set(&dhd->rx_napi_cpu, 1);
-#endif /* DHD_LB_RXPOST */
 	atomic_set(&dhd->tx_cpu, 2);
 	atomic_set(&dhd->net_tx_cpu, 0);
 	atomic_set(&dhd->dpc_cpu, 0);
@@ -207,9 +197,6 @@ void dhd_select_cpu_candidacy(dhd_info_t *dhd)
 	uint32 net_tx_cpu = atomic_read(&dhd->net_tx_cpu);
 	bool use_big_core = dhd_plat_pcie_enable_big_core();
 
-#if defined(DHD_LB_CANDIDACY_OVERRIDE)
-	return;
-#endif /* DHD_LB_CANDIDACY_OVERRIDE */
 	cpumask_clear(dhd->cpumask_set8_new);
 	cpumask_clear(dhd->cpumask_set4_new);
 	cpumask_clear(dhd->cpumask_set0_new);
@@ -384,22 +371,23 @@ dhd_cpu_callback(struct notifier_block *nfb, unsigned long action, void *hcpu)
 	}
 
 	/* Do we need other action types ? */
-	switch (action) {
-	case CPU_ONLINE:
-	case CPU_ONLINE_FROZEN:
-		DHD_LB_STATS_INCR(dhd->cpu_online_cnt[cpu]);
-		cpumask_set_cpu(cpu, dhd->cpumask_curr_avail);
-		dhd_select_cpu_candidacy(dhd);
-		break;
+	switch (action)
+	{
+		case CPU_ONLINE:
+		case CPU_ONLINE_FROZEN:
+			DHD_LB_STATS_INCR(dhd->cpu_online_cnt[cpu]);
+			cpumask_set_cpu(cpu, dhd->cpumask_curr_avail);
+			dhd_select_cpu_candidacy(dhd);
+			break;
 
-	case CPU_DOWN_PREPARE:
-	case CPU_DOWN_PREPARE_FROZEN:
-		DHD_LB_STATS_INCR(dhd->cpu_offline_cnt[cpu]);
-		cpumask_clear_cpu(cpu, dhd->cpumask_curr_avail);
-		dhd_select_cpu_candidacy(dhd);
-		break;
-	default:
-		break;
+		case CPU_DOWN_PREPARE:
+		case CPU_DOWN_PREPARE_FROZEN:
+			DHD_LB_STATS_INCR(dhd->cpu_offline_cnt[cpu]);
+			cpumask_clear_cpu(cpu, dhd->cpumask_curr_avail);
+			dhd_select_cpu_candidacy(dhd);
+			break;
+		default:
+			break;
 	}
 
 	return NOTIFY_OK;
@@ -800,7 +788,7 @@ uint64 dhd_lb_mem_usage(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf)
 		skb_queue_len(&dhd->rx_emerge_queue), skb_queue_len(&dhd->rx_pend_queue),
 		skb_queue_len(&dhd->rx_napi_queue), skb_queue_len(&dhd->rx_process_queue));
 	bcm_bprintf(strbuf, "DHD rx-path memory_usage: %llubytes %lluKB \n",
-		rx_path_memory_usage, (rx_path_memory_usage / 1024));
+		rx_path_memory_usage, (rx_path_memory_usage/ 1024));
 	return rx_path_memory_usage;
 }
 #endif /* DHD_MEM_STATS */
@@ -875,57 +863,23 @@ void dhd_lb_stats_update_napi_latency(uint64 *bin, uint32 latency)
 	bin_power = next_larger_power2(latency);
 
 	switch (bin_power) {
-	case   1:
-		p = bin + 0;
-		break;
-	case   2:
-		p = bin + 1;
-		break;
-	case   4:
-		p = bin + 2;
-		break;
-	case   8:
-		p = bin + 3;
-		break;
-	case  16:
-		p = bin + 4;
-		break;
-	case  32:
-		p = bin + 5;
-		break;
-	case  64:
-		p = bin + 6;
-		break;
-	case 128:
-		p = bin + 7;
-		break;
-	case 256:
-		p = bin + 8;
-		break;
-	case 512:
-		p = bin + 9;
-		break;
-	case 1024:
-		p = bin + 10;
-		break;
-	case 2048:
-		p = bin + 11;
-		break;
-	case 4096:
-		p = bin + 12;
-		break;
-	case 8192:
-		p = bin + 13;
-		break;
-	case 16384:
-		p = bin + 14;
-		break;
-	case 32768:
-		p = bin + 15;
-		break;
-	default:
-		p = bin + 16;
-		break;
+		case   1: p = bin + 0; break;
+		case   2: p = bin + 1; break;
+		case   4: p = bin + 2; break;
+		case   8: p = bin + 3; break;
+		case  16: p = bin + 4; break;
+		case  32: p = bin + 5; break;
+		case  64: p = bin + 6; break;
+		case 128: p = bin + 7; break;
+		case 256: p = bin + 8; break;
+		case 512: p = bin + 9; break;
+		case 1024: p = bin + 10; break;
+		case 2048: p = bin + 11; break;
+		case 4096: p = bin + 12; break;
+		case 8192: p = bin + 13; break;
+		case 16384: p = bin + 14; break;
+		case 32768: p = bin + 15; break;
+		default : p = bin + 16; break;
 	}
 	ASSERT((p - bin) < DHD_NUM_NAPI_LATENCY_ROWS);
 	*p = *p + 1;
@@ -940,33 +894,15 @@ void dhd_lb_stats_update_histo(uint32 **bin, uint32 count, uint32 cpu)
 	bin_power = next_larger_power2(count);
 
 	switch (bin_power) {
-	case   1:
-		p = bin[0] + cpu;
-		break;
-	case   2:
-		p = bin[1] + cpu;
-		break;
-	case   4:
-		p = bin[2] + cpu;
-		break;
-	case   8:
-		p = bin[3] + cpu;
-		break;
-	case  16:
-		p = bin[4] + cpu;
-		break;
-	case  32:
-		p = bin[5] + cpu;
-		break;
-	case  64:
-		p = bin[6] + cpu;
-		break;
-	case 128:
-		p = bin[7] + cpu;
-		break;
-	default:
-		p = bin[8] + cpu;
-		break;
+		case   1: p = bin[0] + cpu; break;
+		case   2: p = bin[1] + cpu; break;
+		case   4: p = bin[2] + cpu; break;
+		case   8: p = bin[3] + cpu; break;
+		case  16: p = bin[4] + cpu; break;
+		case  32: p = bin[5] + cpu; break;
+		case  64: p = bin[6] + cpu; break;
+		case 128: p = bin[7] + cpu; break;
+		default : p = bin[8] + cpu; break;
 	}
 
 	*p = *p + 1;
@@ -1027,7 +963,7 @@ void dhd_lb_stats_rxc_percpu_cnt_incr(dhd_pub_t *dhdp)
  * CPU and schedules a tasklet.
  * @tasklet: opaque pointer to the tasklet
  */
-void
+INLINE void
 dhd_tasklet_schedule(void *tasklet)
 {
 	tasklet_schedule((struct tasklet_struct *)tasklet);
@@ -1043,20 +979,20 @@ dhd_tasklet_schedule(void *tasklet)
  * will be invoked to schedule the specified work on the requested CPU.
  */
 
-void
+INLINE void
 dhd_work_schedule_on(struct work_struct *work, int on_cpu)
 {
 	schedule_work_on(on_cpu, work);
 }
 
-void
+INLINE void
 dhd_delayed_work_schedule_on(struct delayed_work *dwork, int on_cpu, ulong delay)
 {
 	schedule_delayed_work_on(on_cpu, dwork, delay);
 }
 
 #if defined(DHD_LB_TXP)
-void dhd_tx_dispatcher_work(struct work_struct *work)
+void dhd_tx_dispatcher_work(struct work_struct * work)
 {
 	struct dhd_info *dhd;
 
@@ -1147,7 +1083,7 @@ dhd_napi_poll(struct napi_struct *napi, int budget)
 	int ifid;
 	const int pkt_count = 1;
 	const int chan = 0;
-	struct sk_buff *skb;
+	struct sk_buff * skb;
 	unsigned long flags;
 	struct dhd_info *dhd;
 	int processed = 0;
@@ -1323,7 +1259,7 @@ dhd_napi_schedule(void *info)
  * we are running from tasklet context. Since dhd_rx_napi_dispatcher_work can
  * run from Work Queue context we have to call these functions
  */
-void dhd_rx_napi_dispatcher_work(struct work_struct *work)
+void dhd_rx_napi_dispatcher_work(struct work_struct * work)
 {
 	struct dhd_info *dhd;
 	GCC_DIAGNOSTIC_PUSH_SUPPRESS_CAST();
@@ -1363,20 +1299,11 @@ dhd_lb_rx_napi_dispatch(dhd_pub_t *dhdp)
 	DHD_RX_NAPI_QUEUE_UNLOCK(&dhd->rx_napi_queue.lock, flags);
 
 	/* If sysfs lb_rxp_active is not set, schedule on current cpu */
-	if (!atomic_read(&dhd->lb_rxp_active)) {
+	if (!atomic_read(&dhd->lb_rxp_active))
+	{
 		dhd_napi_schedule(dhd);
 		return;
 	}
-
-#ifdef DHD_SCHED_NAPI_DIRECTLY_LOW_TPUT
-	/* Based on customer request, for lower TPUTs
-	 * schedule napi directly on the same core.
-	 */
-	if (!dhd_plat_pcie_enable_big_core()) {
-		dhd_napi_schedule(dhd);
-		return;
-	}
-#endif /* DHD_SCHED_NAPI_DIRECTLY_LOW_TPUT */
 
 	/*
 	 * Get cpu will disable pre-ermption and will not allow any cpu to go offline
@@ -1591,67 +1518,6 @@ dhd_lb_tx_handler(unsigned long data)
 
 #endif /* DHD_LB_TXP */
 
-#if defined(DHD_LB_RXPOST)
-void
-dhd_lb_rxpost_init(dhd_pub_t *dhdp)
-{
-	dhd_info_t *dhd = dhdp->info;
-	uint32 rxpost_cpu = atomic_read(&dhd->rxpost_cpu);
-	PROC_START_ON(dhd_lb_rxpost_thread, dhd, &dhd->lb_rxpost_thread, 0,
-		"dhd_lb_rxpost_thread", rxpost_cpu);
-}
-
-void
-dhd_lb_rxpost_deinit(dhd_pub_t *dhdp)
-{
-	dhd_info_t *dhd = dhdp->info;
-	tsk_ctl_t *tsk = &dhd->lb_rxpost_thread;
-	if (tsk->parent && tsk->thr_pid >= 0) {
-		PROC_STOP_USING_BINARY_SEMA(tsk);
-	} else {
-		DHD_ERROR(("%s: lb_rxpost_thread(%ld) not inited\n",
-			__FUNCTION__, tsk->thr_pid));
-	}
-}
-
-void
-dhd_lb_rxpost_dispatch(dhd_pub_t *dhdp)
-{
-	dhd_info_t *dhd = dhdp->info;
-	binary_sema_up(&dhd->lb_rxpost_thread);
-}
-
-/* Rxpost Work */
-static int
-dhd_lb_rxpost_thread(void *data)
-{
-	tsk_ctl_t *tsk = (tsk_ctl_t *)data;
-	dhd_info_t *dhd = (dhd_info_t *)tsk->parent;
-
-	while (TRUE) {
-		if (!binary_sema_down(tsk)) {
-			SMP_RD_BARRIER_DEPENDS();
-			/* Check terminated before processing the items */
-			if (tsk->terminated) {
-				DHD_ERROR(("%s: task terminated\n", __FUNCTION__));
-				goto exit;
-			}
-			OSL_DISABLE_PREEMPTION(dhd->pub.osh);
-			dhd_msgbuf_rxbuf_post(&dhd->pub, FALSE); /* alloc pkt ids */
-			OSL_ENABLE_PREEMPTION(dhd->pub.osh);
-
-		} else {
-			DHD_ERROR_RLMT(("%s: unexpected break\n", __FUNCTION__));
-			break;
-		}
-	}
-exit:
-	DHD_TRACE(("%s: EXITED...\n", __FUNCTION__));
-	KTHREAD_COMPLETE_AND_EXIT(&tsk->completed, 0);
-
-}
-#endif /* DHD_LB_RXPOST */
-
 #endif /* DHD_LB */
 
 #if defined(SET_PCIE_IRQ_CPU_CORE) || \
@@ -1738,24 +1604,24 @@ dhd_set_irq_cpucore(dhd_pub_t *dhdp, int affinity_cmd)
 		PCIe interrupt scheduled on CPU core 0
 	*/
 	switch (affinity_cmd) {
-	case DHD_AFFINITY_OFF:
+		case DHD_AFFINITY_OFF:
 #if defined(DHD_LB) && defined(DHD_LB_HOST_CTRL)
-		dhd_irq_set_affinity(dhdp, dhdp->info->cpumask_set0);
+			dhd_irq_set_affinity(dhdp, dhdp->info->cpumask_set0);
 #endif /* DHD_LB && DHD_LB_HOST_CTRL */
-		break;
-	case DHD_AFFINITY_TPUT_150MBPS:
-		dhd_irq_set_affinity(dhdp, dhdp->info->cpumask_set4);
-		break;
-	case DHD_AFFINITY_TPUT_300MBPS:
+			break;
+		case DHD_AFFINITY_TPUT_150MBPS:
+			dhd_irq_set_affinity(dhdp, dhdp->info->cpumask_set4);
+			break;
+		case DHD_AFFINITY_TPUT_300MBPS:
 #ifdef CONFIG_ARCH_EXYNOS
-		dhd_irq_set_affinity(dhdp, cpumask_of(PCIE_IRQ_CPU_CORE));
+			dhd_irq_set_affinity(dhdp, cpumask_of(PCIE_IRQ_CPU_CORE));
 #else
-		dhd_irq_set_affinity(dhdp, dhdp->info->cpumask_set4);
+			dhd_irq_set_affinity(dhdp, dhdp->info->cpumask_set4);
 #endif /* CONFIG_ARCH_EXYNOS */
-		break;
-	default:
-		DHD_ERROR(("%s, Unknown PCIe affinity cmd=0x%x\n",
-			__FUNCTION__, affinity_cmd));
+			break;
+		default:
+			DHD_ERROR(("%s, Unknown PCIe affinity cmd=0x%x\n",
+				__FUNCTION__, affinity_cmd));
 	}
 }
 #endif /* SET_PCIE_IRQ_CPU_CORE */

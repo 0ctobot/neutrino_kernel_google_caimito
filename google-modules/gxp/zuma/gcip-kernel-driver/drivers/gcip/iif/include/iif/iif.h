@@ -156,21 +156,9 @@ struct iif_fence_remaining_signalers_ioctl {
 
 /*
  * Check whether there are remaining signalers to be submitted to fences.
- *
- * This ioctl can be utilized if a runtime wants to submit waiters to @fences
- * after all signalers have been submitted to them. It is optional to keep the
- * order between them, but it might be useful if the runtime wants to prevent
- * any possible deadlocks such as:
- *
- * 1. Circular dependency between commands.
- *    E.g., Fence 1 -> Command A -> Fence 0
- *          Fence 0 -> Command B -> Fence 1
- *
- * 2. Waiter commands dominate credits and signaler commands cannot be submitted
- *    so that fences will be never signaled.
- *
- * If the runtime decides to keep the order, it will listen to the eventfd to
- * wait for all signalers to be submitted to @fences and then submit waiters.
+ * If all signalers have been submitted, the runtime is expected to send waiter
+ * commands right away. Otherwise, it will listen the eventfd to wait signaler
+ * submission to be finished.
  */
 #define IIF_FENCE_REMAINING_SIGNALERS \
 	_IOWR(IIF_IOCTL_BASE, 1, struct iif_fence_remaining_signalers_ioctl)

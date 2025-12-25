@@ -29,8 +29,8 @@
 #include <typedefs.h>
 
 #define ADDR_64(x)			(x.addr)
-#define HIGH_ADDR_32(sh_addr)		((sh_addr).high_addr)
-#define LOW_ADDR_32(sh_addr)		((sh_addr).low_addr)
+#define HIGH_ADDR_32(x)     ((uint32) (((sh_addr_t) x).high_addr))
+#define LOW_ADDR_32(x)      ((uint32) (((sh_addr_t) x).low_addr))
 
 typedef struct {
 	uint32 low_addr;
@@ -160,13 +160,12 @@ typedef struct {
 #define PCIE_SHARED2_LPM_SUPPORT	0x08000000u	/* LPM mode support */
 #define PCIE_SHARED2_METADATA_RING	0x10000000u	/* Metadata Ring support */
 
-#define PCIE_SHARED2_D2H_D11_TX_STATUS	0x40000000u
-#define PCIE_SHARED2_H2D_D11_TX_STATUS	0x80000000u
+#define PCIE_SHARED2_D2H_D11_TX_STATUS	0x40000000
+#define PCIE_SHARED2_H2D_D11_TX_STATUS	0x80000000
 
-#define PCIE_SHARED3_CFG_TRAP_SUPPORT   0x00000001u /* special trap sig supported in config space */
-#define PCIE_SHARED3_TXDESC_ATTR_SUPPORT  0x00000002u /* txdesc.ext_flags supported */
-#define PCIE_SHARED3_TXDESC_ETH_HDR	0x00000004u /* host address will point to ethernet header */
-#define PCIE_SHARED3_RXBUF_CMPL_CHAIN	0x00000008u	/* Chained RxCompletion support */
+#define PCIE_SHARED3_CFG_TRAP_SUPPORT   0x00000001 /* special trap sig supported in config space */
+#define PCIE_SHARED3_TXDESC_ATTR_SUPPORT  0x00000002 /* txdesc.ext_flags supported */
+#define PCIE_SHARED3_TXDESC_ETH_HDR	0x00000004 /* host address will point to ethernet header */
 
 #define PCIE_SHARED_D2H_MAGIC		0xFEDCBA09
 #define PCIE_SHARED_H2D_MAGIC		0x12345678
@@ -475,7 +474,6 @@ typedef struct {
 #define HOSTCAP2_DURATION_SCALE_MASK            0x0000003Fu
 #define HOSTCAP2_PCIE_PTM			0x00000100u
 #define HOSTCAP2_TRAP_ON_BAD_RECOVERY		0x00000200u
-#define HOSTCAP2_RXBUF_CMPL_CHAIN		0x00000400u	/* Chained RxCompletion support */
 
 /* extended trap debug buffer allocation sizes. Note that this buffer can be used for
  * other trap related purposes also.
@@ -619,7 +617,6 @@ typedef struct {
 #define PCIE_SHARED2_DEV_TXPOST_EXT_TAG_CAP_RSVD	(1u << 0u) /* Reserved  */
 #define PCIE_SHARED2_DEV_TXPOST_EXT_TAG_CAP_CSO		(1u << 1u) /* CSO */
 #define PCIE_SHARED2_DEV_TXPOST_EXT_TAG_CAP_MESH	(1u << 2u) /* MESH */
-#define PCIE_SHARED2_DEV_TXPOST_EXT_TAG_CAP_ART		(1u << 3u) /* Active radiotap */
 
 /* Aggregated Work Item definitions */
 #define PCIE_AGGR_WI_TXPOST		(1u << 0u)

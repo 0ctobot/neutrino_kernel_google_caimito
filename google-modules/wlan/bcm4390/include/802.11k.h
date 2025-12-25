@@ -235,7 +235,6 @@ typedef struct dot11_rmrep_bcn dot11_rmrep_bcn_t;
 #define DOT11_RMREQ_BCN_REPINFO_ID	1
 #define DOT11_RMREQ_BCN_REPDET_ID	2
 #define DOT11_RMREQ_BCN_REQUEST_ID	10
-#define DOT11_RMREQ_BCN_EXT_REQ_ID	11
 #define DOT11_RMREQ_BCN_APCHREP_ID	DOT11_MNG_AP_CHREP_ID
 #define DOT11_RMREQ_BCN_WIDE_BWCS_ID	163u	/* Wide Bandwidth Channel Switch */
 #define DOT11_RMREQ_BCN_LAST_RPT_IND_REQ_ID 164
@@ -781,12 +780,11 @@ typedef struct dot11_rmreq_ftm_range dot11_rmreq_ftm_range_t;
 #define DOT11_RMREQ_FTM_RANGE_LEN 8
 
 #define DOT11_FTM_RANGE_LEN		3
-/* From IEEE Std 802.11-2020 spec section: 9.4.2.21.18 */
 BWL_PRE_PACKED_STRUCT struct dot11_ftm_range_entry {
 	uint32 start_tsf;		/* 4 lsb of tsf */
 	struct ether_addr bssid;
 	uint8 range[DOT11_FTM_RANGE_LEN];
-	uint8 max_err_exp;
+	uint8 max_err[DOT11_FTM_RANGE_LEN];
 	uint8  rsvd;
 } BWL_POST_PACKED_STRUCT;
 typedef struct dot11_ftm_range_entry dot11_ftm_range_entry_t;

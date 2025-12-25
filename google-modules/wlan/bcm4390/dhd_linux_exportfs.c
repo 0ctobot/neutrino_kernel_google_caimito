@@ -44,7 +44,7 @@
 #endif /* DHD_SSSR_DUMP */
 
 #ifdef SHOW_LOGTRACE
-extern dhd_pub_t *g_dhd_pub;
+extern dhd_pub_t* g_dhd_pub;
 static int dhd_proc_open(struct inode *inode, struct file *file);
 ssize_t dhd_ring_proc_read(struct file *file, char *buffer, size_t tt, loff_t *loff);
 #ifdef EWP_EVENTTS_LOG
@@ -140,7 +140,7 @@ dhd_ring_proc_read(struct file *file, char __user *buffer, size_t tt, loff_t *lo
 			ret = -ENOMEM;
 			goto exit;
 		}
-		if (copy_to_user(buffer, (void *)trace_buf_info->buf,
+		if (copy_to_user(buffer, (void*)trace_buf_info->buf,
 				MIN(trace_buf_info->size, tt))) {
 			ret = -EFAULT;
 			goto exit;
@@ -198,7 +198,7 @@ dhd_ring_eventts_proc_read(struct file *file, char __user *usrbuf, size_t usrsz,
 		goto fail;
 	}
 
-	ret = copy_to_user(usrbuf, (void *)tmpbuf, rlen);
+	ret = copy_to_user(usrbuf, (void*)tmpbuf, rlen);
 	if (ret) {
 		DHD_ERROR(("%s: copy_to_usr fails! rlen=%d, usrsz=%ld \n",
 			__FUNCTION__, rlen, usrsz));
@@ -243,7 +243,7 @@ dhd_buffer_proc_read(struct file *file, char __user *usrbuf, size_t usrsz, loff_
 void
 dhd_dbg_ring_proc_create(dhd_pub_t *dhdp)
 {
-	dhd_info_t *dhd = (dhd_info_t *)dhdp->info;
+	dhd_info_t *dhd = (dhd_info_t*)dhdp->info;
 
 #ifdef DEBUGABILITY
 	dhd_dbg_ring_t *dbg_verbose_ring = NULL;
@@ -308,7 +308,7 @@ dhd_dbg_ring_proc_create(dhd_pub_t *dhdp)
 void
 dhd_dbg_ring_proc_destroy(dhd_pub_t *dhdp)
 {
-	dhd_info_t *dhd = (dhd_info_t *)dhdp->info;
+	dhd_info_t *dhd = (dhd_info_t*)dhdp->info;
 #ifdef DEBUGABILITY
 	if (dhd->dhd_trace_proc) {
 		remove_proc_entry("dhd_trace", NULL);
@@ -962,15 +962,13 @@ typedef struct wl_pwrstats_sysfs {
 	uint64	l1_2_dur_us;
 	uint64	l2_cnt;
 	uint64	l2_dur_us;
-	uint64	shallow_dur_ms;
 } wl_pwrstats_sysfs_t;
 
-uint64 last_delta;
+uint64 last_delta = 0;
 wl_pwrstats_sysfs_t accumstats = {0, };
 wl_pwrstats_sysfs_t laststats = {0, };
 static const char pwrstr_cnt[] = "count:";
 static const char pwrstr_dur[] = "duration_usec:";
-static const char pwrstr_dur_ms[] = "duration_msec:";
 static const char pwrstr_ts[] = "last_entry_timestamp_usec:";
 
 ssize_t print_pwrstats_cum(char *buf)
@@ -1019,9 +1017,6 @@ ssize_t print_pwrstats_cum(char *buf)
 		accumstats.l2_cnt);
 	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_dur,
 		accumstats.l2_dur_us);
-	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "shallow_state:\n");
-	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%s 0x%0llx\n", pwrstr_dur_ms,
-		accumstats.shallow_dur_ms);
 
 	return ret;
 }
@@ -1080,7 +1075,7 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 	 */
 	if (!dhd_os_check_if_up(&dhd->pub)) {
 		if (dhd->pub.busstate == DHD_BUS_SUSPEND) {
-			static uint64 last_suspend_end_time;
+			static uint64 last_suspend_end_time = 0;
 			uint64 curr_time = 0, estimated_pm_dur = 0;
 
 			if (last_suspend_end_time <
@@ -1136,7 +1131,7 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 
 	/* Check version */
 	pwrstats = (wl_pwrstats_t *) iovar_buf;
-	if (dtoh16(pwrstats->version) > WL_PWRSTATS_VERSION_4) {
+	if (dtoh16(pwrstats->version) != WL_PWRSTATS_VERSION) {
 		DHD_PRINT(("PWRSTATS Version mismatch\n"));
 		goto done;
 	}
@@ -1145,8 +1140,8 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 	len = dtoh16(pwrstats->length) - WL_PWR_STATS_HDRLEN;
 	p_data = pwrstats->data;
 	do {
-		type = dtoh16(((uint16 *)p_data)[0]);
-		taglen = dtoh16(((uint16 *)p_data)[1]);
+		type = dtoh16(((uint16*)p_data)[0]);
+		taglen = dtoh16(((uint16*)p_data)[1]);
 
 		if ((taglen < BCM_XTLV_HDR_SIZE) || (taglen > len)) {
 			DHD_ERROR(("Bad len %d for tag %d, remaining len %d\n",
@@ -1163,13 +1158,12 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 		switch (type) {
 		case WL_PWRSTATS_TYPE_PCIE:
 		{
-			wl_pwr_pcie_stats_t *stats = (wl_pwr_pcie_stats_t *)p_data;
-			u32 pcie_stats_len = sizeof(wl_pwr_pcie_stats_t);
-			u32 pcie_stat_v3_len = sizeof(wl_pwr_pcie_stats_v3_t);
+			wl_pwr_pcie_stats_t *stats =
+				(wl_pwr_pcie_stats_t *)p_data;
 
-			if (taglen < pcie_stats_len) {
+			if (taglen < sizeof(wl_pwr_pcie_stats_t)) {
 				DHD_ERROR(("Short len for %d: %d < %d\n",
-					type, taglen, (int)pcie_stats_len));
+					type, taglen, (int)sizeof(wl_pwr_pcie_stats_t)));
 				goto done;
 			}
 
@@ -1187,11 +1181,6 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 			pwrstats_sysfs.l1_2_dur_us = dtoh32(stats->pcie.l1_2_usecs);
 			pwrstats_sysfs.l2_cnt = dtoh32(stats->pcie.l2_cnt);
 			pwrstats_sysfs.l2_dur_us = dtoh32(stats->pcie.l2_usecs);
-			if (stats->len == pcie_stat_v3_len) {
-				wl_pwr_pcie_stats_v3_t *stats_v3 =
-					(wl_pwr_pcie_stats_v3_t *)p_data;
-				pwrstats_sysfs.shallow_dur_ms = dtoh32(stats_v3->pcie.shallow_dur);
-			}
 		}
 		break;
 
@@ -1231,7 +1220,7 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 		/* Adjust length to account for padding, but don't exceed total len */
 		taglen = (ROUNDUP(taglen, 4) > len) ? len : ROUNDUP(taglen, 4);
 		len -= taglen;
-		*(uint8 **)&p_data += taglen;
+		*(uint8**)&p_data += taglen;
 	} while (len >= BCM_XTLV_HDR_SIZE);
 
 	/* [awake|pm]_last_entry_us are provided based on host timestamp.
@@ -1279,8 +1268,6 @@ show_pwrstats_path(struct dhd_info *dev, char *buf)
 			TRUE);
 	update_pwrstats_cum(&accumstats.l2_dur_us, &laststats.l2_dur_us,
 			&pwrstats_sysfs.l2_dur_us, TRUE);
-	update_pwrstats_cum(&accumstats.shallow_dur_ms, &laststats.shallow_dur_ms,
-			&pwrstats_sysfs.shallow_dur_ms, TRUE);
 
 	ret = print_pwrstats_cum(buf);
 done:
@@ -1520,7 +1507,7 @@ get_mem_val_from_file(void)
 		goto done;
 	}
 
-	p_mem_val = (char *)&mem_val;
+	p_mem_val = (char*)&mem_val;
 	p_mem_val[sizeof(uint32) - 1] = '\0';
 	mem_val = bcm_atoi(p_mem_val);
 
@@ -1581,7 +1568,7 @@ show_memdump_info(struct dhd_info *dev, char *buf)
 	}
 
 	dhdp = &dev->pub;
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%u\n", dhdp->memdump_enabled);
+	ret = scnprintf(buf, PAGE_SIZE -1, "%u\n", dhdp->memdump_enabled);
 	return ret;
 }
 
@@ -1679,7 +1666,7 @@ show_assert_info(struct dhd_info *dev, char *buf)
 		return ret;
 	}
 
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n", g_assert_type);
+	ret = scnprintf(buf, PAGE_SIZE -1, "%d\n", g_assert_type);
 	return ret;
 
 }
@@ -1711,7 +1698,7 @@ show_wifiver_info(struct dhd_info *dev, char *buf)
 {
 	ssize_t ret = 0;
 
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%s", version_info);
+	ret = scnprintf(buf, PAGE_SIZE -1, "%s", version_info);
 	return ret;
 }
 
@@ -1735,10 +1722,10 @@ show_cid_info(struct dhd_info *dev, char *buf)
 	ssize_t ret = 0;
 
 #ifdef USE_DIRECT_VID_TAG
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%x%x", cidinfostr[VENDOR_OFF], cidinfostr[MD_REV_OFF]);
+	ret = scnprintf(buf, PAGE_SIZE -1, "%x%x", cidinfostr[VENDOR_OFF], cidinfostr[MD_REV_OFF]);
 #endif /* USE_DIRECT_VID_TAG */
 #ifdef USE_CID_CHECK
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%s", cidinfostr);
+	ret = scnprintf(buf, PAGE_SIZE -1, "%s", cidinfostr);
 #endif /* USE_CID_CHECK */
 	return ret;
 }
@@ -1784,7 +1771,7 @@ show_softap_info(struct dhd_info *dev, char *buf)
 {
 	ssize_t ret = 0;
 
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%s", softapinfostr);
+	ret = scnprintf(buf, PAGE_SIZE -1, "%s", softapinfostr);
 	return ret;
 }
 
@@ -1807,7 +1794,7 @@ show_ant_info(struct dhd_info *dev, char *buf)
 {
 	ssize_t ret = 0;
 
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%lu\n", antsel);
+	ret = scnprintf(buf, PAGE_SIZE -1, "%lu\n", antsel);
 	return ret;
 }
 
@@ -1846,9 +1833,9 @@ show_pm_info(struct dhd_info *dev, char *buf)
 	ssize_t ret = 0;
 
 	if (pmmode_val == 0xFF) {
-		ret = scnprintf(buf, PAGE_SIZE - 1, "PM mode is not set\n");
+		ret = scnprintf(buf, PAGE_SIZE -1, "PM mode is not set\n");
 	} else {
-		ret = scnprintf(buf, PAGE_SIZE - 1, "%u\n", pmmode_val);
+		ret = scnprintf(buf, PAGE_SIZE -1, "%u\n", pmmode_val);
 	}
 	return ret;
 }
@@ -1884,7 +1871,7 @@ show_logtrace_info(struct dhd_info *dev, char *buf)
 {
 	ssize_t ret = 0;
 
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%lu\n", logtrace_val);
+	ret = scnprintf(buf, PAGE_SIZE -1, "%lu\n", logtrace_val);
 	return ret;
 }
 
@@ -1912,7 +1899,7 @@ static struct dhd_attr dhd_attr_logtraceinfo =
 	__ATTR(logtrace, 0660, show_logtrace_info, set_logtrace_info);
 #endif /* LOGTRACE_FROM_FILE */
 
-#ifdef USE_WFA_CERT_CONF
+#ifdef  USE_WFA_CERT_CONF
 #ifdef BCMSDIO
 uint32 bus_txglom = VALUENOTSET;
 
@@ -1924,7 +1911,7 @@ show_bustxglom(struct dhd_info *dev, char *buf)
 	if (bus_txglom == VALUENOTSET) {
 		ret = scnprintf(buf, PAGE_SIZE - 1, "%s\n", "bustxglom not set from sysfs");
 	} else {
-		ret = scnprintf(buf, PAGE_SIZE - 1, "%u\n", bus_txglom);
+		ret = scnprintf(buf, PAGE_SIZE -1, "%u\n", bus_txglom);
 	}
 	return ret;
 }
@@ -1962,9 +1949,9 @@ show_roamoff(struct dhd_info *dev, char *buf)
 	ssize_t ret = 0;
 
 	if (roam_off == VALUENOTSET) {
-		ret = scnprintf(buf, PAGE_SIZE - 1, "%s\n", "roam_off not set from sysfs");
+		ret = scnprintf(buf, PAGE_SIZE -1, "%s\n", "roam_off not set from sysfs");
 	} else {
-		ret = scnprintf(buf, PAGE_SIZE - 1, "%u\n", roam_off);
+		ret = scnprintf(buf, PAGE_SIZE -1, "%u\n", roam_off);
 	}
 	return ret;
 }
@@ -2002,9 +1989,9 @@ show_frameburst(struct dhd_info *dev, char *buf)
 	ssize_t ret = 0;
 
 	if (frameburst == VALUENOTSET) {
-		ret = scnprintf(buf, PAGE_SIZE - 1, "%s\n", "frameburst not set from sysfs");
+		ret = scnprintf(buf, PAGE_SIZE -1, "%s\n", "frameburst not set from sysfs");
 	} else {
-		ret = scnprintf(buf, PAGE_SIZE - 1, "%u\n", frameburst);
+		ret = scnprintf(buf, PAGE_SIZE -1, "%u\n", frameburst);
 	}
 	return ret;
 }
@@ -2042,9 +2029,9 @@ show_txbf(struct dhd_info *dev, char *buf)
 	ssize_t ret = 0;
 
 	if (txbf == VALUENOTSET) {
-		ret = scnprintf(buf, PAGE_SIZE - 1, "%s\n", "txbf not set from sysfs");
+		ret = scnprintf(buf, PAGE_SIZE -1, "%s\n", "txbf not set from sysfs");
 	} else {
-		ret = scnprintf(buf, PAGE_SIZE - 1, "%u\n", txbf);
+		ret = scnprintf(buf, PAGE_SIZE -1, "%u\n", txbf);
 	}
 	return ret;
 }
@@ -2082,9 +2069,9 @@ show_proptx(struct dhd_info *dev, char *buf)
 	ssize_t ret = 0;
 
 	if (proptx == VALUENOTSET) {
-		ret = scnprintf(buf, PAGE_SIZE - 1, "%s\n", "proptx not set from sysfs");
+		ret = scnprintf(buf, PAGE_SIZE -1, "%s\n", "proptx not set from sysfs");
 	} else {
-		ret = scnprintf(buf, PAGE_SIZE - 1, "%u\n", proptx);
+		ret = scnprintf(buf, PAGE_SIZE -1, "%u\n", proptx);
 	}
 	return ret;
 }
@@ -2119,7 +2106,7 @@ static struct dhd_attr dhd_attr_proptx =
 #if defined(WL_BAM)
 #define BAD_AP_MAC_ADDR_ELEMENT_NUM	6
 #define MACF_READ	"%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx"
-wl_bad_ap_mngr_t *g_bad_ap_mngr;
+wl_bad_ap_mngr_t *g_bad_ap_mngr = NULL;
 
 static ssize_t
 show_adps_bam_list(struct dhd_info *dev, char *buf)
@@ -2289,7 +2276,7 @@ set_max_rx_pkt_pool(struct dhd_info *dhd, const char *buf, size_t count)
 	return count;
 }
 
-static struct dhd_attr dhd_attr_max_rx_pkt_pool =
+static struct dhd_attr dhd_attr_max_rx_pkt_pool=
 __ATTR(dhd_max_rx_pkt_pool, 0660, show_max_rx_pkt_pool, set_max_rx_pkt_pool);
 #endif /* RX_PKT_POOL */
 
@@ -2446,46 +2433,9 @@ set_control_he_enab(struct dhd_info *dev, const char *buf, size_t count)
 	return count;
 }
 
-static struct dhd_attr dhd_attr_control_he_enab =
+static struct dhd_attr dhd_attr_control_he_enab=
 __ATTR(control_he_enab, 0660, show_control_he_enab, set_control_he_enab);
 #endif /* CUSTOM_CONTROL_HE_ENAB */
-
-#ifdef DHD_FORCE_WLREGON_CTRL
-static ssize_t
-show_force_wl_reg_on(struct dhd_info *dhd, char *buf)
-{
-	ssize_t ret = 0;
-	uint32 val;
-	if (!dhd) {
-		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
-		return ret;
-	}
-	val = dhd_plat_get_wlan_reg_on_gpio();
-	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n", val);
-	DHD_PRINT(("%s: show_force_wl_reg_on: %d\n", __FUNCTION__, val));
-	return ret;
-}
-
-static ssize_t
-set_force_wl_reg_on(struct dhd_info *dhd, const char *buf, size_t count)
-{
-	uint32 val;
-	if (!dhd) {
-		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
-		return count;
-	}
-	val = bcm_atoi(buf);
-	if (val == 0) {
-		dhd->pub.force_wl_reg_off = TRUE;
-	}
-	dhd_wifi_platform_set_power(&dhd->pub, val);
-	DHD_PRINT(("%s: ### set_force_wl_reg_on: %d ###\n", __FUNCTION__, val));
-	return count;
-}
-
-static struct dhd_attr dhd_attr_force_wl_reg_on =
-__ATTR(force_wl_reg_on, 0660, show_force_wl_reg_on, set_force_wl_reg_on);
-#endif /* DHD_FORCE_WLREGON_CTRL */
 
 #ifdef DHD_DUMP_RXPKTIDMAP
 static ssize_t
@@ -2518,6 +2468,40 @@ static struct dhd_attr dhd_attr_dump_rxpktidmap =
 __ATTR(dump_rxpktidmap, 0660, show_dump_rxpktidmap, set_dump_rxpktidmap);
 #endif /* DHD_DUMP_RXPKTIDMAP */
 
+#if defined(WLAN_ACCEL_BOOT)
+static ssize_t
+show_wl_accel_force_reg_on(struct dhd_info *dhd, char *buf)
+{
+	ssize_t ret = 0;
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return ret;
+	}
+
+	ret = scnprintf(buf, PAGE_SIZE - 1, "%d\n", dhd->wl_accel_force_reg_on);
+	return ret;
+}
+
+static ssize_t
+set_wl_accel_force_reg_on(struct dhd_info *dhd, const char *buf, size_t count)
+{
+	uint32 val;
+
+	if (!dhd) {
+		DHD_ERROR(("%s: dhd is NULL\n", __FUNCTION__));
+		return count;
+	}
+
+	val = bcm_atoi(buf);
+
+	dhd->wl_accel_force_reg_on = val ? 1 : 0;
+	DHD_PRINT(("%s: wl_accel_force_reg_on: %d\n", __FUNCTION__, dhd->wl_accel_force_reg_on));
+	return count;
+}
+
+static struct dhd_attr dhd_attr_wl_accel_force_reg_on=
+__ATTR(wl_accel_force_reg_on, 0660, show_wl_accel_force_reg_on, set_wl_accel_force_reg_on);
+#endif /* WLAN_ACCEL_BOOT */
 
 #ifdef DHD_AGGR_WI
 #define DHD_SYSFS_AGGR_WI_ENAB_FILE_MODE (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP)
@@ -2559,7 +2543,7 @@ set_aggr_wi_enab(struct dhd_info *dhd, const char *buf, size_t count)
 	return count;
 }
 
-static struct dhd_attr dhd_attr_wl_aggr_wi_enab =
+static struct dhd_attr dhd_attr_wl_aggr_wi_enab=
 __ATTR(aggr_wi_enab, DHD_SYSFS_AGGR_WI_ENAB_FILE_MODE, show_aggr_wi_enab,
 	set_aggr_wi_enab);
 #endif /* DHD_AGGR_WI */
@@ -2853,7 +2837,8 @@ set_dhd_dump_in_progress(struct dhd_info *dhd, const char *buf, size_t count)
 		DHD_INFO(("%s: Trigger dongle dump\n", __FUNCTION__));
 		dhd_set_dump_status(&dhd->pub, DUMP_IN_PROGRESS);
 		schedule_work(&dhd->dhd_dump_proc_work);
-	} else {
+	}
+	else {
 		DHD_ERROR(("%s: Invalid value %d\n", __FUNCTION__, input));
 	}
 
@@ -3021,9 +3006,9 @@ static struct attribute *default_file_attrs[] = {
 #if defined(CUSTOM_CONTROL_HE_ENAB)
 	&dhd_attr_control_he_enab.attr,
 #endif /* CUSTOM_CONTROL_HE_ENAB */
-#ifdef DHD_FORCE_WLREGON_CTRL
-	&dhd_attr_force_wl_reg_on.attr,
-#endif /* DHD_FORCE_WLREGON_CTRL */
+#if defined(WLAN_ACCEL_BOOT)
+	&dhd_attr_wl_accel_force_reg_on.attr,
+#endif /* WLAN_ACCEL_BOOT */
 #ifdef DHD_DUMP_RXPKTIDMAP
 	&dhd_attr_dump_rxpktidmap.attr,
 #endif /* DHD_DUMP_RXPKTIDMAP */
@@ -3483,7 +3468,8 @@ set_rx_cpu(struct dhd_info *dev, const char *buf, size_t count)
 	}
 
 	val = (uint32)bcm_atoi(buf);
-	if (val >= nr_cpu_ids) {
+	if (val >= nr_cpu_ids)
+	{
 		DHD_ERROR(("%s : can't set the value out of number of cpus, val = %u\n",
 			__FUNCTION__, val));
 	}
@@ -3517,7 +3503,8 @@ set_tx_cpu(struct dhd_info *dev, const char *buf, size_t count)
 	}
 
 	val = (uint32)bcm_atoi(buf);
-	if (val >= nr_cpu_ids) {
+	if (val >= nr_cpu_ids)
+	{
 		DHD_ERROR(("%s : can't set the value out of number of cpus, val = %u\n",
 			__FUNCTION__, val));
 		return count;
@@ -3637,7 +3624,8 @@ set_ctrl_cpl_post_bound(struct dhd_info *dev, const char *buf, size_t count)
 	int val;
 
 	val = (uint32)bcm_atoi(buf);
-	if (val <= 0) {
+	if (val <= 0)
+	{
 		DHD_ERROR(("%s : invalid ctrl_cpl_post_bound %u\n",
 			__FUNCTION__, val));
 		return count;
@@ -3662,7 +3650,8 @@ set_tx_post_bound(struct dhd_info *dev, const char *buf, size_t count)
 	int val;
 
 	val = (uint32)bcm_atoi(buf);
-	if (val <= 0) {
+	if (val <= 0)
+	{
 		DHD_ERROR(("%s : invalid tx_post_bound %u\n",
 			__FUNCTION__, val));
 		return count;
@@ -3688,7 +3677,8 @@ set_rx_cpl_post_bound(struct dhd_info *dev, const char *buf, size_t count)
 	int val;
 
 	val = (uint32)bcm_atoi(buf);
-	if (val <= 0) {
+	if (val <= 0)
+	{
 		DHD_ERROR(("%s : invalid rx_cpl_post_bound %u\n",
 			__FUNCTION__, val));
 		return count;
@@ -3713,7 +3703,8 @@ set_tx_cpl_bound(struct dhd_info *dev, const char *buf, size_t count)
 	int val;
 
 	val = (uint32)bcm_atoi(buf);
-	if (val <= 0) {
+	if (val <= 0)
+	{
 		DHD_ERROR(("%s : invalid tx_cpl_bound %u\n",
 			__FUNCTION__, val));
 		return count;

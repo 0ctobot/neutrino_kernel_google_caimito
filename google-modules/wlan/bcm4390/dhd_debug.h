@@ -283,7 +283,7 @@ typedef enum {
 typedef struct {
     uint16 tag;
     uint16 len; /* length of value */
-    uint8 value[];
+    uint8 value[0];
 } tlv_log;
 
 typedef struct per_packet_status_entry {
@@ -334,7 +334,7 @@ typedef struct per_packet_status_entry {
 #if defined(__linux__)
 typedef struct log_conn_event {
     uint16 event;
-    tlv_log tlvs[];
+    tlv_log tlvs[0];
 	/*
 	* separate parameter structure per event to be provided and optional data
 	* the event_data is expected to include an official android part, with some
@@ -630,6 +630,7 @@ typedef struct compat_wifi_rx_report {
 /*
  * Packet logging - internal data
  */
+
 typedef enum dhd_dbg_pkt_mon_state {
 	PKT_MON_INVALID = 0,
 	PKT_MON_ATTACHED,
@@ -637,8 +638,8 @@ typedef enum dhd_dbg_pkt_mon_state {
 	PKT_MON_STARTED,
 	PKT_MON_STOPPING,
 	PKT_MON_STOPPED,
-	PKT_MON_DETACHED
-} dhd_dbg_pkt_mon_state_t;
+	PKT_MON_DETACHED,
+	} dhd_dbg_pkt_mon_state_t;
 
 typedef struct dhd_dbg_pkt_info {
 	frame_type payload_type;
@@ -658,17 +659,20 @@ typedef struct compat_dhd_dbg_pkt_info {
 	void *pkt;
 } compat_dhd_dbg_pkt_info_t;
 
-typedef struct dhd_dbg_tx_info {
+typedef struct dhd_dbg_tx_info
+{
 	wifi_tx_packet_fate fate;
 	dhd_dbg_pkt_info_t info;
 } dhd_dbg_tx_info_t;
 
-typedef struct dhd_dbg_rx_info {
+typedef struct dhd_dbg_rx_info
+{
 	wifi_rx_packet_fate fate;
 	dhd_dbg_pkt_info_t info;
 } dhd_dbg_rx_info_t;
 
-typedef struct dhd_dbg_tx_report {
+typedef struct dhd_dbg_tx_report
+{
 	dhd_dbg_tx_info_t *tx_pkts;
 	/* Indicates how many packets queued to send over the air */
 	uint16 pkt_pos;
@@ -676,7 +680,8 @@ typedef struct dhd_dbg_tx_report {
 	uint16 status_pos;
 } dhd_dbg_tx_report_t;
 
-typedef struct dhd_dbg_rx_report {
+typedef struct dhd_dbg_rx_report
+{
 	dhd_dbg_rx_info_t *rx_pkts;
 	/* Indicates how many packets sent over the air and received txstatus */
 	uint16 pkt_pos;
@@ -696,7 +701,8 @@ typedef int (*dbg_mon_rx_pkts_t) (dhd_pub_t *dhdp, int ifidx, void *pkt, frame_t
 #define PKT_MON_IF_MAX 1u
 #endif /* DHD_PKT_MON_DUAL_STA */
 
-typedef struct dhd_dbg_pkt_mon {
+typedef struct dhd_dbg_pkt_mon
+{
 	dhd_dbg_tx_report_t *tx_report[PKT_MON_IF_MAX];
 	dhd_dbg_rx_report_t *rx_report[PKT_MON_IF_MAX];
 	dhd_dbg_pkt_mon_state_t tx_pkt_state[PKT_MON_IF_MAX];
@@ -940,7 +946,7 @@ extern int dhd_dbg_monitor_get_rx_pkts(dhd_pub_t *dhdp, int ifidx, void __user *
 extern int dhd_dbg_detach_pkt_monitor(dhd_pub_t *dhdp, int ifidx);
 extern void dhd_dbg_monitor_mgmt_str(uint8 subtype, char *buf, uint32 buflen);
 extern void dhd_dbg_monitor_eapol_str(msg_eapol_t type, char *buf, uint32 buflen);
-extern void dhd_dbg_monitor_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t *msg, void *pkt, int ifidx);
+extern void dhd_dbg_monitor_pkt(dhd_pub_t *dhdp, host_rxbuf_cmpl_t* msg, void *pkt, int ifidx);
 #endif /* DBG_PKT_MON */
 
 extern bool dhd_dbg_process_tx_status(dhd_pub_t *dhdp, int ifidx, void *pkt,

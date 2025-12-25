@@ -87,6 +87,7 @@ enum gbms_property {
 	GBMS_PROP_RESISTANCE_AVG,		/* GBMS google_resistance */
 	GBMS_PROP_BATTERY_AGE,			/* GBMS time in field */
 	GBMS_PROP_CAPACITY_FADE_RATE,		/* GBMS capacity fade rate by fullcapnom */
+	GBMS_PROP_CAPACITY_FADE_RATE_FCR,	/* GBMS capacity fade rate by fullcaprep */
 	GBMS_PROP_CHARGE_FULL_ESTIMATE,		/* GBMS google_capacity */
 	GBMS_PROP_WLC_OP_FREQ,			/* GBMS wlc frequency */
 	GBMS_PROP_WLC_VRECT,			/* GBMS wlc Vrect */

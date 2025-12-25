@@ -25,7 +25,7 @@
 #ifndef	_sdio_api_h_
 #define	_sdio_api_h_
 
-#if defined(BT_OVER_SDIO)
+#if defined (BT_OVER_SDIO)
 #include <linux/mmc/sdio_func.h>
 #endif /* defined (BT_OVER_SDIO) */
 
@@ -81,7 +81,7 @@ typedef struct sdioh_info sdioh_info_t;
 
 /* callback function, taking one arg */
 typedef void (*sdioh_cb_fn_t)(void *);
-#if defined(BT_OVER_SDIO)
+#if defined (BT_OVER_SDIO)
 extern
 void sdioh_sdmmc_card_enable_func_f3(sdioh_info_t *sd, struct sdio_func *func);
 #endif /* defined (BT_OVER_SDIO) */
@@ -122,7 +122,7 @@ extern uint sdioh_query_iofnum(sdioh_info_t *si);
 
 /* handle iovars */
 extern int sdioh_iovar_op(sdioh_info_t *si, const char *name,
-	void *params, int plen, void *arg, uint len, bool set);
+                          void *params, int plen, void *arg, uint len, bool set);
 
 /* Issue abort to the specified function and clear controller as needed */
 extern int sdioh_abort(sdioh_info_t *si, uint fnc);

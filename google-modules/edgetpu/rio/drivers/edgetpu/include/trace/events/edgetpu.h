@@ -21,7 +21,6 @@
 #include "../../../edgetpu.h"
 #include "../../../edgetpu-device-group.h"
 #include "../../../edgetpu-internal.h"
-#include "../../../gcip-kernel-driver/include/gcip/gcip-kci.h"
 
 #define EDGETPU_TRACE_SYSTEM __stringify(TRACE_SYSTEM)
 
@@ -222,97 +221,78 @@ TRACE_EVENT(edgetpu_unmap_dmabuf_end,
 
 TRACE_EVENT(edgetpu_acquire_wakelock_start,
 
-	TP_PROTO(struct edgetpu_client *client, u32 flags),
+	TP_PROTO(pid_t pid, u32 flags),
 
-	TP_ARGS(client, flags),
+	TP_ARGS(pid, flags),
 
 	TP_STRUCT__entry(
 		__field(pid_t, pid)
-		__field(pid_t, tgid)
-		__field(int, group_id)
 		__field(u32, flags)
 	),
 
 	TP_fast_assign(
-		__entry->pid = client->pid;
-		__entry->tgid = client->tgid;
-		__entry->group_id = client->group ? client->group->group_id : -1;
+		__entry->pid = pid;
 		__entry->flags = flags;
 	),
 
-	TP_printk("pid = %u, tgid = %u group = %d flags = %u", __entry->pid, __entry->tgid,
-		  __entry->group_id, __entry->flags)
+	TP_printk("pid = %d, flags = %u", __entry->pid, __entry->flags)
 );
 
 TRACE_EVENT(edgetpu_acquire_wakelock_end,
 
-	TP_PROTO(struct edgetpu_client *client, int count, int ret),
+	TP_PROTO(pid_t pid, int count, int ret),
 
-	TP_ARGS(client, count, ret),
+	TP_ARGS(pid, count, ret),
 
 	TP_STRUCT__entry(
 		__field(pid_t, pid)
-		__field(pid_t, tgid)
-		__field(int, group_id)
 		__field(int, count)
 		__field(int, ret)
 	),
 
 	TP_fast_assign(
-		__entry->pid = client->pid;
-		__entry->tgid = client->tgid;
-		__entry->group_id = client->group ? client->group->group_id : -1;
+		__entry->pid = pid;
 		__entry->count = count;
 		__entry->ret = ret;
 	),
 
-	TP_printk("pid = %d, tgid = %d group = %d req_count = %d, ret = %d",
-		  __entry->pid, __entry->tgid, __entry->group_id, __entry->count, __entry->ret)
+	TP_printk("pid = %d, req_count = %d, ret = %d", __entry->pid, __entry->count, __entry->ret)
 );
 
 TRACE_EVENT(edgetpu_release_wakelock_start,
 
-	TP_PROTO(struct edgetpu_client *client),
+	TP_PROTO(pid_t pid),
 
-	TP_ARGS(client),
+	TP_ARGS(pid),
 
 	TP_STRUCT__entry(
 		__field(pid_t, pid)
-		__field(pid_t, tgid)
-		__field(int, group_id)
 	),
 
 	TP_fast_assign(
-		__entry->pid = client->pid;
-		__entry->tgid = client->tgid;
-		__entry->group_id = client->group ? client->group->group_id : -1;
+		__entry->pid = pid;
 	),
 
-	TP_printk("pid = %d, tgid = %d group = %d", __entry->pid, __entry->tgid, __entry->group_id)
+	TP_printk("pid = %d", __entry->pid)
 );
 
 TRACE_EVENT(edgetpu_release_wakelock_end,
 
-	TP_PROTO(struct edgetpu_client *client, int count),
+	TP_PROTO(pid_t pid, int count),
 
-	TP_ARGS(client, count),
+	TP_ARGS(pid, count),
 
 	TP_STRUCT__entry(
 		__field(pid_t, pid)
-		__field(pid_t, tgid)
-		__field(int, group_id)
 		__field(int, count)
 	),
 
 	TP_fast_assign(
-		__entry->pid = client->pid;
-		__entry->tgid = client->tgid;
-		__entry->group_id = client->group ? client->group->group_id : -1;
+		__entry->pid = pid;
 		__entry->count = count;
 	),
 
-	TP_printk("pid = %d, tgid = %d group = %d, req_count = %d", __entry->pid, __entry->tgid,
-		  __entry->group_id, __entry->count)
+	TP_printk("pid = %d, req_count = %d", __entry->pid, __entry->count)
 );
 
 TRACE_EVENT(edgetpu_vii_command_start,
@@ -569,161 +549,6 @@ TRACE_EVENT(edgetpu_iif_unblocked_end,
 	),
 
 	TP_printk("fence id = %u", __entry->fence_id)
-);
-
-TRACE_EVENT(edgetpu_client_create,
-
-	TP_PROTO(struct edgetpu_client *client),
-
-	TP_ARGS(client),
-
-	TP_STRUCT__entry(
-		__field(pid_t, pid)
-		__field(pid_t, tgid)
-	),
-
-	TP_fast_assign(
-		__entry->pid = client->pid;
-		__entry->tgid = client->tgid;
-	),
-
-	TP_printk("client pid = %u, tgid = %u",
-		  __entry->pid, __entry->tgid)
-);
-
-TRACE_EVENT(edgetpu_client_group_create,
-
-	TP_PROTO(struct edgetpu_client *client),
-
-	TP_ARGS(client),
-
-	TP_STRUCT__entry(
-		__field(pid_t, pid)
-		__field(pid_t, tgid)
-		__field(uint, group_id)
-		__field(uint, vcid)
-	),
-
-	TP_fast_assign(
-		__entry->pid = client->pid;
-		__entry->tgid = client->tgid;
-		__entry->group_id = client->group->group_id;
-		__entry->vcid = client->group->group_id;
-	),
-
-	TP_printk("client pid = %u, tgid = %u, group = %u vcid = %u",
-		  __entry->pid, __entry->tgid, __entry->group_id, __entry->vcid)
-);
-
-TRACE_EVENT(edgetpu_client_remove,
-
-	TP_PROTO(struct edgetpu_client *client),
-
-	TP_ARGS(client),
-
-	TP_STRUCT__entry(
-		__field(pid_t, pid)
-		__field(pid_t, tgid)
-		__field(pid_t, limited_pid)
-		__field(pid_t, limited_tgid)
-		__field(int, group_id)
-		__field(uint, wakelock_count)
-	),
-
-	TP_fast_assign(
-		__entry->group_id = client->group ? client->group->group_id : -1;
-		__entry->pid = client->pid;
-		__entry->tgid = client->tgid;
-		__entry->limited_pid = client->limited_pid;
-		__entry->limited_tgid = client->limited_tgid;
-		__entry->wakelock_count = client->wakelock.req_count;
-	),
-
-	TP_printk("client pid = %u, tgid = %u, limited_pid = %d, limited_tgid = %d group = %d wake = %u",
-		  __entry->pid, __entry->tgid, __entry->limited_pid, __entry->limited_tgid,
-		  __entry->group_id, __entry->wakelock_count)
-);
-
-TRACE_EVENT(edgetpu_power_state,
-
-	TP_PROTO(int state),
-
-	TP_ARGS(state),
-
-	TP_STRUCT__entry(
-		__field(int, state)
-	),
-
-	TP_fast_assign(
-		__entry->state = state;
-	),
-
-	TP_printk("state = %d",
-		  __entry->state)
-);
-
-TRACE_EVENT(edgetpu_kci_command_start,
-
-	TP_PROTO(struct gcip_kci_command_element *cmd),
-
-	TP_ARGS(cmd),
-
-	TP_STRUCT__entry(
-		__field(u16, code)
-	),
-
-	TP_fast_assign(
-		__entry->code = cmd->code;
-	),
-
-	TP_printk("code = %u",
-		  __entry->code)
-);
-
-TRACE_EVENT(edgetpu_kci_command_end,
-
-	TP_PROTO(struct gcip_kci_command_element *cmd, int ret),
-
-	TP_ARGS(cmd, ret),
-
-	TP_STRUCT__entry(
-		__field(u16, code)
-		__field(u64, seq)
-		__field(int, ret)
-	),
-
-	TP_fast_assign(
-		__entry->code = cmd->code;
-		__entry->seq = cmd->seq;
-		__entry->ret = ret;
-	),
-
-	TP_printk("code = %u seq = %llu ret = %d",
-		  __entry->code, __entry->seq, __entry->ret)
-);
-
-TRACE_EVENT(edgetpu_rkci,
-
-	TP_PROTO(struct gcip_kci_response_element *resp),
-
-	TP_ARGS(resp),
-
-	TP_STRUCT__entry(
-		__field(u16, code)
-		__field(u64, seq)
-		__field(u32, value1)
-		__field(u32, value2)
-	),
-
-	TP_fast_assign(
-		__entry->code = resp->code;
-		__entry->seq = resp->seq;
-		__entry->value1 = resp->rkci_value1;
-		__entry->value2 = resp->rkci_value2;
-	),
-
-	TP_printk("code = %u seq = %llu value1 = %u value2 = %u",
-		  __entry->code, __entry->seq, __entry->value1, __entry->value2)
 );
 
 #endif /* _TRACE_EDGETPU_H */

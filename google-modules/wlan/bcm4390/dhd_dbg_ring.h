@@ -88,8 +88,8 @@ typedef struct dhd_dbg_ring {
 	uint32  rp_tmp;		/* tmp read pointer */
 	uint32  log_level;	/* log_level */
 	uint32  threshold;	/* threshold bytes */
-	void *ring_buf;	/* pointer of actually ring buffer */
-	void *lock;		/* lock for ring access */
+	void *  ring_buf;	/* pointer of actually ring buffer */
+	void *  lock;		/* lock for ring access */
 	struct ring_statistics stat;	/* statistics */
 	enum dbg_ring_state state;	/* ring state enum */
 	bool tail_padded;	/* writer does not have enough space */
@@ -143,7 +143,7 @@ int dhd_dbg_ring_update(void *dbg_ring, uint32 w_len);
 #endif /* DHD_PKT_LOGGING_DBGRING */
 int dhd_dbg_ring_push(dhd_dbg_ring_t *ring, dhd_dbg_ring_entry_t *hdr, void *data);
 int dhd_dbg_ring_pull(dhd_dbg_ring_t *ring, void *data, uint32 buf_len,
-		bool strip_hdr, int *num_entries);
+		bool strip_hdr, int* num_entries);
 int dhd_dbg_ring_pull_single(dhd_dbg_ring_t *ring, void *data, uint32 buf_len,
 	bool strip_header);
 uint32 dhd_dbg_ring_get_pending_len(dhd_dbg_ring_t *ring);

@@ -79,13 +79,4 @@
 #define EDGETPU_USE_HW_WDT 0
 #endif
 
-#ifndef EDGETPU_POWER_ISLAND_COUNT
-#define EDGETPU_POWER_ISLAND_COUNT 0
-#endif
-
-/* Whether the IOMMU granularity is same as PAGE_SIZE. */
-#ifndef EDGETPU_MMU_GRANULARITY_IS_PAGE
-#define EDGETPU_MMU_GRANULARITY_IS_PAGE 1
-#endif
-
 #endif /* __EDGETPU_CONFIG_H__ */

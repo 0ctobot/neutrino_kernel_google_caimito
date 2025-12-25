@@ -120,19 +120,18 @@ s32 wl_genl_send_msg(struct net_device *ndev, u32 event_type,
 s32 wl_netlink_send_msg(int pid, int type, int seq, const void *data, size_t size);
 
 /* hostap mac mode */
-#define MACLIST_MODE_DISABLED   0u
-#define MACLIST_MODE_DENY       1u
-#define MACLIST_MODE_ALLOW      2u
+#define MACLIST_MODE_DISABLED   0
+#define MACLIST_MODE_DENY       1
+#define MACLIST_MODE_ALLOW      2
 
 /* max number of assoc list */
-#define MAX_NUM_OF_ASSOCLIST    64u
+#define MAX_NUM_OF_ASSOCLIST    64
 
 /* Bandwidth */
-#define WL_CH_BANDWIDTH_20MHZ   20u
-#define WL_CH_BANDWIDTH_40MHZ   40u
-#define WL_CH_BANDWIDTH_80MHZ   80u
-#define WL_CH_BANDWIDTH_160MHZ  160u
-#define WL_CH_BANDWIDTH_320MHZ  320u
+#define WL_CH_BANDWIDTH_20MHZ 20
+#define WL_CH_BANDWIDTH_40MHZ 40
+#define WL_CH_BANDWIDTH_80MHZ 80
+#define WL_CH_BANDWIDTH_160MHZ 160
 
 /* max number of mac filter list
  * restrict max number to 10 as maximum cmd string size is 255
@@ -210,6 +209,3 @@ extern int wl_update_twt_teardown_evt_info(struct sk_buff *skb, void *event_data
 extern int wl_update_twt_info_frm_evt_info(struct sk_buff *skb, void *event_data);
 extern int wl_update_twt_notify_evt_info(struct sk_buff *skb, void *event_data);
 #endif /* WL_TWT */
-#ifdef DHD_ART
-extern int wl_android_art_apply_config(struct net_device *dev);
-#endif /* DHD_ART */

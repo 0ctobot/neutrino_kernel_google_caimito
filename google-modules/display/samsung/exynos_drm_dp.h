@@ -245,10 +245,6 @@ struct dp_device {
 
 	/* DP stats/error counters */
 	struct dp_stats_counters stats;
-
-	/* DP mode change */
-	bool is_mode_changed;
-	ktime_t last_disable_ts;
 };
 
 static inline struct dp_device *get_dp_drvdata(void)

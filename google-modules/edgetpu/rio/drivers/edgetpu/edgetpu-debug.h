@@ -16,7 +16,8 @@
 
 struct edgetpu_dev;
 
-/* Firmware debug service buffer IOVA (after FW remap region) and size. */
+/* Firmware debug service buffer IOVA and size. */
+/* TODO(b/333625284): reserve firmware debug buffer IOVA range from DMA window used by DMA API */
 #define FW_DEBUG_BUFFER_IOVA	0x18000000
 #define FW_DEBUG_BUFFER_SIZE	(13 * SZ_1M)
 

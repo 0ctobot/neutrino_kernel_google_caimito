@@ -21,14 +21,6 @@
  * <<Broadcom-WL-IPTag/Dual:>>
  */
 
-// For strict C17 Posix 2008 target builds, enable bzero()
-#define _GNU_SOURCE 1
-
-#if defined(__linux__) && !defined(BCMDRIVER)
-// for 'uint'
-#define USE_TYPEDEF_DEFAULTS
-#endif
-
 #include <typedefs.h>
 #include <bcmdefs.h>
 #ifdef BCMDRIVER
@@ -37,9 +29,6 @@
 #include <stddef.h>
 #include <string.h>
 #include <stdlib.h>
-#if defined(__linux) && !defined(BCMFUZZ)
-#include <strings.h>
-#endif
 #endif /* else BCMDRIVER */
 
 #include <bcmstdlib_s.h>
@@ -70,9 +59,7 @@
 #endif /* __SIZE_MAX__ */
 #define SIZE_MAX __SIZE_MAX__
 #endif /* SIZE_MAX */
-#ifndef RSIZE_MAX
 #define RSIZE_MAX (SIZE_MAX >> 1u)
-#endif /* RSIZE_MAX */
 
 #if !defined(__STDC_WANT_SECURE_LIB__) && \
 	!(defined(__STDC_LIB_EXT1__) && defined(__STDC_WANT_LIB_EXT1__))
@@ -229,17 +216,6 @@ size_t BCMPOSTTRAPFN(strlcpy)(char *dest, const char *src, size_t size)
 {
 	size_t i;
 
-#ifdef __GNUC__
-#if __GNUC__ >= 9
-	/*
-	 * False Positives on testing dest==NULL and src==NULL below,
-	 * for some builds, depending on compiler version and strictness options.
-	 */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wnonnull-compare"
-#endif /* __GNUC__ > 9 */
-#endif /* __GNUC__ */
-
 	if (dest == NULL || size == 0) {
 		return 0;
 	}
@@ -248,12 +224,6 @@ size_t BCMPOSTTRAPFN(strlcpy)(char *dest, const char *src, size_t size)
 		*dest = '\0';
 		return 0;
 	}
-
-#ifdef __GNUC__
-#if __GNUC__ >= 9
-#pragma GCC diagnostic pop
-#endif /* __GNUC__ > 9 */
-#endif /* __GNUC__ */
 
 	for (i = 0; i < size; i++) {
 		dest[i] = src[i];

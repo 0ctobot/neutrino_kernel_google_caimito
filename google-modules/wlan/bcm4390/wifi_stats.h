@@ -422,7 +422,6 @@ typedef struct {
 /* ML interface statistics */
 typedef struct {
 	uint8 link_id;			/* Identifier for the link */
-	wifi_link_state state;		/* State for the link. */
 	wifi_radio radio;		/* Radio on which link stats are sampled. */
 	u32 frequency;			/* Frequency on which link is operating. */
 	uint32 beacon_rx;		/* access point beacon received count from connected AP */

@@ -37,6 +37,11 @@
 #define COEX_COMBINED_DUMP_MAGIC	0x504d4443u	/* 'CDMP', for memory dump */
 #define COEX_COMBINED_FW_HDR_VERSION	1u
 
+#define COEX_ITCM_BASE 0x1a000000u
+#define COEX_ITCM_SIZE 98304u
+#define COEX_DTCM_BASE 0x1a018000u
+#define COEX_DTCM_SIZE 24576u
+
 /**
  * @brief Coex firmware tlv header with 32bit length.
  */

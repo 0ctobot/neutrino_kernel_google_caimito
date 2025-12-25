@@ -274,7 +274,7 @@ dhd_log_dump(void *handle, void *event_info, u8 event)
 	dhdp = &dhd->pub;
 
 #if defined(WL_CFG80211)
-	if (!dhd_query_bus_erros(dhdp) && !dhd_os_proto_is_blocked(dhdp)) {
+	if (!dhd_query_bus_erros(dhdp) || !dhd_os_proto_is_blocked(dhdp)) {
 		/* flush the fw preserve logs */
 		wl_flush_fw_log_buffer(dhd_linux_get_primary_netdev(dhdp),
 			FW_LOGSET_MASK_ALL);
@@ -716,31 +716,31 @@ dhd_get_init_dump_len(void *ndev, dhd_pub_t *dhdp, int section)
 		return length;
 
 	switch (section) {
-	case LOG_DUMP_SECTION_EWP_HW_INIT_LOG:
-		if (dhdp->ewphw_initlog_buf) {
-			length += dhdp->ewphw_initlog_len;
-		}
-		length += (uint32)(strlen(EWP_HW_INIT_LOG_HDR) +
-			sizeof(sec_hdr));
-		break;
+		case LOG_DUMP_SECTION_EWP_HW_INIT_LOG:
+			if (dhdp->ewphw_initlog_buf) {
+				length += dhdp->ewphw_initlog_len;
+			}
+			length += (uint32)(strlen(EWP_HW_INIT_LOG_HDR) +
+				sizeof(sec_hdr));
+			break;
 
-	case LOG_DUMP_SECTION_EWP_HW_MOD_DUMP:
-		if (dhdp->ewphw_moddump_buf) {
-			length += dhdp->ewphw_moddump_len;
-		}
-		length += (uint32)(strlen(EWP_HW_MOD_DUMP_LOG_HDR) +
-			sizeof(sec_hdr));
-		break;
+		case LOG_DUMP_SECTION_EWP_HW_MOD_DUMP:
+			if (dhdp->ewphw_moddump_buf) {
+				length += dhdp->ewphw_moddump_len;
+			}
+			length += (uint32)(strlen(EWP_HW_MOD_DUMP_LOG_HDR) +
+				sizeof(sec_hdr));
+			break;
 
-	case LOG_DUMP_SECTION_EWP_HW_REG_DUMP:
-		if (dhdp->ewphw_regdump_buf) {
-			length += dhdp->ewphw_regdump_len;
-		}
-		length += (uint32)(strlen(EWP_HW_REG_DUMP_LOG_HDR) +
-			sizeof(sec_hdr));
-		break;
-	default:
-		break;
+		case LOG_DUMP_SECTION_EWP_HW_REG_DUMP:
+			if (dhdp->ewphw_regdump_buf) {
+				length += dhdp->ewphw_regdump_len;
+			}
+			length += (uint32)(strlen(EWP_HW_REG_DUMP_LOG_HDR) +
+				sizeof(sec_hdr));
+			break;
+		default:
+			break;
 	}
 
 	return length;
@@ -1512,8 +1512,7 @@ do_dhd_log_dump(dhd_pub_t *dhdp, log_dump_type_t *type)
 	DHD_BUS_BUSY_SET_IN_LOGDUMP(dhdp);
 	DHD_GENERAL_UNLOCK(dhdp, flags);
 
-	ret = dhd_log_flush(dhdp, type);
-	if (ret < 0) {
+	if ((ret = dhd_log_flush(dhdp, type)) < 0) {
 		goto exit1;
 	}
 
@@ -1652,7 +1651,7 @@ do_dhd_log_dump(dhd_pub_t *dhdp, log_dump_type_t *type)
 	}
 #endif /* BCMPCIE */
 
-#if defined(DHD_FW_COREDUMP) && defined(DNGL_EVENT_SUPPORT)
+#if defined(DHD_FW_COREDUMP) && defined (DNGL_EVENT_SUPPORT)
 	len = dhd_get_health_chk_len(NULL, dhdp);
 	if (len) {
 		if (dhd_print_health_chk_data(NULL, dhdp, 0, fp, len, &pos) < 0)
@@ -2049,12 +2048,6 @@ dhd_log_dump_deinit(dhd_pub_t *dhd)
 	dhd_dbg_ring_t *ring = NULL;
 
 	BCM_REFERENCE(ring);
-
-#if defined(DHD_EVENT_LOG_FILTER)
-	if (dhd->event_log_filter) {
-		dhd_event_log_filter_deinit(dhd);
-	}
-#endif /* DHD_EVENT_LOG_FILTER */
 
 	if (dhd->concise_dbg_buf) {
 		VMFREE(dhd->osh, dhd->concise_dbg_buf, CONCISE_DUMP_BUFLEN);
@@ -2586,7 +2579,7 @@ dhd_logdump_cookie_save(dhd_pub_t *dhdp, char *cookie, char *type)
 	if (!dhdp || !cookie || !type || !dhdp->logdump_cookie) {
 		DHD_ERROR(("%s: At least one buffer ptr is NULL dhdp=%p cookie=%p"
 			" type = %p, cookie_cfg:%p\n", __FUNCTION__,
-			dhdp, cookie, type, dhdp?dhdp->logdump_cookie : NULL));
+			dhdp, cookie, type, dhdp?dhdp->logdump_cookie: NULL));
 		return;
 	}
 	ptr = (char *)dhd_ring_get_empty(dhdp->logdump_cookie);
@@ -2605,8 +2598,8 @@ dhd_logdump_cookie_get(dhd_pub_t *dhdp, char *ret_cookie, uint32 buf_size)
 
 	if (!dhdp || !ret_cookie || !dhdp->logdump_cookie) {
 		DHD_ERROR(("%s: At least one buffer ptr is NULL dhdp=%p"
-			" cookie=%p cookie_cfg:%p\n", __FUNCTION__,
-			dhdp, ret_cookie, dhdp?dhdp->logdump_cookie : NULL));
+			"cookie=%p cookie_cfg:%p\n", __FUNCTION__,
+			dhdp, ret_cookie, dhdp?dhdp->logdump_cookie: NULL));
 		return BCME_ERROR;
 	}
 	ptr = (char *)dhd_ring_get_first(dhdp->logdump_cookie);
@@ -2624,7 +2617,7 @@ dhd_logdump_cookie_count(dhd_pub_t *dhdp)
 {
 	if (!dhdp || !dhdp->logdump_cookie) {
 		DHD_ERROR(("%s: At least one buffer ptr is NULL dhdp=%p cookie=%p\n",
-			__FUNCTION__, dhdp, dhdp?dhdp->logdump_cookie : NULL));
+			__FUNCTION__, dhdp, dhdp?dhdp->logdump_cookie: NULL));
 		return 0;
 	}
 	return dhd_ring_get_cur_size(dhdp->logdump_cookie);
@@ -2822,7 +2815,7 @@ get_debug_dump_time(char *str)
 		ktime_get_real_ts64(&curtime);
 		local_time = (u64)(curtime.tv_sec -
 				(sys_tz.tz_minuteswest * DHD_LOG_DUMP_TS_MULTIPLIER_VALUE));
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION (3, 19, 0))
 		rtc_time64_to_tm(local_time, &tm);
 #else
 		rtc_time_to_tm(local_time, &tm);

@@ -688,16 +688,10 @@ int lwis_client_event_states_clear(struct lwis_client *lwis_client)
 	list_for_each_safe(it_event, it_tmp, &events_to_clear) {
 		state = list_entry(it_event, struct lwis_client_event_state, clearance_node);
 		list_del(&state->clearance_node);
-
-		if (EVENT_OWNER_DEVICE_ID(state->event_control.event_id) !=
-		    lwis_client->lwis_dev->id && state->event_control.flags) {
-			client_event_unsubscribe(lwis_client, state->event_control.event_id);
-		}
-
 		/* Update the device state with zero flags */
 		lwis_device_event_flags_updated(lwis_client->lwis_dev,
 						state->event_control.event_id,
-						state->event_control.flags, /*new_flags=*/0);
+						state->event_control.flags, 0);
 		/* Free the object */
 		kfree(state);
 	}

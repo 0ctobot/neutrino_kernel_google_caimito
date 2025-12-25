@@ -163,8 +163,7 @@ vid_info_t vid_naming_table_4390[] = {
 	/* 4390b1 */
 	{ 3, { 0x26, 0x63, }, { "_USI_G6BB_6327_V27" } },
 	{ 3, { 0x27, 0x63, }, { "_USI_G6BB_6327_V27" } },
-	{ 3, { 0x11, 0x73, }, { "_USI_G7BB_7311_V11" } },
-	{ 3, { 0x21, 0x73, }, { "_USI_G7BB_7321_V21" } },
+	{ 3, { 0x11, 0x73, }, { "_USI_G6BB_6327_V27" } },
 };
 
 #ifdef DHD_USE_CISINFO
@@ -402,7 +401,7 @@ typedef struct otp_access {
 #define OTP_OFFSET 12 /* SDIO */
 #endif /* CONFIG_BCMDHD_PCIE */
 
-unsigned char *g_cis_buf;
+unsigned char *g_cis_buf = NULL;
 
 /* Definitions for common interface */
 typedef struct tuple_entry {
@@ -415,7 +414,7 @@ extern int _dhd_set_mac_address(struct dhd_info *dhd, int ifidx, struct ether_ad
 static tuple_entry_t *dhd_alloc_tuple_entry(dhd_pub_t *dhdp, const int idx);
 static void dhd_free_tuple_entry(dhd_pub_t *dhdp, struct list_head *head);
 static int dhd_find_tuple_list_from_otp(dhd_pub_t *dhdp, int req_tup,
-	unsigned char *req_tup_len, struct list_head *head);
+	unsigned char* req_tup_len, struct list_head *head);
 #endif /* GET_MAC_FROM_OTP || USE_CID_CHECK */
 
 /* otp region read/write information */
@@ -549,14 +548,15 @@ dhd_parse_board_information_bcm(dhd_bus_t *bus, int *boardtype,
 			memcpy(vid, tuple->data, tuple->len - CIS_TUPLE_TAG_LENGTH);
 			*vid_length = tuple->len - CIS_TUPLE_TAG_LENGTH;
 			prhex("OTP VID", tuple->data, tuple->len - CIS_TUPLE_TAG_LENGTH);
-		} else if ((tuple->tag == CIS_TUPLE_TAG_BOARDTYPE) &&
+		}
+		else if ((tuple->tag == CIS_TUPLE_TAG_BOARDTYPE) &&
 				(totlen >= (int)(len + CIS_TUPLE_HDR_LEN))) {
 			/* found boardtype */
 			*boardtype = (int)tuple->data[0];
 			prhex("OTP boardtype VID", tuple->data, tuple->len - CIS_TUPLE_TAG_LENGTH);
 		}
 
-		tuple = (cis_tuple_format_t *)((uint8 *)tuple + (len + CIS_TUPLE_HDR_LEN));
+		tuple = (cis_tuple_format_t*)((uint8*)tuple + (len + CIS_TUPLE_HDR_LEN));
 		totlen -= (len + CIS_TUPLE_HDR_LEN);
 	}
 
@@ -688,33 +688,34 @@ naming_info_t bcm4389_naming_table[] = {
 naming_info_t *
 select_naming_table(dhd_pub_t *dhdp, int *table_size)
 {
-	naming_info_t *info = NULL;
+	naming_info_t * info = NULL;
 
-	if (!dhdp || !dhdp->bus || !dhdp->bus->sih) {
+	if (!dhdp || !dhdp->bus || !dhdp->bus->sih)
+	{
 		DHD_ERROR(("%s : Invalid pointer \n", __FUNCTION__));
 		return info;
 	}
 
 	switch (si_chipid(dhdp->bus->sih)) {
-	case BCM4361_CHIP_ID:
-	case BCM4347_CHIP_ID:
-		info = &bcm4361_naming_table[0];
-		*table_size = ARRAYSIZE(bcm4361_naming_table);
-		DHD_INFO(("%s: info %p, ret %d\n", __FUNCTION__, info, *table_size));
-		break;
-	case BCM4375_CHIP_ID:
-		info = &bcm4375_naming_table[0];
-		*table_size = ARRAYSIZE(bcm4375_naming_table);
-		DHD_INFO(("%s: info %p, ret %d\n", __FUNCTION__, info, *table_size));
-		break;
-	case BCM4389_CHIP_ID:
-		info = &bcm4389_naming_table[0];
-		*table_size = ARRAYSIZE(bcm4389_naming_table);
-		DHD_INFO(("%s: info %p, ret %d\n", __FUNCTION__, info, *table_size));
-		break;
-	default:
-		DHD_ERROR(("%s: No MODULE NAMING TABLE found\n", __FUNCTION__));
-		break;
+		case BCM4361_CHIP_ID:
+		case BCM4347_CHIP_ID:
+			info = &bcm4361_naming_table[0];
+			*table_size = ARRAYSIZE(bcm4361_naming_table);
+			DHD_INFO(("%s: info %p, ret %d\n", __FUNCTION__, info, *table_size));
+			break;
+		case BCM4375_CHIP_ID:
+			info = &bcm4375_naming_table[0];
+			*table_size = ARRAYSIZE(bcm4375_naming_table);
+			DHD_INFO(("%s: info %p, ret %d\n", __FUNCTION__, info, *table_size));
+			break;
+		case BCM4389_CHIP_ID:
+			info = &bcm4389_naming_table[0];
+			*table_size = ARRAYSIZE(bcm4389_naming_table);
+			DHD_INFO(("%s: info %p, ret %d\n", __FUNCTION__, info, *table_size));
+			break;
+		default:
+			DHD_ERROR(("%s: No MODULE NAMING TABLE found\n", __FUNCTION__));
+			break;
 	}
 
 	return info;
@@ -933,22 +934,22 @@ dhd_get_fw_nvram_names(dhd_pub_t *dhdp, uint chipid, uint chiprev,
 		memcpy_s(&cur_vid_info, sizeof(cur_vid_info), vid, sizeof(cur_vid_info));
 
 		switch (chipid) {
-		case BCM4389_CHIP_ID:
-			vid_info = vid_naming_table_4389;
-			vid_info_sz = ARRAYSIZE(vid_naming_table_4389);
-			break;
-		case BCM4397_CHIP_GRPID:
-			vid_info = vid_naming_table_4398;
-			vid_info_sz = ARRAYSIZE(vid_naming_table_4398);
-			break;
-		case BCM4390_CHIP_GRPID:
-			vid_info = vid_naming_table_4390;
-			vid_info_sz = ARRAYSIZE(vid_naming_table_4390);
-			break;
-		default:
-			DHD_ERROR(("%s: unrecognized chip id 0x%x !\n",
-				__FUNCTION__, chipid));
-			return BCME_NOTFOUND;
+			case BCM4389_CHIP_ID:
+				vid_info = vid_naming_table_4389;
+				vid_info_sz = ARRAYSIZE(vid_naming_table_4389);
+				break;
+			case BCM4397_CHIP_GRPID:
+				vid_info = vid_naming_table_4398;
+				vid_info_sz = ARRAYSIZE(vid_naming_table_4398);
+				break;
+			case BCM4390_CHIP_GRPID:
+				vid_info = vid_naming_table_4390;
+				vid_info_sz = ARRAYSIZE(vid_naming_table_4390);
+				break;
+			default:
+				DHD_ERROR(("%s: unrecognized chip id 0x%x !\n",
+					__FUNCTION__, chipid));
+				return BCME_NOTFOUND;
 		}
 
 		/* Using VID get the CID string having nvram extension at the end */
@@ -1238,18 +1239,18 @@ dhd_otp_cbfn_rgnstatus(void *ctx, const uint8 *data, uint16 type, uint16 len)
 	}
 
 	switch (type) {
-	case WL_OTP_XTLV_RGN:
-		stat_info->rgnid = *data;
-		break;
-	case WL_OTP_XTLV_ADDR:
-		stat_info->rgnstart = dtoh16((uint16)*data);
-		break;
-	case WL_OTP_XTLV_SIZE:
-		stat_info->rgnsize = dtoh16((uint16)*data);
-		break;
-	default:
-		DHD_ERROR(("%s: unknown tlv %u\n", __FUNCTION__, type));
-		break;
+		case WL_OTP_XTLV_RGN:
+			stat_info->rgnid = *data;
+			break;
+		case WL_OTP_XTLV_ADDR:
+			stat_info->rgnstart = dtoh16((uint16)*data);
+			break;
+		case WL_OTP_XTLV_SIZE:
+			stat_info->rgnsize = dtoh16((uint16)*data);
+			break;
+		default:
+			DHD_ERROR(("%s: unknown tlv %u\n", __FUNCTION__, type));
+			break;
 	}
 
 	return BCME_OK;
@@ -1318,21 +1319,21 @@ dhd_otp_cbfn_rgndump(void *ctx, const uint8 *data, uint16 type, uint16 len)
 	}
 
 	switch (type) {
-	case WL_OTP_XTLV_RGN:
-		rw_info->rgnid = *data;
-		break;
-	case WL_OTP_XTLV_DATA:
-		/*
-		 * intentionally ignoring the return value of memcpy_s as it is just
-		 * a variable copy and because of this size is within the bounds
-		 */
-		(void)memcpy_s(&rw_info->data, sizeof(rw_info->data),
-				&data, sizeof(rw_info->data));
-		rw_info->datasize = len;
-		break;
-	default:
-		DHD_ERROR(("%s: unknown tlv %u\n", __FUNCTION__, type));
-		break;
+		case WL_OTP_XTLV_RGN:
+			rw_info->rgnid = *data;
+			break;
+		case WL_OTP_XTLV_DATA:
+			/*
+			 * intentionally ignoring the return value of memcpy_s as it is just
+			 * a variable copy and because of this size is within the bounds
+			 */
+			(void)memcpy_s(&rw_info->data, sizeof(rw_info->data),
+					&data, sizeof(rw_info->data));
+			rw_info->datasize = len;
+			break;
+		default:
+			DHD_ERROR(("%s: unknown tlv %u\n", __FUNCTION__, type));
+			break;
 	}
 	return BCME_OK;
 }
@@ -1403,7 +1404,7 @@ dhd_free_tuple_entry(dhd_pub_t *dhdp, struct list_head *head)
 
 static int
 dhd_find_tuple_list_from_otp(dhd_pub_t *dhdp, int req_tup,
-	unsigned char *req_tup_len, struct list_head *head)
+	unsigned char* req_tup_len, struct list_head *head)
 {
 	int idx = OTP_OFFSET + sizeof(cis_rw_t);
 	int tup, tup_len = 0;
@@ -1953,7 +1954,7 @@ board_info_t murata_board_info[] = {
 #endif /* BCM4361_CHIP */
 #endif /* SUPPORT_MULTIPLE_BOARDTYPE */
 
-uint32 cur_vid_info;
+uint32 cur_vid_info = 0;
 /* CID managment functions */
 
 char *
@@ -2389,21 +2390,21 @@ static int concate_revision_bcm4359(dhd_bus_t *bus, char *fw_path, char *nv_path
 	module_type =  dhd_check_module_b90();
 
 	switch (module_type) {
-	case BCM4359_MODULE_TYPE_B90B:
-		strcat(fw_path, chipver_tag);
-		break;
-	case BCM4359_MODULE_TYPE_B90S:
-	default:
-		/*
-		 * .cid.info file not exist case,
-		 * loading B90S FW force for initial MFG boot up.
-		*/
-		if (chip_ver == 5) {
-			strncat(fw_path, "_b90s", strlen("_b90s"));
-		}
-		strcat(fw_path, chipver_tag);
-		strcat(nv_path, chipver_tag);
-		break;
+		case BCM4359_MODULE_TYPE_B90B:
+			strcat(fw_path, chipver_tag);
+			break;
+		case BCM4359_MODULE_TYPE_B90S:
+		default:
+			/*
+			 * .cid.info file not exist case,
+			 * loading B90S FW force for initial MFG boot up.
+			*/
+			if (chip_ver == 5) {
+				strncat(fw_path, "_b90s", strlen("_b90s"));
+			}
+			strcat(fw_path, chipver_tag);
+			strcat(nv_path, chipver_tag);
+			break;
 	}
 #else /* SUPPORT_MULTIPLE_MODULE_CIS && USE_CID_CHECK && SUPPORT_BCM4359_MIXED_MODULES */
 	strcat(fw_path, chipver_tag);
@@ -2546,36 +2547,35 @@ concate_revision(dhd_bus_t *bus, char *fw_path, char *nv_path)
 	chiprev = bus->sih->chiprev;
 	chipid = si_chipid(bus->sih);
 	switch (chipid) {
-	case BCM43569_CHIP_ID:
-	case BCM4358_CHIP_ID:
-		res = concate_revision_bcm4358(bus, fw_path, nv_path);
-		break;
-	case BCM4355_CHIP_ID:
-	case BCM4359_CHIP_ID:
-		res = concate_revision_bcm4359(bus, fw_path, nv_path);
-		break;
-	case BCM4361_CHIP_ID:
-	case BCM4347_CHIP_ID:
-	case BCM4375_CHIP_ID:
-		res = concate_revision_from_cisinfo(bus, fw_path, nv_path);
-		break;
-	case BCM4389_CHIP_ID:
-	case BCM4397_CHIP_GRPID:
-	case BCM4383_CHIP_ID:
-	case BCM4384_CHIP_ID:
-	case BCM4390_CHIP_GRPID:
-		res = dhd_get_fw_nvram_names(bus->dhd, chipid, chiprev, fw_path,
-			nv_path, map_path);
-		if (res != BCME_OK) {
-			/* if OTP not programmed or VID naming table not present
-			 * fall back to default fw nvram names
-			 */
-			res = BCME_OK;
-		}
-		break;
-	default:
-		DHD_ERROR(("REVISION SPECIFIC feature is not required\n"));
-		return res;
+		case BCM43569_CHIP_ID:
+		case BCM4358_CHIP_ID:
+			res = concate_revision_bcm4358(bus, fw_path, nv_path);
+			break;
+		case BCM4355_CHIP_ID:
+		case BCM4359_CHIP_ID:
+			res = concate_revision_bcm4359(bus, fw_path, nv_path);
+			break;
+		case BCM4361_CHIP_ID:
+		case BCM4347_CHIP_ID:
+		case BCM4375_CHIP_ID:
+			res = concate_revision_from_cisinfo(bus, fw_path, nv_path);
+			break;
+		case BCM4389_CHIP_ID:
+		case BCM4397_CHIP_GRPID:
+		case BCM4383_CHIP_ID:
+		case BCM4390_CHIP_GRPID:
+			res = dhd_get_fw_nvram_names(bus->dhd, chipid, chiprev, fw_path,
+				nv_path, map_path);
+			if (res != BCME_OK) {
+				/* if OTP not programmed or VID naming table not present
+				 * fall back to default fw nvram names
+				 */
+				res = BCME_OK;
+			}
+			break;
+		default:
+			DHD_ERROR(("REVISION SPECIFIC feature is not required\n"));
+			return res;
 	}
 
 #ifdef CONCAT_DEF_REV_FOR_NOMATCH_VID

@@ -59,5 +59,4 @@ extern size_t strlcat_s(char *dest, const char *src, size_t size);
 #endif /* BCM_STDLIB_S_BUILTINS_TEST */
 
 #endif /* !BWL_NO_INTERNAL_STDLIB_S_SUPPORT */
-
 #endif /* _bcmstdlib_s_h_ */

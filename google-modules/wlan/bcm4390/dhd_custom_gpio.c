@@ -61,7 +61,7 @@ int dhd_customer_oob_irq_map(void *adapter, unsigned long *irq_flags_ptr)
 {
 	int  host_oob_irq = 0;
 
-#if defined(CUSTOMER_HW2) || defined(CUSTOMER_HW4) || defined(BOARD_HIKEY) || defined(BOARD_STB)
+#if defined(CUSTOMER_HW2) || defined(CUSTOMER_HW4) || defined(BOARD_HIKEY) || defined (BOARD_STB)
 	host_oob_irq = wifi_platform_get_irq_number(adapter, irq_flags_ptr);
 
 #else
@@ -74,11 +74,11 @@ int dhd_customer_oob_irq_map(void *adapter, unsigned long *irq_flags_ptr)
 	if (dhd_oob_gpio_num < 0) {
 		WL_ERROR(("%s: ERROR customer specific Host GPIO is NOT defined \n",
 		__FUNCTION__));
-		return dhd_oob_gpio_num;
+		return (dhd_oob_gpio_num);
 	}
 
 	WL_ERROR(("%s: customer specific Host GPIO number is (%d)\n",
-		__FUNCTION__, dhd_oob_gpio_num));
+	         __FUNCTION__, dhd_oob_gpio_num));
 
 #endif /* CUSTOMER_HW2 || CUSTOMER_HW4 || BOARD_HIKEY || BOARD_STB */
 
@@ -173,7 +173,7 @@ const struct cntry_locales_custom translate_custom_table[] = {
 	{"TR", "TR", 0},
 	{"NO", "NO", 0},
 #endif /* EXMAPLE_TABLE */
-#if (defined(CUSTOMER_HW2) || defined(BOARD_HIKEY) || defined(BOARD_STB)) && !defined(CUSTOMER_HW5)
+#if (defined(CUSTOMER_HW2) || defined(BOARD_HIKEY) || defined (BOARD_STB)) && !defined(CUSTOMER_HW5)
 #if defined(BCM4335_CHIP)
 	{"",   "XZ", 11},  /* Universal if Country code is unknown or empty */
 #endif
@@ -381,7 +381,7 @@ void get_customized_country_code(void *adapter, char *country_iso_code, wl_count
 {
 
 #if defined(OEM_ANDROID)
-#if (defined(CUSTOMER_HW2) || defined(BOARD_HIKEY) || defined(BOARD_STB)) && \
+#if (defined(CUSTOMER_HW2) || defined(BOARD_HIKEY) || defined (BOARD_STB)) && \
 	(LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 39))
 
 	struct cntry_locales_custom *cloc_ptr;

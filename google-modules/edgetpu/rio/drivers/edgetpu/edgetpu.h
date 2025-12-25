@@ -33,7 +33,6 @@
 #define EDGETPU_MMAP_TRACE2_BUFFER_OFFSET 0x2000000
 #define EDGETPU_MMAP_LOG3_BUFFER_OFFSET 0x2100000
 #define EDGETPU_MMAP_TRACE3_BUFFER_OFFSET 0x2200000
-#define EDGETPU_MMAP_HWTRACE_BUFFER_OFFSET 0x2300000
 
 /* EdgeTPU map flag macros */
 
@@ -241,7 +240,6 @@ struct edgetpu_mailbox_attr {
  */
 #define EDGETPU_PERDIE_EVENT_LOGS_AVAILABLE		0x1000
 #define EDGETPU_PERDIE_EVENT_TRACES_AVAILABLE		0x1001
-#define EDGETPU_PERDIE_EVENT_HWTRACES_AVAILABLE		0x1002
 
 /*
  * Set eventfd for notification of per-die events from kernel.
@@ -426,8 +424,9 @@ struct edgetpu_map_bulk_dmabuf_ioctl {
 	/*
 	 * The list of file descriptors backed by dma-buf.
 	 *
-	 * The first FD will be mapped to the first device in the target group;
-	 * the second FD will be mapped to the second device and so on.
+	 * The first FD will be mapped to the first device in the target group
+	 * (i.e. the master die); the second FD will be mapped to the second
+	 * device and so on.
 	 * Only the first N FDs will be used, where N is the number of devices
 	 * in the group.
 	 *
@@ -440,7 +439,7 @@ struct edgetpu_map_bulk_dmabuf_ioctl {
 };
 
 /*
- * Obsolete: Map a list of dma-buf FDs to devices in the group.
+ * Map a list of dma-buf FDs to devices in the group.
  *
  * On success, @device_address is set and the syscall returns zero.
  *
@@ -453,7 +452,7 @@ struct edgetpu_map_bulk_dmabuf_ioctl {
 #define EDGETPU_MAP_BULK_DMABUF \
 	_IOWR(EDGETPU_IOCTL_BASE, 22, struct edgetpu_map_bulk_dmabuf_ioctl)
 /*
- * Obsolete: Un-map address previously mapped by EDGETPU_MAP_BULK_DMABUF.
+ * Un-map address previously mapped by EDGETPU_MAP_BULK_DMABUF.
  *
  * Only field @device_address in the third argument is used, other fields such
  * as @size will be fetched from the kernel's internal records.

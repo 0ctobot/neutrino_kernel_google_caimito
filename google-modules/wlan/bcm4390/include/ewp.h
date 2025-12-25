@@ -136,13 +136,27 @@ typedef struct etb_config_info_cmn {
 } etb_config_info_cmn_t;
 
 typedef struct etb_config_info_v1 {
+/* remove "BCM_ETB_CFG_TRANSITIONAL_FLAG", once all components use 'hdr' */
+#ifdef BCM_ETB_CFG_TRANSITIONAL_FLAG
 	etb_config_info_cmn_t hdr;
+#else
+	uint8 version;					// Version
+	uint8 num_etb;					// Max no. of ETBs
+	uint8 pad[2];
+#endif /* BCM_ETB_CFG_TRANSITIONAL_FLAG */
 	etb_block_t eblk[];				// Individual ETB blocks
 } etb_config_info_v1_t;
 
 #define EWP_ETB_CONFIG_INFO_VER_2 0x2u
 typedef struct etb_config_info_v2 {
+/* remove "BCM_ETB_CFG_TRANSITIONAL_FLAG", once all components use 'hdr' */
+#ifdef BCM_ETB_CFG_TRANSITIONAL_FLAG
 	etb_config_info_cmn_t hdr;
+#else
+	uint8 version;					// Version
+	uint8 num_etb;					// Max no. of ETBs
+	uint8 pad[2];
+#endif /* BCM_ETB_CFG_TRANSITIONAL_FLAG */
 	uint32	ram_start_pa;				// RAM start address
 	uint32	rom_start_pa;				// ROM start address
 	uint32	aslr_ram_offset;			// ASLR RAM offset
@@ -151,7 +165,13 @@ typedef struct etb_config_info_v2 {
 	uint32	rom_size;				// ROM size
 	etb_block_t eblk[];				// Individual ETB blocks
 } etb_config_info_v2_t;
+/* remove "BCM_ETB_CFG_TRANSITIONAL_FLAG", once all components use 'hdr' */
+#ifdef BCM_ETB_CFG_TRANSITIONAL_FLAG
 #define EWP_ETB_CONFIG_INFO_VER	EWP_ETB_CONFIG_INFO_VER_2
 typedef etb_config_info_v2_t etb_config_info_t;
+#else
+#define EWP_ETB_CONFIG_INFO_VER	EWP_ETB_CONFIG_INFO_VER_1
+typedef etb_config_info_v1_t etb_config_info_t;
+#endif /* BCM_ETB_CFG_TRANSITIONAL_FLAG */
 
 #endif	/* _bcmpcie_h_ */

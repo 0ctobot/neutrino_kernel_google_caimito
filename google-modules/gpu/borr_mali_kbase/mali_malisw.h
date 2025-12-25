@@ -26,9 +26,6 @@
 #ifndef _MALISW_H_
 #define _MALISW_H_
 
-#include <linux/version.h>
-
-#if (KERNEL_VERSION(6, 11, 0) > LINUX_VERSION_CODE)
 /**
  * MIN - Return the lesser of two values.
  * @x: value1
@@ -52,7 +49,6 @@
  * instead.
  */
 #define MAX(x, y) ((x) < (y) ? (y) : (x))
-#endif
 
 /**
  * CSTD_UNUSED - Function-like macro for suppressing unused variable warnings.
@@ -98,13 +94,5 @@
  * @endcode
  */
 #define CSTD_STR2(x) CSTD_STR1(x)
-
-#ifndef fallthrough
-#define fallthrough __fallthrough
-#endif /* fallthrough */
-
-#ifndef __fallthrough
-#define __fallthrough __attribute__((fallthrough))
-#endif /* __fallthrough */
 
 #endif /* _MALISW_H_ */

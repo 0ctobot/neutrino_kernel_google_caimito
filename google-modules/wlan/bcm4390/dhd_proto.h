@@ -118,14 +118,14 @@ extern uint dhd_prot_hdrlen(dhd_pub_t *, void *txp);
 extern int dhd_prot_hdrpull(dhd_pub_t *, int *ifidx, void *rxp, uchar *buf, uint *len);
 
 /* Use protocol to issue ioctl to dongle */
-extern int dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t *ioc, void *buf, int len);
+extern int dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t * ioc, void * buf, int len);
 
 /* Handles a protocol control response asynchronously */
 extern int dhd_prot_ctl_complete(dhd_pub_t *dhd);
 
 /* Check for and handle local prot-specific iovar commands */
 extern int dhd_prot_iovar_op(dhd_pub_t *dhdp, const char *name,
-	void *params, int plen, void *arg, int len, bool set);
+                             void *params, int plen, void *arg, int len, bool set);
 
 /* Add prot dump output to a buffer */
 extern void dhd_prot_dump(dhd_pub_t *dhdp, struct bcmstrbuf *strbuf);
@@ -138,7 +138,7 @@ extern int dhd_prot_dump_extended_trap(dhd_pub_t *dhdp, struct bcmstrbuf *b, boo
 /* Update local copy of dongle statistics */
 extern void dhd_prot_dstats(dhd_pub_t *dhdp);
 
-extern int dhd_ioctl(dhd_pub_t *dhd_pub, int ifidx, dhd_ioctl_t *ioc, void *buf, uint buflen);
+extern int dhd_ioctl(dhd_pub_t * dhd_pub, int ifidx, dhd_ioctl_t *ioc, void * buf, uint buflen);
 
 extern int dhd_preinit_ioctls(dhd_pub_t *dhd);
 
@@ -161,14 +161,13 @@ void dhd_prot_set_ctrl_cpl_post_bound(dhd_pub_t *dhd, uint32 val);
 #ifdef BTLOG
 extern bool dhd_prot_process_msgbuf_btlogcpl(dhd_pub_t *dhd, uint bound);
 #endif	/* BTLOG */
-extern bool dhd_prot_process_ctrlbuf(dhd_pub_t *dhd, uint32 *ctrlcpl_items);
-extern int dhd_prot_process_trapbuf(dhd_pub_t *dhd);
-extern bool dhd_prot_dtohsplit(dhd_pub_t *dhd);
+extern bool dhd_prot_process_ctrlbuf(dhd_pub_t * dhd, uint32 *ctrlcpl_items);
+extern int dhd_prot_process_trapbuf(dhd_pub_t * dhd);
+extern bool dhd_prot_dtohsplit(dhd_pub_t * dhd);
 extern int dhd_post_dummy_msg(dhd_pub_t *dhd);
 extern int dhdmsgbuf_lpbk_req(dhd_pub_t *dhd, uint len);
 extern void dhd_prot_rx_dataoffset(dhd_pub_t *dhd, uint32 offset);
 extern int dhd_prot_txdata(dhd_pub_t *dhd, void *p, uint8 ifidx);
-extern void dhd_msgbuf_rxbuf_post(dhd_pub_t *dhd, bool use_rsv_pktid);
 extern void dhd_prot_schedule_aggregate_h2d_db(dhd_pub_t *dhd, uint16 flow_id);
 extern int dhdmsgbuf_dmaxfer_req(dhd_pub_t *dhd,
 	uint len, uint srcdelay, uint destdelay, uint d11_lpbk, uint core_num,
@@ -184,14 +183,12 @@ extern int dhd_post_tx_ring_item(dhd_pub_t *dhd, void *PKTBUF, uint8 ifindex);
 extern int dhd_prot_flow_ring_delete(dhd_pub_t *dhd, flow_ring_node_t *flow_ring_node);
 extern int dhd_prot_flow_ring_flush(dhd_pub_t *dhd, flow_ring_node_t *flow_ring_node);
 extern int dhd_prot_ringupd_dump(dhd_pub_t *dhd, struct bcmstrbuf *b);
-extern bool dhd_prot_is_ctrl_cpln_wr_ahead(dhd_pub_t *dhd, uint16 dma_idx_rd, uint16 dma_idx_wr);
-extern bool dhd_prot_is_wait_for_isr(dhd_pub_t *dhd);
 extern uint32 dhd_prot_metadata_dbg_set(dhd_pub_t *dhd, bool val);
 extern uint32 dhd_prot_metadata_dbg_get(dhd_pub_t *dhd);
 extern uint32 dhd_prot_metadatalen_set(dhd_pub_t *dhd, uint32 val, bool rx);
 extern uint32 dhd_prot_metadatalen_get(dhd_pub_t *dhd, bool rx);
 extern void dhd_prot_print_flow_ring(dhd_pub_t *dhd, void *msgbuf_flow_info, bool h2d,
-	struct bcmstrbuf *strbuf, const char *fmt);
+	struct bcmstrbuf *strbuf, const char * fmt);
 extern void dhd_prot_print_info(dhd_pub_t *dhd, struct bcmstrbuf *strbuf);
 extern void dhd_prot_print_traces(dhd_pub_t *dhd, struct bcmstrbuf *strbuf);
 extern bool dhd_prot_update_txflowring(dhd_pub_t *dhdp, uint16 flow_id, void *msgring_info);
@@ -283,8 +280,8 @@ void dhd_local_buf_reset(char *buf, uint32 len);
 #define DHD_PROTOCOL "unknown"
 #endif /* proto */
 
-int dhd_get_hscb_info(dhd_pub_t *dhd, void **va, uint32 *len);
-int dhd_get_hscb_buff(dhd_pub_t *dhd, uint32 offset, uint32 length, void *buff);
+int dhd_get_hscb_info(dhd_pub_t *dhd, void ** va, uint32 *len);
+int dhd_get_hscb_buff(dhd_pub_t *dhd, uint32 offset, uint32 length, void * buff);
 
 
 #ifdef DHD_HP2P

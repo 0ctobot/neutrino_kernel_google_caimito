@@ -29,7 +29,6 @@ struct max77759_chgr_data {
 
 	/* wcin inlim tracking */
 	struct delayed_work wcin_inlim_work;
-	struct delayed_work wcin_charge_disable_work;
 	uint32_t wcin_inlim_period;
 	uint32_t wcin_inlim_flag;
 	uint32_t wcin_inlim_headroom;

@@ -22,12 +22,6 @@
 #ifndef _UAPI_KBASE_GPU_REGMAP_H_
 #define _UAPI_KBASE_GPU_REGMAP_H_
 
-/* [Pixel-Mod Begin] Keeping for JM compatibility */
-#if MALI_USE_CSF
 #include "backend/mali_kbase_gpu_regmap_csf.h"
-#else
-#include "backend/mali_kbase_gpu_regmap_jm.h"
-#endif
-/* [Pixel-Mod End] Keeping for JM compatibility */
 
 #endif /* _UAPI_KBASE_GPU_REGMAP_H_ */

@@ -31,6 +31,8 @@ EXTRA_CFLAGS+="-Wno-missing-prototypes"
 # Define and "all" target, which isn't really needed but doesn't hurt.
 all: modules
 
-modules modules_install clean compile_commands.json:
+modules modules_install headers_install clean compile_commands.json:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) $(KBUILD_OPTIONS) \
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS)" KBUILD_EXTRA_SYMBOLS="$(EXTRA_SYMBOLS)" $(@)
+
+modules_install: headers_install

@@ -51,12 +51,10 @@ extern "C" {
 #define PKTPOOL_CB_MAX		3
 #define PKTPOOL_CB_MAX_AVL	4
 
-/* rxcpl operation type for pktpool callback function pciedev_manage_haddr */
-typedef enum {
-	RXCPLID_POST = 1u, /* Post rx buffer */
-	RXCPLID_REMOVE = 2u, /* puts back rxcplid and and host addr associated with the rxfrag */
-	RXCPLID_AUDIT_PKTID = 3u, /* Audit the pktids from the rxpkt of non first MSDUs */
-} rxcpl_op_t;
+/* REMOVE_RXCPLID is an arg for pktpool callback function for removing rxcplID
+ * and host addr associated with the rxfrag or shared pool buffer during pktpool_reclaim().
+ */
+#define REMOVE_RXCPLID            2
 
 #define FREE_ALL_PKTS		0
 #define FREE_ALL_FRAG_PKTS	1
@@ -78,7 +76,11 @@ typedef struct {
 	uint8 refcnt;
 } pktpool_cbinfo_t;
 
+#ifdef USE_URB_CHAINED_RX_CB
 typedef void (*pktpool_rxurb_cb_t)(struct pktpool *pool, void *arg, void *head, uint32 count);
+#else
+typedef void (*pktpool_rxurb_cb_t)(struct pktpool *pool, void *arg, uint8 *addr, uint16 len);
+#endif /* USE_URB_CHAINED_RX_CB */
 
 typedef struct {
 	pktpool_rxurb_cb_t cb;
@@ -86,8 +88,8 @@ typedef struct {
 } pktpool_rxurb_cbinfo_t;
 
 /** PCIe SPLITRX related: call back fn extension to populate host address in pool pkt */
-typedef int (*pktpool_cb_extn_t)(struct pktpool *pool, rxcpl_op_t op, void *arg1, void *arg2,
-		void *arg3);
+typedef int (*pktpool_cb_extn_t)(struct pktpool *pool, void *arg1, void* pkt, int arg2,
+	uint *pktcnt);
 typedef struct {
 	pktpool_cb_extn_t cb;
 	void *arg;
@@ -201,7 +203,6 @@ extern uint16 pktpool_reclaim(osl_t *osh, pktpool_t *pktp, uint16 free_cnt, uint
 void pktpool_update_freelist(pktpool_t *pktp, void *p, uint pkts_consumed);
 extern void* pktpool_get_ext(pktpool_t *pktp, uint8 type, uint *pktcnt);
 extern void pktpool_free(pktpool_t *pktp, void *p);
-extern void pktpool_free_cb(pktpool_t *pktp, void *p, uint num_pkts);
 void pktpool_nfree(pktpool_t *pktp, void *head, void *tail, uint count);
 extern int pktpool_add(pktpool_t *pktp, void *p);
 extern int pktpool_avail_notify_normal(osl_t *osh, pktpool_t *pktp);
@@ -284,8 +285,10 @@ extern pktpool_t *pktpool_shared_lfrag;
 extern pktpool_t *pktpool_shared_alfrag;
 #define SHARED_ALFRAG_DATA_POOL	(pktpool_shared_alfrag_data)
 extern pktpool_t *pktpool_shared_alfrag_data;
+#ifdef BCM_ALFRAG_MDATA
 #define SHARED_ALFRAG_MDATA_POOL	(pktpool_shared_alfrag_mdata)
 extern pktpool_t *pktpool_shared_alfrag_mdata;
+#endif /* BCM_ALFRAG_MDATA */
 #endif /* BCMFRAGPOOL */
 
 #ifdef BCMRESVFRAGPOOL

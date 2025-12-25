@@ -94,7 +94,7 @@ static int program_iremap_csr(struct gxp_dev *gxp, struct gcip_memory *buf)
  */
 static bool is_signed_firmware(const struct firmware *fw)
 {
-	if (fw->size < GCIP_FW_MAX_HEADER_SIZE)
+	if (fw->size < GCIP_FW_HEADER_SIZE)
 		return false;
 
 	if (!gcip_common_image_check_magic(fw->data, GXP_FW_MAGIC))
@@ -230,7 +230,7 @@ int gxp_mcu_firmware_load(struct gxp_dev *gxp, char *fw_name,
 	struct gxp_mcu_firmware *mcu_fw = gxp_mcu_firmware_of(gxp);
 	struct device *dev = gxp->dev;
 	const struct gcip_image_config *imgcfg;
-	size_t size, fw_header_size;
+	size_t size;
 	struct gxp_firmware_loader_manager *mgr = gxp->fw_loader_mgr;
 
 	mutex_lock(&mcu_fw->lock);
@@ -257,8 +257,7 @@ int gxp_mcu_firmware_load(struct gxp_dev *gxp, char *fw_name,
 		goto err_release_firmware;
 	}
 
-	fw_header_size = gcip_common_get_fw_header_size((*fw)->data, GXP_FW_MAGIC);
-	size = (*fw)->size - fw_header_size;
+	size = (*fw)->size - GCIP_FW_HEADER_SIZE;
 
 	imgcfg = gcip_common_image_get_config_from_hdr((*fw)->data, GXP_FW_MAGIC);
 	if (!imgcfg) {
@@ -305,13 +304,14 @@ int gxp_mcu_firmware_load(struct gxp_dev *gxp, char *fw_name,
 		if (IS_ERR(mcu_fw->dynamic_fw_buffer))
 			goto err_clear_config;
 		memcpy(gcip_noncontiguous_sgt_to_mem(mcu_fw->dynamic_fw_buffer->sgt),
-		       (*fw)->data + fw_header_size, size);
+		       (*fw)->data + GCIP_FW_HEADER_SIZE, size);
 		gxp_dma_sync_sg_for_device(gxp, mcu_fw->dynamic_fw_buffer->sgt->sgl,
 					   mcu_fw->dynamic_fw_buffer->sgt->orig_nents,
 					   DMA_TO_DEVICE);
 	} else {
 		if (!mgr->is_mcu_copied) {
-			memcpy(mcu_fw->image_buf.virt_addr, (*fw)->data + fw_header_size, size);
+			memcpy(mcu_fw->image_buf.virt_addr, (*fw)->data + GCIP_FW_HEADER_SIZE,
+			       size);
 			mgr->is_mcu_copied = true;
 		}
 	}

@@ -73,6 +73,5 @@ struct exynos5_i2c {
 	int			nack_restart;
 
 	unsigned int 		trailing_count;
-	bool			has_trailing_bytes;
 };
 #endif /*__I2C_EXYNOS5_H */

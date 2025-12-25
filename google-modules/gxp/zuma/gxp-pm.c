@@ -141,7 +141,7 @@ static int gxp_pm_blkpwr_up(struct gxp_dev *gxp)
 
 static int gxp_pm_blkpwr_down(struct gxp_dev *gxp)
 {
-	int ret, timeout;
+	int ret;
 
 	if (gxp->power_mgr->ops->before_blk_power_down) {
 		ret = gxp->power_mgr->ops->before_blk_power_down(gxp);
@@ -162,21 +162,6 @@ static int gxp_pm_blkpwr_down(struct gxp_dev *gxp)
 		dev_err(gxp->dev,
 			"pm_runtime_put_sync returned %d during blk down\n",
 			ret);
-	if (ret == -EAGAIN) {
-		/*
-		 * -EAGAIN may eventually suspends the block. Check this for
-		 * sometime to be consistent with return status.
-		 */
-		timeout = 500;
-		do {
-			if (pm_runtime_suspended(gxp->dev)) {
-				ret = 0;
-				break;
-			}
-			/* Delay 200~400us per retry */
-			usleep_range(SHUTDOWN_DELAY_US_MIN, SHUTDOWN_DELAY_US_MAX);
-		} while (timeout--);
-	}
 	/* Remove our vote for INT/MIF state (if any) */
 	gxp_soc_pm_reset(gxp);
 	return ret;

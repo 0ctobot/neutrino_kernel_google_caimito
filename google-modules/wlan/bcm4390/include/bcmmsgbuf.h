@@ -89,6 +89,8 @@
 #define D2HRING_TXCMPLT_ITEMSIZE	24
 #define D2HRING_RXCMPLT_ITEMSIZE	40
 
+#define D2HRING_RXCMPLT_ITEMSIZE_V3	20u
+
 #define D2HRING_MDCMPLT_ITEMSIZE	80
 
 #define D2HRING_TXCMPLT_ITEMSIZE_PREREV7	16
@@ -301,8 +303,7 @@ typedef enum bcmpcie_msgtype {
 	MSG_TYPE_RX_CMPLT_AGGR		= 0x32,
 	MSG_TYPE_MDATA_CPL		= 0x33,
 	MSG_TYPE_RXBUF_POST_V3		= 0x34,
-	MSG_TYPE_RXBUF_CMPLT_CHAINED	= 0x35,
-	MSG_TYPE_RXBUF_LINK_POC		= 0x36, /* only used in RXCMPL_PKT_LIST_HW_POC */
+	MSG_TYPE_RXBUF_CMPLT_V3		= 0x35,
 	MSG_TYPE_API_MAX_RSVD		= 0x3F
 } bcmpcie_msg_type_t;
 
@@ -550,7 +551,6 @@ typedef struct pcie_dma_xfer_params {
 #define BCMPCIE_FLOW_RING_OPT_EXT_TXSTATUS	0x02u /* bit1 */
 #define BCMPCIE_FLOW_RING_INTF_MESH		0x04u /* bit2, identifies the mesh flow ring */
 #define BCMPCIE_FLOW_RING_INTF_LLW		0x08u /* bit3, identifies the llw flow ring */
-#define BCMPCIE_FLOW_RING_INTF_ART		0x10u /* bit4, identifies the art flow ring */
 
 /** Complete msgbuf hdr for flow ring update from host to dongle */
 typedef struct tx_flowring_create_request {
@@ -1044,32 +1044,12 @@ typedef union rxbuf_submit_item {
 } rxbuf_submit_item_t;
 
 /* marker */
-#define BCMPCIE_RX_PKT_RSSI_MASK	0xFFu
-#define BCMPCIE_RX_PKT_RSSI_SHIFT	0u
-#define BCMPCIE_RX_PKT_DUR0_MASK	0xFFFF00u
-#define BCMPCIE_RX_PKT_DUR0_SHIFT	8u
-#define BCMPCIE_RX_PKT_BAND_MASK	0x3000000u
-#define BCMPCIE_RX_PKT_BAND_SHIFT	24u
-
-#define BCM_PTM_CLK_ID			0xEu		/* PTM clock ID; IDs 0-3 used in tsync */
-#define BCM_PTM_CLK_ID_INVALID		0xFu		/* INV clock ID; IDs 0-3 used in tsync */
-#define BCM_PTM_CLK_ID_MASK		0xF0000000u	/* Bitmask for clkid */
-#define BCM_PTM_CLK_ID_SHIFT		28u		/* Bitshift for clkid */
-
-#define BCM_PTM_SET_CLKID(ts)	\
-do { \
-	ts &= ~BCM_PTM_CLK_ID_MASK;	\
-	ts |= (BCM_PTM_CLK_ID << BCM_PTM_CLK_ID_SHIFT);	\
-} while (0)
-
-#define BCM_PTM_SET_INVALID_CLKID(ts)	\
-do { \
-	ts &= ~BCM_PTM_CLK_ID_MASK;	\
-	ts |= (BCM_PTM_CLK_ID_INVALID << BCM_PTM_CLK_ID_SHIFT);	\
-} while (0)
-
-#define BCM_PTM_GET_CLKID(ts) (((ts) & BCM_PTM_CLK_ID_MASK) >> BCM_PTM_CLK_ID_SHIFT)
-#define IS_BCM_PTM_CLKID(ts) (BCM_PTM_GET_CLKID(ts) == BCM_PTM_CLK_ID)
+#define BCMPCIE_RX_PKT_RSSI_MASK		0xFFu
+#define BCMPCIE_RX_PKT_RSSI_SHIFT		0u
+#define BCMPCIE_RX_PKT_DUR0_MASK		0xFFFF00u
+#define BCMPCIE_RX_PKT_DUR0_SHIFT		8u
+#define BCMPCIE_RX_PKT_BAND_MASK		0x3000000u
+#define BCMPCIE_RX_PKT_BAND_SHIFT		24u
 
 /* D2H Rxcompletion ring work items for IPC rev7 */
 typedef struct host_rxbuf_cmpl {
@@ -1079,18 +1059,8 @@ typedef struct host_rxbuf_cmpl {
 	compl_msg_hdr_t	compl_hdr;
 	/**  filled up meta data len */
 	uint16		metadata_len;
-	union {
-		/* Based on hdr.msg_type use data_len (or) chain_cnt
-		 *	MSG_TYPE_RX_CMPLT => data_len
-		 *	MSG_TYPE_RXBUF_CMPLT_CHAINED => chain_cnt
-		 *	(data_len is available in HW_RxStatus)
-		 */
-
-		/** filled up buffer len to receive data */
-		uint16		data_len;
-		/** numbers of rx pkts chained by FW in this RxCmpl */
-		uint16		chain_cnt;
-	};
+	/** filled up buffer len to receive data */
+	uint16		data_len;
 	/** offset in the host rx buffer where the data starts */
 	uint16		data_offset;
 	/** offset in the host rx buffer where the data starts */
@@ -1164,14 +1134,6 @@ typedef enum pkt_csum_type_shift {
 	PKT_CSUM_TYPE_TRANS_CSUM_SHIFT = 5,	/* pkt requires TCP/UDP csum offload */
 	PKT_CSUM_TYPE_PSEUDOHDR_CSUM_SHIFT = 6,	/* pkt requires pseudo header csum offload */
 } pkt_type_shift_t;
-
-#define	CSUM_TYPE_IS_IPV4(csum_type)	((csum_type) & (1u << PKT_CSUM_TYPE_IPV4_SHIFT))
-#define	CSUM_TYPE_IS_IPV6(csum_type)	((csum_type) & (1u << PKT_CSUM_TYPE_IPV6_SHIFT))
-#define	CSUM_TYPE_IS_TCP(csum_type)	((csum_type) & (1u << PKT_CSUM_TYPE_TCP_SHIFT))
-#define	CSUM_TYPE_IS_UDP(csum_type)	((csum_type) & (1u << PKT_CSUM_TYPE_UDP_SHIFT))
-#define	CSUM_TYPE_IS_NWK(csum_type)	((csum_type) & (1u << PKT_CSUM_TYPE_NWK_CSUM_SHIFT))
-#define	CSUM_TYPE_IS_TRANS(csum_type)	((csum_type) & (1u << PKT_CSUM_TYPE_TRANS_CSUM_SHIFT))
-#define	CSUM_TYPE_IS_PSUEDO(csum_type)	((csum_type) & (1u << PKT_CSUM_TYPE_PSEUDOHDR_CSUM_SHIFT))
 
 typedef struct pkt_info_cso {
 	/* packet csum type = ipv4/v6|udp|tcp|nwk_csum|trans_csum|ph_csum */
@@ -1333,9 +1295,6 @@ typedef union txbuf_submit_item {
 	host_txbuf_post_t	txpost;
 	unsigned char		check[H2DRING_TXPOST_ITEMSIZE];
 } txbuf_submit_item_t;
-
-/* Tx post Ext flags */
-#define BCMPCIE_PKT_FLAGS_ART	(0x80u)	/* Active radiotap support */
 
 /* metadata_len */
 #define BCMPCIE_TX_PKT_LATENCY_MASK     0xFFFu
@@ -1539,7 +1498,7 @@ typedef struct txbatch_cmn_msghdr {
 
 typedef struct txbatch_msghdr {
 	txbatch_cmn_msghdr_t txcmn;
-	txbatch_lenptr_tup_t tx_tup[]; /**< Based on packet count */
+	txbatch_lenptr_tup_t tx_tup[0]; /**< Based on packet count */
 } txbatch_msghdr_t;
 
 /* TX desc posting header */
@@ -1562,7 +1521,7 @@ typedef struct txdescr_msghdr {
 	txdescr_cmn_msghdr_t txcmn;
 	uint8 txhdr[ETHER_HDR_LEN];
 	uint16 rsvd;
-	tx_lenptr_tup_t tx_tup[];	/**< Based on descriptor count */
+	tx_lenptr_tup_t tx_tup[0];	/**< Based on descriptor count */
 } txdescr_msghdr_t;
 
 /** Tx status header info */
@@ -1585,7 +1544,7 @@ typedef struct rxdesc_msghdr {
 	uint16 rsvd0;
 	uint8 rsvd1;
 	uint8 descnt;
-	rx_lenptr_tup_t rx_tup[];
+	rx_lenptr_tup_t rx_tup[0];
 } rxdesc_msghdr_t;
 
 /** RX complete tuples */
@@ -1602,7 +1561,7 @@ typedef struct rxcmplt_hdr {
 	cmn_msg_hdr_t   msg;
 	uint16 rsvd0;
 	uint16 rxcmpltcnt;
-	rxcmplt_tup_t rx_tup[];
+	rxcmplt_tup_t rx_tup[0];
 } rxcmplt_hdr_t;
 
 typedef struct hostevent_hdr {
@@ -1815,26 +1774,38 @@ typedef struct host_rxbuf_cmpl_aggr_ext {
 	host_rxbuf_cmpl_item_t	item[RXCPL_AGGR_CNT_EXT];
 } host_rxbuf_cmpl_aggr_ext_t;
 
+/* aggregated work item of rxcpl list */
+typedef struct host_rxbuf_cmpl_v3 {
+	/** common aggregated message header */
+	cmn_aggr_msg_hdr_t cmn_aggr_hdr;
 
-/* "APP2.0 HW RxStatus" to be consumed by Host for chained Rxcmpl - app rxcpl */
+	/** completion aggregated message header */
+	compl_aggr_msg_hdr_t compl_aggr_hdr;
+
+	/** rxbuffer work item */
+	host_rxbuf_cmpl_item_t	item;
+
+	/** TODO: add metadata common to the pkt list */
+
+	/* XOR checksum or a magic number to audit DMA done */
+	dma_done_t marker_ext;
+} host_rxbuf_cmpl_v3_t;
+
+typedef union rxbuf_complete_item_v3 {
+	host_rxbuf_cmpl_v3_t	rxcmpl;
+	unsigned char		check[D2HRING_RXCMPLT_ITEMSIZE_V3];
+} rxbuf_complete_item_v3_t;
+
+/* Host RxStatus to be consumed for chained Rxcmpl - host_rxbuf_cmpl_v3_t */
 typedef struct host_rxstatus {
 	uint16	datalen;	/* Payload bytes to be conusmed */
 	uint16	rsrvd;		/* DMA flags */
+	uint16	ptm_l;		/* 64-bit Rx PTM Timestamp */
+	uint16	ptm_ml;
+	uint16	ptm_mh;
+	uint16	ptm_h;
 	uint16	request_id_l;	/* 32-bit host pktid */
 	uint16	request_id_h;
-	union {
-		uint64		ptm;
-		struct {
-			uint32  ptm_lo;
-			uint32  ptm_hi;
-		};
-		struct {
-			uint16	ptm_l;		/* 64-bit Rx PTM Timestamp */
-			uint16	ptm_ml;
-			uint16	ptm_mh;
-			uint16	ptm_h;
-		};
-	};
 } host_rxstatus_t;
 
 /* txpost extended tag types */
@@ -1843,8 +1814,7 @@ enum {
 	TXPOST_EXT_TAG_TYPE_RSVD	= 0u,	/* Reserved */
 	TXPOST_EXT_TAG_TYPE_CSO		= 1u,
 	TXPOST_EXT_TAG_TYPE_MESH	= 2u,
-	TXPOST_EXT_TAG_TYPE_ART		= 3u,
-	TXPOST_EXT_TAG_TYPE_MAX		= 4u	/* NOTE: increment this as you add reasons above */
+	TXPOST_EXT_TAG_TYPE_MAX		= 3u	/* NOTE: increment this as you add reasons above */
 };
 
 /* Fixed lengths for each extended tag */
@@ -1852,18 +1822,8 @@ typedef uint8 txpost_ext_tag_len_t;
 enum {
 	TXPOST_EXT_TAG_LEN_RSVD		= 0u, /* Reserved */
 	TXPOST_EXT_TAG_LEN_CSO		= 4u,
-	TXPOST_EXT_TAG_LEN_MESH		= 20u,
-	TXPOST_EXT_TAG_LEN_ART		= 30u
+	TXPOST_EXT_TAG_LEN_MESH		= 20u
 };
-
-#define TXPOST_EXT_ART_HDR_LEN	(DOT11_MAC_HDR_LEN + DOT11_QOS_LEN)
-
-/* ART header information in extended Txpost workitem */
-typedef struct txpost_wi_art_info_s {
-	txpost_ext_tag_type_t ext_tag;
-	uint8 PAD[3];
-	uint8 art_hdr[TXPOST_EXT_ART_HDR_LEN];
-} txpost_wi_art_info_t;
 
 /* CSO specific information for the cso enabled txpost workitem */
 typedef struct txpost_wi_cso_info_s {

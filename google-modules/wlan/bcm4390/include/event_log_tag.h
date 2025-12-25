@@ -248,8 +248,6 @@
 #define EVENT_LOG_TAG_SB_SCHED_DBG_SYNC		233
 #define EVENT_LOG_TAG_ENHANCED_TS		234
 #define EVENT_LOG_TAG_PHY_OBSS_INFO		235
-#define EVENT_LOG_TAG_SBI_SC_INFO		236
-#define EVENT_LOG_TAG_SBI_SC_ERR		237
 
 /* Available space for new tags for Dingo, Iguana and branches
  * prior to Koala only. From Koala onwards, new tags must be greater
@@ -658,21 +656,8 @@
 #define EVENT_LOG_TAG_FILS_DISC_ERROR		495
 #define EVENT_LOG_TAG_MCNX_IDX_LOG		496
 
-/* AOP triggered scan (AOP request WiFi FW to scan) */
-#define EVENT_LOG_TAG_AOP_SCAN_ERR		497
-#define EVENT_LOG_TAG_AOP_SCAN_INFO		498
-
-#define EVENT_LOG_TAG_PER_PKT_INFO              499
-#define EVENT_LOG_TAG_PER_PKT_ERROR             500
-
-/* UHR EVEVNT_LOG_TAG */
-#define EVENT_LOG_TAG_WL_UHR_INFO		501
-#define EVENT_LOG_TAG_WL_UHR_TRACE		502
-#define EVENT_LOG_TAG_WL_UHR_WARN		503
-#define EVENT_LOG_TAG_WL_UHR_ERROR		504
-
 /* EVENT_LOG_TAG_MAX	= Set to the same value of last tag, not last tag + 1 */
-#define EVENT_LOG_TAG_MAX			504
+#define EVENT_LOG_TAG_MAX			496
 
 typedef enum wl_el_set_type_def {
 	EVENT_LOG_SET_TYPE_DEFAULT = 0, /* flush the log buffer when it is full - Default option */

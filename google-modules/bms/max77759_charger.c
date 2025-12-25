@@ -189,7 +189,7 @@ int max77759_external_reg_read(struct device *dev, uint8_t reg, uint8_t *val)
 	if (max77759_resume_check(data))
 		return -EAGAIN;
 
-	if (max77759_readn(data->regmap, reg, val, 2) < 0)
+	if (max77759_reg_read(data->regmap, reg, val) < 0)
 		return -EINVAL;
 
 	return 0;
@@ -724,8 +724,6 @@ static int max77759_get_usecase(struct max77759_foreach_cb_data *cb_data,
 	if (cb_data->buck_on && !uc_data->dcin_is_dock)
 		wlc_rx = false;
 
-	uc_data->chgr_on = chgr_on;
-
 	/* buck_on is wired, wlc_rx is wireless, might still need rTX */
 	if (cb_data->usb_wlc) {
 		/* USB+WLC for factory and testing */
@@ -910,8 +908,6 @@ static int max77759_set_insel(struct max77759_chgr_data *data,
 		insel_value |= MAX77759_CHG_CNFG_12_WCINSEL;
 	}
 
-	mod_delayed_work(system_wq, &data->wcin_charge_disable_work, 0);
-
 	if (from_uc != use_case || force_wlc || wlc_on) {
 		wlc_on = wlc_on || (insel_value & MAX77759_CHG_CNFG_12_WCINSEL) != 0;
 
@@ -983,8 +979,6 @@ static int max77759_set_usecase(struct max77759_chgr_data *data,
 			 uc_data->bst_on, uc_data->bst_sel, uc_data->ext_bst_ctl,
 			 uc_data->lsw1_is_open, uc_data->lsw1_is_closed);
 	}
-
-	uc_data->to_uc = use_case;
 
 	/* always fix/adjust insel (solves multiple input_suspend) */
 	ret = max77759_set_insel(data, uc_data, cb_data, from_uc, use_case);
@@ -1765,27 +1759,6 @@ static void max77759_wcin_inlim_work_en(struct max77759_chgr_data *data, bool en
 						data->wcin_soft_icl, false);
 	}
 	mutex_unlock(&data->wcin_inlim_lock);
-}
-
-/*
- * this doesn't need any special locking because it's called from inside a mode_callback
- * to_uc (usecase to transition to) and chgr_on (signifies mode 4/5) must be set before calling
- * this work function
- */
-static void max77759_wcin_charge_disable_work(struct work_struct *work)
-{
-	struct max77759_chgr_data *data = container_of(work, struct max77759_chgr_data,
-						       wcin_charge_disable_work.work);
-	struct max77759_usecase_data *uc_data = &data->uc_data;
-	/*
-	 * dc_icl votable is a min voter, so this call won't be called recursively forever if
-	 * the election result doesn't change
-	 */
-	gvotable_cast_long_vote(data->dc_icl_votable,
-				MAX77759_USECASE_VOTER,
-				MAX77759_USECASE_WLC_CHARGE_DISABLE_INLIM_LIMIT,
-				(!uc_data->chgr_on &&
-				((uc_data->to_uc == GSU_MODE_WLC_RX))));
 }
 
 #if IS_ENABLED(CONFIG_GPIOLIB)
@@ -3309,7 +3282,6 @@ static int max77759_charger_probe(struct i2c_client *client,
 	i2c_set_clientdata(client, data);
 
 	INIT_DELAYED_WORK(&data->wcin_inlim_work, max77759_wcin_inlim_work);
-	INIT_DELAYED_WORK(&data->wcin_charge_disable_work, max77759_wcin_charge_disable_work);
 
 	data->usecase_wake_lock = wakeup_source_register(NULL, "max77759-usecase");
 	if (!data->usecase_wake_lock) {

@@ -77,9 +77,6 @@
 #ifdef WL_NAN
 #include <wl_cfgnan.h>
 #endif /* WL_NAN */
-#ifdef WL_TWT_HAL_IF
-#include <wl_cfgtwt.h>
-#endif /* WL_TWT_HAL_IF */
 #ifdef WL_BAM
 #include <wl_bam.h>
 #endif  /* WL_BAM */
@@ -91,16 +88,8 @@ struct bcm_cfg80211;
 struct wl_security;
 struct wl_ibss;
 
-#if defined(WL_TWT_HAL_IF) && defined(WL_TWT)
-#error "use either TWT private command interface or HAL interface"
-#endif /* WL_TWT_HAL_IF && WL_TWT */
-
 /* Enable by default */
-/* aware dfs chan policy enable it by default */
-#define WL_DYNAMIC_CHAN_POLICY_AWARE_DFS
 #define WL_WTC
-/* WPA3 compatibility mode */
-#define WL_MRSNO_OFFLD
 
 #ifndef WL_CLIENT_SAE
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0) && !defined(WL_SAE) && !defined(WL_SAE_STD_API))
@@ -172,7 +161,6 @@ struct wl_ibss;
 
 /* check whether local admin bit is set */
 #define IS_LOCAL_ETHERADDR(ea)  (((const uint8 *)(ea))[0] & 2)
-#define WME_COUNTERS
 
 /* Define to default v6 */
 #define USE_STA_INFO_V6
@@ -275,8 +263,6 @@ typedef sta_info_v4_t wlcfg_sta_info_t;
 	.max_power		= 30,				\
 }
 #endif /* CFG80211_6G_SUPPORT */
-
-#define IS_INVALID_CONN_ADDR(addr) (ETHER_ISNULLADDR(addr) || !ETHER_ISUCAST(addr))
 
 #if defined(WL_SAE) || defined(WL_SAE_STD_API)
 #define IS_AKM_SAE(akm) (akm == WLAN_AKM_SUITE_SAE)
@@ -989,20 +975,20 @@ entry = container_of((ptr), type, member); \
 #endif /* STRICT_GCC_WARNINGS */
 
 typedef enum wl_pm_state {
-	PM_STATE_INIT,
-	PM_STATE_CONNECT,
-	PM_STATE_RTT_START,
-	PM_STATE_RTT_STOP,
-	PM_STATE_PRIV_CMD,
-	PM_STATE_HOST_SET,
-	PM_STATE_CONN_NOTIFIER,
-	PM_STATE_CONN_NOTIFIER2,
-	PM_STATE_CONN_DONE,
-	PM_STATE_WORK_HDLR,
-	PM_STATE_BTCOEX,
-	PM_STATE_P2P_PS,
-	PM_STATE_P2P_LISTEN,
-	PM_STATE_AP_START
+    PM_STATE_INIT,
+    PM_STATE_CONNECT,
+    PM_STATE_RTT_START,
+    PM_STATE_RTT_STOP,
+    PM_STATE_PRIV_CMD,
+    PM_STATE_HOST_SET,
+    PM_STATE_CONN_NOTIFIER,
+    PM_STATE_CONN_NOTIFIER2,
+    PM_STATE_CONN_DONE,
+    PM_STATE_WORK_HDLR,
+    PM_STATE_BTCOEX,
+    PM_STATE_P2P_PS,
+    PM_STATE_P2P_LISTEN,
+    PM_STATE_AP_START
 } wl_pm_state_t;
 
 /* DPP Public Action Frame types */
@@ -1139,7 +1125,6 @@ typedef enum wl_iftype {
 	WL_IF_TYPE_AIBSS = 10,
 	WL_IF_TYPE_MLO_STA_LINK = 11,
 	WL_IF_TYPE_MLO_AP_LINK = 12,
-	WL_IF_TYPE_ART = 13,
 	WL_IF_TYPE_MAX
 } wl_iftype_t;
 
@@ -1162,7 +1147,6 @@ enum wl_mode {
 	WL_MODE_AP = 2,
 
 	WL_MODE_NAN = 4,
-	WL_MODE_ART = 5,
 	WL_MODE_MAX
 };
 
@@ -1275,7 +1259,7 @@ struct beacon_proberesp {
 	__le64 timestamp;
 	__le16 beacon_int;
 	__le16 capab_info;
-	u8 variable[];
+	u8 variable[0];
 } __attribute__ ((packed));
 
 /* driver configuration */
@@ -1433,7 +1417,6 @@ typedef struct wl_mlo_link {
 	u8 link_addr[ETH_ALEN];
 	u8 peer_link_addr[ETH_ALEN];
 	chanspec_t chspec;
-	u8 link_power_state;
 } wl_mlo_link_t;
 
 typedef struct wl_mlo_link_info {
@@ -1460,9 +1443,6 @@ typedef struct wl_mlo_config {
 #define MAX_SAP_BW_6G	WL_CHANSPEC_BW_160
 #define MAX_SAP_BW_5G	WL_CHANSPEC_BW_80
 #define MAX_SAP_BW_2G	WL_CHANSPEC_BW_20
-
-#define DHD_SKIP_ML_CONFIG      1u
-#define DHD_FORCE_ML_DISABLE    2u
 
 typedef struct wl_chan_info {
 	chanspec_t chspec;
@@ -1500,6 +1480,7 @@ struct net_info {
 	u16 passphrase_cfg_len;
 #ifdef WL_MLO
 	wl_mlo_link_info_t mlinfo;          /* For MLO Link interface */
+	wl_mlo_link_info_t mlinfo_cache;    /* For MLO Link roam scenarios */
 #endif /* WL_MLO */
 	u8 *qos_up_table;
 	bool reg_update_reqd;
@@ -1936,10 +1917,9 @@ typedef struct wl_wps_session {
 #endif /* WL_STATIC_IFNAME */
 
 #ifdef WL_DYNAMIC_CHAN_POLICY
-#define DYN_CHAN_POLICY_INDOOR		(1u << 0u)
-#define DYN_CHAN_POLICY_DFS		(1u << 1u)
-#define DYN_CHAN_POLICY_AWARE_DFS	(1u << 2u)
-#define DYN_CHAN_POLICY_MASK		0x0007u
+#define DYN_CHAN_POLICY_INDOOR   (1u << 0u)
+#define DYN_CHAN_POLICY_DFS      (1u << 1u)
+#define DYN_CHAN_POLICY_MASK     0x0003u
 #endif /* WL_DYNAMIC_CHAN_POLICY */
 
 typedef struct buf_data {
@@ -1954,7 +1934,6 @@ typedef struct wl_loc_info {
 	bool in_progress;             /* for tracking listen in progress        */
 	struct delayed_work work;     /* for taking care of listen timeout      */
 	struct wireless_dev *wdev;    /* interface on which listen is requested */
-	uint32 cur_chspec;
 } wl_loc_info_t;
 
 typedef enum wl_sar_events {
@@ -2160,9 +2139,6 @@ typedef struct cfg_hang_recovery {
 	struct net_device *recovery_ndev;
 	u32 recovery_state;
 } cfg_hang_recovery_t;
-
-/* feature mask for cfg80211/vendor nl80211 features */
-#define CFG80211_FEAT_LTE_CHANAVOID		0x00000001u
 
 /* private data of cfg80211 interface */
 struct bcm_cfg80211 {
@@ -2403,7 +2379,6 @@ struct bcm_cfg80211 {
 #endif /* WL_BCNRECV */
 	struct net_device *static_ndev;
 	uint8 static_ndev_state;
-	uint8 nmi_ndev_state;
 	uint8 hal_state;
 	wl_wlc_version_t wlc_ver;
 	u8 scan_params_ver;
@@ -2509,12 +2484,6 @@ struct bcm_cfg80211 {
 	u8 *chan_info_list;
 	u32 dyn_chan_policy;
 	bool p2p_cleanup;
-	u64 cfg80211_features;
-	uint32 nan_usd_busy_cnt;
-	uint32 actfrm_fail_cnt;
-#ifdef DHD_ART
-	u8 art_bssid[ETHER_ADDR_LEN]; /* BSSID filter */
-#endif /* DHD_ART */
 };
 
 typedef struct wl_multink_config {
@@ -2539,6 +2508,7 @@ enum wl_recovery_state_type {
 	WL_STATE_CONNECTING_SKIP_DUMP
 };
 
+#define WL_STATIC_IFIDX	(DHD_MAX_IFS + DHD_MAX_STATIC_IFS - 1)
 enum static_ndev_states {
 	NDEV_STATE_NONE,
 	NDEV_STATE_OS_IF_CREATED,
@@ -2546,15 +2516,11 @@ enum static_ndev_states {
 	NDEV_STATE_FW_IF_FAILED,
 	NDEV_STATE_FW_IF_DELETED
 };
-
 #define IS_CFG80211_STATIC_IF(cfg, ndev) \
 	((cfg && (cfg->static_ndev == ndev)) ? true : false)
 #define IS_CFG80211_STATIC_IF_ACTIVE(cfg) \
 	((cfg && cfg->static_ndev && \
 	(cfg->static_ndev_state & NDEV_STATE_FW_IF_CREATED)) ? true : false)
-#define IS_CFG80211_NMI_IF_ACTIVE(cfg) \
-	((cfg && cfg->nmi_ndev && \
-	(cfg->nmi_ndev_state & NDEV_STATE_FW_IF_CREATED)) ? true : false)
 #define IS_CFG80211_STATIC_IF_NAME(cfg, name) \
 	(cfg && cfg->static_ndev && \
 	  !strncmp(cfg->static_ndev->name, name, strlen(name)))
@@ -3264,8 +3230,6 @@ wl_iftype_to_str(int wl_iftype)
 			return "WL_IF_TYPE_MONITOR";
 		case (WL_IF_TYPE_AIBSS):
 			return "WL_IF_TYPE_AIBSS";
-		case (WL_IF_TYPE_ART):
-			return "WL_IF_TYPE_ART";
 		default:
 			return "WL_IF_TYPE_UNKNOWN";
 	}
@@ -3545,8 +3509,8 @@ extern s32 wl_cfg80211_notify_ifdel(struct net_device * dev, int ifidx, char *na
 	uint8 bssidx);
 extern s32 wl_cfg80211_notify_ifchange(struct net_device * dev, int ifidx, char *name, uint8 *mac,
 	uint8 bssidx);
-extern struct net_device* dhd_cfg80211_allocate_if(struct bcm_cfg80211 *cfg, int ifidx,
-	const char *name, uint8 *mac, uint8 bssidx, const char *dngl_name, bool rtnl_lock_reqd);
+extern struct net_device* wl_cfg80211_allocate_if(struct bcm_cfg80211 *cfg, int ifidx,
+	const char *name, uint8 *mac, uint8 bssidx, const char *dngl_name);
 extern int wl_cfg80211_register_if(struct bcm_cfg80211 *cfg,
 	int ifidx, struct net_device* ndev, bool rtnl_lock_reqd);
 extern int wl_cfg80211_remove_if(struct bcm_cfg80211 *cfg,
@@ -3728,7 +3692,6 @@ extern bool wl_cfg80211_bss_isup(struct net_device *ndev, int bsscfg_idx);
 
 struct net_device *wl_cfg80211_post_ifcreate(struct net_device *ndev,
 	wl_if_event_info *event, u8 *addr, const char *name, bool rtnl_lock_reqd);
-extern s32 _wl_cfg80211_post_ifdel(struct net_device *ndev, bool rtnl_lock_reqd, s32 ifidx);
 extern s32 wl_cfg80211_post_ifdel(struct net_device *ndev, bool rtnl_lock_reqd, s32 ifidx);
 #if defined(PKT_FILTER_SUPPORT) && defined(APSTA_BLOCK_ARP_DURING_DHCP)
 extern void wl_cfg80211_block_arp(struct net_device *dev, int enable);
@@ -3810,8 +3773,7 @@ extern s32 wl_cfg80211_static_if_open(struct net_device *net);
 extern s32 wl_cfg80211_static_if_close(struct net_device *net);
 extern struct net_device * wl_cfg80211_post_static_ifcreate(struct bcm_cfg80211 *cfg,
 	wl_if_event_info *event, u8 *addr, s32 iface_type);
-extern s32 wl_cfg80211_post_static_ifdel(struct bcm_cfg80211 *cfg,
-		struct net_device *ndev, s32 ifidx, s32 bssidx);
+extern s32 wl_cfg80211_post_static_ifdel(struct bcm_cfg80211 *cfg, struct net_device *ndev);
 #endif  /* WL_STATIC_IF */
 extern struct wireless_dev *wl_cfg80211_get_wdev_from_ifname(struct bcm_cfg80211 *cfg,
 	const char *name);
@@ -4017,6 +3979,10 @@ extern void wl_android_roamoff_dbg_dump(struct bcm_cfg80211 *cfg);
 #define ROAMOFF_DBG_SAVE(dev, rsn, var)
 #define ROAMOFF_DBG_DUMP(cfg)
 #endif /* DEBUG_SETROAMMODE */
+#if !defined(WL_TWT) && defined(WL_TWT_HAL_IF)
+extern s32 wl_cfgvendor_notify_twt_event(struct bcm_cfg80211 *cfg,
+	bcm_struct_cfgdev *cfgdev, const wl_event_msg_t *e, void *data);
+#endif /* !WL_TWT && WL_TWT_HAL_IF */
 extern int wl_get_all_sideband_chanspecs(uint center_channel, chanspec_band_t band,
 	chanspec_bw_t bw, chanspec_t *chspecs, int *cnt);
 
@@ -4104,5 +4070,4 @@ extern s32 wl_cfg80211_set_pm(struct net_device *dev, u32 pm_enable, wl_pm_state
 extern s32 wl_validate_bss_length(uint32 version, uint32 tot_len, uint32 ie_length);
 bool wl_cfg80211_verify_bss(struct bcm_cfg80211 *cfg, struct net_device *ndev,
 		struct cfg80211_bss **bss);
-bool wl_cfg80211_is_dualsta_active(struct bcm_cfg80211 *cfg);
 #endif /* _wl_cfg80211_h_ */

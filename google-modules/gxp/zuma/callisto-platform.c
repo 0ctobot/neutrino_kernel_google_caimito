@@ -2,7 +2,7 @@
 /*
  * Platform device driver for Callisto.
  *
- * Copyright (C) 2022-2025 Google LLC
+ * Copyright (C) 2022-2024 Google LLC
  */
 
 #include <linux/device.h>
@@ -182,7 +182,6 @@ static void __exit gxp_platform_exit(void)
 }
 
 MODULE_DESCRIPTION("Google GXP platform driver");
-MODULE_IMPORT_NS(DMA_BUF);
 MODULE_LICENSE("GPL");
 #ifdef GIT_REPO_TAG
 MODULE_INFO(gitinfo, GIT_REPO_TAG);

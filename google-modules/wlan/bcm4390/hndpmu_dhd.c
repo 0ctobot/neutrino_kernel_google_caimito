@@ -68,7 +68,8 @@ si_pmu_set_min_res_mask(si_t *sih, osl_t *osh, uint min_res_mask)
 	origidx = si_coreidx(sih);
 	if (AOB_ENAB(sih)) {
 		pmu = si_setcore(sih, PMU_CORE_ID, 0);
-	} else {
+	}
+	else {
 		pmu = si_setcoreidx(sih, SI_CC_IDX);
 	}
 	ASSERT(pmu != NULL);

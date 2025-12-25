@@ -111,6 +111,7 @@ struct edgetpu_device_group {
 	struct edgetpu_client *client;
 	enum edgetpu_device_group_status status;
 	bool activated; /* whether this group's VII has ever been activated */
+	struct edgetpu_vii vii;		/* VII mailbox */
 
 	/* The IOMMU domain being associated to this group */
 	struct edgetpu_iommu_domain *etdomain;
@@ -123,15 +124,16 @@ struct edgetpu_device_group {
 	/* Mask of errors set for this group. */
 	uint fatal_errors;
 
-	/* end of fields protected by @lock */
-
 	/* List of DMA fences owned by this group */
 	struct list_head dma_fence_list;
+
+	/* end of fields protected by @lock */
+
 	/*
-	 * Protects dma_fence_list.
-	 * @lock must also be held for reading or writing whenever @dma_fence_lock is held.
+	 * Used to synchronize any mapping operations for this device group.
+	 * @lock must be held for reading or writing whenever @mapping_lock is held.
 	 */
-	struct mutex dma_fence_lock;
+	struct mutex mapping_lock;
 
 	/*
 	 * Used to synchronize any VII command sending or response fetching for this device group.

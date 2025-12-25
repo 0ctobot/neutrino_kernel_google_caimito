@@ -550,13 +550,9 @@ dhd_dump_pkt_enabled(dhd_pub_t *dhdp)
 }
 #else
 static INLINE void
-dhd_dump_pkt_cnts_inc(dhd_pub_t *dhdp, bool tx, uint16 *pktfate, uint16 pkttype)
-{ }
+dhd_dump_pkt_cnts_inc(dhd_pub_t *dhdp, bool tx, uint16 *pktfate, uint16 pkttype) { }
 static INLINE bool
-dhd_dump_pkt_enabled(dhd_pub_t *dhdp)
-{
-	return FALSE;
-}
+dhd_dump_pkt_enabled(dhd_pub_t *dhdp) { return FALSE; }
 #endif /* DHD_PKTDUMP_ROAM */
 
 #ifdef DHD_8021X_DUMP
@@ -903,15 +899,15 @@ dhd_check_dhcp(uint8 *pktdata)
 
 	/* check UDP port for bootp (67, 68) */
 	if (b->udph.src_port != htons(DHCP_PORT_SERVER) &&
-		b->udph.src_port != htons(DHCP_PORT_CLIENT) &&
-		b->udph.dst_port != htons(DHCP_PORT_SERVER) &&
-		b->udph.dst_port != htons(DHCP_PORT_CLIENT)) {
-		return FALSE;
+	        b->udph.src_port != htons(DHCP_PORT_CLIENT) &&
+	        b->udph.dst_port != htons(DHCP_PORT_SERVER) &&
+	        b->udph.dst_port != htons(DHCP_PORT_CLIENT)) {
+	        return FALSE;
 	}
 
 	/* check header length */
 	if (ntohs(iph->tot_len) < ntohs(b->udph.len) + sizeof(struct bcmudp_hdr)) {
-		return FALSE;
+	        return FALSE;
 	}
 	return TRUE;
 }
@@ -1030,23 +1026,7 @@ dhd_dhcp_dump(dhd_pub_t *dhdp, int ifidx, uint8 *pktdata, bool tx,
 					opstr = DHCP_OPS_STR(b->op);
 					DHD_STATLOG_DATA(dhdp, DHCP_TYPES_STAT(dhcp_type),
 						ifidx, tx, cond);
-#ifdef PCIE_FULL_DONGLE
-					if (DHD_IF_ROLE_GENERIC_STA(dhdp, ifidx)) {
-						if ((tx && (b->op == DHCP_OP_REQUEST)) ||
-							(!tx && (b->op == DHCP_OP_REPLY))) {
-							DHCP_PRINT("DHCP");
-						}
-					} else if (DHD_IF_ROLE_P2PGO(dhdp, ifidx) ||
-							DHD_IF_ROLE_AP(dhdp, ifidx)) {
-						if ((tx && (b->op == DHCP_OP_REPLY)) ||
-							(!tx && (b->op == DHCP_OP_REQUEST))) {
-							DHCP_PRINT("DHCP");
-						}
-					}
-#else
 					DHCP_PRINT("DHCP");
-#endif /* PCIE_FULL_DONGLE */
-					dhd_track_dhcp_op(dhdp, b->op, ifidx, tx);
 					break;
 				}
 			}
@@ -1171,7 +1151,7 @@ dhd_check_arp(uint8 *pktdata, uint16 ether_type)
 
 bool arp_print_enabled = FALSE;
 #ifdef DHD_ARP_DUMP
-#if defined(BOARD_HIKEY) || defined(BOARD_STB)
+#if defined(BOARD_HIKEY) || defined (BOARD_STB)
 /* On Hikey, due to continuous ARP prints
  * DPC not scheduled. Hence redirect to debug dump unless
  * enabled explicitly via sysfs variable.
@@ -1506,8 +1486,7 @@ static dhd_advlog_arr_map_entry_t advlog_map_arr[] = {
 	{DHD_ADVLOG_EAPOL, eapol_advlog_map, ARRAY_SIZE(eapol_advlog_map)},
 };
 
-const char *
-get_advlog_val(dhd_advlog_map_entry_t *arr, uint32 arr_len, int tag)
+const char* get_advlog_val(dhd_advlog_map_entry_t *arr, uint32 arr_len, int tag)
 {
 	int i;
 	for (i = 0; i < arr_len; i++) {

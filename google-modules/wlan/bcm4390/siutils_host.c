@@ -137,7 +137,7 @@ si_get_pmu_reg_addr(si_t *sih, uint32 offset)
 		/* note: this function is used by dhd and possible 64 bit compilation needs
 		 * a cast to (unsigned long) for avoiding a compilation error.
 		 */
-		pmuaddr = (uint32)(uintptr)((volatile uint8 *)pmu + offset);
+		pmuaddr = (uint32)(uintptr)((volatile uint8*)pmu + offset);
 		si_setcoreidx(sih, origidx);
 	} else
 		pmuaddr = SI_ENUM_BASE(sih) + offset;
@@ -171,7 +171,7 @@ BCMATTACHFN(si_oob_war_BT_F1)(si_t *sih)
  */
 si_info_t *
 BCMATTACHFN(si_doattach)(si_info_t *sii, uint devid, osl_t *osh, volatile void *regs,
-	uint bustype, void *sdh, char **vars, uint *varsz)
+                       uint bustype, void *sdh, char **vars, uint *varsz)
 {
 	struct si_pub *sih = &sii->pub;
 	chipcregs_t *cc;
@@ -242,15 +242,13 @@ si_tcm_size(si_t *sih)
 	origidx = si_coreidx(sih);
 
 	/* Switch to CR4 core */
-	regs = si_setcore(sih, ARMCR4_CORE_ID, 0);
-	if (!regs)
+	if (!(regs = si_setcore(sih, ARMCR4_CORE_ID, 0)))
 		goto done;
 
 	/* Get info for determining size. If in reset, come out of reset,
 	 * but remain in halt
 	 */
-	wasup = si_iscoreup(sih);
-	if (!wasup)
+	if (!(wasup = si_iscoreup(sih)))
 		si_core_reset(sih, SICF_CPUHALT, SICF_CPUHALT);
 
 	arm_cap_reg = (volatile uint32 *)(regs + SI_CR4_CAP);
@@ -336,7 +334,7 @@ si_ccreg(si_t *sih, uint32 offset, uint32 mask, uint32 val)
 /* #define	SI_BPIND_4BYTE		0xF */
 int
 si_bpind_access(si_t *sih, uint32 addr_high, uint32 addr_low,
-	int32 *data, bool read, uint32 us_timeout)
+		int32 * data, bool read, uint32 us_timeout)
 {
 
 	uint32 status = 0;

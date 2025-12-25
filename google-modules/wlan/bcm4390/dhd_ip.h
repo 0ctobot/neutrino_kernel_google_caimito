@@ -32,7 +32,8 @@
 #include <dhd.h>
 #endif /* DHDTCPACK_SUPPRESS || DHDTCPSYNC_FLOOD_BLK */
 
-typedef enum pkt_frag {
+typedef enum pkt_frag
+{
 	DHD_PKT_FRAG_NONE = 0,
 	DHD_PKT_FRAG_FIRST,
 	DHD_PKT_FRAG_CONT,

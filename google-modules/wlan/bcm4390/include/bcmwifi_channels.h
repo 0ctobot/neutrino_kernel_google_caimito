@@ -253,10 +253,13 @@ typedef struct {
 	(((chspec) & WL_CHANSPEC_320_CHAN_MASK) >> WL_CHANSPEC_320_CHAN_SHIFT)
 #define WL_CHSPEC_320_CNTR_FREQ_OVERLAPPED(chspec) (WL_CHSPEC_320_CHAN(chspec) & 0x04u)
 
-#define WL_CHSPEC_BAND(chspec)	(CHSPEC_BAND(chspec) >> WL_CHANSPEC_BAND_SHIFT)
 #define WL_CHSPEC_BW(chspec)	(CHSPEC_BW(chspec) >> WL_CHANSPEC_BW_SHIFT)
 
-#define CHSPEC_BW_MAX_NUM	(WL_CHSPEC_BW(WL_CHANSPEC_BW_MASK) + 1u)
+/* deprecated: to be removed */
+#define MAX_BW_NUM		(uint8)(WL_CHANSPEC_BW_MASK >> WL_CHANSPEC_BW_SHIFT)
+#define CHSPEC_320_CNTR_FREQ_OVERLAPPED(chspec) (WL_CHSPEC_320_CHAN(chspec) & 0x04u)
+
+#define CHSPEC_BW_MAX_NUM	WL_CHSPEC_BW(WL_CHANSPEC_BW_MASK)
 #define CHSPEC_BW_REPL(chspec, chspec_bw) \
 	(((chspec) & ~WL_CHANSPEC_BW_MASK) | (chspec_bw))
 

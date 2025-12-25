@@ -32,7 +32,7 @@
 
 bool kbase_is_gpu_removed(struct kbase_device *kbdev)
 {
-	if (!IS_ENABLED(CONFIG_MALI_ARBITER_SUPPORT))
+	if (!kbase_has_arbiter(kbdev))
 		return false;
 
 
@@ -89,9 +89,12 @@ void kbase_gpu_interrupt(struct kbase_device *kbdev, u32 val)
 {
 	u32 power_changed_mask = (POWER_CHANGED_ALL | MCU_STATUS_GPU_IRQ);
 	struct kbase_csf_scheduler *scheduler = &kbdev->csf.scheduler;
+	bool is_legacy_gpu_irq_mask = true;
 
 
 	KBASE_KTRACE_ADD(kbdev, CORE_GPU_IRQ, NULL, val);
+
+
 	if (val & GPU_FAULT)
 		kbase_gpu_fault_interrupt(kbdev);
 
@@ -105,7 +108,9 @@ void kbase_gpu_interrupt(struct kbase_device *kbdev, u32 val)
 		 */
 		spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
 		kbase_reg_write32(kbdev, GPU_CONTROL_ENUM(GPU_IRQ_MASK),
-				  GPU_IRQ_REG_ALL & ~GPU_PROTECTED_FAULT);
+				  kbase_reg_gpu_irq_all(is_legacy_gpu_irq_mask) &
+					  ~GPU_PROTECTED_FAULT);
+
 		spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
 
 		kbase_csf_scheduler_spin_lock(kbdev, &flags);
@@ -139,7 +144,7 @@ void kbase_gpu_interrupt(struct kbase_device *kbdev, u32 val)
 
 	/* Defer clearing CLEAN_CACHES_COMPLETED to kbase_clean_caches_done.
 	 * We need to acquire hwaccess_lock to avoid a race condition with
-	 * kbase_gpu_cache_flush_and_busy_wait
+	 * kbase_gpu_cache_flush_and_busy_wait.
 	 */
 	KBASE_KTRACE_ADD(kbdev, CORE_GPU_IRQ_CLEAR, NULL, val & ~CLEAN_CACHES_COMPLETED);
 	kbase_reg_write32(kbdev, GPU_CONTROL_ENUM(GPU_IRQ_CLEAR), val & ~CLEAN_CACHES_COMPLETED);
@@ -183,14 +188,12 @@ void kbase_gpu_interrupt(struct kbase_device *kbdev, u32 val)
 			 * cases so timeouts are tolerable.
 			 */
 			u32 mcu_status;
-			const u32 timeout_us =
-				kbase_get_timeout_ms(kbdev, CSF_FIRMWARE_SOI_HALT_TIMEOUT) *
-				USEC_PER_MSEC;
-
-			int err = kbase_reg_poll32_timeout(
-				kbdev, GPU_CONTROL_ENUM(MCU_STATUS), mcu_status,
+			int err = read_poll_timeout_atomic(
+				kbase_reg_read32, mcu_status,
 				MCU_STATUS_VALUE_GET(mcu_status) != MCU_STATUS_VALUE_ENABLED, 1,
-				timeout_us, false);
+				kbase_get_timeout_ms(kbdev, CSF_FIRMWARE_SOI_HALT_TIMEOUT) *
+					USEC_PER_MSEC,
+				false, kbdev, GPU_CONTROL_ENUM(MCU_STATUS));
 			if (unlikely(err))
 				dev_warn(kbdev->dev, "MCU hasn't halted after automatic sleep");
 
@@ -228,7 +231,7 @@ void kbase_gpu_interrupt(struct kbase_device *kbdev, u32 val)
 		 * cores.
 		 */
 		if (kbdev->pm.backend.l2_always_on ||
-		    kbase_hw_has_issue(kbdev, BASE_HW_ISSUE_TTRX_921))
+		    kbase_hw_has_issue(kbdev, KBASE_HW_ISSUE_TTRX_921))
 			kbase_pm_power_changed(kbdev);
 	}
 

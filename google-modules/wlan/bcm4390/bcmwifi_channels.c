@@ -23,9 +23,6 @@
  * <<Broadcom-WL-IPTag/Dual:>>
  */
 
-// For strict c17 Posix 2008 builds, enable bzero()
-#define _GNU_SOURCE 1
-
 #include <typedefs.h>
 #include <bcmutils.h>
 #include <bcmdefs.h>
@@ -40,9 +37,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#if defined(__linux__)
-#include <strings.h>
-#endif
 #ifndef ASSERT
 #define ASSERT(exp)
 #endif
@@ -773,18 +767,12 @@ done_read:
 bool
 BCMPOSTTRAPFASTPATH(wf_chspec_malformed)(chanspec_t chanspec)
 {
-	uint chspec_bw;
+	uint chspec_bw = CHSPEC_BW(chanspec);
 	uint chspec_sb;
 
-	/* At least the combination of WL_CHANSPEC_BAND_x and WL_CHANSPEC_BW_y
-	 * can not be 0 so it's ok to treat 0 as a malformed chanspec.
-	 */
-	if (chanspec == INVCHANSPEC || chanspec == 0) {
+	if (chanspec == INVCHANSPEC) {
 		return TRUE;
 	}
-
-	chspec_bw = CHSPEC_BW(chanspec);
-
 	if (CHSPEC_IS2G(chanspec)) {
 		/* must be valid bandwidth for 2G */
 		if (!BW_LE40(chspec_bw)) {
@@ -2246,38 +2234,18 @@ uint16
 wf_channel2chspec(uint pri_ch, uint bw)
 {
 	uint16 chspec;
-	uint16 chspec_band;
 	const uint8 *center_ch = NULL;
 	int num_ch = 0;
 	int sb = -1;
 	int i = 0;
 
-	chspec_band = chspec = ((pri_ch <= CH_MAX_2G_CHANNEL) ? WL_CHANSPEC_BAND_2G :
-			WL_CHANSPEC_BAND_5G);
+	chspec = ((pri_ch <= CH_MAX_2G_CHANNEL) ? WL_CHANSPEC_BAND_2G : WL_CHANSPEC_BAND_5G);
+
 	chspec |= bw;
 
 	if (bw == WL_CHANSPEC_BW_40) {
-		/* 2G 40MHz is a special case; channel_to_sb() works for 5G only */
-		/* In 2.4GHz, pri_ch 5, 6 & 7 can be used as both lower and upper sb.
-		 * For such ambiguous cases, lower is chosen by default here.
-		 * Japan center channels 10 and 11 are used in upper SB context only.
-		 */
-		if (chspec_band == WL_CHANSPEC_BAND_2G) {
-			const uint8 ctl2cent[] = {3, 4, 5, 6, 7, 8, 9, 6, 7, 8, 9, 10, 11};
-			const uint8 len_c2c = ARRAYSIZE(ctl2cent);
-			uint8 cent;
-			if (pri_ch < 1 || pri_ch > len_c2c) {
-					 return 0;
-			}
-			cent = ctl2cent[pri_ch - 1];
-			chspec |= cent;
-			chspec |= (pri_ch < cent ? WL_CHANSPEC_CTL_SB_LOWER :
-				WL_CHANSPEC_CTL_SB_UPPER);
-			return chspec;
-		} else {
-			center_ch = wf_5g_40m_chans;
-			num_ch = WF_NUM_5G_40M_CHANS;
-		}
+		center_ch = wf_5g_40m_chans;
+		num_ch = WF_NUM_5G_40M_CHANS;
 	} else if (bw == WL_CHANSPEC_BW_80) {
 		center_ch = wf_5g_80m_chans;
 		num_ch = WF_NUM_5G_80M_CHANS;

@@ -153,7 +153,8 @@ typedef struct si_cores_info {
 #ifdef SI_INFO_T_COMPAT
 #define RES_PEND_STATS_COUNT	8
 
-typedef struct res_state_info {
+typedef struct res_state_info
+{
 	uint32 low;
 	uint32 low_time;
 	uint32 high;
@@ -258,31 +259,19 @@ typedef struct si_info {
  * Adding SOCI_NCI_BUS to avoid abandons in the branches that use this MACRO.
  */
 #ifdef SOCI_NCI_BUS
-#define INTR_OFF(si, intr_val) do { \
-		if ((si)->intrsoff_fn && \
-			(si_coreid(&(si)->pub) == (si)->dev_coreid)) { \
-			(*(si)->intrsoff_fn)((si)->intr_arg, intr_val); \
-		} \
-	} while (0)
-#define INTR_RESTORE(si, intr_val) do { \
-		if ((si)->intrsrestore_fn && \
-			(si_coreid(&(si)->pub) == (si)->dev_coreid)) { \
-			(*(si)->intrsrestore_fn)((si)->intr_arg, intr_val); \
-		} \
-	} while (0)
+#define INTR_OFF(si, intr_val) \
+	if ((si)->intrsoff_fn && (si_coreid(&(si)->pub) == (si)->dev_coreid)) { \
+		(*(si)->intrsoff_fn)((si)->intr_arg, intr_val); }
+#define INTR_RESTORE(si, intr_val) \
+	if ((si)->intrsrestore_fn && (si_coreid(&(si)->pub) == (si)->dev_coreid)) { \
+		(*(si)->intrsrestore_fn)((si)->intr_arg, intr_val); }
 #else
-#define INTR_OFF(si, intr_val) do { \
-		if ((si)->intrsoff_fn && \
-			(si)->cores_info->coreid[(si)->curidx] == (si)->dev_coreid) { \
-			(*(si)->intrsoff_fn)((si)->intr_arg, intr_val); \
-		} \
-	} while (0)
-#define INTR_RESTORE(si, intr_val) do { \
-		if ((si)->intrsrestore_fn && \
-			(si)->cores_info->coreid[(si)->curidx] == (si)->dev_coreid) { \
-			(*(si)->intrsrestore_fn)((si)->intr_arg, intr_val); \
-		} \
-	} while (0)
+#define INTR_OFF(si, intr_val) \
+	if ((si)->intrsoff_fn && (si)->cores_info->coreid[(si)->curidx] == (si)->dev_coreid) { \
+		(*(si)->intrsoff_fn)((si)->intr_arg, intr_val); }
+#define INTR_RESTORE(si, intr_val) \
+	if ((si)->intrsrestore_fn && (si)->cores_info->coreid[(si)->curidx] == (si)->dev_coreid) { \
+		(*(si)->intrsrestore_fn)((si)->intr_arg, intr_val); }
 #endif /* SOCI_NCI_BUS */
 
 /* dynamic clock control defines */
@@ -311,7 +300,7 @@ extern uint32	wd_msticks;		/**< watchdog timer ticks normalized to ms */
 
 /* AMBA Interconnect exported externs */
 extern si_t *ai_attach(uint pcidev, osl_t *osh, void *regs, uint bustype,
-	void *sdh, char **vars, uint *varsz);
+                       void *sdh, char **vars, uint *varsz);
 extern si_t *ai_kattach(osl_t *osh);
 extern void ai_scan(si_t *sih, void *regs, uint devid);
 extern bool ai_erom_in_oobr(si_info_t *sii, void *regs);
@@ -359,7 +348,7 @@ extern uint32 ai_clear_backplane_to_per_core(si_t *sih, uint coreid, uint coreun
 extern void ai_view(const si_t *sih, bool verbose);
 extern void ai_viewall(si_t *sih, bool verbose);
 #endif
-#if defined(BCMDBG) || defined(BCMDBG_DUMP) || defined(BCMDBG_PHYDUMP)
+#if defined(BCMDBG) || defined(BCMDBG_DUMP)|| defined(BCMDBG_PHYDUMP)
 extern void ai_dumpregs(const si_t *sih, struct bcmstrbuf *b);
 #endif /* BCMDBG || BCMDBG_DUMP|| BCMDBG_PHYDUMP */
 

@@ -203,7 +203,7 @@ typedef struct dbg_log_ts_s {
 /* Special buffer is allocated as separately in prealloc */
 #define LOG_DUMP_SPECIAL_MAX_BUFSIZE (8 * 1024)
 
-#define LOG_DUMP_MAX_FILESIZE (8 * 1024 * 1024) /* 8 MB default */
+#define LOG_DUMP_MAX_FILESIZE (8 *1024 * 1024) /* 8 MB default */
 
 #ifdef CONFIG_LOG_BUF_SHIFT
 /* 15% of kernel log buf size, if for example klog buf size is 512KB
@@ -278,7 +278,8 @@ typedef struct {
 } log_dump_section_hdr_t;
 
 #ifdef DHD_DEBUGABILITY_LOG_DUMP_RING
-struct dhd_dbg_ring_buf {
+struct dhd_dbg_ring_buf
+{
 	void *dhd_pub;
 };
 extern struct dhd_dbg_ring_buf g_ring_buf;
@@ -290,7 +291,8 @@ typedef struct dhd_debug_dump_ring_entry {
 } dhd_debug_dump_ring_entry_t;
 
 /* below structure describe ring buffer. */
-struct dhd_log_dump_buf {
+struct dhd_log_dump_buf
+{
 #if defined(__linux__) || defined(ANDROID) || defined(OEM_ANDROID)
 	spinlock_t lock;
 #endif
@@ -299,9 +301,9 @@ struct dhd_log_dump_buf {
 	unsigned int wraparound;
 	unsigned long max;
 	unsigned int remain;
-	char *present;
-	char *front;
-	char *buffer;
+	char* present;
+	char* front;
+	char* buffer;
 };
 
 typedef struct {
@@ -406,7 +408,7 @@ void dhd_nla_put_sssr_dump_len(void *ndev, uint32 *arr_len);
 int dhd_get_debug_dump(void *dev, const void *user_buf, uint32 len, int type);
 #ifdef DHD_PKT_LOGGING
 extern int dhd_os_get_pktlog_dump(void *dev, const void *user_buf, uint32 len);
-extern spinlock_t *dhd_os_get_pktlog_lock(dhd_pub_t *dhdp);
+extern spinlock_t* dhd_os_get_pktlog_lock(dhd_pub_t *dhdp);
 extern uint32 dhd_os_get_pktlog_dump_size(struct net_device *dev);
 extern void dhd_os_get_pktlogdump_filename(struct net_device *dev, char *dump_path, int len);
 #endif /* DHD_PKT_LOGGING */

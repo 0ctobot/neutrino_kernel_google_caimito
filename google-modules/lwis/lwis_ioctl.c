@@ -2124,7 +2124,6 @@ static int ioctl_handle_cmd_pkt(struct lwis_client *lwis_client,
 		if (lwis_dev->type != DEVICE_TYPE_TOP && device_disabled &&
 		    (header.cmd_id == LWIS_CMD_ID_DMA_BUFFER_ALLOC ||
 		     header.cmd_id == LWIS_CMD_ID_REG_IO ||
-		     header.cmd_id == LWIS_CMD_ID_REG_IO_V2 ||
 		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V4 ||
 		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V5 ||
 		     header.cmd_id == LWIS_CMD_ID_TRANSACTION_SUBMIT_V6 ||

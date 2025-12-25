@@ -93,6 +93,9 @@
 #include <wb_regon_coordinator.h>
 #endif /* WBRC */
 
+#ifdef WL_STATIC_IF
+#define WL_BSSIDX_MAX	16
+#endif /* WL_STATIC_IF */
 /*
  * Android private command strings, PLEASE define new private commands here
  * so they can be updated easily in the future (if needed)
@@ -913,18 +916,6 @@ int wl_cfgp2p_set_p2p_ecsa(struct net_device *net, char* buf, int len)
 int wl_cfgp2p_increase_p2p_bw(struct net_device *net, char* buf, int len)
 { return 0; }
 #endif /* WK_CFG80211 */
-
-#ifdef DHD_ART
-#define CMD_ART_GET_IF_ADDR "ART_GET_IF_ADDR"
-#define CMD_ART_SET_CHAN "ART_SET_CHAN"
-#define CMD_ART_TX_RATE "ART_TX_RATE"
-#define CMD_ART_BSSID "ART_BSSID"
-static int wl_android_art_get_if_addr(struct net_device *dev, char *command, int total_len);
-static int wl_android_art_set_chan(struct net_device *dev, char *command, int total_len);
-static int wl_android_art_set_txrate(struct net_device *dev, char *command, int total_len);
-static int wl_android_art_set_bssid(struct net_device *dev, char *command, int total_len);
-#endif /* DHD_ART */
-
 #if defined(WL_WTC) && defined(CUSTOMER_HW4_PRIVATE_CMD)
 static int wl_android_wtc_config(struct net_device *dev, char *command, int total_len);
 #endif /* WL_WTC && CUSTOMER_HW4_PRIVATE_CMD */
@@ -1207,16 +1198,16 @@ static char* wl_android_get_band_str(u16 band)
 {
 	switch (band) {
 #ifdef WL_6G_BAND
-	case WLC_BAND_6G:
-		return "6G";
+		case WLC_BAND_6G:
+			return "6G";
 #endif /* WL_6G_BAND */
-	case WLC_BAND_5G:
-		return "5G";
-	case WLC_BAND_2G:
-		return "2G";
-	default:
-		WL_ERR(("Unkown band: %d \n", band));
-		return "Unknown band";
+		case WLC_BAND_5G:
+			return "5G";
+		case WLC_BAND_2G:
+			return "2G";
+		default:
+			WL_ERR(("Unkown band: %d \n", band));
+			return "Unknown band";
 	}
 }
 
@@ -1783,31 +1774,31 @@ wl_android_get_band(struct net_device *dev, char *command, int total_len)
 
 	/* Changed Band types to Band Definition */
 	switch (band) {
-	case WLC_BAND_AUTO:
+		case WLC_BAND_AUTO:
 #ifdef WL_6G_BAND
-		if (cfg->band_6g_supported) {
-			band_def = BAND_DEF_2G5G6G;
-			break;
-		}
+			if (cfg->band_6g_supported) {
+				band_def = BAND_DEF_2G5G6G;
+				break;
+			}
 #endif /* WL_6G_BAND */
-		band_def = BAND_DEF_2G5G;
-		break;
-	case WLC_BAND_2G:
-		band_def = BAND_DEF_2G;
-		break;
-	case WLC_BAND_5G:
+			band_def = BAND_DEF_2G5G;
+			break;
+		case WLC_BAND_2G:
+			band_def = BAND_DEF_2G;
+			break;
+		case WLC_BAND_5G:
 #ifdef WL_6G_BAND
-	case WLC_BAND_6G:
-		if (cfg->band_6g_supported) {
-			band_def = BAND_DEF_5G6G;
-			break;
-		}
+		case WLC_BAND_6G:
+			if (cfg->band_6g_supported) {
+				band_def = BAND_DEF_5G6G;
+				break;
+			}
 #endif /* WL_6G_BAND */
-		band_def = BAND_DEF_5G;
-		break;
-	default:
-		WL_ERR(("Unkown band: %d\n", band));
-		return BCME_ERROR;
+			band_def = BAND_DEF_5G;
+			break;
+		default:
+			WL_ERR(("Unkown band: %d\n", band));
+			return BCME_ERROR;
 	}
 
 	bytes_written = snprintf(command, total_len, "Band %d", band_def);
@@ -1823,30 +1814,30 @@ wl_android_set_band(struct net_device *dev, char *command)
 
 	/* Changed Band Definition to Band types */
 	switch (band_def) {
-	case BAND_DEF_2G:
-		band = WLC_BAND_2G;
-		break;
+		case BAND_DEF_2G:
+			band = WLC_BAND_2G;
+			break;
 #ifndef WL_6G_BAND
-	case BAND_DEF_2G5G:
-		band = WLC_BAND_AUTO;
-		break;
-	case BAND_DEF_5G:
-		band = WLC_BAND_5G;
-		break;
+		case BAND_DEF_2G5G:
+			band = WLC_BAND_AUTO;
+			break;
+		case BAND_DEF_5G:
+			band = WLC_BAND_5G;
+			break;
 #else
-	case BAND_DEF_2G5G6G:
-		band = WLC_BAND_AUTO;
-		break;
-	case BAND_DEF_5G6G:
-		band = WLC_BAND_5G;
-		break;
-	/* Can't set only 5GHz or 6GHz band on 6GHz supported device. */
-	case BAND_DEF_6G:
-	case BAND_DEF_2G6G:
+		case BAND_DEF_2G5G6G:
+			band = WLC_BAND_AUTO;
+			break;
+		case BAND_DEF_5G6G:
+			band = WLC_BAND_5G;
+			break;
+		/* Can't set only 5GHz or 6GHz band on 6GHz supported device. */
+		case BAND_DEF_6G:
+		case BAND_DEF_2G6G:
 #endif /* !WL_6G_BAND */
-	default:
-		WL_ERR(("Unsupported band definition: %d\n", band_def));
-		return BCME_ERROR;
+		default:
+			WL_ERR(("Unsupported band definition: %d\n", band_def));
+			return BCME_ERROR;
 	}
 
 #ifdef WL_HOST_BAND_MGMT
@@ -1919,60 +1910,60 @@ wl_android_get_rssi_roam_threshold(struct net_device *dev, char *data, char *com
 		}
 
 		switch (roam_prof_ver) {
-		case WL_ROAM_PROF_VER_1:
-		{
-			for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
-				if (rp.v2.roam_prof[i].channel_usage == 0) {
-					roam_threshold[0] = rp.v2.roam_prof[i].roam_trigger;
-					break;
+			case WL_ROAM_PROF_VER_1:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v2.roam_prof[i].channel_usage == 0) {
+						roam_threshold[0] = rp.v2.roam_prof[i].roam_trigger;
+						break;
+					}
 				}
 			}
-		}
-		break;
-		case WL_ROAM_PROF_VER_2:
-		{
-			for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
-				if (rp.v3.roam_prof[i].channel_usage == 0) {
-					roam_threshold[0] = rp.v3.roam_prof[i].roam_trigger;
-					break;
+			break;
+			case WL_ROAM_PROF_VER_2:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v3.roam_prof[i].channel_usage == 0) {
+						roam_threshold[0] = rp.v3.roam_prof[i].roam_trigger;
+						break;
+					}
 				}
 			}
-		}
-		break;
-		case WL_ROAM_PROF_VER_3:
-		{
-			for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
-				if (rp.v4.roam_prof[i].channel_usage == 0) {
-					roam_threshold[0] = rp.v4.roam_prof[i].roam_trigger;
-					break;
+			break;
+			case WL_ROAM_PROF_VER_3:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v4.roam_prof[i].channel_usage == 0) {
+						roam_threshold[0] = rp.v4.roam_prof[i].roam_trigger;
+						break;
+					}
 				}
 			}
-		}
-		break;
-		case WL_ROAM_PROF_VER_4:
-		{
-			for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
-				if (rp.v4.roam_prof[i].channel_usage == 0) {
-					roam_threshold[0] = rp.v4.roam_prof[i].roam_trigger;
-					break;
+			break;
+			case WL_ROAM_PROF_VER_4:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v4.roam_prof[i].channel_usage == 0) {
+						roam_threshold[0] = rp.v4.roam_prof[i].roam_trigger;
+						break;
+					}
 				}
 			}
-		}
-		break;
-		case WL_ROAM_PROF_VER_5:
-		{
-			for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
-				if (rp.v6.roam_prof[i].channel_usage == 0) {
-					roam_threshold[0] = rp.v6.roam_prof[i].roam_trigger;
-					break;
+			break;
+			case WL_ROAM_PROF_VER_5:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v6.roam_prof[i].channel_usage == 0) {
+						roam_threshold[0] = rp.v6.roam_prof[i].roam_trigger;
+						break;
+					}
 				}
 			}
-		}
-		break;
+			break;
 
-		default:
-			WL_ERR(("bad version = %d \n", roam_prof_ver));
-			return BCME_VERSION;
+			default:
+				WL_ERR(("bad version = %d \n", roam_prof_ver));
+				return BCME_VERSION;
 		}
 		if (roam_threshold[0] == 0) {
 			WL_ERR(("rssi roam threshold was not set properly\n"));
@@ -1985,320 +1976,6 @@ wl_android_get_rssi_roam_threshold(struct net_device *dev, char *data, char *com
 
 	return bytes_written;
 }
-
-#ifdef DHD_ART
-static int
-wl_android_art_get_if_addr(struct net_device *dev, char *command, int total_len)
-{
-	int bytes_written = 0;
-	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
-	struct net_device *monitor_dev;
-
-	if (!dhdp) {
-		WL_ERR(("dhd_pub is null\n"));
-		goto exit;
-	}
-
-	monitor_dev = dhd_get_monitor_ndev(dhdp);
-	if (!monitor_dev) {
-		WL_ERR(("monitor_dev is null\n"));
-		goto exit;
-	}
-
-	WL_INFORM_MEM(("ART I/F addr:" MACDBG " bytes_written:%d\n",
-		MAC2STRDBG(monitor_dev->dev_addr), bytes_written));
-	bytes_written = snprintf(command, total_len, MACF"\n",
-		ETHERP_TO_MACF(monitor_dev->dev_addr));
-
-exit:
-	return bytes_written;
-}
-
-static s32
-wl_get_chspec_bw_from_usr_bw(u16 bw)
-{
-	switch (bw) {
-	case WL_CH_BANDWIDTH_20MHZ:
-		return WL_CHANSPEC_BW_20;
-	case WL_CH_BANDWIDTH_40MHZ:
-		return WL_CHANSPEC_BW_40;
-	case WL_CH_BANDWIDTH_80MHZ:
-		return WL_CHANSPEC_BW_80;
-	case WL_CH_BANDWIDTH_160MHZ:
-		return WL_CHANSPEC_BW_160;
-	case WL_CH_BANDWIDTH_320MHZ:
-		return WL_CHANSPEC_BW_320;
-	default:
-		WL_ERR(("unsupported BW\n"));
-	}
-
-	return BCME_ERROR;
-}
-
-int
-wl_android_art_apply_config(struct net_device *art_ndev)
-{
-	s32 ret = BCME_OK;
-	wl_art_cmd_config_v1_t art_cmd_config = {0};
-	bcm_xtlv_t *pxtlv = NULL;
-	uint8 mybuf[WLC_IOCTL_SMLEN];
-	uint16 mybuf_len = sizeof(mybuf);
-	u8 resp_buf[WLC_IOCTL_SMLEN] = {0};
-	struct bcm_cfg80211 *cfg = wl_get_cfg(art_ndev);
-
-	if (!art_ndev) {
-		WL_ERR(("ART I/F is not present\n"));
-		return -ENODEV;
-	}
-
-	if (ETHER_ISNULLADDR(cfg->art_bssid)) {
-		WL_DBG_MEM(("ART BSSID is not set. Skip macaddr filtering\n"));
-		return BCME_OK;
-	}
-
-	pxtlv = (bcm_xtlv_t *)mybuf;
-	pxtlv->len = sizeof(wl_art_cmd_config_v1_t);
-
-	art_cmd_config.version = WL_ART_CONFIG_VER_1;
-	eacopy(&cfg->art_bssid, &art_cmd_config.mac_addr);
-	/* set bssid */
-	pxtlv->len = htod16(sizeof(wl_art_cmd_config_v1_t));
-	ret = bcm_pack_xtlv_entry((uint8 **)&pxtlv, &mybuf_len, WL_ART_CMD_CONFIG,
-			sizeof(wl_art_cmd_config_v1_t),
-			(const u8 *)&art_cmd_config, BCM_XTLV_OPTION_ALIGN32);
-	if (ret != BCME_OK) {
-		WL_ERR(("%s failed to pack art config, err: %s\n",
-				__FUNCTION__, bcmerrorstr(ret)));
-		return ret;
-	}
-
-	ret = wldev_iovar_setbuf(art_ndev, "art",
-			(char *)&mybuf, (sizeof(mybuf) - mybuf_len),
-			resp_buf, sizeof(resp_buf), NULL);
-	if (ret < 0) {
-		WL_ERR(("ART config failed, err: %s\n",
-				bcmerrorstr(ret)));
-	} else {
-		WL_ERR(("ART config successed\n"));
-	}
-
-	return ret;
-}
-
-static int
-wl_android_art_set_bssid(struct net_device *dev, char *command, int total_len)
-{
-	char *pos = command;
-	char *token = NULL;
-	u8 mac_addr[ETH_ALEN] = {0};
-	struct bcm_cfg80211 *cfg = wl_get_cfg(dev);
-
-
-	/* drop command */
-	token = bcmstrtok(&pos, " ", NULL);
-	if (token == NULL) {
-		WL_ERR(("ART command not specified\n"));
-		return -EINVAL;
-	}
-
-	/* drop command */
-	token = bcmstrtok(&pos, " ", NULL);
-	if (token == NULL) {
-		WL_ERR(("macaddr not specified\n"));
-		return -EINVAL;
-	}
-
-	if (strlen(token) < ETHER_ADDR_STR_LEN - 1) {;
-		WL_ERR(("macaddr is too short: %s\n", token));
-		return -EINVAL;
-	}
-
-	/* convert ascii macaddr string to binary */
-	if (!bcm_ether_atoe(token, (struct ether_addr *)&mac_addr)) {
-		WL_ERR(("macaddr is not valid: %s\n", token));
-		return -EINVAL;
-	}
-
-	if (!is_valid_ether_addr((u8 *)&mac_addr)) {
-		WL_ERR(("macaddr is not valid: %s\n", token));
-		return -EINVAL;
-	}
-
-	/* cache macaddr */
-	eacopy(&mac_addr, cfg->art_bssid);
-	return BCME_OK;
-}
-
-static int
-wl_android_art_set_chan(struct net_device *dev, char *command, int total_len)
-{
-	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
-	chanspec_t chanspec = {0};
-	u32 channel = 0;
-	u32 band = 0;
-	u32 bw = 0;
-	u32 chspec_bw = 0;
-	char *pos;
-	char *token;
-
-	if (!dhdp) {
-		WL_ERR(("dhd_pub is null\n"));
-		return -EINVAL;
-	}
-
-	pos = command;
-
-	/* drop command */
-	token = bcmstrtok(&pos, " ", NULL);
-
-	/* get channel */
-	token = bcmstrtok(&pos, " ", NULL);
-	if (!token) {
-		WL_ERR(("chan not specified\n"));
-		return -EINVAL;
-	}
-	channel = (uint32)bcm_atoi(token);
-
-	token = bcmstrtok(&pos, " ", NULL);
-	if (!token) {
-		WL_ERR(("band not specified\n"));
-		return -EINVAL;
-	}
-
-	if (strncmp(token, "6g", strlen("6g")) == 0) {
-		WL_ERR(("6g band is not supported\n"));
-		return -EINVAL;
-	} else if (strncmp(token, "5g", strlen("5g")) == 0) {
-		band = WL_CHANSPEC_BAND_5G;
-	} else if (strncmp(token, "2g", strlen("2g")) == 0) {
-		band = WL_CHANSPEC_BAND_2G;
-	} else {
-		WL_ERR(("unsupported band. Expected 2g/5g/6g\n"));
-		return -EINVAL;
-	}
-
-	/* get bandwidth */
-	token = bcmstrtok(&pos, " ", NULL);
-	if (!token) {
-		WL_ERR((" bandwidth is not specified\n"));
-		return -EINVAL;
-	}
-	bw = (uint32)bcm_atoi(token);
-
-	chspec_bw = wl_get_chspec_bw_from_usr_bw(bw);
-	if (bw < 0) {
-		WL_ERR(("wrong bandwidth\n"));
-		return -EINVAL;
-	}
-
-	WL_INFORM_MEM(("chan:%d band:%d bw:%d chspec_bw:0x%x\n",
-			channel, band, bw, chspec_bw));
-
-	chanspec = wf_create_chspec_from_primary(channel,
-			chspec_bw, band, 0);
-	if (!wf_chspec_valid(chanspec)) {
-		WL_ERR(("chanspec not valid chanspec:%x0x\n", chanspec));
-		return -EINVAL;
-	}
-
-	WL_INFORM_MEM(("user enforced chspec:0x%x\n", chanspec));
-	dhd_set_monitor_chspec(dhdp, chanspec);
-
-	return BCME_OK;
-
-}
-
-#define MAX_VHT_MCS	9u
-#define MAX_HE_MCS	11u
-static int
-wl_android_art_set_txrate(struct net_device *dev, char *command, int total_len)
-{
-	int mcs = -1, nss = -1;
-	char format[8] = {0};
-	bool ht_set = FALSE;
-	int error = 0;
-	int matched = 0;
-	uint32 rspec = 0;
-	dhd_pub_t *dhdp = wl_cfg80211_get_dhdp(dev);
-	chanspec_t chanspec;
-
-	/* Accept: "TX_RATE <format> <mcs> <nss>", e.g. "TX_RATE HE 7 2" */
-	matched = sscanf(command + strlen(CMD_ART_TX_RATE), "%7s %d %d", format, &mcs, &nss);
-	if (matched != 3) {
-		WL_ERR(("%s: invalid command. Usage: %s <HT/VHT/HE/EHT> <mcs:0-13> <nss:0-2>\n",
-			__FUNCTION__, CMD_ART_TX_RATE));
-		return -EINVAL;
-	}
-	if ((strcmp(format, "HT") && strcmp(format, "VHT") &&
-		strcmp(format, "HE") && strcmp(format, "EHT")) ||
-		mcs < 0 || mcs > 15 || nss < 1 || nss > 2) {
-		WL_ERR(("%s: invalid format/mcs/nss. format=%s, mcs=%d, nss=%d\n",
-			__FUNCTION__, format, mcs, nss));
-		return -EINVAL;
-	}
-
-	WL_INFORM(("%s: Request to set TX rate: format=%s, mcs=%d, nss=%d\n",
-		__FUNCTION__, format, mcs, nss));
-
-	if (!strcmp(format, "HT")) {
-		rspec = WL_RSPEC_ENCODE_HT;	/* 11n HT */
-		ht_set = TRUE;
-	} else if (!strcmp(format, "VHT")) {
-		rspec = WL_RSPEC_ENCODE_VHT;	/* 11ac VHT */
-		if (mcs > MAX_VHT_MCS) {
-			WL_ERR(("VHT supports only max:%d mcs\n", MAX_VHT_MCS));
-			return -EINVAL;
-		}
-	}
-	/* to be enabled after validation */
-	else if (!strcmp(format, "HE")) {
-		rspec = WL_RSPEC_ENCODE_HE;	/* 11ax HE */
-		if (mcs > MAX_HE_MCS) {
-			WL_ERR(("HE supports only upto max:%d mcs\n", MAX_HE_MCS));
-			return -EINVAL;
-		}
-	}
-#ifdef NOT_YET
-	else if (!strcmp(format, "EHT")) {
-		rspec = WL_RSPEC_ENCODE_EHT;	/* 11be EHT */
-	}
-#endif /* NOT_YET */
-
-	if (ht_set) {
-		rspec |= mcs;
-	} else {
-		rspec |= (nss << WL_RSPEC_NSS_SHIFT);
-		rspec |= mcs;
-	}
-
-	chanspec = dhd_get_monitor_chspec(dhdp);
-	if (chanspec == 0) {
-		DHD_ERROR(("%s ART_SET_CHAN is not set\n", __FUNCTION__));
-		return -EINVAL;
-	}
-	if (CHSPEC_BAND(chanspec) == WL_CHANSPEC_BAND_5G) {
-		rspec |= WL_RSPEC_LDPC;
-		error = wldev_iovar_setint(dev, "5g_rate", rspec);
-		if (error != BCME_OK) {
-			DHD_ERROR(("%s: failed to set 5g_rate error:%d rspec:0x%x\n",
-				__FUNCTION__, error, rspec));
-			return error;
-		}
-	} else if (CHSPEC_BAND(chanspec) == WL_CHANSPEC_BAND_2G) {
-		error = wldev_iovar_setint(dev, "2g_rate", rspec);
-		if (error != BCME_OK) {
-			DHD_ERROR(("%s: failed to set 2g_rate error:%d rspec:0x%x\n",
-				__FUNCTION__, error, rspec));
-			return error;
-		}
-	} else {
-		DHD_ERROR(("%s neither 5G nor 2G chanspec: 0x%x\n", __FUNCTION__, chanspec));
-		return -EINVAL;
-	}
-
-	return 0;
-}
-#endif /* DHD_ART */
 
 #ifdef CUSTOMER_HW4_PRIVATE_CMD
 #ifdef ROAM_API
@@ -2364,60 +2041,60 @@ wl_android_get_roam_trigger(struct net_device *dev, char *command, int total_len
 			return -EINVAL;
 		}
 		switch (roam_prof_ver) {
-		case WL_ROAM_PROF_VER_1:
-		{
-			for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
-				if (rp.v2.roam_prof[i].channel_usage == 0) {
-					roam_trigger[0] = rp.v2.roam_prof[i].roam_trigger;
-					break;
+			case WL_ROAM_PROF_VER_1:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v2.roam_prof[i].channel_usage == 0) {
+						roam_trigger[0] = rp.v2.roam_prof[i].roam_trigger;
+						break;
+					}
 				}
 			}
-		}
-		break;
-		case WL_ROAM_PROF_VER_2:
-		{
-			for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
-				if (rp.v3.roam_prof[i].channel_usage == 0) {
-					roam_trigger[0] = rp.v3.roam_prof[i].roam_trigger;
-					break;
+			break;
+			case WL_ROAM_PROF_VER_2:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v3.roam_prof[i].channel_usage == 0) {
+						roam_trigger[0] = rp.v3.roam_prof[i].roam_trigger;
+						break;
+					}
 				}
 			}
-		}
-		break;
-		case WL_ROAM_PROF_VER_3:
-		{
-			for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
-				if (rp.v4.roam_prof[i].channel_usage == 0) {
-					roam_trigger[0] = rp.v4.roam_prof[i].roam_trigger;
-					break;
+			break;
+			case WL_ROAM_PROF_VER_3:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v4.roam_prof[i].channel_usage == 0) {
+						roam_trigger[0] = rp.v4.roam_prof[i].roam_trigger;
+						break;
+					}
 				}
 			}
-		}
-		break;
-		case WL_ROAM_PROF_VER_4:
-		{
-			for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
-				if (rp.v4.roam_prof[i].channel_usage == 0) {
-					roam_trigger[0] = rp.v4.roam_prof[i].roam_trigger;
-					break;
+			break;
+			case WL_ROAM_PROF_VER_4:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v4.roam_prof[i].channel_usage == 0) {
+						roam_trigger[0] = rp.v4.roam_prof[i].roam_trigger;
+						break;
+					}
 				}
 			}
-		}
-		break;
-		case WL_ROAM_PROF_VER_5:
-		{
-			for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
-				if (rp.v6.roam_prof[i].channel_usage == 0) {
-					roam_trigger[0] = rp.v6.roam_prof[i].roam_trigger;
-					break;
+			break;
+			case WL_ROAM_PROF_VER_5:
+			{
+				for (i = 0; i < WL_MAX_ROAM_PROF_BRACKETS; i++) {
+					if (rp.v6.roam_prof[i].channel_usage == 0) {
+						roam_trigger[0] = rp.v6.roam_prof[i].roam_trigger;
+						break;
+					}
 				}
 			}
-		}
-		break;
+			break;
 
-		default:
-			WL_ERR(("bad version = %d \n", roam_prof_ver));
-			return BCME_VERSION;
+			default:
+				WL_ERR(("bad version = %d \n", roam_prof_ver));
+				return BCME_VERSION;
 		}
 #endif /* WBTEXT */
 		if (roam_trigger[0] == 0) {
@@ -5982,14 +5659,10 @@ int wl_android_wifi_on(struct net_device *dev)
 			}
 		}
 #endif /* !BCMPCIE */
+		g_wifi_on = TRUE;
 	}
 
 exit:
-	/*
-	 * Set g_wifi_on here to indicate WL_REG_ON is high,
-	 * so that dhd_stop will pull the WL_REG_ON low
-	 */
-	g_wifi_on = TRUE;
 	dhd_net_if_unlock(dev);
 
 	return ret;
@@ -7327,40 +7000,40 @@ wl_android_mbo_non_pref_chan_parse_cbfn(void *ctx, const uint8 *data, uint16 typ
 		return -EINVAL;
 	}
 	switch (type) {
-	case WL_MBO_XTLV_OPCLASS:
-	{
-		bytes_written = snprintf(command, total_len, "%u:", *data);
-		WL_ERR(("wr %u %u\n", bytes_written, *data));
-		command += bytes_written;
-		cmd_info->bytes_written += bytes_written;
-	}
-	break;
-	case WL_MBO_XTLV_CHAN:
-	{
-		bytes_written = snprintf(command, total_len, "%u:", *data);
-		WL_ERR(("wr %u\n", bytes_written));
-		command += bytes_written;
-		cmd_info->bytes_written += bytes_written;
-	}
-	break;
-	case WL_MBO_XTLV_PREFERENCE:
-	{
-		bytes_written = snprintf(command, total_len, "%u:", *data);
-		WL_ERR(("wr %u\n", bytes_written));
-		command += bytes_written;
-		cmd_info->bytes_written += bytes_written;
-	}
-	break;
-	case WL_MBO_XTLV_REASON_CODE:
-	{
-		bytes_written = snprintf(command, total_len, "%u ", *data);
-		WL_ERR(("wr %u\n", bytes_written));
-		command += bytes_written;
-		cmd_info->bytes_written += bytes_written;
-	}
-	break;
-	default:
-		WL_ERR(("%s: Unknown tlv %u\n", __FUNCTION__, type));
+		case WL_MBO_XTLV_OPCLASS:
+		{
+			bytes_written = snprintf(command, total_len, "%u:", *data);
+			WL_ERR(("wr %u %u\n", bytes_written, *data));
+			command += bytes_written;
+			cmd_info->bytes_written += bytes_written;
+		}
+		break;
+		case WL_MBO_XTLV_CHAN:
+		{
+			bytes_written = snprintf(command, total_len, "%u:", *data);
+			WL_ERR(("wr %u\n", bytes_written));
+			command += bytes_written;
+			cmd_info->bytes_written += bytes_written;
+		}
+		break;
+		case WL_MBO_XTLV_PREFERENCE:
+		{
+			bytes_written = snprintf(command, total_len, "%u:", *data);
+			WL_ERR(("wr %u\n", bytes_written));
+			command += bytes_written;
+			cmd_info->bytes_written += bytes_written;
+		}
+		break;
+		case WL_MBO_XTLV_REASON_CODE:
+		{
+			bytes_written = snprintf(command, total_len, "%u ", *data);
+			WL_ERR(("wr %u\n", bytes_written));
+			command += bytes_written;
+			cmd_info->bytes_written += bytes_written;
+		}
+		break;
+		default:
+			WL_ERR(("%s: Unknown tlv %u\n", __FUNCTION__, type));
 	}
 	WL_DBG(("Total bytes written %u\n", cmd_info->bytes_written));
 	return BCME_OK;
@@ -8016,32 +7689,32 @@ wl_cfg80211_get_acs_band(int band)
 {
 	chanspec_band_t acs_band = WLC_ACS_BAND_INVALID;
 	switch (band) {
-	case WLC_BAND_AUTO:
-		WL_DBG(("ACS full channel scan \n"));
-		/* Restricting band to 2G in case of hw_mode any */
-		acs_band = WL_CHANSPEC_BAND_2G;
-		break;
+		case WLC_BAND_AUTO:
+			WL_DBG(("ACS full channel scan \n"));
+			/* Restricting band to 2G in case of hw_mode any */
+			acs_band = WL_CHANSPEC_BAND_2G;
+			break;
 #ifdef WL_6G_BAND
-	case WLC_BAND_6G:
-		WL_DBG(("ACS 6G band scan \n"));
-		acs_band = WL_CHANSPEC_BAND_6G;
-		break;
+		case WLC_BAND_6G:
+			WL_DBG(("ACS 6G band scan \n"));
+			acs_band = WL_CHANSPEC_BAND_6G;
+			break;
 #endif /* WL_6G_BAND */
-	case WLC_BAND_5G:
-		WL_DBG(("ACS 5G band scan \n"));
-		acs_band = WL_CHANSPEC_BAND_5G;
-		break;
-	case WLC_BAND_2G:
-		/*
-		 * If channel argument is not provided/ argument 20 is provided,
-		 * Restrict channel to 2GHz, 20MHz BW, No SB
-		 */
-		WL_DBG(("ACS 2G band scan \n"));
-		acs_band = WL_CHANSPEC_BAND_2G;
-		break;
-	default:
-		WL_ERR(("ACS: No band chosen\n"));
-		break;
+		case WLC_BAND_5G:
+			WL_DBG(("ACS 5G band scan \n"));
+			acs_band = WL_CHANSPEC_BAND_5G;
+			break;
+		case WLC_BAND_2G:
+			/*
+			 * If channel argument is not provided/ argument 20 is provided,
+			 * Restrict channel to 2GHz, 20MHz BW, No SB
+			 */
+			WL_DBG(("ACS 2G band scan \n"));
+			acs_band = WL_CHANSPEC_BAND_2G;
+			break;
+		default:
+			WL_ERR(("ACS: No band chosen\n"));
+			break;
 	}
 	WL_DBG(("%s: ACS: band = %d, acs_band = 0x%x\n", __FUNCTION__, band, acs_band));
 	return acs_band;
@@ -8163,69 +7836,69 @@ wl_android_set_auto_channel(struct net_device *dev, const char* cmd_str,
 
 	if ((sta_band != WLC_ACS_BAND_INVALID) && sta_chanspec && (band != WLC_BAND_INVALID)) {
 		switch (sta_band) {
-		case (WL_CHANSPEC_BAND_5G): {
-			if ((IS_5G_APCS_CHANNEL(sta_channel)) &&
-				(band == WLC_BAND_5G || band == WLC_BAND_AUTO)) {
-				/* SCC is allowed only for DEF_5G Channel */
-				channel = sta_channel;
-				acs_band = sta_band;
-			} else {
-				channel = APCS_DEFAULT_2G_CH;
-				acs_band = wl_cfg80211_get_acs_band(WLC_BAND_2G);
+			case (WL_CHANSPEC_BAND_5G): {
+				if ((IS_5G_APCS_CHANNEL(sta_channel)) &&
+					(band == WLC_BAND_5G || band == WLC_BAND_AUTO)) {
+					/* SCC is allowed only for DEF_5G Channel */
+					channel = sta_channel;
+					acs_band = sta_band;
+				} else {
+					channel = APCS_DEFAULT_2G_CH;
+					acs_band = wl_cfg80211_get_acs_band(WLC_BAND_2G);
+				}
+				break;
 			}
-			break;
-		}
 #ifdef WL_6G_BAND
-		case (WL_CHANSPEC_BAND_6G):
-		{
-			if ((CHSPEC_IS_6G_PSC((chanspec_t)sta_chanspec)) &&
-				(band == WLC_BAND_6G || band == WLC_BAND_AUTO)) {
-				/* scc */
-				channel = sta_channel;
-				acs_band = sta_band;
-			} else {
-				WL_INFORM_MEM(("Fall back to 2g default\n"));
-				channel = APCS_DEFAULT_2G_CH;
-				acs_band = wl_cfg80211_get_acs_band(WLC_BAND_2G);
+			case (WL_CHANSPEC_BAND_6G):
+			{
+				if ((CHSPEC_IS_6G_PSC((chanspec_t)sta_chanspec)) &&
+					(band == WLC_BAND_6G || band == WLC_BAND_AUTO)) {
+					/* scc */
+					channel = sta_channel;
+					acs_band = sta_band;
+				} else {
+					WL_INFORM_MEM(("Fall back to 2g default\n"));
+					channel = APCS_DEFAULT_2G_CH;
+					acs_band = wl_cfg80211_get_acs_band(WLC_BAND_2G);
+				}
+				break;
 			}
-			break;
-		}
 #endif /* WL_6G_BAND */
-		case (WL_CHANSPEC_BAND_2G): {
+			case (WL_CHANSPEC_BAND_2G): {
 #ifdef WL_6G_BAND
-			if (band == WLC_BAND_6G) {
-				channel = APCS_DEFAULT_6G_CH;
-				acs_band = wl_cfg80211_get_acs_band(WLC_BAND_6G);
-			} else
-#endif /* WL_6G_BAND */
-			if (band == WLC_BAND_5G) {
-				channel = APCS_DEFAULT_5G_CH;
-				acs_band = wl_cfg80211_get_acs_band(WLC_BAND_5G);
-			} else if (band == WLC_BAND_AUTO) {
-#ifdef WL_6G_BAND
-				if (cfg->band_6g_supported) {
+				if (band == WLC_BAND_6G) {
 					channel = APCS_DEFAULT_6G_CH;
 					acs_band = wl_cfg80211_get_acs_band(WLC_BAND_6G);
-				} else {
+				} else
+#endif /* WL_6G_BAND */
+				if (band == WLC_BAND_5G) {
 					channel = APCS_DEFAULT_5G_CH;
 					acs_band = wl_cfg80211_get_acs_band(WLC_BAND_5G);
-				}
+				} else if (band == WLC_BAND_AUTO) {
+#ifdef WL_6G_BAND
+					if (cfg->band_6g_supported) {
+						channel = APCS_DEFAULT_6G_CH;
+						acs_band = wl_cfg80211_get_acs_band(WLC_BAND_6G);
+					} else {
+						channel = APCS_DEFAULT_5G_CH;
+						acs_band = wl_cfg80211_get_acs_band(WLC_BAND_5G);
+					}
 #else
-				channel = APCS_DEFAULT_5G_CH;
-				acs_band = wl_cfg80211_get_acs_band(WLC_BAND_5G);
+					channel = APCS_DEFAULT_5G_CH;
+					acs_band = wl_cfg80211_get_acs_band(WLC_BAND_5G);
 #endif	/* WL_6G_BAND */
-			} else {
-				/* scc */
+				} else {
+					/* scc */
+					channel = sta_channel;
+					acs_band = sta_band;
+				}
+				break;
+			}
+			default:
+				/* Intentional fall through to use same sta channel for softap */
 				channel = sta_channel;
 				acs_band = sta_band;
-			}
-			break;
-		}
-		default:
-			/* Intentional fall through to use same sta channel for softap */
-			channel = sta_channel;
-			acs_band = sta_band;
-			break;
+				break;
 		}
 		goto done2;
 	}
@@ -12744,21 +12417,21 @@ wl_nan_ranging_bw(struct net_device *net, int bw, char *command)
 	}
 
 	switch (bw) {
-	case NAN_RANGING_5G_BW20:
-		WL_ERR(("NAN_RANGING 5G/BW20\n"));
-		param.band = WLC_BAND_5G;
-		param.bw_cap = 0x1;
-		break;
-	case NAN_RANGING_5G_BW40:
-		WL_ERR(("NAN_RANGING 5G/BW40\n"));
-		param.band = WLC_BAND_5G;
-		param.bw_cap = 0x3;
-		break;
-	case NAN_RANGING_5G_BW80:
-		WL_ERR(("NAN_RANGING 5G/BW80\n"));
-		param.band = WLC_BAND_5G;
-		param.bw_cap = 0x7;
-		break;
+		case NAN_RANGING_5G_BW20:
+			WL_ERR(("NAN_RANGING 5G/BW20\n"));
+			param.band = WLC_BAND_5G;
+			param.bw_cap = 0x1;
+			break;
+		case NAN_RANGING_5G_BW40:
+			WL_ERR(("NAN_RANGING 5G/BW40\n"));
+			param.band = WLC_BAND_5G;
+			param.bw_cap = 0x3;
+			break;
+		case NAN_RANGING_5G_BW80:
+			WL_ERR(("NAN_RANGING 5G/BW80\n"));
+			param.band = WLC_BAND_5G;
+			param.bw_cap = 0x7;
+			break;
 	}
 
 	err = wldev_ioctl_set(net, WLC_DOWN, &val, sizeof(s32));
@@ -15129,20 +14802,6 @@ wl_handle_private_cmd(struct net_device *net, char *command, u32 cmd_len)
 		char *data = (command + strlen(CMD_GET_RSSI_ROAM_THRESHOLD) + 1);
 		bytes_written = wl_android_get_rssi_roam_threshold(net, data,
 				command, priv_cmd.total_len);
-#ifdef DHD_ART
-	} else if (strnicmp(command, CMD_ART_GET_IF_ADDR,
-		strlen(CMD_ART_GET_IF_ADDR)) == 0) {
-		bytes_written = wl_android_art_get_if_addr(net, command, priv_cmd.total_len);
-	} else if (strnicmp(command, CMD_ART_SET_CHAN,
-		strlen(CMD_ART_SET_CHAN)) == 0) {
-		bytes_written = wl_android_art_set_chan(net, command, priv_cmd.total_len);
-	} else if (strnicmp(command, CMD_ART_BSSID,
-		strlen(CMD_ART_BSSID)) == 0) {
-		bytes_written = wl_android_art_set_bssid(net, command, priv_cmd.total_len);
-	} else if (strnicmp(command, CMD_ART_TX_RATE,
-		strlen(CMD_ART_TX_RATE)) == 0) {
-		bytes_written = wl_android_art_set_txrate(net, command, priv_cmd.total_len);
-#endif /* DHD_ART */
 	} else {
 		DHD_ERROR(("Unknown PRIVATE command %s - ignored\n", command));
 #ifdef CUSTOMER_HW4_DEBUG
@@ -15278,19 +14937,19 @@ s32 wl_event_to_bcm_event(u16 event_type)
 	u16 event = -1;
 
 	switch (event_type) {
-	case WLC_E_SERVICE_FOUND:
-		event = BCM_E_SVC_FOUND;
-		break;
-	case WLC_E_P2PO_ADD_DEVICE:
-		event = BCM_E_DEV_FOUND;
-		break;
-	case WLC_E_P2PO_DEL_DEVICE:
-		event = BCM_E_DEV_LOST;
-		break;
+		case WLC_E_SERVICE_FOUND:
+			event = BCM_E_SVC_FOUND;
+			break;
+		case WLC_E_P2PO_ADD_DEVICE:
+			event = BCM_E_DEV_FOUND;
+			break;
+		case WLC_E_P2PO_DEL_DEVICE:
+			event = BCM_E_DEV_LOST;
+			break;
 	/* Above events are supported from BCM Supp ver 47 Onwards */
 
-	default:
-		WL_ERR(("Event not supported\n"));
+		default:
+			WL_ERR(("Event not supported\n"));
 	}
 
 	return event;
@@ -15482,12 +15141,16 @@ wl_cfg80211_register_static_if(struct bcm_cfg80211 *cfg, u16 iftype, char *ifnam
 {
 	struct net_device *ndev;
 	struct wireless_dev *wdev = NULL;
+	int ifidx = WL_STATIC_IFIDX; /* Register ndev with a reserved ifidx */
+	u8 mac_addr[ETH_ALEN];
 	struct net_device *primary_ndev;
+#ifdef DHD_USE_RANDMAC
 	struct ether_addr ea_addr;
+#endif /* DHD_USE_RANDMAC */
 
 	BCM_REFERENCE(primary_ndev);
 
-	WL_INFORM_MEM(("Enter (%s) iftype:%d\n", ifname, iftype));
+	WL_INFORM_MEM(("[STATIC_IF] Enter (%s) iftype:%d\n", ifname, iftype));
 
 	if (!cfg) {
 		WL_ERR(("cfg null\n"));
@@ -15497,13 +15160,15 @@ wl_cfg80211_register_static_if(struct bcm_cfg80211 *cfg, u16 iftype, char *ifnam
 
 #ifdef DHD_USE_RANDMAC
 	wl_cfg80211_generate_mac_addr(&ea_addr);
+	(void)memcpy_s(mac_addr, ETH_ALEN, ea_addr.octet, ETH_ALEN);
 #else
 	/* Use primary mac with locally admin bit set */
-	eacopy(primary_ndev->dev_addr, ea_addr.octet);
-	ea_addr.octet[0] |= 0x02;
+	(void)memcpy_s(mac_addr, ETH_ALEN, primary_ndev->dev_addr, ETH_ALEN);
+	mac_addr[0] |= 0x02;
 #endif /* DHD_USE_RANDMAC */
 
-	ndev = dhd_allocate_static_if(cfg->pub, ifname, ea_addr.octet, NULL, FALSE);
+	ndev = wl_cfg80211_allocate_if(cfg, ifidx, ifname, mac_addr,
+		WL_BSSIDX_MAX, NULL);
 	if (unlikely(!ndev)) {
 		WL_ERR(("Failed to allocate static_if\n"));
 		goto fail;
@@ -15521,20 +15186,21 @@ wl_cfg80211_register_static_if(struct bcm_cfg80211 *cfg, u16 iftype, char *ifnam
 	SET_NETDEV_DEV(ndev, wiphy_dev(wdev->wiphy));
 	wdev->netdev = ndev;
 
-	if (dhd_register_static_if(cfg->pub, ndev, TRUE) != BCME_OK) {
+	if (wl_cfg80211_register_if(cfg, ifidx,
+		ndev, TRUE) != BCME_OK) {
 		WL_ERR(("ndev registration failed!\n"));
 		goto fail;
 	}
 
 	cfg->static_ndev = ndev;
 	cfg->static_ndev_state = NDEV_STATE_OS_IF_CREATED;
+	wl_cfg80211_update_iflist_info(cfg, ndev, ifidx, NULL, WL_BSSIDX_MAX,
+		ifname, NDEV_STATE_OS_IF_CREATED);
 	WL_INFORM_MEM(("Static I/F (%s) Registered\n", ndev->name));
 	return ndev;
 
 fail:
-	if (ndev) {
-		dhd_remove_static_if(cfg->pub, ndev, TRUE);
-	}
+	wl_cfg80211_remove_if(cfg, ifidx, ndev, false);
 	return NULL;
 }
 
@@ -15547,11 +15213,10 @@ wl_cfg80211_unregister_static_if(struct bcm_cfg80211 *cfg)
 		return;
 	}
 
-	if (cfg->static_ndev) {
-		/* clean up if static_ndev reference is still there in static_iflist */
-		dhd_remove_static_if(cfg->pub, cfg->static_ndev, TRUE);
-	}
-	cfg->static_ndev = NULL;
+	/* wdev free will happen from notifier context */
+	/* free_netdev(cfg->static_ndev);
+	*/
+	dhd_unregister_net(cfg->static_ndev, true);
 }
 
 s32
@@ -15563,29 +15228,24 @@ wl_cfg80211_static_if_open(struct net_device *net)
 	u16 iftype = net->ieee80211_ptr ? net->ieee80211_ptr->iftype : 0;
 	u16 wl_iftype, wl_mode;
 
+	WL_INFORM_MEM(("[STATIC_IF] dev_open ndev %p and wdev %p\n", net, net->ieee80211_ptr));
+	ASSERT(cfg->static_ndev == net);
+
 	if (cfg80211_to_wl_iftype(iftype, &wl_iftype, &wl_mode) <  0) {
 		return BCME_ERROR;
 	}
-
-	WL_INFORM_MEM(("(%s) Enter. iftype:%d wl_iftype:%d\n",
-		net->name, iftype, wl_iftype));
-
-#ifndef WL_STATIC_NMI_IF
-	/* If feature not enabled, don't initialise FW interface */
-	if (IS_NMI_IFACE(net->name)) {
-		WL_ERR(("static aware i/f not supported\n"));
-		return BCME_OK;
-	}
-#endif /* WL_STATIC_NMI_IF */
-
+	if (cfg->static_ndev_state != NDEV_STATE_FW_IF_CREATED) {
 #if defined(DHD_USE_RANDMAC) || defined(WL_SOFTAP_RAND)
-	wdev = wl_cfg80211_add_if(cfg, primary_ndev, wl_iftype, net->name, net->dev_addr);
+		wdev = wl_cfg80211_add_if(cfg, primary_ndev, wl_iftype, net->name, net->dev_addr);
 #else
-	wdev = wl_cfg80211_add_if(cfg, primary_ndev, wl_iftype, net->name, NULL);
+		wdev = wl_cfg80211_add_if(cfg, primary_ndev, wl_iftype, net->name, NULL);
 #endif /* DHD_USE_RANDMAC || WL_SOFTAP_RAND */
-	if (!wdev) {
-		WL_ERR(("[STATIC_IF] wdev is NULL, can't proceed"));
-		return BCME_ERROR;
+		if (!wdev) {
+			WL_ERR(("[STATIC_IF] wdev is NULL, can't proceed"));
+			return BCME_ERROR;
+		}
+	} else {
+		WL_INFORM_MEM(("Fw IF for static netdev already created\n"));
 	}
 
 	return BCME_OK;
@@ -15598,15 +15258,16 @@ wl_cfg80211_static_if_close(struct net_device *net)
 	struct bcm_cfg80211 *cfg = wl_get_cfg(net);
 	struct net_device *primary_ndev = bcmcfg_to_prmry_ndev(cfg);
 
-	WL_INFORM_MEM(("(%s) Enter\n", net->name));
-	ret = wl_cfgvif_del_if(cfg, primary_ndev, net->ieee80211_ptr, net->name);
-	if (unlikely(ret)) {
-		WL_ERR(("Del iface failed for static_if %d\n", ret));
-		/* on critical errors the cfg80211_del API would trigger hang event
-		 * for WiFi to reset. However, the driver need to return okay to allow the
-		 * kernel to clear the IFF_UP flags.
-		 */
-		ret = BCME_OK;
+	if (cfg->static_ndev_state == NDEV_STATE_FW_IF_CREATED) {
+		ret = wl_cfgvif_del_if(cfg, primary_ndev, net->ieee80211_ptr, net->name);
+		if (unlikely(ret)) {
+			WL_ERR(("Del iface failed for static_if %d\n", ret));
+			/* on critical errors the cfg80211_del API would trigger hang event
+			 * for WiFi to reset. However, the driver need to return okay to allow the
+			 * kernel to clear the IFF_UP flags.
+			 */
+			ret = BCME_OK;
+		}
 	}
 
 	return ret;
@@ -15619,54 +15280,28 @@ wl_cfg80211_post_static_ifcreate(struct bcm_cfg80211 *cfg,
 	struct net_device *new_ndev = NULL;
 	struct wireless_dev *wdev = NULL;
 
-	if (event->role == WLC_E_IF_ROLE_NAN_NMI) {
-		new_ndev = cfg->nmi_ndev;
-		cfg->nmi_ndev_state = NDEV_STATE_FW_IF_CREATED;
-		WL_INFORM_MEM(("NMI interface linked\n"));
-#ifdef DHD_ART
-	} else if (event->role == WLC_E_IF_ROLE_ART) {
-		dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
-		new_ndev = dhd_get_monitor_ndev(dhdp);
-		WL_INFORM_MEM(("static I/F ART role\n"));
-#endif /* DHD_ART */
-	} else {
-		new_ndev = cfg->static_ndev;
-		cfg->static_ndev_state = NDEV_STATE_FW_IF_CREATED;
-		WL_INFORM_MEM(("static sta/ap interface linked\n"));
-	}
+	WL_INFORM_MEM(("Updating static iface after Fw IF create \n"));
+	new_ndev = cfg->static_ndev;
 
 	if (new_ndev) {
 		wdev = new_ndev->ieee80211_ptr;
 		ASSERT(wdev);
 		wdev->iftype = iface_type;
 		NETDEV_ADDR_SET(new_ndev, ETH_ALEN, addr, ETH_ALEN);
-	} else {
-		WL_ERR(("new ndev null\n"));
-		return NULL;
 	}
 
+	cfg->static_ndev_state = NDEV_STATE_FW_IF_CREATED;
 	wl_cfg80211_update_iflist_info(cfg, new_ndev, event->ifidx, addr, event->bssidx,
 		event->name, NDEV_STATE_FW_IF_CREATED);
-	WL_INFORM_MEM(("[%s] ifidx:%d bssidx:%d\n", new_ndev->name, event->ifidx, event->bssidx));
-
 	return new_ndev;
 }
 
 s32
-wl_cfg80211_post_static_ifdel(struct bcm_cfg80211 *cfg,
-		struct net_device *ndev, s32 ifidx, s32 bssidx)
+wl_cfg80211_post_static_ifdel(struct bcm_cfg80211 *cfg, struct net_device *ndev)
 {
-	dhd_pub_t *dhdp = (dhd_pub_t *)(cfg->pub);
-	if (IS_NMI_IFACE(ndev->name)) {
-		cfg->nmi_ndev_state = NDEV_STATE_FW_IF_DELETED;
-		WL_INFORM_MEM(("NMI interface de-linked\n"));
-	} else {
-		cfg->static_ndev_state = NDEV_STATE_FW_IF_DELETED;
-		WL_INFORM_MEM(("static I/F interface de-linked\n"));
-	}
-	dhd_clear_del_in_progress(dhdp, ndev);
-	wl_cfg80211_update_iflist_info(cfg, ndev, ifidx, NULL,
-		bssidx, NULL, NDEV_STATE_FW_IF_DELETED);
+	cfg->static_ndev_state = NDEV_STATE_FW_IF_DELETED;
+	wl_cfg80211_update_iflist_info(cfg, ndev, WL_STATIC_IFIDX, NULL,
+		WL_BSSIDX_MAX, NULL, NDEV_STATE_FW_IF_DELETED);
 	wl_cfg80211_clear_per_bss_ies(cfg, ndev->ieee80211_ptr);
 	wl_dealloc_netinfo_by_wdev(cfg, ndev->ieee80211_ptr);
 	return BCME_OK;

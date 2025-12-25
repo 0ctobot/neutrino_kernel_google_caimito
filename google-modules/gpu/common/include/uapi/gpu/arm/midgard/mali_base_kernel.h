@@ -87,7 +87,6 @@ typedef __u64 base_mem_alloc_flags;
 #define BASE_MEM_FLAGS_MODIFIABLE \
 	(BASE_MEM_FLAGS_MODIFIABLE_NATIVE | BASE_MEM_FLAGS_MODIFIABLE_IMPORTED_UMM)
 
-#if MALI_USE_CSF
 /* A mask of all the flags that can be returned via the base_mem_get_flags()
  * interface.
  */
@@ -95,14 +94,7 @@ typedef __u64 base_mem_alloc_flags;
 	(BASE_MEM_FLAGS_INPUT_MASK &                                                           \
 	 ~(BASE_MEM_FLAGS_RESERVED | BASE_MEM_FLAGS_UNUSED | BASE_MEM_FLAGS_ACTION_MODIFIERS | \
 	   BASE_MEM_FLAGS_KERNEL_ONLY))
-#else
-/* A mask of all the flags that can be returned via the base_mem_get_flags()
- * interface.
- */
-#define BASE_MEM_FLAGS_QUERYABLE                                                       \
-	(BASE_MEM_FLAGS_INPUT_MASK & ~(BASE_MEM_DONT_QUERY | BASE_MEM_FLAGS_RESERVED | \
-				       BASE_MEM_FLAGS_UNUSED | BASEP_MEM_FLAGS_KERNEL_ONLY))
-#endif
+
 /**
  * enum base_mem_import_type - Memory types supported by @a base_mem_import
  *

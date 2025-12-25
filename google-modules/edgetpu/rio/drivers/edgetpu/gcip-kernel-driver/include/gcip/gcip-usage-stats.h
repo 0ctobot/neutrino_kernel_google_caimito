@@ -45,18 +45,10 @@
 			      store)
 
 /*
- * Set a device attribute to show/store all default subcomponents instead of one specific
- * subcomponent.  The default ustats->subcomponents specifies the number of subcomponents.
+ * Set a device attribute to show/store all subcomponents instead of one specific subcomponent.
  * See @subcomponents field of `struct gcip_usage_stats_attr`.
  */
 #define GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS -1
-
-/*
- * Set a counter attribute to show/store a custom number of subcomponents @n instead of the default
- * number of subcomponents.  @n cannot be 1; specify subcomponent zero instead if there's only one.
- * This is currently only defined for COUNTER attributes.
- */
-#define GCIP_USAGE_STATS_ATTR_SUBCOMPONENTS(n) (-(n))
 
 /* Max number of frequencies to support. */
 #define GCIP_USAGE_STATS_MAX_DVFS_FREQ_NUM 25
@@ -186,8 +178,7 @@ struct gcip_usage_stats_component_utilization {
 
 /*
  * Defines different counter types we track.
- * Must be kept in sync with firmware `ToIdentifier(ComponentCounterType type)` and
- * `ToIdentifier(CounterType type)` definitions.
+ * Must be kept in sync with firmware `enum class CounterType`.
  */
 enum gcip_usage_stats_counter_type {
 	/* Active TPU cycles. */
@@ -239,8 +230,6 @@ enum gcip_usage_stats_counter_type {
 	 * a preemption.
 	 */
 	GCIP_USAGE_STATS_COUNTER_NUM_OF_RECONFIGURATIONS_BY_PREEMPTION,
-	/* Number of TPU configurations for each power island subcomponent. */
-	GCIP_USAGE_STATS_COUNTER_POWER_ISLAND_CONFIGURATIONS,
 
 	/* The number of total types. Must be located at the end of this enum. */
 	GCIP_USAGE_STATS_COUNTER_NUM_TYPES,
@@ -462,7 +451,7 @@ struct gcip_usage_stats_ops {
 struct gcip_usage_stats {
 	/* The version of metrics. */
 	enum gcip_usage_stats_version version;
-	/* The default number of subcomponents for each attr. (e.g., TPU: clusters, DSP: cores) */
+	/* The number of subcomponents. (e.g., TPU: clusters, DSP: cores) */
 	unsigned int subcomponents;
 	/* The device to register attributes. */
 	struct device *dev;
@@ -478,7 +467,7 @@ struct gcip_usage_stats {
 	const struct gcip_usage_stats_ops *ops;
 
 	/*
-	 * Core usage (per default subcomponent).
+	 * Core usage (per subcomponent).
 	 * Stores stats as an UID to `struct gcip_usage_stats_core_usage_uid_entry` hash table.
 	 * Declare it as a pointer to an array because we have to dynamically allocate multiple
 	 * rows with the fixed column size.
@@ -486,22 +475,19 @@ struct gcip_usage_stats {
 	 */
 	struct hlist_head (*core_usage_htable)[BIT(GCIP_USAGE_STATS_UID_HASH_BITS)];
 	/*
-	 * Component (such as entire IP or specific compute block) utilization (per default
-	 * subcomponent, such as compute cluster).
+	 * Component (such as entire IP or specific compute block) utilization (per subcomponent,
+	 * such as compute cluster).
 	 * Declare it as a pointer to an array because we have to dynamically allocate multiple
 	 * rows with the fixed column size.
 	 * I.e., (@subcomponents (rows) * GCIP_USAGE_STATS_COMPONENT_UTILIZATION_NUM_TYPES (cols))
 	 */
 	int32_t (*component_utilization)[GCIP_USAGE_STATS_COMPONENT_UTILIZATION_NUM_TYPES];
 	/*
-	 * Counter (per default or custom subcomponent).
-	 * Declare it as a pointer to an array because we dynamically allocate multiple rows with
-	 * a fixed column size.  The # of rows is the max number of subcomponents for all counters,
-	 * kept in counter_maxsubcomponents.  That value is updated if an attr is declared with a
-	 * larger # of subcomponents than the default.
-	 * I.e., (@maxsubcomponents (rows) * GCIP_USAGE_STATS_COUNTER_NUM_TYPES (cols)) 2d array.
+	 * Counter (per subcomponents).
+	 * Declare it as a pointer to an array because we have to dynamically allocate multiple
+	 * rows with the fixed column size.
+	 * I.e., (@subcomponents (rows) * GCIP_USAGE_STATS_COUNTER_NUM_TYPES (cols)) 2d array.
 	 */
-	uint32_t counter_maxsubcomponents;
 	int64_t (*counter)[GCIP_USAGE_STATS_COUNTER_NUM_TYPES];
 	/* Thread statistics. */
 	int32_t thread_max_stack_usage[GCIP_USAGE_STATS_THREAD_NUM_TYPES];
@@ -540,8 +526,8 @@ struct gcip_usage_stats {
 
 /*
  * Structure which contains information of an attribute to be registered to the device.
- * One can directly create an instance, but it is recommended to use `GCIP_USAGE_STATS_ATTR_*`
- * macros instead. A pointer array of these attributes must be passed to the @attrs of
+ * One can directly create an instance, but it is recommneded to use `GCIP_USAGE_STATS_ATTR_*`
+ * macros instead. A pointer array of this attributes must be passed to the @attrs of
  * `struct gcip_usage_stats_args`.
  */
 struct gcip_usage_stats_attr {
@@ -559,20 +545,17 @@ struct gcip_usage_stats_attr {
 	 *
 	 * One can specify the subcomponent to be read if there are multiple subcomponents.
 	 *
-	 * If this value is `GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS`, its show and/or store
-	 * functions will operate on all default subcomponents. In case of show, it will print
-	 * statistics of all default subcomponents in an array with whitespace separation. Note that
-	 * according to the Linux documentation, one value per one attribute is a rule, but
-	 * printing multiple same types in an array is acceptable. Therefore, use this way only when
-	 * the printing format is simple. In case of store, it will update statistic values (mostly
-	 * reset to 0) of all default subcomponents.
-	 *
-	 * `GCIP_USAGE_STATS_ATTR_SUBCOMPONENTS(n)` can be used similar to above, specifying a
-	 * non-default number of subcomponents.
+	 * If this value is `GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS`, its show or store function
+	 * will involve in all subcomponents. In case of show, it will print statistics of all
+	 * subcomponents in an array with whitespace separation. Note that according to the Linux
+	 * documentation, one value per one attribute is a rule, but printing multiple same types
+	 * in an array is acceptable. Therefore, use this way only when the printing format is
+	 * simple. In case of store, it will update statistic values (mostly reset to 0) of all
+	 * subcomponents.
 	 *
 	 * Note: when the metric is `CORE_USAGE`, using `GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS`
-	 * or `GCIP_USAGE_STATS_ATTR_SUBCOMPONENTS(n)`is invalid because its printing format is too
-	 * complicated to print multiple subcomponents in one attribute.
+	 * is invalid because its printing format is too complicated to print multiple
+	 * subcomponents in one attribute.
 	 */
 	int subcomponent;
 	/* The name of the attribute. */

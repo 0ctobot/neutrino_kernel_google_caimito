@@ -3388,15 +3388,13 @@ static int process_prfcnt_interrupts(struct kbase_device *kbdev, u32 glb_req, u3
 	/* Process PRFCNT_OVERFLOW interrupt. */
 	if ((glb_req ^ glb_ack) & GLB_REQ_PRFCNT_OVERFLOW_MASK) {
 		dev_dbg(kbdev->dev, "PRFCNT_OVERFLOW interrupt received.");
-		/* This function may lock the FW I/O interface, hence
-		 * it should not be called while keeping the FW I/O lock.
-		 */
-		kbase_hwcnt_backend_csf_on_prfcnt_overflow(&kbdev->hwcnt_gpu_iface);
 		if (kbase_csf_fw_io_open(fw_io, &fw_io_flags)) {
 			dev_dbg(kbdev->dev,
 				"Skipping PRFCNT_OVERFLOW interrupt handling due to unresponsive MCU.");
 			return -ENODEV;
 		}
+
+		kbase_hwcnt_backend_csf_on_prfcnt_overflow(&kbdev->hwcnt_gpu_iface);
 
 		/* Set the GLB_REQ.PRFCNT_OVERFLOW flag back to
 		 * the same value as GLB_ACK.PRFCNT_OVERFLOW

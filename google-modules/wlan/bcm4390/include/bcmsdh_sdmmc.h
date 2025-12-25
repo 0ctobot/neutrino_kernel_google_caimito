@@ -43,7 +43,7 @@
 #define sd_sync_dma(sd, read, nbytes)
 #define sd_init_dma(sd)
 #define sd_ack_intr(sd)
-#define sd_wakeup(sd)
+#define sd_wakeup(sd);
 
 #ifdef BCMPERFSTATS
 #define sd_log(x)	do { if (sd_msglevel & SDH_LOG_VAL)	 bcmlog x; } while (0)

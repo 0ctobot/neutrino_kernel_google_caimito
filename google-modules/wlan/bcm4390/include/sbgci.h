@@ -464,7 +464,7 @@ typedef volatile struct {
 	uint32 coex_error_parity;			/* 0xF78 */
 	uint32 PAD;					/* 0xF7C */
 	uint32 ar_buf_01[8];				/* 0xF80 - 0xF9C */
-	uint32 PAD[PADRANGE(0xfa0, 0xfac)];		/* 0xFA0 - 0xFAC */
+	uint32 PAD[PADRANGE(0xfa0,0xfac)];		/* 0xFA0 - 0xFAC */
 	uint32 coex_ctrl_reg0;				/* 0xFB0 */
 	uint32 coex_ctrl_reg1;				/* 0xFB4 */
 	uint32 coex_chip_id;				/* 0xFB8 */

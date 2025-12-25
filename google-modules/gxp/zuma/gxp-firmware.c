@@ -47,6 +47,7 @@
 #include "unittests/factory/fake-gxp-firmware.h"
 #endif
 
+#define FW_HEADER_SIZE		GCIP_FW_HEADER_SIZE
 #define DEBUGFS_FIRMWARE_RUN "firmware_run"
 
 static int gxp_dsp_fw_auth_disable;
@@ -102,7 +103,7 @@ static bool check_firmware_config_version(struct gxp_dev *gxp,
 {
 	const struct gcip_image_config *cfg;
 
-	if (unlikely(core_firmware[0]->size < GCIP_FW_MAX_HEADER_SIZE))
+	if (unlikely(core_firmware[0]->size < GCIP_FW_HEADER_SIZE))
 		return false;
 	cfg = gcip_common_image_get_config_from_hdr(core_firmware[0]->data, GXP_FW_MAGIC);
 	if (!cfg) {
@@ -204,15 +205,17 @@ static int elf_load_segments(struct gxp_dev *gxp, const u8 *elf_data, size_t siz
 	return ret;
 }
 
-static int gxp_firmware_authenticate(struct gxp_dev *gxp,
-				     const struct firmware *firmwares[GXP_NUM_CORES])
+static int
+gxp_firmware_authenticate(struct gxp_dev *gxp,
+			  const struct firmware *firmwares[GXP_NUM_CORES])
 {
 	const u8 *data;
-	size_t size, fw_header_size;
+	size_t size;
 	void *header_vaddr;
 	struct gcip_memory *buffer;
 	dma_addr_t header_dma_addr;
-	int core, ret;
+	int core;
+	int ret;
 
 	if (gxp_dsp_fw_auth_disable) {
 		dev_warn(gxp->dev,
@@ -233,13 +236,11 @@ static int gxp_firmware_authenticate(struct gxp_dev *gxp,
 	for (core = 0; core < GXP_NUM_CORES; core++) {
 		data = firmwares[core]->data;
 		size = firmwares[core]->size;
-		fw_header_size =
-			gcip_common_get_fw_header_size(firmwares[core]->data, GXP_FW_MAGIC);
 		buffer = &gxp->fwbufs[core];
 
-		if ((size - fw_header_size) > buffer->size) {
+		if ((size - FW_HEADER_SIZE) > buffer->size) {
 			dev_err(gxp->dev, "Firmware image does not fit (%zu > %lu)\n",
-				size - fw_header_size, buffer->size);
+				size - FW_HEADER_SIZE, buffer->size);
 			ret = -EINVAL;
 			goto error;
 		}
@@ -247,25 +248,26 @@ static int gxp_firmware_authenticate(struct gxp_dev *gxp,
 		dev_dbg(gxp->dev, "Authenticating firmware of core%u\n", core);
 
 		/* Allocate coherent memory for the image header */
-		header_vaddr = dma_alloc_coherent(gxp->gsa_dev, fw_header_size, &header_dma_addr,
-						  GFP_KERNEL);
+		header_vaddr = dma_alloc_coherent(gxp->gsa_dev, FW_HEADER_SIZE,
+						  &header_dma_addr, GFP_KERNEL);
 		if (!header_vaddr) {
 			ret = -ENOMEM;
 			goto error;
 		}
 
 		/* Copy the header to GSA coherent memory */
-		memcpy(header_vaddr, data, fw_header_size);
+		memcpy(header_vaddr, data, FW_HEADER_SIZE);
 
 		/* Copy the firmware image to the carveout location, skipping the header */
-		memcpy_toio(buffer->virt_addr, data + fw_header_size, size - fw_header_size);
+		memcpy_toio(buffer->virt_addr, data + FW_HEADER_SIZE, size - FW_HEADER_SIZE);
 
 		dev_dbg(gxp->dev, "Requesting GSA authentication. meta = %pad payload = %pap",
 			&header_dma_addr, &buffer->phys_addr);
 
 		ret = gsa_authenticate_image(gxp->gsa_dev, header_dma_addr, buffer->phys_addr);
 
-		dma_free_coherent(gxp->gsa_dev, fw_header_size, header_vaddr, header_dma_addr);
+		dma_free_coherent(gxp->gsa_dev, FW_HEADER_SIZE, header_vaddr,
+				  header_dma_addr);
 
 		if (ret) {
 			dev_err(gxp->dev, "GSA authentication failed: %d\n",
@@ -416,28 +418,28 @@ static int
 gxp_firmware_load_into_memories(struct gxp_dev *gxp,
 				const struct firmware *firmwares[GXP_NUM_CORES])
 {
-	int core, ret;
-	size_t fw_header_size;
+	int core;
+	int ret;
 
 	for (core = 0; core < GXP_NUM_CORES; core++) {
 		/* Load firmware to System RAM */
-		fw_header_size =
-			gcip_common_get_fw_header_size(firmwares[core]->data, GXP_FW_MAGIC);
-		if (firmwares[core]->size < fw_header_size) {
-			dev_err(gxp->dev, "Invalid Core %u firmware Image size (%zu > %zu)\n", core,
-				fw_header_size, firmwares[core]->size);
+		if (firmwares[core]->size < FW_HEADER_SIZE) {
+			dev_err(gxp->dev,
+				"Invalid Core %u firmware Image size (%d > %zu)\n",
+				core, FW_HEADER_SIZE, firmwares[core]->size);
 			ret = -EINVAL;
 			goto error;
 		}
 
-		if ((firmwares[core]->size - fw_header_size) > gxp->fwbufs[core].size) {
+		if ((firmwares[core]->size - FW_HEADER_SIZE) >
+		    gxp->fwbufs[core].size) {
 			dev_err(gxp->dev, "Core %u firmware image does not fit (%zu > %lu)\n", core,
-				firmwares[core]->size - fw_header_size, gxp->fwbufs[core].size);
+				firmwares[core]->size - FW_HEADER_SIZE, gxp->fwbufs[core].size);
 			ret = -EINVAL;
 			goto error;
 		}
-		memcpy_toio(gxp->fwbufs[core].virt_addr, firmwares[core]->data + fw_header_size,
-			    firmwares[core]->size - fw_header_size);
+		memcpy_toio(gxp->fwbufs[core].virt_addr, firmwares[core]->data + FW_HEADER_SIZE,
+			    firmwares[core]->size - FW_HEADER_SIZE);
 	}
 	return 0;
 error:
@@ -451,15 +453,14 @@ int gxp_firmware_rearrange_elf(struct gxp_dev *gxp,
 			       const struct firmware *firmwares[GXP_NUM_CORES])
 {
 	int ret = 0;
-	size_t fw_header_size;
 	uint core;
 
 	for (core = 0; core < GXP_NUM_CORES; core++) {
 		/* Re-arrange ELF firmware in System RAM */
-		fw_header_size =
-			gcip_common_get_fw_header_size(firmwares[core]->data, GXP_FW_MAGIC);
-		ret = elf_load_segments(gxp, firmwares[core]->data + fw_header_size,
-					firmwares[core]->size - fw_header_size, &gxp->fwbufs[core]);
+		ret = elf_load_segments(gxp,
+					firmwares[core]->data + FW_HEADER_SIZE,
+					firmwares[core]->size - FW_HEADER_SIZE,
+					&gxp->fwbufs[core]);
 		if (ret) {
 			dev_err(gxp->dev,
 				"Failed to parse ELF firmware on core %u\n",

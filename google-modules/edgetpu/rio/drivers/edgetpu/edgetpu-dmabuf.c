@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0
 /*
  * EdgeTPU support for dma-buf.
  *
- * Copyright (C) 2020-2025 Google LLC
+ * Copyright (C) 2020 Google, Inc.
  */
 
 #include <linux/debugfs.h>
@@ -100,9 +100,13 @@ static struct edgetpu_mapping *dmabuf_mapping_create(struct edgetpu_device_group
 	mapping->show = dmabuf_map_callback_show;
 
 	down_read(&group->lock);
+	mutex_lock(&group->mapping_lock);
 	if (!edgetpu_device_group_is_ready(group)) {
 		ret = edgetpu_group_errno(group);
-		etdev_err(group->etdev, "group %u already errored: %d", group->group_id, ret);
+		etdev_dbg(group->etdev,
+			  "%s: edgetpu_device_group_is_ready returns %d\n",
+			  __func__, ret);
+		mutex_unlock(&group->mapping_lock);
 		up_read(&group->lock);
 		goto err_device_group_put;
 	}
@@ -110,6 +114,7 @@ static struct edgetpu_mapping *dmabuf_mapping_create(struct edgetpu_device_group
 
 	mapping->gcip_mapping =
 		gcip_iommu_domain_map_dma_buf(etdomain->gdomain, dmabuf, gcip_map_flags);
+	mutex_unlock(&group->mapping_lock);
 	up_read(&group->lock);
 	if (IS_ERR(mapping->gcip_mapping)) {
 		ret = PTR_ERR(mapping->gcip_mapping);
@@ -135,14 +140,20 @@ int edgetpu_map_dmabuf(struct edgetpu_device_group *group, struct edgetpu_map_dm
 	int ret;
 
 	mapping = dmabuf_mapping_create(group, arg->dmabuf_fd, arg->flags);
-	if (IS_ERR(mapping))
-		return PTR_ERR(mapping);
+	if (IS_ERR(mapping)) {
+		ret = PTR_ERR(mapping);
+		etdev_dbg(group->etdev, "%s: dmabuf_mapping_create returns %d\n", __func__, ret);
+		return ret;
+	}
 
 	/* Save address before add to mapping tree, after which another thread can free it. */
 	arg->device_address = mapping->gcip_mapping->device_address;
 	ret = edgetpu_mapping_add(&group->dmabuf_mappings, mapping);
-	if (ret)
+	if (ret) {
+		etdev_dbg(group->etdev, "%s: edgetpu_mapping_add returns %d\n",
+			  __func__, ret);
 		goto err_destroy_mapping;
+	}
 
 	return 0;
 
@@ -193,11 +204,9 @@ static void edgetpu_dma_fence_release(struct dma_fence *fence)
 	struct edgetpu_dma_fence *etfence = to_etfence(gfence);
 	struct edgetpu_device_group *group = etfence->group;
 
-	down_read(&group->lock);
-	mutex_lock(&group->dma_fence_lock);
+	down_write(&group->lock);
 	list_del(&etfence->group_list);
-	mutex_unlock(&group->dma_fence_lock);
-	up_read(&group->lock);
+	up_write(&group->lock);
 	/* Release this fence's reference on the owning group. */
 	edgetpu_device_group_put(group);
 	gcip_dma_fence_exit(gfence);
@@ -217,11 +226,9 @@ static int edgetpu_dma_fence_after_init(struct gcip_dma_fence *gfence)
 	struct edgetpu_dma_fence *etfence = to_etfence(gfence);
 	struct edgetpu_device_group *group = etfence->group;
 
-	down_read(&group->lock);
-	mutex_lock(&group->dma_fence_lock);
+	down_write(&group->lock);
 	list_add_tail(&etfence->group_list, &group->dma_fence_list);
-	mutex_unlock(&group->dma_fence_lock);
-	up_read(&group->lock);
+	up_write(&group->lock);
 
 	return 0;
 }
@@ -268,7 +275,6 @@ void edgetpu_sync_fence_group_shutdown(struct edgetpu_device_group *group)
 	int ret;
 
 	lockdep_assert_held(&group->lock);
-	mutex_lock(&group->dma_fence_lock);
 	list_for_each(pos, &group->dma_fence_list) {
 		struct edgetpu_dma_fence *etfence =
 			container_of(pos, struct edgetpu_dma_fence, group_list);
@@ -283,7 +289,6 @@ void edgetpu_sync_fence_group_shutdown(struct edgetpu_device_group *group)
 				   fence->seqno);
 		}
 	}
-	mutex_unlock(&group->dma_fence_lock);
 }
 
 int edgetpu_sync_fence_status(struct edgetpu_sync_fence_status *datap)
@@ -308,3 +313,5 @@ int edgetpu_sync_fence_debugfs_show(struct seq_file *s, void *unused)
 
 	return 0;
 }
+
+MODULE_IMPORT_NS(DMA_BUF);

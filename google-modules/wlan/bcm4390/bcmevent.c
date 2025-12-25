@@ -252,9 +252,6 @@ static const bcmevent_name_str_t bcmevent_names[] = {
 	BCMEVENT_NAME(WLC_E_ULMU_DISABLED_REASON_UPD),
 	BCMEVENT_NAME(WLC_E_EDS_EVENT),
 	BCMEVENT_NAME(WLC_E_ICM),
-	BCMEVENT_NAME(WLC_E_AP_BCN_MUTE),
-	BCMEVENT_NAME(WLC_E_VLPTPC),
-	BCMEVENT_NAME(WLC_E_SBI_SC_EVENT)
 };
 
 const char *bcmevent_get_name(uint event_type)

@@ -3133,6 +3133,9 @@ _dhd_pno_get_for_batch(dhd_pub_t *dhd, char *buf, int bufsize, int reason)
 	uint16 fwstatus = PFN_INCOMPLETE;
 	uint16 fwcount;
 
+	NULL_CHECK(dhd, "dhd is NULL", err);
+	NULL_CHECK(dhd->pno_state, "pno_state is NULL", err);
+
 	/* The static asserts below guarantee the v1 and v2 net_info and subnet_info
 	 * structures are compatible in size and SSID offset, allowing v1 to be safely
 	 * used in the code below except for lscanresults fields themselves
@@ -3141,9 +3144,6 @@ _dhd_pno_get_for_batch(dhd_pub_t *dhd, char *buf, int bufsize, int reason)
 	STATIC_ASSERT(sizeof(wl_pfn_net_info_v1_t) == sizeof(wl_pfn_net_info_v2_t));
 	STATIC_ASSERT(sizeof(wl_pfn_lnet_info_v1_t) == sizeof(wl_pfn_lnet_info_v2_t));
 	STATIC_ASSERT(sizeof(wl_pfn_subnet_info_v1_t) == sizeof(wl_pfn_subnet_info_v2_t));
-
-	NULL_CHECK(dhd, "dhd is NULL", err);
-	NULL_CHECK(dhd->pno_state, "pno_state is NULL", err);
 
 	DHD_PNO(("%s enter\n", __FUNCTION__));
 	_pno_state = PNO_GET_PNOSTATE(dhd);

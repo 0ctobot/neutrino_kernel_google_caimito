@@ -463,6 +463,7 @@ static void iif_fences_submit_signaler_locked(struct iif_fence **fences, int num
 
 /*
  * Checks whether a waiter can be submitted to @fences.
+ * If there are unsubmitted signalers, the caller should retry submitting waiters later.
  *
  * Returns 0 on success. Otherwise, a negative errno.
  */
@@ -472,6 +473,9 @@ static int iif_fences_are_waiter_submittable_locked(struct iif_fence **fences, i
 
 	for (i = 0; i < num_fences; i++) {
 		lockdep_assert_held(&fences[i]->fence_lock);
+
+		if (iif_fence_unsubmitted_signalers_locked(fences[i]))
+			return -EAGAIN;
 
 		if (iif_fence_has_retired_locked(fences[i]))
 			return -EPERM;
@@ -1311,10 +1315,15 @@ int iif_fence_submit_signaler(struct iif_fence *fence)
 
 int iif_fence_submit_waiter(struct iif_fence *fence, enum iif_ip_type ip)
 {
+	int unsubmitted = iif_fence_unsubmitted_signalers(fence);
+
 	might_sleep();
 
 	if (ip >= IIF_IP_NUM)
 		return -EINVAL;
+
+	if (unsubmitted)
+		return unsubmitted;
 
 	return iif_fence_submit_signaler_and_waiter(&fence, 1, NULL, 0, ip);
 }

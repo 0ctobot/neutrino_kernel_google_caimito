@@ -142,11 +142,8 @@ typedef int bcmerror_t;
 #define BCME_PHYMUTE			-83	/* PHY MUTED */
 #define BCME_ECC_REJECT			-84	/* OTP Program Reject on ECC enabled row */
 #define BCME_OTP_PROG_LOCK		-85	/* OTP Program Locked */
-#define BCME_RETRY			-86	/* Ask caller to retry */
-#define BCME_NOTINFRASTA		-87	/* Not Infra STA */
 
-/* Add new one above and update BCME_LAST!! */
-#define BCME_LAST			BCME_NOTINFRASTA
+#define BCME_LAST			BCME_OTP_PROG_LOCK /* add new one above and update this */
 
 /* This error code is *internal* to the driver, and is not propogated to users. It should
  * only be used by IOCTL patch handlers as an indication that it did not handle the IOCTL.
@@ -239,15 +236,13 @@ typedef int bcmerror_t;
 	"Command/context already active", \
 	"Command/context is in progress", \
 	"No action taken i.e. NOP",	\
-	"6G Not permitted",		\
+	"6G Not permitted", \
 	"tpe for 6g channel(s) does not exist", \
 	"PLL RC Cal failed",		\
 	"BT RC Cal failure",		\
 	"Phy muted",			\
-	"OTP Program Reject on ECC enabled row", \
-	"Programming failed due to OTP Locked - need a reset", \
-	"retry indication",		\
-	"Not Infra STA",		\
+	"OTP Program Reject on ECC enabled row",			\
+	"Programming failed due to OTP Locked - need a reset",			\
 }
 
 /* FTM error codes [-1024, -2047] */
@@ -918,29 +913,28 @@ enum {
 
 /* bcmsm error code [-12288 .. -13311] (1K) */
 typedef enum {
-	BCMSM_E_IN_RTC			= -12288,	/**< In Run to completion loop */
-	BCMSM_E_TRANS_NOT_FOUND		= -12289,	/**< Transition was not found */
-	BCMSM_E_TRANS_GUARD_FAILED	= -12290,	/**< guard for a transition failed */
-	BCMSM_E_TRANS_EFFECT_FAILED	= -12291,	/**< transition effect returned err */
-	BCMSM_E_TRANS_ERROR		= -12292,	/**< Error while taking transition */
-	BCMSM_E_STATE_ENTRY_FAILED	= -12293,	/**< Entry to state failed */
-	BCMSM_E_STATE_EXIT_FAILED	= -12294,	/**< Failure while executing a state */
-	BCMSM_E_STATE_ID_EXISTS		= -12295,	/**< Same ID exists */
-	BCMSM_E_STATE_CONFIG_ERROR	= -12296,	/**< SM configuration has error */
-	BCMSM_E_Q_FULL			= -12297,	/**< Event queue is full */
-	BCMSM_E_Q_EMPTY			= -12298,	/**< Event queue is empty */
-	BCMSM_E_Q_NO_DEQUEUE		= -12299,	/**< Dequeue attempted was unsuccessful */
-	BCMSM_E_CHOICE_STATE_NO_TRANS	= -12300,	/**< Choice has no valid out transition */
-	BCMSM_E_EVENT_ALLOC_FAILED	= -12301,	/**< Event allocation failed */
-	BCMSM_E_EVENT_EXPIRED		= -12302,	/**< Event expired */
-	BCMSM_E_EVENT_NOT_POSTED	= -12303,	/**< Event was not posted */
-	BCMSM_E_HALTED			= -12304,	/**< State machine is in final state */
-	BCMSM_E_TMR_NOT_STOPPED		= -12305,	/**< Error in stopping a timer */
-	BCMSM_E_TMR_NOT_STARTED		= -12306,	/**< Error in starting a timer */
-	BCMSM_E_TMR_NOT_FOUND		= -12307,	/**< No timer available to be scheduled */
-	BCMSM_E_TMR_ERROR		= -12308,	/**< Error in starting a timer */
-	BCMSM_E_NO_INSTANCE		= -12309,	/**< SM is not instantiated */
-	BCMSM_E_EVT_HANDLED		= -12310,	/**< EVT is consumed without transition */
-	BCMSM_E_MAX			= -13311
+	BCMSM_IN_RTC			= -12288,	/**< In Run to completion loop */
+	BCMSM_TRANS_NOT_FOUND		= -12289,	/**< Transition was not found */
+	BCMSM_TRANS_GUARD_FAILED	= -12290,	/**< guard for a transition failed */
+	BCMSM_TRANS_EFFECT_FAILED	= -12291,	/**< transition effect returned err */
+	BCMSM_TRANS_ERROR		= -12292,	/**< Error while taking transition */
+	BCMSM_STATE_ENTRY_FAILED	= -12293,	/**< Entry to state failed */
+	BCMSM_STATE_EXIT_FAILED		= -12294,	/**< Failure while executing a state */
+	BCMSM_STATE_ID_EXISTS		= -12295,	/**< Same ID exists */
+	BCMSM_STATE_CONFIG_ERROR	= -12296,	/**< SM configuration has error */
+	BCMSM_Q_FULL			= -12297,	/**< Event queue is full */
+	BCMSM_Q_EMPTY			= -12298,	/**< Event queue is empty */
+	BCMSM_Q_NO_DEQUEUE		= -12299,	/**< Dequeue attempted was unsuccessful */
+	BCMSM_CHOICE_STATE_NO_TRANS	= -12300,	/**< Choice has no valid out transition */
+	BCMSM_EVENT_ALLOC_FAILED	= -12301,	/**< Event allocation failed */
+	BCMSM_EVENT_EXPIRED		= -12302,	/**< Event expired */
+	BCMSM_EVENT_NOT_POSTED		= -12303,	/**< Event was not posted */
+	BCMSM_HALTED			= -12304,	/**< State machine is in final state */
+	BCMSM_TMR_NOT_STOPPED		= -12305,	/**< Error in stopping a timer */
+	BCMSM_TMR_NOT_STARTED		= -12306,	/**< Error in starting a timer */
+	BCMSM_TMR_NOT_FOUND		= -12307,	/**< No timer available to be scheduled */
+	BCMSM_TMR_ERROR			= -12308,	/**< Error in starting a timer */
+
+	BCMSM_MAX			= -13311
 } bcmsm_status_t;
 #endif	/* _bcmerror_h_ */

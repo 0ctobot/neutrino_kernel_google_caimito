@@ -17,7 +17,6 @@
 #include <linux/seq_file.h>
 #include <linux/slab.h>
 #include <linux/string.h> /* memcpy */
-#include <trace/events/edgetpu.h>
 
 #include <gcip/gcip-firmware.h>
 #include <gcip/gcip-memory.h>
@@ -27,7 +26,6 @@
 
 #include "edgetpu-config.h"
 #include "edgetpu-debug.h"
-#include "edgetpu-dt-mailbox-adapter.h"
 #include "edgetpu-firmware.h"
 #include "edgetpu-internal.h"
 #include "edgetpu-iremap-pool.h"
@@ -37,6 +35,9 @@
 #include "edgetpu-soc.h"
 #include "edgetpu-telemetry.h"
 #include "edgetpu-usage-stats.h"
+
+/* the index of mailbox for kernel should always be zero */
+#define KERNEL_MAILBOX_INDEX 0
 
 /* size of queue for KCI mailbox */
 #define QUEUE_SIZE CIRC_QUEUE_MAX_SIZE(CIRC_QUEUE_WRAP_BIT)
@@ -157,7 +158,6 @@ static void edgetpu_reverse_kci_handle_response(struct gcip_kci *kci,
 	struct edgetpu_dev *etdev = mailbox->etdev;
 	int ret;
 
-	trace_edgetpu_rkci(resp);
 	ret = edgetpu_soc_handle_reverse_kci(etdev, resp);
 	if (ret != -EOPNOTSUPP)
 		return;
@@ -214,15 +214,12 @@ static inline bool edgetpu_kci_is_block_off(struct gcip_kci *kci)
 	return edgetpu_soc_pm_is_block_off(mailbox->etdev);
 }
 
-/* PM lock may be held.  Any PM calls must be non-blocking. */
 static void edgetpu_kci_on_error(struct gcip_kci *kci, int err)
 {
 	struct edgetpu_mailbox *mailbox = gcip_kci_get_data(kci);
 
-	if (err == -ETIMEDOUT) {
-		edgetpu_soc_pm_dump_block_state(mailbox->etdev);
+	if (err == -ETIMEDOUT)
 		edgetpu_debug_dump_cpu_regs(mailbox->etdev);
-	}
 }
 
 static const struct gcip_kci_ops kci_ops = {
@@ -240,13 +237,13 @@ static const struct gcip_kci_ops kci_ops = {
 	.on_error = edgetpu_kci_on_error,
 };
 
-int edgetpu_kci_init(struct edgetpu_dev *etdev, struct edgetpu_kci *etkci)
+int edgetpu_kci_init(struct edgetpu_mailbox_manager *mgr, struct edgetpu_kci *etkci)
 {
-	struct edgetpu_mailbox *mailbox = edgetpu_mailbox_kci(etdev);
+	struct edgetpu_mailbox *mailbox = edgetpu_mailbox_kci(mgr);
 	struct gcip_memory *cmd_queue_mem = &etkci->cmd_queue_mem;
 	struct gcip_memory *resp_queue_mem = &etkci->resp_queue_mem;
 	struct gcip_kci_args args = {
-		.dev = etdev->dev,
+		.dev = mgr->etdev->dev,
 		.queue_wrap_bit = CIRC_QUEUE_WRAP_BIT,
 		.rkci_buffer_size = REVERSE_KCI_BUFFER_SIZE,
 		.timeout = KCI_TIMEOUT,
@@ -259,28 +256,28 @@ int edgetpu_kci_init(struct edgetpu_dev *etdev, struct edgetpu_kci *etkci)
 		return PTR_ERR(mailbox);
 
 	if (!etkci->kci) {
-		etkci->kci = devm_kzalloc(etdev->dev, sizeof(*etkci->kci), GFP_KERNEL);
+		etkci->kci = devm_kzalloc(mgr->etdev->dev, sizeof(*etkci->kci), GFP_KERNEL);
 		if (!etkci->kci) {
 			ret = -ENOMEM;
 			goto err_free_mailbox;
 		}
 	}
 
-	ret = edgetpu_kci_alloc_queue(etdev, mailbox, GCIP_MAILBOX_CMD_QUEUE, cmd_queue_mem);
+	ret = edgetpu_kci_alloc_queue(mgr->etdev, mailbox, GCIP_MAILBOX_CMD_QUEUE, cmd_queue_mem);
 	if (ret)
 		goto err_free_mailbox;
 
-	etdev_dbg(etdev, "%s: cmdq kva=%pK dma=%pad", __func__, cmd_queue_mem->virt_addr,
+	etdev_dbg(mgr->etdev, "%s: cmdq kva=%pK dma=%pad", __func__, cmd_queue_mem->virt_addr,
 		  &cmd_queue_mem->dma_addr);
 
-	ret = edgetpu_kci_alloc_queue(etdev, mailbox, GCIP_MAILBOX_RESP_QUEUE, resp_queue_mem);
+	ret = edgetpu_kci_alloc_queue(mgr->etdev, mailbox, GCIP_MAILBOX_RESP_QUEUE, resp_queue_mem);
 	if (ret)
 		goto err_free_cmd_queue;
 
-	etdev_dbg(etdev, "%s: rspq kva=%pK dma=%pad", __func__, resp_queue_mem->virt_addr,
+	etdev_dbg(mgr->etdev, "%s: rspq kva=%pK dma=%pad", __func__, resp_queue_mem->virt_addr,
 		  &resp_queue_mem->dma_addr);
 
-	edgetpu_mailbox_set_irq_handler(mailbox, edgetpu_kci_handle_irq);
+	mailbox->handle_irq = edgetpu_kci_handle_irq;
 	mailbox->internal.etkci = etkci;
 
 	args.cmd_queue = cmd_queue_mem->virt_addr;
@@ -295,19 +292,21 @@ int edgetpu_kci_init(struct edgetpu_dev *etdev, struct edgetpu_kci *etkci)
 	return 0;
 
 err_free_resp_queue:
-	edgetpu_kci_free_queue(etdev, resp_queue_mem);
+	edgetpu_kci_free_queue(mgr->etdev, resp_queue_mem);
 err_free_cmd_queue:
-	edgetpu_kci_free_queue(etdev, cmd_queue_mem);
+	edgetpu_kci_free_queue(mgr->etdev, cmd_queue_mem);
 err_free_mailbox:
-	edgetpu_mailbox_release(mailbox);
+	kfree(mailbox);
 	return ret;
 }
 
 int edgetpu_kci_reinit(struct edgetpu_kci *etkci)
 {
 	struct edgetpu_mailbox *mailbox = etkci->mailbox;
+	struct edgetpu_mailbox_manager *mgr;
 	struct gcip_memory *cmd_queue_mem = &etkci->cmd_queue_mem;
 	struct gcip_memory *resp_queue_mem = &etkci->resp_queue_mem;
+	unsigned long flags;
 	int ret;
 
 	if (!mailbox)
@@ -323,8 +322,11 @@ int edgetpu_kci_reinit(struct edgetpu_kci *etkci)
 	if (ret)
 		return ret;
 
+	mgr = mailbox->etdev->mailbox_manager;
 	/* Restore KCI irq handler */
-	edgetpu_mailbox_set_irq_handler(mailbox, edgetpu_kci_handle_irq);
+	write_lock_irqsave(&mgr->mailboxes_lock, flags);
+	mailbox->handle_irq = edgetpu_kci_handle_irq;
+	write_unlock_irqrestore(&mgr->mailboxes_lock, flags);
 
 	edgetpu_mailbox_init_doorbells(mailbox);
 	edgetpu_mailbox_enable(mailbox);
@@ -334,18 +336,22 @@ int edgetpu_kci_reinit(struct edgetpu_kci *etkci)
 
 void edgetpu_kci_cancel_work_queues(struct edgetpu_kci *etkci)
 {
+	struct edgetpu_mailbox_manager *mgr;
 	struct edgetpu_mailbox *mailbox = etkci->mailbox;
+	unsigned long flags;
 
-	if (mailbox)
+	if (mailbox) {
+		mgr = mailbox->etdev->mailbox_manager;
 		/* Remove IRQ handler to stop responding to interrupts */
-		edgetpu_mailbox_set_irq_handler(mailbox, NULL);
+		write_lock_irqsave(&mgr->mailboxes_lock, flags);
+		mailbox->handle_irq = NULL;
+		write_unlock_irqrestore(&mgr->mailboxes_lock, flags);
+	}
 	gcip_kci_cancel_work_queues(etkci->kci);
 }
 
 void edgetpu_kci_release(struct edgetpu_dev *etdev, struct edgetpu_kci *etkci)
 {
-	struct edgetpu_mailbox *mailbox;
-
 	if (!etkci || !etkci->kci)
 		return;
 
@@ -356,9 +362,7 @@ void edgetpu_kci_release(struct edgetpu_dev *etdev, struct edgetpu_kci *etkci)
 	edgetpu_kci_free_queue(etdev, &etkci->cmd_queue_mem);
 	edgetpu_kci_free_queue(etdev, &etkci->resp_queue_mem);
 
-	mailbox = etkci->mailbox;
 	etkci->mailbox = NULL;
-	edgetpu_mailbox_release(mailbox);
 }
 
 static int edgetpu_kci_send_cmd_with_data(struct edgetpu_kci *etkci,
@@ -379,37 +383,12 @@ static int edgetpu_kci_send_cmd_with_data(struct edgetpu_kci *etkci,
 
 	cmd->dma.address = mem.dma_addr;
 	cmd->dma.size = size;
-	trace_edgetpu_kci_command_start(cmd);
 	ret = gcip_kci_send_cmd(etkci->kci, cmd);
-	trace_edgetpu_kci_command_end(cmd, ret);
 	edgetpu_iremap_free(etdev, &mem);
 	etdev_dbg(etdev, "%s: unmap kva=%pK dma=%pad", __func__, mem.virt_addr, &mem.dma_addr);
 
 	return ret;
 }
-
-static int edgetpu_kci_send_cmd(struct gcip_kci *kci, struct gcip_kci_command_element *cmd)
-{
-	int ret;
-
-	trace_edgetpu_kci_command_start(cmd);
-	ret = gcip_kci_send_cmd(kci, cmd);
-	trace_edgetpu_kci_command_end(cmd, ret);
-	return ret;
-}
-
-static int edgetpu_kci_send_cmd_return_resp(struct gcip_kci *kci,
-					    struct gcip_kci_command_element *cmd,
-					    struct gcip_kci_response_element *resp)
-{
-	int ret;
-
-	trace_edgetpu_kci_command_start(cmd);
-	ret = gcip_kci_send_cmd_return_resp(kci, cmd, resp);
-	trace_edgetpu_kci_command_end(cmd, ret);
-	return ret;
-}
-
 
 int edgetpu_kci_map_log_buffer(const struct gcip_telemetry_kci_args *args)
 {
@@ -421,26 +400,13 @@ int edgetpu_kci_map_log_buffer(const struct gcip_telemetry_kci_args *args)
 		},
 	};
 
-	return edgetpu_kci_send_cmd(args->kci, &cmd);
+	return gcip_kci_send_cmd(args->kci, &cmd);
 }
 
 int edgetpu_kci_map_trace_buffer(const struct gcip_telemetry_kci_args *args)
 {
 	struct gcip_kci_command_element cmd = {
 		.code = GCIP_KCI_CODE_MAP_TRACE_BUFFER,
-		.dma = {
-			.address = args->addr,
-			.size = args->size,
-		},
-	};
-
-	return edgetpu_kci_send_cmd(args->kci, &cmd);
-}
-
-int edgetpu_kci_map_hwtrace_buffer(const struct gcip_telemetry_kci_args *args)
-{
-	struct gcip_kci_command_element cmd = {
-		.code = GCIP_KCI_CODE_MAP_HWTRACE_BUFFER,
 		.dma = {
 			.address = args->addr,
 			.size = args->size,
@@ -478,7 +444,7 @@ enum gcip_fw_flavor edgetpu_kci_fw_info(struct edgetpu_kci *etkci, struct gcip_f
 		cmd.dma.size = sizeof(*fw_info);
 	}
 
-	ret = edgetpu_kci_send_cmd_return_resp(etkci->kci, &cmd, &resp);
+	ret = gcip_kci_send_cmd_return_resp(etkci->kci, &cmd, &resp);
 	if (cmd.dma.address) {
 		memcpy(fw_info, mem.virt_addr, sizeof(*fw_info));
 		edgetpu_iremap_free(etdev, &mem);
@@ -526,6 +492,12 @@ int edgetpu_kci_update_usage(struct edgetpu_dev *etdev)
 	if (edgetpu_firmware_status_locked(etdev) != GCIP_FW_VALID)
 		goto fw_unlock;
 
+	/* Test firmware doesn't implement usage stats, skip and return no error. */
+	if (edgetpu_firmware_get_flavor(etdev) == GCIP_FW_FLAVOR_SYSTEST) {
+		ret = 0;
+		goto fw_unlock;
+	}
+
 	/*
 	 * This function may run in a worker that is being canceled when the device is powering
 	 * down, and the power down code holds the PM lock.
@@ -547,7 +519,6 @@ fw_unlock:
 	return ret;
 }
 
-/* Firmware and PM are locked.  Any PM calls must be non-blocking. */
 int edgetpu_kci_update_usage_locked(struct edgetpu_dev *etdev)
 {
 #define EDGETPU_USAGE_BUFFER_SIZE	4096
@@ -573,7 +544,7 @@ int edgetpu_kci_update_usage_locked(struct edgetpu_dev *etdev)
 	cmd.dma.address = mem.dma_addr;
 	cmd.dma.size = EDGETPU_USAGE_BUFFER_SIZE;
 	memset(mem.virt_addr, 0, sizeof(struct gcip_usage_stats_header));
-	ret = edgetpu_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
+	ret = gcip_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
 
 	if (ret == GCIP_STATUS_CODE_UNIMPLEMENTED || ret == GCIP_STATUS_CODE_UNAVAILABLE) {
 		etdev_dbg(etdev, "firmware does not report usage\n");
@@ -624,7 +595,7 @@ int edgetpu_kci_get_debug_dump(struct edgetpu_kci *etkci, tpu_addr_t tpu_addr, s
 		},
 	};
 
-	return edgetpu_kci_send_cmd(etkci->kci, &cmd);
+	return gcip_kci_send_cmd(etkci->kci, &cmd);
 }
 
 int edgetpu_kci_open_device(struct edgetpu_kci *etkci, u32 mailbox_map, u32 client_priv, s16 vcid,
@@ -647,7 +618,7 @@ int edgetpu_kci_open_device(struct edgetpu_kci *etkci, u32 mailbox_map, u32 clie
 	if (ret)
 		return ret;
 	if (vcid < 0)
-		return edgetpu_kci_send_cmd(etkci->kci, &cmd);
+		return gcip_kci_send_cmd(etkci->kci, &cmd);
 
 	return edgetpu_kci_send_cmd_with_data(etkci, &cmd, &detail, sizeof(detail));
 }
@@ -665,7 +636,7 @@ int edgetpu_kci_close_device(struct edgetpu_kci *etkci, u32 mailbox_map)
 	ret = check_etdev_state(etkci, "close device");
 	if (ret)
 		return ret;
-	return edgetpu_kci_send_cmd(etkci->kci, &cmd);
+	return gcip_kci_send_cmd(etkci->kci, &cmd);
 }
 
 int edgetpu_kci_notify_throttling(struct edgetpu_dev *etdev, u32 level)
@@ -677,7 +648,7 @@ int edgetpu_kci_notify_throttling(struct edgetpu_dev *etdev, u32 level)
 		},
 	};
 
-	return edgetpu_kci_send_cmd(etdev->etkci->kci, &cmd);
+	return gcip_kci_send_cmd(etdev->etkci->kci, &cmd);
 }
 
 int edgetpu_kci_block_bus_speed_control(struct edgetpu_dev *etdev, bool block)
@@ -689,7 +660,7 @@ int edgetpu_kci_block_bus_speed_control(struct edgetpu_dev *etdev, bool block)
 		},
 	};
 
-	return edgetpu_kci_send_cmd(etdev->etkci->kci, &cmd);
+	return gcip_kci_send_cmd(etdev->etkci->kci, &cmd);
 }
 
 int edgetpu_kci_allocate_vmbox(struct edgetpu_kci *etkci, u32 client_id, u8 slice_index,
@@ -742,7 +713,7 @@ int edgetpu_kci_firmware_tracing_level(void *data, unsigned long level, unsigned
 	struct gcip_kci_response_element resp;
 	int ret;
 
-	ret = edgetpu_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
+	ret = gcip_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
 	if (ret == GCIP_STATUS_CODE_OK)
 		*active_level = resp.retval;
 
@@ -758,7 +729,7 @@ int edgetpu_kci_thermal_control(struct edgetpu_dev *etdev, bool enable)
 		},
 	};
 
-	return edgetpu_kci_send_cmd(etdev->etkci->kci, &cmd);
+	return gcip_kci_send_cmd(etdev->etkci->kci, &cmd);
 }
 
 int edgetpu_kci_set_device_properties(struct edgetpu_kci *etkci, struct edgetpu_dev_prop *dev_prop)
@@ -794,7 +765,7 @@ int edgetpu_kci_set_freq_limits(struct edgetpu_kci *etkci, u32 min_freq, u32 max
 		},
 	};
 
-	return edgetpu_kci_send_cmd(etkci->kci, &cmd);
+	return gcip_kci_send_cmd(etkci->kci, &cmd);
 }
 
 int edgetpu_kci_resp_rkci_ack(struct edgetpu_dev *etdev, struct gcip_kci_response_element *rkci_cmd)
@@ -804,7 +775,7 @@ int edgetpu_kci_resp_rkci_ack(struct edgetpu_dev *etdev, struct gcip_kci_respons
 		.code = GCIP_KCI_CODE_RKCI_ACK,
 	};
 
-	return edgetpu_kci_send_cmd(etdev->etkci->kci, &cmd);
+	return gcip_kci_send_cmd(etdev->etkci->kci, &cmd);
 }
 
 bool edgetpu_kci_flush_rkci(struct edgetpu_dev *etdev)
@@ -847,7 +818,7 @@ int edgetpu_kci_fw_debug_cmd(struct edgetpu_dev *etdev, dma_addr_t daddr, size_t
 
 	cmd.dma.address = daddr;
 	cmd.dma.size = count;
-	ret = edgetpu_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
+	ret = gcip_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
 	if (ret == GCIP_STATUS_CODE_OK)
 		edgetpu_fw_debug_resp_ready(etdev, 0, resp.retval);
 	return ret;
@@ -861,7 +832,7 @@ int edgetpu_kci_fw_debug_reset(struct edgetpu_dev *etdev)
 	struct gcip_kci_response_element resp;
 	int ret;
 
-	ret = edgetpu_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
+	ret = gcip_kci_send_cmd_return_resp(etdev->etkci->kci, &cmd, &resp);
 	return ret;
 }
 
@@ -873,6 +844,6 @@ void edgetpu_kci_fw_send_debug_init(struct edgetpu_dev *etdev, dma_addr_t daddr,
 
 	cmd.dma.address = daddr;
 	cmd.dma.size = count;
-	edgetpu_kci_send_cmd(etdev->etkci->kci, &cmd);
+	gcip_kci_send_cmd(etdev->etkci->kci, &cmd);
 }
 #endif /* EDGETPU_HAS_FW_DEBUG */

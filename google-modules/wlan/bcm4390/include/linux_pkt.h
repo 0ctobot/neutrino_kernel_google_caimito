@@ -68,9 +68,6 @@
 					sizeof(((struct sk_buff*)(skb))->cb) - sizeof(uint16)))
 #define PKTDBG_TRACE(osh, pkt, bit)     osl_pkttrace(osh, pkt, bit)
 #endif /* BCMDBG_PKT */
-
-#define PKTGET_EX(osh, len, send)	PKTGET(osh, len, send)
-
 #if defined(BCM_OBJECT_TRACE)
 #define	PKTFREE(osh, skb, send)		linux_pktfree((osh), (skb), (send), __LINE__, __FUNCTION__)
 #else
@@ -225,10 +222,6 @@ extern void osl_pkt_orphan_partial(struct sk_buff *skb);
 #define	PKTSETTOBR(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
 #define	PKTCLRTOBR(osh, skb)		({BCM_REFERENCE(osh); BCM_REFERENCE(skb);})
 #define	PKTISTOBR(skb)			({BCM_REFERENCE(skb); FALSE;})
-
-#define PKTISTXFRAGSPPROBE(skb)		({BCM_REFERENCE(skb); 0; })
-#define PKTSETTXFRAGSPPROBE(skb, idx)	({BCM_REFERENCE(skb); BCM_REFERENCE(idx); })
-#define PKTRESETTXFRAGSPPROBE(skb)	({BCM_REFERENCE(skb); })
 
 #ifdef BCMFA
 #ifdef BCMFA_HW_HASH

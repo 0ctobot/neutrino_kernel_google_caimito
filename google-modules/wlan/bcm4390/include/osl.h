@@ -26,10 +26,6 @@
 
 #include <osl_decl.h>
 
-#ifdef WL_UNITTEST
-#include <assert.h>
-#endif /* WL_UNITTEST */
-
 enum {
 	TAIL_BYTES_TYPE_FCS = 1,
 	TAIL_BYTES_TYPE_ICV = 2,
@@ -170,9 +166,7 @@ typedef void  (*osl_wreg_fn_t)(void *ctx, volatile void *reg, unsigned int val, 
  * we otherwise would have halted.
  */
 #define OSL_SYS_HALT()   __coverity_panic__()
-#elif defined (WL_UNITTEST)
-#define OSL_SYS_HALT()	assert(0)
-#else
+#else /* __COVERITY__ */
 #define OSL_SYS_HALT()	do {} while (0)
 #endif /* __COVERITY__ */
 #endif /* OSL_SYS_HALT */
@@ -330,17 +324,6 @@ do { \
 #define PKTRESETTXALFRAG(osh, lb)	BCM_REFERENCE(osh)
 #endif
 
-/* RX ALFRAG */
-#ifndef PKT_IS_RX_ALFRAG
-#define PKT_IS_RX_ALFRAG(osh, lb)	(0)
-#endif
-#ifndef PKT_SET_RX_ALFRAG
-#define PKT_SET_RX_ALFRAG(osh, lb)	(BCM_REFERENCE(osh))
-#endif
-#ifndef PKT_RESET_RX_ALFRAG
-#define PKT_RESET_RX_ALFRAG(osh, lb)	(BCM_REFERENCE(osh))
-#endif
-
 #ifndef PKTNUMMPDUS
 #define PKTNUMMPDUS(osh, lb)		(1)
 #endif
@@ -427,14 +410,6 @@ do { \
 #define PKTRESETUDR(osh, lb)			BCM_REFERENCE(osh)
 #endif
 
-#ifndef PKTGETNMSDU_AMSDU
-#define PKTGETNMSDU_AMSDU(osh, p)		0
-#endif
-
-#ifndef PKTSETNMSDU_AMSDU
-#define PKTSETNMSDU_AMSDU(osh, lb, _nmsdu)	BCM_REFERENCE(osh)
-#endif
-
 #if !defined(__linux__)
 #define PKTLIST_INIT(x)			BCM_REFERENCE(x)
 #define PKTLIST_ENQ(x, y)		BCM_REFERENCE(x)
@@ -510,21 +485,15 @@ do { \
 
 /* Memory breakup capturing macros */
 #ifdef BCMDBG_MEM_BREAKUP
-extern uint32 g_mb_depth;
 #define MB_START(var) \
-		uint mb_memuse_before_##var = MALLOCED(NULL); g_mb_depth++
+		uint mb_memuse_before_##var = MALLOCED(NULL)
 
 #define MB_END(var, fmt, ...) \
 		do { \
 			uint mb_memuse_##var = MALLOCED(NULL) - mb_memuse_before_##var; \
-			g_mb_depth--; \
 			if (mb_memuse_##var) { \
-				printf("[MB] "); \
-				for (uint _i = 0; _i < g_mb_depth; _i++) { \
-					printf("-"); \
-				} \
-				printf(fmt, ##__VA_ARGS__); \
-				printf(" %d, %d\n", mb_memuse_##var, MALLOCED(NULL)); \
+				printf("[MB] " fmt, ##__VA_ARGS__); \
+				printf(" %d\n", mb_memuse_##var); \
 			} \
 		} while (0)
 #else
@@ -560,18 +529,6 @@ extern uint32 g_mb_depth;
 #define MFREE_PERSIST MFREE
 #endif /* DONGLEBUILD && !BCM_MEM_PERSIST_ENABLE */
 
-#ifndef PKTISRXHWPKTID_CHAINED
-#define PKTISRXHWPKTID_CHAINED(osh, lb)		{BCM_REFERENCE(osh); BCM_BCM_REFERENCE(lb); FALSE}
-#endif /* PKTISRXHWPKTID_CHAINED */
-
-#ifndef PKTSETRXHWPKTID_CHAINED
-#define PKTSETRXHWPKTID_CHAINED(osh, lb)	(BCM_REFERENCE(osh), BCM_REFERENCE(lb))
-#endif /* PKTSETRXHWPKTID_CHAINED */
-
-#ifndef PKTRESETRXHWPKTID_CHAINED
-#define PKTRESETRXHWPKTID_CHAINED(osh, lb)	(BCM_REFERENCE(osh), BCM_REFERENCE(lb))
-#endif /* PKTRESETRXHWPKTID_CHAINED */
-
 #define OSL_ALLOC_FATAL_LOGBUF(osh) \
 	(osl_alloc_fatal_logbuf(osh))
 #define OSL_DEALLOC_FATAL_LOGBUF(osh) \
@@ -595,14 +552,4 @@ extern uint32 g_mb_depth;
 	(osl_timer_del(osh, t))
 #define OSL_TIMER_FREE(osh, t) \
 	(osl_timer_free(osh, t))
-#define OSL_TIMER_GET_CTX(t) \
-	(osl_timer_get_ctx((t)))
-
-#ifndef OSH_STACK_CTX_SZ
-#define OSH_STACK_CTX_SZ 0u
-uint osl_ctx_push(osl_t *osh, void *ptr);
-void osl_ctx_pop(osl_t *osh, uint flag);
-uint osl_ctx_copy(osl_t *osh, uintptr *out, uint sz);
-void osl_ctx_enab(osl_t *osh);
-#endif /* OSH_STACK_CTX_SZ */
 #endif	/* _osl_h_ */

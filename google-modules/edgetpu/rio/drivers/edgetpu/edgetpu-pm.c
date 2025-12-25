@@ -11,7 +11,6 @@
 #include <linux/mutex.h>
 #include <linux/pm_runtime.h>
 #include <linux/pm_wakeup.h>
-#include <trace/events/edgetpu.h>
 
 #include <gcip/gcip-pm.h>
 #include <gcip/gcip-status-code.h>
@@ -170,28 +169,19 @@ DEFINE_DEBUGFS_ATTRIBUTE(fops_tpu_pwr_policy, mobile_pwr_policy_get, mobile_pwr_
 
 static int mobile_power_down(void *data);
 
-static void edgetpu_pm_enable_mailbox_irqs(struct edgetpu_dev *etdev, bool enable)
-{
-	edgetpu_mailbox_irq_enable(etdev->etkci->mailbox, enable);
-	edgetpu_mailbox_irq_enable(etdev->etikv->mbx_hardware, enable);
-	if (etdev->etiif->mbx_hardware)
-		edgetpu_mailbox_irq_enable(etdev->etiif->mbx_hardware, enable);
-}
 
 /*
  * Disable mailbox IRQs during the power up sequence just in case old firmware is still
  * running, avoid potential RFW access violation during state restore.
  */
-static int edgetpu_pm_runtime_get_irqs_disabled(struct edgetpu_dev *etdev)
+static int edgetpu_pm_get_irqs_disabled(struct edgetpu_dev *etdev)
 {
 	int ret;
 
-	edgetpu_pm_enable_mailbox_irqs(etdev, false);
+	edgetpu_mailbox_irqs_enable(etdev, false);
 	ret = pm_runtime_get_sync(etdev->dev);
-	edgetpu_eventlog_event(etdev, EVENTLOG_EVENT_POWER_RPMDONE,
-			       (void *)edgetpu_soc_pm_is_block_off(etdev));
 	/* Re-enable mailbox IRQs. */
-	edgetpu_pm_enable_mailbox_irqs(etdev, true);
+	edgetpu_mailbox_irqs_enable(etdev, true);
 	return ret;
 }
 
@@ -239,8 +229,9 @@ static int try_force_power_domain_reboot(struct edgetpu_dev *etdev)
 	return 0;
 }
 
-static int do_power_up(struct edgetpu_dev *etdev)
+static int mobile_power_up(void *data)
 {
+	struct edgetpu_dev *etdev = (struct edgetpu_dev *)data;
 	int times = 0;
 	int ret;
 
@@ -256,9 +247,6 @@ static int do_power_up(struct edgetpu_dev *etdev)
 				break;
 			usleep_range(BLOCK_DOWN_MIN_DELAY_US, BLOCK_DOWN_MAX_DELAY_US);
 		} while (++times < BLOCK_DOWN_RETRY_TIMES);
-		if (times)
-			edgetpu_eventlog_event(etdev, EVENTLOG_EVENT_POWER_WAITSTATE,
-					       (void *)edgetpu_soc_pm_is_block_off(etdev));
 		if (times >= BLOCK_DOWN_RETRY_TIMES && !edgetpu_poll_block_off(etdev)) {
 			etdev_err(
 				etdev,
@@ -282,14 +270,13 @@ static int do_power_up(struct edgetpu_dev *etdev)
 	}
 
 	etdev_info(etdev, "Powering up\n");
-	ret = edgetpu_pm_runtime_get_irqs_disabled(etdev);
+	ret = edgetpu_pm_get_irqs_disabled(etdev);
 	if (ret < 0) {
 		pm_runtime_put_noidle(etdev->dev);
 		etdev_err(etdev, "pm_runtime_get_sync returned %d\n", ret);
 		return ret;
 	}
 
-	trace_edgetpu_power_state(1);
 	edgetpu_soc_pm_lpm_up(etdev);
 
 	/* TODO(b/269374029) Do *_reinit() results need to be checked? */
@@ -354,7 +341,7 @@ static int do_power_up(struct edgetpu_dev *etdev)
 
 out:
 	if (!ret) {
-		edgetpu_mailbox_restore_active_ext_mailbox_queues(etdev);
+		edgetpu_mailbox_restore_active_mailbox_queues(etdev);
 		mutex_lock(&etdev->pm->freq_limits_lock);
 		/* Only send limits to FW if at least one has been set. */
 		if (etdev->pm->min_freq || etdev->pm->max_freq)
@@ -362,17 +349,6 @@ out:
 		mutex_unlock(&etdev->pm->freq_limits_lock);
 	}
 
-	return ret;
-}
-
-static int mobile_power_up(void *data)
-{
-	struct edgetpu_dev *etdev = (struct edgetpu_dev *)data;
-	uintptr_t ret;
-
-	edgetpu_eventlog_event(etdev, EVENTLOG_EVENT_POWER_STATE_START, (void *)1);
-	ret = do_power_up(etdev);
-	edgetpu_eventlog_event(etdev, EVENTLOG_EVENT_POWER_STATE_END, (void *)ret);
 	return ret;
 }
 
@@ -393,13 +369,13 @@ static void mobile_firmware_down(struct edgetpu_dev *etdev)
 		etdev_warn(etdev, "firmware shutdown retry failed (%d)", ret);
 }
 
-static int do_power_down(struct edgetpu_dev *etdev)
+static int mobile_power_down(void *data)
 {
+	struct edgetpu_dev *etdev = (struct edgetpu_dev *)data;
 	struct edgetpu_mobile_platform_dev *etmdev = to_mobile_dev(etdev);
 	int res = 0;
 
 	etdev_info(etdev, "Powering down\n");
-	trace_edgetpu_power_state(0);
 
 	edgetpu_sw_wdt_stop(etdev);
 
@@ -442,8 +418,6 @@ static int do_power_down(struct edgetpu_dev *etdev)
 	}
 
 	res = pm_runtime_put_sync(etdev->dev);
-	edgetpu_eventlog_event(etdev, EVENTLOG_EVENT_POWER_RPMDONE,
-			       (void *)edgetpu_soc_pm_is_block_off(etdev));
 	if (res) {
 		etdev_err(etdev, "pm_runtime_put_sync returned %d\n", res);
 		return res;
@@ -460,17 +434,6 @@ static int do_power_down(struct edgetpu_dev *etdev)
 	etmdev->secure_client = NULL;
 
 	return 0;
-}
-
-static int mobile_power_down(void *data)
-{
-	struct edgetpu_dev *etdev = (struct edgetpu_dev *)data;
-	uintptr_t ret;
-
-	edgetpu_eventlog_event(etdev, EVENTLOG_EVENT_POWER_STATE_START, (void *)0);
-	ret = do_power_down(etdev);
-	edgetpu_eventlog_event(etdev, EVENTLOG_EVENT_POWER_STATE_END, (void *)ret);
-	return ret;
 }
 
 static int mobile_pm_after_create(void *data)
@@ -491,7 +454,10 @@ static int mobile_pm_after_create(void *data)
 	mutex_init(&etdev->pm->freq_limits_lock);
 
 	etdev->pm->debugfs_dir = debugfs_create_dir("power", edgetpu_fs_debugfs_dir());
-	if (!IS_ERR_OR_NULL(etdev->pm->debugfs_dir)) {
+	if (IS_ERR_OR_NULL(etdev->pm->debugfs_dir)) {
+		dev_warn(etdev->dev, "Failed to create debug FS power");
+		/* don't fail the procedure on debug FS creation fails */
+	} else {
 		debugfs_create_file("state", 0660, etdev->pm->debugfs_dir, etdev,
 				    &fops_tpu_pwr_state);
 		debugfs_create_file("policy", 0660, etdev->pm->debugfs_dir, etdev,

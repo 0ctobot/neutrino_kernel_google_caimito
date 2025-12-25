@@ -53,10 +53,6 @@
 #include <bcmmsgbuf.h>
 #endif /* BCMPCIE */
 
-#if defined(RTT_SUPPORT) && defined(WL_CFG80211)
-#include <dhd_rtt.h>
-#endif /* RTT_SUPPORT && WL_CFG80211 */
-
 #ifdef PCIE_FULL_DONGLE
 #include <etd.h>
 #endif /* PCIE_FULL_DONGLE */
@@ -154,7 +150,7 @@ typedef struct wifi_adapter_info {
 	uint		bus_type;
 	uint		bus_num;
 	uint		slot_num;
-#if defined(BT_OVER_SDIO)
+#if defined (BT_OVER_SDIO)
 	const char	*btfw_path;
 #endif /* defined (BT_OVER_SDIO) */
 } wifi_adapter_info_t;
@@ -168,7 +164,7 @@ typedef struct bcmdhd_wifi_platdata {
 typedef struct dhd_sta {
 	cumm_ctr_t cumm_ctr;    /* cummulative queue length of child flowrings */
 	uint16 flowid[NUMPRIO]; /* allocated flow ring ids (by priority) */
-	void *ifp;             /* associated dhd_if */
+	void * ifp;             /* associated dhd_if */
 	struct ether_addr ea;   /* stations ethernet mac address */
 	struct list_head list;  /* link into dhd_if::sta_list */
 	int idx;                /* index of self in dhd_pub::sta_pool[] */
@@ -229,14 +225,10 @@ typedef enum {
 #define HIST_BIN_SIZE	9
 
 #if defined(DHD_LB_TXP)
-/*
- * Do not use this pkttag, rather use dhd_pkttag_fd_t
- * Pkttag not compatible with PROP_TXSTATUS or WLFC
- */
+/* Pkttag not compatible with PROP_TXSTATUS or WLFC */
 typedef struct dhd_tx_lb_pkttag_fr {
-	uint16 flowid;
-	uint16 ifidx;
 	struct net_device *net;
+	int ifidx;
 } dhd_tx_lb_pkttag_fr_t;
 
 #define DHD_LB_TX_PKTTAG_SET_NETDEV(tag, netdevp)	((tag)->net = netdevp)
@@ -299,11 +291,11 @@ extern uint32 report_hang_privcmd_err;
 
 #if defined(SOFTAP_TPUT_ENHANCE)
 extern void dhd_bus_setidletime(dhd_pub_t *dhdp, int idle_time);
-extern void dhd_bus_getidletime(dhd_pub_t *dhdp, int *idle_time);
+extern void dhd_bus_getidletime(dhd_pub_t *dhdp, int* idle_time);
 #endif /* SOFTAP_TPUT_ENHANCE */
 
 #if defined(BCM_ROUTER_DHD)
-void traffic_mgmt_pkt_set_prio(dhd_pub_t *dhdp, void *pktbuf);
+void traffic_mgmt_pkt_set_prio(dhd_pub_t *dhdp, void * pktbuf);
 #endif /* BCM_ROUTER_DHD */
 
 typedef struct dhd_if_event {
@@ -366,7 +358,6 @@ typedef struct dhd_if {
 	uint8 tx_paths_active;
 	bool del_in_progress;
 	bool static_if;			/* used to avoid some operations on static_if */
-	bool mgmt_if;			/* differentiate interfaces exposed only for mgmt purpose */
 #ifdef DHD_4WAYM4_FAIL_DISCONNECT
 	struct delayed_work m4state_work;
 	atomic_t m4state;
@@ -389,7 +380,6 @@ typedef struct dhd_if {
 	uint8	*llc_hdr;	/* Additional llc header data */
 	uint8	llc_hdr_len;	/* Additional llc header data length */
 	uint8	llc_headroom_added_len;	/* Headroom length added to this net dev for LLC */
-	bool	dhcp_request_pending;
 } dhd_if_t;
 
 struct ipv6_work_info_t {
@@ -455,7 +445,7 @@ struct dhd_rx_tx_work {
 
 int dhd_wifi_platform_register_drv(void);
 void dhd_wifi_platform_unregister_drv(void);
-wifi_adapter_info_t *dhd_wifi_platform_get_adapter(uint32 bus_type, uint32 bus_num,
+wifi_adapter_info_t* dhd_wifi_platform_get_adapter(uint32 bus_type, uint32 bus_num,
 	uint32 slot_num);
 int wifi_platform_set_power(wifi_adapter_info_t *adapter, bool on, unsigned long msec);
 int wifi_platform_bus_enumerate(wifi_adapter_info_t *adapter, bool device_present);
@@ -471,24 +461,24 @@ void *wifi_platform_get_country_code(wifi_adapter_info_t *adapter, char *ccode,
 #else
 void *wifi_platform_get_country_code(wifi_adapter_info_t *adapter, char *ccode);
 #endif /* CUSTOM_COUNTRY_CODE */
-void *wifi_platform_prealloc(wifi_adapter_info_t *adapter, int section, unsigned long size);
-void *wifi_platform_get_prealloc_func_ptr(wifi_adapter_info_t *adapter);
+void* wifi_platform_prealloc(wifi_adapter_info_t *adapter, int section, unsigned long size);
+void* wifi_platform_get_prealloc_func_ptr(wifi_adapter_info_t *adapter);
 
 int dhd_get_fw_mode(struct dhd_info *dhdinfo);
 bool dhd_update_fw_nv_path(struct dhd_info *dhdinfo);
 void dhd_update_fw_path(dhd_pub_t *dhdpub, const char *fw_path);
 
 #ifdef BCM_ROUTER_DHD
-void dhd_update_dpsta_interface_for_sta(dhd_pub_t *dhdp, int ifidx, void *event_data);
+void dhd_update_dpsta_interface_for_sta(dhd_pub_t* dhdp, int ifidx, void* event_data);
 #endif /* BCM_ROUTER_DHD */
 #ifdef DHD_WMF
-dhd_wmf_t *dhd_wmf_conf(dhd_pub_t *dhdp, uint32 idx);
+dhd_wmf_t* dhd_wmf_conf(dhd_pub_t *dhdp, uint32 idx);
 int dhd_get_wmf_psta_disable(dhd_pub_t *dhdp, uint32 idx);
 int dhd_set_wmf_psta_disable(dhd_pub_t *dhdp, uint32 idx, int val);
-void dhd_update_psta_interface_for_sta(dhd_pub_t *dhdp, char *ifname,
-	void *mac_addr, void *event_data);
+void dhd_update_psta_interface_for_sta(dhd_pub_t *dhdp, char* ifname,
+		void* mac_addr, void* event_data);
 #endif /* DHD_WMF */
-#if defined(BT_OVER_SDIO)
+#if defined (BT_OVER_SDIO)
 int dhd_net_bus_get(struct net_device *dev);
 int dhd_net_bus_put(struct net_device *dev);
 #endif /* BT_OVER_SDIO */
@@ -502,24 +492,21 @@ int dhd_enable_adps(dhd_pub_t *dhd, uint8 on);
 extern void dhd_reset_tcpsync_info_by_ifp(dhd_if_t *ifp);
 extern void dhd_reset_tcpsync_info_by_dev(struct net_device *dev);
 #endif /* DHDTCPSYNC_FLOOD_BLK */
-extern void dhd_set_del_in_progress(dhd_pub_t *dhdp, struct net_device *ndev);
-extern void dhd_clear_del_in_progress(dhd_pub_t *dhdp, struct net_device *ndev);
+extern void dhd_set_del_in_progress(dhd_pub_t *dhdp, struct net_device * ndev);
+extern void dhd_clear_del_in_progress(dhd_pub_t *dhdp, struct net_device * ndev);
 #ifdef PCIE_FULL_DONGLE
-extern void dhd_net_del_flowrings_sta(dhd_pub_t *dhd, struct net_device *ndev);
+extern void dhd_net_del_flowrings_sta(dhd_pub_t * dhd, struct net_device * ndev);
 #endif /* PCIE_FULL_DONGLE */
-int dhd_get_fw_capabilities(dhd_pub_t *dhd);
+int dhd_get_fw_capabilities(dhd_pub_t * dhd);
 #ifdef WL_CFGVENDOR_SEND_ALERT_EVENT
 void dhd_alert_process(struct work_struct *work_data);
 #endif /* WL_CFGVENDOR_SEND_ALERT_EVENT */
 void dhd_event_logtrace_enqueue(dhd_pub_t *dhdp, int ifidx, void *pktbuf);
 #if defined(SUPPORT_MULTIPLE_NVRAM) || defined(SUPPORT_MULTIPLE_CLMBLOB)
-int dhd_get_platform_naming_for_nvram_clmblob_file(download_type_t component, char *file_name);
+int dhd_get_platform_naming_for_nvram_clmblob_file(download_type_t component, char* file_name);
 #ifdef USE_CID_CHECK
-void dhd_set_platform_ext_name_for_chip_version(char *chip_version);
+void dhd_set_platform_ext_name_for_chip_version(char* chip_version);
 #endif /* USE_CID_CHECK */
 #endif /* SUPPORT_MULTIPLE_NVRAM || SUPPORT_MULTIPLE_CLMBLOB */
 extern void dhd_os_skbq_dump(struct sk_buff_head *qdump, char *qname);
-#if defined(RTT_SUPPORT) && defined(WL_CFG80211)
-int dhd_dev_rtt_capability_mc_az(struct net_device *dev, rtt_capabilities_mc_az_t *capa);
-#endif /* RTT_SUPPORT && WL_CFG80211 */
 #endif /* __DHD_LINUX_H__ */

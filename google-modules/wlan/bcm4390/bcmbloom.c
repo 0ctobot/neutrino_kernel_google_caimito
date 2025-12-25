@@ -21,11 +21,6 @@
  * <<Broadcom-WL-IPTag/Dual:>>
  */
 
-#if defined(__linux__) && !defined(BCMDRIVER)
-// for 'uint'
-#define USE_TYPEDEF_DEFAULTS
-#endif
-
 #include <typedefs.h>
 #include <bcmdefs.h>
 
@@ -43,9 +38,6 @@
 #include <osl.h>
 #include <bcmutils.h>
 #else /* !BCMDRIVER */
-#if defined(__linux__) && !defined(BCMFUZZ)
-#include <strings.h>
-#endif
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

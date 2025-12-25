@@ -147,13 +147,6 @@ static GCIP_USAGE_STATS_ATTR_RW(GCIP_USAGE_STATS_METRIC_TYPE_COUNTER,
 				preempt_reconfigurations, NULL, NULL);
 #endif
 
-#if EDGETPU_POWER_ISLAND_COUNT
-static GCIP_USAGE_STATS_ATTR_RW(GCIP_USAGE_STATS_METRIC_TYPE_COUNTER,
-				GCIP_USAGE_STATS_COUNTER_POWER_ISLAND_CONFIGURATIONS,
-				GCIP_USAGE_STATS_ATTR_SUBCOMPONENTS(EDGETPU_POWER_ISLAND_COUNT),
-				power_island_configurations, NULL, NULL);
-#endif
-
 /* Max watermark. */
 static GCIP_USAGE_STATS_ATTR_RW(GCIP_USAGE_STATS_METRIC_TYPE_MAX_WATERMARK,
 				GCIP_USAGE_STATS_MAX_WATERMARK_OUTSTANDING_CMDS, 0,
@@ -202,9 +195,6 @@ static struct gcip_usage_stats_attr *attrs[] = {
 #if EDGETPU_TPU_CLUSTER_COUNT > 1
 	&gcip_usage_stats_attr_reconfigurations,
 	&gcip_usage_stats_attr_preempt_reconfigurations,
-#endif
-#if EDGETPU_POWER_ISLAND_COUNT
-	&gcip_usage_stats_attr_power_island_configurations,
 #endif
 	&gcip_usage_stats_attr_outstanding_commands_max,
 	&gcip_usage_stats_attr_preempt_depth_max,

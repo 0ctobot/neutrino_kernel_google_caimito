@@ -31,9 +31,6 @@
 #include <event_log.h>
 #endif /* SHOW_LOGTRACE */
 #include <linux/skbuff.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-#include <linux/sched/clock.h>
-#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0) */
 #include <linux/spinlock.h>
 #include <linux/interrupt.h>
 #ifdef CONFIG_COMPAT
@@ -77,8 +74,7 @@ typedef struct dhd_info {
 	/* for supporting multiple interfaces.
 	* static_ifs hold the net ifaces without valid FW IF
 	*/
-	dhd_if_t *iflist[DHD_MAX_IFS];
-	dhd_if_t *static_iflist[DHD_MAX_STATIC_IFS];
+	dhd_if_t *iflist[DHD_MAX_IFS + DHD_MAX_STATIC_IFS];
 	void *adapter;			/* adapter information, interrupt, fw path etc. */
 	char fw_path[PATH_MAX];		/* path to firmware image */
 	char nv_path[PATH_MAX];		/* path to nvram vars file */
@@ -145,7 +141,6 @@ typedef struct dhd_info {
 	struct wakeup_source *wl_scanwake;  /* Wifi scan wakelock */
 #endif /* DHD_USE_SCAN_WAKELOCK */
 	struct wakeup_source *wl_nanwake; /* NAN wakelock */
-	struct wakeup_source *wl_artwake; /* Wifi ART wakelock */
 #endif /* CONFIG_HAS_WAKELOCK */
 
 #if defined(OEM_ANDROID)
@@ -209,7 +204,7 @@ typedef struct dhd_info {
 	uint32	psta_mode;	/* PSTA or PSR */
 #endif /* DHD_PSTA */
 #ifdef DHD_WET
-	uint32  wet_mode;
+	        uint32  wet_mode;
 #endif /* DHD_WET */
 #ifdef DHD_DEBUG
 	dhd_dump_t *dump;
@@ -340,8 +335,6 @@ typedef struct dhd_info {
 
 	/* CPU on which the Network stack is calling the DHD's xmit function */
 	atomic_t		net_tx_cpu;
-	/* cpu on which the DHD Rxpost is happenning */
-	atomic_t                rxpost_cpu;
 
 	/* Tasklet context from which the DHD's TX processing happens */
 	struct tasklet_struct tx_tasklet;
@@ -406,7 +399,6 @@ typedef struct dhd_info {
     char btfw_path[PATH_MAX];
 #endif /* defined (BT_OVER_SDIO) */
 #ifdef WL_MONITOR
-	chanspec_t monitor_chspec; /* monitor pseudo device */
 	struct net_device *monitor_dev; /* monitor pseudo device */
 	struct sk_buff *monitor_skb;
 	uint	monitor_len;
@@ -416,7 +408,7 @@ typedef struct dhd_info {
 	uint host_radiotap_conv;
 #endif /* HOST_RADIOTAP_CONV */
 #endif /* WL_MONITOR */
-#if defined(BT_OVER_SDIO)
+#if defined (BT_OVER_SDIO)
     struct mutex bus_user_lock; /* lock for sdio bus apis shared between WLAN & BT */
     int     bus_user_count; /* User counts of sdio bus shared between WLAN & BT */
 #endif /* BT_OVER_SDIO */
@@ -471,10 +463,6 @@ typedef struct dhd_info {
 	pkt_pool_t rx_pkt_pool;
 	tsk_ctl_t rx_pktpool_thread;
 #endif
-#if defined(DHD_LB_RXPOST)
-	tsk_ctl_t lb_rxpost_thread;
-#endif /* DHD_LB_RXPOST */
-
 #if defined(DHD_FILE_DUMP_EVENT) && defined(DHD_FW_COREDUMP)
 	osl_atomic_t dump_status;
 	struct work_struct dhd_dump_proc_work;
@@ -498,10 +486,10 @@ typedef struct dhd_info {
 
 /** priv_link is the link between netdev and the dhdif and dhd_info structs. */
 typedef struct dhd_dev_priv {
-	dhd_info_t *dhd; /* cached pointer to dhd_info in netdevice priv */
-	dhd_if_t   *ifp; /* cached pointer to dhd_if in netdevice priv */
+	dhd_info_t * dhd; /* cached pointer to dhd_info in netdevice priv */
+	dhd_if_t   * ifp; /* cached pointer to dhd_if in netdevice priv */
 	int          ifidx; /* interface index */
-	void       *lkup;
+	void       * lkup;
 } dhd_dev_priv_t;
 
 #define DHD_DEV_PRIV_SIZE       (sizeof(dhd_dev_priv_t))
@@ -522,11 +510,11 @@ extern void dhd_dbg_ring_proc_destroy(dhd_pub_t *dhdp);
 
 int __dhd_sendpkt(dhd_pub_t *dhdp, int ifidx, void *pktbuf);
 
-void dhd_dpc_tasklet_dispatcher_work(struct work_struct *work);
+void dhd_dpc_tasklet_dispatcher_work(struct work_struct * work);
 #if defined(DHD_LB)
 #if defined(DHD_LB_TXP)
 int dhd_lb_sendpkt(dhd_info_t *dhd, struct net_device *net, int ifidx, void *skb);
-void dhd_tx_dispatcher_work(struct work_struct *work);
+void dhd_tx_dispatcher_work(struct work_struct * work);
 void dhd_tx_dispatcher_fn(dhd_pub_t *dhdp);
 void dhd_lb_tx_dispatch(dhd_pub_t *dhdp);
 void dhd_lb_tx_handler(unsigned long data);
@@ -534,7 +522,7 @@ void dhd_lb_tx_handler(unsigned long data);
 
 #if defined(DHD_LB_RXP)
 int dhd_napi_poll(struct napi_struct *napi, int budget);
-void dhd_rx_napi_dispatcher_work(struct work_struct *work);
+void dhd_rx_napi_dispatcher_work(struct work_struct * work);
 void dhd_lb_rx_napi_dispatch(dhd_pub_t *dhdp);
 void dhd_lb_rx_pkt_enqueue(dhd_pub_t *dhdp, void *pkt, int ifidx);
 unsigned long dhd_read_lb_rxp(dhd_pub_t *dhdp);
@@ -545,11 +533,6 @@ void dhd_cpumasks_deinit(dhd_info_t *dhd);
 int dhd_cpumasks_init(dhd_info_t *dhd);
 
 void dhd_select_cpu_candidacy(dhd_info_t *dhd);
-#ifdef DHD_LB_RXPOST
-void dhd_lb_rxpost_init(dhd_pub_t *dhdp);
-void dhd_lb_rxpost_deinit(dhd_pub_t *dhdp);
-void dhd_lb_rxpost_dispatch(dhd_pub_t *dhdp);
-#endif /* DHD_LB_RXPOST */
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0))
 int dhd_cpu_startup_callback(unsigned int cpu);
@@ -575,7 +558,6 @@ void dhd_irq_set_affinity(dhd_pub_t *dhdp, const struct cpumask *cpumask);
 void dhd_flush_logtrace_process(dhd_info_t *dhd);
 void dhd_net_if_lock_local(dhd_info_t *dhd);
 void dhd_net_if_unlock_local(dhd_info_t *dhd);
-bool dhd_net_if_lock_islocked_local(dhd_info_t *dhd);
 
 #ifdef DHD_SSSR_DUMP
 extern uint sssr_enab;
@@ -588,7 +570,7 @@ extern uint fis_enab;
  * Added defines for these platforms
  * 4.19.81 -> 4.19.110, 4.14.78 -> 4.14.170
  */
-#if ((defined(BOARD_HIKEY) || defined(BOARD_STB)) && \
+#if ((defined(BOARD_HIKEY) || defined (BOARD_STB)) && \
 	(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 96))) || \
 	(defined(CONFIG_ARCH_MSM) && \
 	(((LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 170)) && \

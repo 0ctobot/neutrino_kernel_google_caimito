@@ -311,7 +311,7 @@ typedef volatile struct pcie_serdes_regs {
 #define CONFIGADDR_REG_SHF	0
 
 #define PCIE_CONFIG_INDADDR(f, r)	((((f) & CONFIGADDR_FUNC_MASK) << CONFIGADDR_FUNC_SHF) | \
-	(((r) & CONFIGADDR_REG_MASK) << CONFIGADDR_REG_SHF))
+			                 (((r) & CONFIGADDR_REG_MASK) << CONFIGADDR_REG_SHF))
 
 /* PCIE Config registers */
 #define	PCIE_CFG_DEV_STS_CTRL_2		0x0d4u	/* "dev_sts_control_2  */

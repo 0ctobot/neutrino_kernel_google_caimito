@@ -150,46 +150,46 @@ dhdpcie_get_sssr_dig_dump(dhd_pub_t *dhd, uint *buf, uint fifo_size,
 	dig_mem_check = FALSE;
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-	case SSSR_REG_INFO_VER_5:
-		if ((dhd->sssr_reg_info->rev5.length > OFFSETOF(sssr_reg_info_v5_t,
-		dig_mem_info)) && dhd->sssr_reg_info->rev5.dig_mem_info.dig_sssr_size) {
-			dig_mem_check = TRUE;
-		}
-		break;
-	case SSSR_REG_INFO_VER_4:
-		if ((dhd->sssr_reg_info->rev4.length > OFFSETOF(sssr_reg_info_v4_t,
-		dig_mem_info)) && dhd->sssr_reg_info->rev4.dig_mem_info.dig_sssr_size) {
-			dig_mem_check = TRUE;
-		}
-		break;
-	case SSSR_REG_INFO_VER_3:
-		/* intentional fall through */
-	case SSSR_REG_INFO_VER_2:
-		if ((dhd->sssr_reg_info->rev2.length > OFFSETOF(sssr_reg_info_v2_t,
-		dig_mem_info)) && dhd->sssr_reg_info->rev2.dig_mem_info.dig_sr_size) {
-			dig_mem_check = TRUE;
-		}
-		break;
-	case SSSR_REG_INFO_VER_1:
-		if (dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size) {
-			vasip_enab = TRUE;
-		} else if ((dhd->sssr_reg_info->rev1.length > OFFSETOF(sssr_reg_info_v1_t,
-			dig_mem_info)) && dhd->sssr_reg_info->rev1.
-			dig_mem_info.dig_sr_size) {
-			dig_mem_check = TRUE;
-		}
-		ioctrl_addr = dhd->sssr_reg_info->rev1.vasip_regs.wrapper_regs.ioctrl;
-		break;
-	case SSSR_REG_INFO_VER_0:
-		if (dhd->sssr_reg_info->rev0.vasip_regs.vasip_sr_size) {
-			vasip_enab = TRUE;
-		}
-		ioctrl_addr = dhd->sssr_reg_info->rev0.vasip_regs.wrapper_regs.ioctrl;
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_6 :
+		case SSSR_REG_INFO_VER_5 :
+			if ((dhd->sssr_reg_info->rev5.length > OFFSETOF(sssr_reg_info_v5_t,
+			dig_mem_info)) && dhd->sssr_reg_info->rev5.dig_mem_info.dig_sssr_size) {
+				dig_mem_check = TRUE;
+			}
+			break;
+		case SSSR_REG_INFO_VER_4 :
+			if ((dhd->sssr_reg_info->rev4.length > OFFSETOF(sssr_reg_info_v4_t,
+			dig_mem_info)) && dhd->sssr_reg_info->rev4.dig_mem_info.dig_sssr_size) {
+				dig_mem_check = TRUE;
+			}
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			/* intentional fall through */
+		case SSSR_REG_INFO_VER_2 :
+			if ((dhd->sssr_reg_info->rev2.length > OFFSETOF(sssr_reg_info_v2_t,
+			dig_mem_info)) && dhd->sssr_reg_info->rev2.dig_mem_info.dig_sr_size) {
+				dig_mem_check = TRUE;
+			}
+			break;
+		case SSSR_REG_INFO_VER_1 :
+			if (dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size) {
+				vasip_enab = TRUE;
+			} else if ((dhd->sssr_reg_info->rev1.length > OFFSETOF(sssr_reg_info_v1_t,
+				dig_mem_info)) && dhd->sssr_reg_info->rev1.
+				dig_mem_info.dig_sr_size) {
+				dig_mem_check = TRUE;
+			}
+			ioctrl_addr = dhd->sssr_reg_info->rev1.vasip_regs.wrapper_regs.ioctrl;
+			break;
+		case SSSR_REG_INFO_VER_0 :
+			if (dhd->sssr_reg_info->rev0.vasip_regs.vasip_sr_size) {
+				vasip_enab = TRUE;
+			}
+			ioctrl_addr = dhd->sssr_reg_info->rev0.vasip_regs.wrapper_regs.ioctrl;
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 	if (addr_reg) {
 		DHD_PRINT(("dig_mem_check=%d vasip_enab=%d\n", dig_mem_check, vasip_enab));
@@ -299,30 +299,30 @@ dhdpcie_get_sssr_subtype_dump(dhd_pub_t *dhd, uint *buf, uint fifo_size,
 		return BCME_UNSUPPORTED;
 	} else if (ret == BCME_OK) {
 		switch (subtype) {
-		case SSSR_SAQM_DUMP:
-			if ((dhd->sssr_reg_info->rev5.length > OFFSETOF(sssr_reg_info_v5_t,
-				saqm_sssr_info)) && dhd->sssr_reg_info->rev5.saqm_sssr_info.
-				saqm_sssr_size) {
-				check = TRUE;
-			}
-			break;
-		case SSSR_SRCB_DUMP:
-			if ((dhd->sssr_reg_info->rev5.length > OFFSETOF(sssr_reg_info_v5_t,
-				srcb_mem_info)) && dhd->sssr_reg_info->rev5.srcb_mem_info.
-				srcb_sssr_size) {
-				check = TRUE;
-			}
-			break;
-		case SSSR_CMN_DUMP:
-			if ((dhd->sssr_reg_info->rev5.length > OFFSETOF(sssr_reg_info_v5_t,
-				fis_mem_info)) && dhd->sssr_reg_info->rev5.fis_mem_info.
-				fis_size) {
-				check = TRUE;
-			}
-			break;
-		default:
-			DHD_ERROR(("%s: invalid subtype %u!\n", __FUNCTION__, subtype));
-			return BCME_UNSUPPORTED;
+			case SSSR_SAQM_DUMP:
+				if ((dhd->sssr_reg_info->rev5.length > OFFSETOF(sssr_reg_info_v5_t,
+					saqm_sssr_info)) && dhd->sssr_reg_info->rev5.saqm_sssr_info.
+					saqm_sssr_size) {
+					check = TRUE;
+				}
+				break;
+			case SSSR_SRCB_DUMP:
+				if ((dhd->sssr_reg_info->rev5.length > OFFSETOF(sssr_reg_info_v5_t,
+					srcb_mem_info)) && dhd->sssr_reg_info->rev5.srcb_mem_info.
+					srcb_sssr_size) {
+					check = TRUE;
+				}
+				break;
+			case SSSR_CMN_DUMP:
+				if ((dhd->sssr_reg_info->rev5.length > OFFSETOF(sssr_reg_info_v5_t,
+					fis_mem_info)) && dhd->sssr_reg_info->rev5.fis_mem_info.
+					fis_size) {
+					check = TRUE;
+				}
+				break;
+			default:
+				DHD_ERROR(("%s: invalid subtype %u!\n", __FUNCTION__, subtype));
+				return BCME_UNSUPPORTED;
 		}
 	}
 
@@ -353,31 +353,31 @@ dhdpcie_resume_chipcommon_powerctrl(dhd_pub_t *dhd, uint32 reg_val)
 
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-	case SSSR_REG_INFO_VER_5:
-		/* Handled using MaxRsrcMask for rev5 and above */
-		goto exit;
-	case SSSR_REG_INFO_VER_4:
-		addr = dhd->sssr_reg_info->rev4.chipcommon_regs.base_regs.powerctrl;
-		powerctrl_mask = dhd->sssr_reg_info->rev4.
-			chipcommon_regs.base_regs.powerctrl_mask;
-		break;
-	case SSSR_REG_INFO_VER_3:
-		/* intentional fall through */
-	case SSSR_REG_INFO_VER_2:
-		addr = dhd->sssr_reg_info->rev2.chipcommon_regs.base_regs.powerctrl;
-		powerctrl_mask = dhd->sssr_reg_info->rev2.
-			chipcommon_regs.base_regs.powerctrl_mask;
-		break;
-	case SSSR_REG_INFO_VER_1:
-	case SSSR_REG_INFO_VER_0:
-		addr = dhd->sssr_reg_info->rev1.chipcommon_regs.base_regs.powerctrl;
-		powerctrl_mask = dhd->sssr_reg_info->rev1.
-			chipcommon_regs.base_regs.powerctrl_mask;
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_6 :
+		case SSSR_REG_INFO_VER_5 :
+			/* Handled using MaxRsrcMask for rev5 and above */
+			goto exit;
+		case SSSR_REG_INFO_VER_4 :
+			addr = dhd->sssr_reg_info->rev4.chipcommon_regs.base_regs.powerctrl;
+			powerctrl_mask = dhd->sssr_reg_info->rev4.
+				chipcommon_regs.base_regs.powerctrl_mask;
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			/* intentional fall through */
+		case SSSR_REG_INFO_VER_2 :
+			addr = dhd->sssr_reg_info->rev2.chipcommon_regs.base_regs.powerctrl;
+			powerctrl_mask = dhd->sssr_reg_info->rev2.
+				chipcommon_regs.base_regs.powerctrl_mask;
+			break;
+		case SSSR_REG_INFO_VER_1 :
+		case SSSR_REG_INFO_VER_0 :
+			addr = dhd->sssr_reg_info->rev1.chipcommon_regs.base_regs.powerctrl;
+			powerctrl_mask = dhd->sssr_reg_info->rev1.
+				chipcommon_regs.base_regs.powerctrl_mask;
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 
 	/* conditionally clear bits [11:8] of PowerCtrl */
@@ -401,27 +401,27 @@ dhdpcie_suspend_chipcommon_powerctrl(dhd_pub_t *dhd)
 
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_4:
-		addr = dhd->sssr_reg_info->rev4.chipcommon_regs.base_regs.powerctrl;
-		powerctrl_mask = dhd->sssr_reg_info->rev4.
-			chipcommon_regs.base_regs.powerctrl_mask;
-		break;
-	case SSSR_REG_INFO_VER_3:
-		/* intentional fall through */
-	case SSSR_REG_INFO_VER_2:
-		addr = dhd->sssr_reg_info->rev2.chipcommon_regs.base_regs.powerctrl;
-		powerctrl_mask = dhd->sssr_reg_info->rev2.
-			chipcommon_regs.base_regs.powerctrl_mask;
-		break;
-	case SSSR_REG_INFO_VER_1:
-	case SSSR_REG_INFO_VER_0:
-		addr = dhd->sssr_reg_info->rev1.chipcommon_regs.base_regs.powerctrl;
-		powerctrl_mask = dhd->sssr_reg_info->rev1.
-			chipcommon_regs.base_regs.powerctrl_mask;
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_4 :
+			addr = dhd->sssr_reg_info->rev4.chipcommon_regs.base_regs.powerctrl;
+			powerctrl_mask = dhd->sssr_reg_info->rev4.
+				chipcommon_regs.base_regs.powerctrl_mask;
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			/* intentional fall through */
+		case SSSR_REG_INFO_VER_2 :
+			addr = dhd->sssr_reg_info->rev2.chipcommon_regs.base_regs.powerctrl;
+			powerctrl_mask = dhd->sssr_reg_info->rev2.
+				chipcommon_regs.base_regs.powerctrl_mask;
+			break;
+		case SSSR_REG_INFO_VER_1 :
+		case SSSR_REG_INFO_VER_0 :
+			addr = dhd->sssr_reg_info->rev1.chipcommon_regs.base_regs.powerctrl;
+			powerctrl_mask = dhd->sssr_reg_info->rev1.
+				chipcommon_regs.base_regs.powerctrl_mask;
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 
 	/* conditionally clear bits [11:8] of PowerCtrl */
@@ -445,40 +445,40 @@ dhdpcie_clear_intmask_and_timer(dhd_pub_t *dhd)
 
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_4:
-		cc_intmask = dhd->sssr_reg_info->rev4.chipcommon_regs.base_regs.intmask;
-		pmuintmask0 = dhd->sssr_reg_info->rev4.pmu_regs.base_regs.pmuintmask0;
-		pmuintmask1 = dhd->sssr_reg_info->rev4.pmu_regs.base_regs.pmuintmask1;
-		resreqtimer = dhd->sssr_reg_info->rev4.pmu_regs.base_regs.resreqtimer;
-		macresreqtimer = dhd->sssr_reg_info->rev4.pmu_regs.base_regs.macresreqtimer;
-		macresreqtimer1 = dhd->sssr_reg_info->rev4.pmu_regs.
-			base_regs.macresreqtimer1;
-		break;
-	case SSSR_REG_INFO_VER_3:
-		/* intentional fall through */
-	case SSSR_REG_INFO_VER_2:
-		cc_intmask = dhd->sssr_reg_info->rev2.chipcommon_regs.base_regs.intmask;
-		pmuintmask0 = dhd->sssr_reg_info->rev2.pmu_regs.base_regs.pmuintmask0;
-		pmuintmask1 = dhd->sssr_reg_info->rev2.pmu_regs.base_regs.pmuintmask1;
-		resreqtimer = dhd->sssr_reg_info->rev2.pmu_regs.base_regs.resreqtimer;
-		macresreqtimer = dhd->sssr_reg_info->rev2.pmu_regs.base_regs.macresreqtimer;
-		macresreqtimer1 = dhd->sssr_reg_info->rev2.
-			pmu_regs.base_regs.macresreqtimer1;
-		break;
-	case SSSR_REG_INFO_VER_1:
-	case SSSR_REG_INFO_VER_0:
-		cc_intmask = dhd->sssr_reg_info->rev1.chipcommon_regs.base_regs.intmask;
-		pmuintmask0 = dhd->sssr_reg_info->rev1.pmu_regs.base_regs.pmuintmask0;
-		pmuintmask1 = dhd->sssr_reg_info->rev1.pmu_regs.base_regs.pmuintmask1;
-		resreqtimer = dhd->sssr_reg_info->rev1.pmu_regs.base_regs.resreqtimer;
-		macresreqtimer = dhd->sssr_reg_info->rev1.pmu_regs.base_regs.macresreqtimer;
-		macresreqtimer1 = dhd->sssr_reg_info->rev1.
-			pmu_regs.base_regs.macresreqtimer1;
-		vasip_sr_size = dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size;
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_4 :
+			cc_intmask = dhd->sssr_reg_info->rev4.chipcommon_regs.base_regs.intmask;
+			pmuintmask0 = dhd->sssr_reg_info->rev4.pmu_regs.base_regs.pmuintmask0;
+			pmuintmask1 = dhd->sssr_reg_info->rev4.pmu_regs.base_regs.pmuintmask1;
+			resreqtimer = dhd->sssr_reg_info->rev4.pmu_regs.base_regs.resreqtimer;
+			macresreqtimer = dhd->sssr_reg_info->rev4.pmu_regs.base_regs.macresreqtimer;
+			macresreqtimer1 = dhd->sssr_reg_info->rev4.pmu_regs.
+				base_regs.macresreqtimer1;
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			/* intentional fall through */
+		case SSSR_REG_INFO_VER_2 :
+			cc_intmask = dhd->sssr_reg_info->rev2.chipcommon_regs.base_regs.intmask;
+			pmuintmask0 = dhd->sssr_reg_info->rev2.pmu_regs.base_regs.pmuintmask0;
+			pmuintmask1 = dhd->sssr_reg_info->rev2.pmu_regs.base_regs.pmuintmask1;
+			resreqtimer = dhd->sssr_reg_info->rev2.pmu_regs.base_regs.resreqtimer;
+			macresreqtimer = dhd->sssr_reg_info->rev2.pmu_regs.base_regs.macresreqtimer;
+			macresreqtimer1 = dhd->sssr_reg_info->rev2.
+				pmu_regs.base_regs.macresreqtimer1;
+			break;
+		case SSSR_REG_INFO_VER_1 :
+		case SSSR_REG_INFO_VER_0 :
+			cc_intmask = dhd->sssr_reg_info->rev1.chipcommon_regs.base_regs.intmask;
+			pmuintmask0 = dhd->sssr_reg_info->rev1.pmu_regs.base_regs.pmuintmask0;
+			pmuintmask1 = dhd->sssr_reg_info->rev1.pmu_regs.base_regs.pmuintmask1;
+			resreqtimer = dhd->sssr_reg_info->rev1.pmu_regs.base_regs.resreqtimer;
+			macresreqtimer = dhd->sssr_reg_info->rev1.pmu_regs.base_regs.macresreqtimer;
+			macresreqtimer1 = dhd->sssr_reg_info->rev1.
+				pmu_regs.base_regs.macresreqtimer1;
+			vasip_sr_size = dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size;
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 
 	/* clear chipcommon intmask */
@@ -520,10 +520,8 @@ dhdpcie_update_d11_status_from_trapdata(dhd_pub_t *dhd)
 {
 #define TRAP_DATA_MAIN_CORE_BIT_MASK	(1 << 1)
 #define TRAP_DATA_AUX_CORE_BIT_MASK	(1 << 4)
-	uint trap_data_mask[MAX_NUM_D11CORES] =	{
-		TRAP_DATA_MAIN_CORE_BIT_MASK,
-		TRAP_DATA_AUX_CORE_BIT_MASK
-	};
+	uint trap_data_mask[MAX_NUM_D11CORES] =
+		{TRAP_DATA_MAIN_CORE_BIT_MASK, TRAP_DATA_AUX_CORE_BIT_MASK};
 	int i;
 	/* Apply only for 4375 chip */
 	if (dhd_bus_chip_id(dhd) == BCM4375_CHIP_ID) {
@@ -590,136 +588,136 @@ dhdpcie_saqm_clear_clk_req(dhd_pub_t *dhdp)
 
 	DHD_PRINT(("%s\n", __FUNCTION__));
 	switch (dhdp->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-	case SSSR_REG_INFO_VER_5:
-		saqm_extrsrcreq = dhdp->sssr_reg_info->rev5.saqm_sssr_info.
-			oobr_regs.extrsrcreq;
-		if (saqm_extrsrcreq) {
-			/* read is for information purpose only.  */
-			dhd_sbreg_op(dhdp, saqm_extrsrcreq, &clockcontrolstatus_val, TRUE);
-			clockcontrolstatus = dhdp->sssr_reg_info->rev5.saqm_sssr_info.
-				base_regs.clockcontrolstatus;
-			dhd_sbreg_op(dhdp, clockcontrolstatus,
-				&clockcontrolstatus_val, TRUE);
-			clockcontrolstatus_val |=
-				dhdp->sssr_reg_info->rev5.saqm_sssr_info.
-				base_regs.clockcontrolstatus_val;
-			dhd_sbreg_op(dhdp, clockcontrolstatus, &clockcontrolstatus_val,
-				FALSE);
-			OSL_DELAY(SAQM_CLK_REQ_CLR_DELAY);
-		}
-		/* set DIG force_sr_all bit */
-		digsr_srcontrol2_addr =
-			dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
-			digsr_srcontrol2_addr;
-		if (digsr_srcontrol2_addr) {
-			dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, TRUE);
-			digsr_srcontrol2_setbit_val =
+		case SSSR_REG_INFO_VER_6 :
+		case SSSR_REG_INFO_VER_5 :
+			saqm_extrsrcreq = dhdp->sssr_reg_info->rev5.saqm_sssr_info.
+				oobr_regs.extrsrcreq;
+			if (saqm_extrsrcreq) {
+				/* read is for information purpose only.  */
+				dhd_sbreg_op(dhdp, saqm_extrsrcreq, &clockcontrolstatus_val, TRUE);
+				clockcontrolstatus = dhdp->sssr_reg_info->rev5.saqm_sssr_info.
+					base_regs.clockcontrolstatus;
+				dhd_sbreg_op(dhdp, clockcontrolstatus,
+					&clockcontrolstatus_val, TRUE);
+				clockcontrolstatus_val |=
+					dhdp->sssr_reg_info->rev5.saqm_sssr_info.
+					base_regs.clockcontrolstatus_val;
+				dhd_sbreg_op(dhdp, clockcontrolstatus, &clockcontrolstatus_val,
+					FALSE);
+				OSL_DELAY(SAQM_CLK_REQ_CLR_DELAY);
+			}
+			/* set DIG force_sr_all bit */
+			digsr_srcontrol2_addr =
 				dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
-				digsr_srcontrol2_setbit_val;
-			val |= digsr_srcontrol2_setbit_val;
-			dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, FALSE);
-		}
+				digsr_srcontrol2_addr;
+			if (digsr_srcontrol2_addr) {
+				dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, TRUE);
+				digsr_srcontrol2_setbit_val =
+					dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
+					digsr_srcontrol2_setbit_val;
+				val |= digsr_srcontrol2_setbit_val;
+				dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, FALSE);
+			}
 
-		/* Disable SR self test */
-		digsr_srcontrol1_addr =
-			dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
-			digsr_srcontrol1_addr;
-		digsr_srcontrol1_clrbit_val =
-			dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
-			digsr_srcontrol1_clrbit_val;
-		if (digsr_srcontrol1_addr) {
-			dhd_sbreg_op(dhdp, digsr_srcontrol1_addr, &val, TRUE);
-			val &= ~(digsr_srcontrol1_clrbit_val);
-			dhd_sbreg_op(dhdp, digsr_srcontrol1_addr, &val, FALSE);
-		}
+			/* Disable SR self test */
+			digsr_srcontrol1_addr =
+				dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
+				digsr_srcontrol1_addr;
+			digsr_srcontrol1_clrbit_val =
+				dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
+				digsr_srcontrol1_clrbit_val;
+			if (digsr_srcontrol1_addr) {
+				dhd_sbreg_op(dhdp, digsr_srcontrol1_addr, &val, TRUE);
+				val &= ~(digsr_srcontrol1_clrbit_val);
+				dhd_sbreg_op(dhdp, digsr_srcontrol1_addr, &val, FALSE);
+			}
 
-		/* set PMU chip ctrl saqm_sr_enable bit */
-		pmuchip_ctl_addr_reg = dhdp->sssr_reg_info->rev5.saqm_sssr_info.
-			sssr_config_regs.pmuchip_ctl_addr_reg;
-		pmuchip_ctl_val = dhdp->sssr_reg_info->rev5.saqm_sssr_info.
-			sssr_config_regs.pmuchip_ctl_val;
-		if (pmuchip_ctl_addr_reg) {
-			dhd_sbreg_op(dhdp, pmuchip_ctl_addr_reg, &pmuchip_ctl_val, FALSE);
-		}
-		pmuchip_ctl_data_reg = dhdp->sssr_reg_info->rev5.saqm_sssr_info.
-			sssr_config_regs.pmuchip_ctl_data_reg;
-		pmuchip_ctl_setbit_val =
-			dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
-			pmuchip_ctl_setbit_val;
-		if (pmuchip_ctl_data_reg) {
-			dhd_sbreg_op(dhdp, pmuchip_ctl_data_reg, &val, TRUE);
-			val |= pmuchip_ctl_setbit_val;
-			dhd_sbreg_op(dhdp, pmuchip_ctl_data_reg, &val, FALSE);
-		}
-		break;
-	case SSSR_REG_INFO_VER_4:
-		saqm_extrsrcreq = dhdp->sssr_reg_info->rev4.saqm_sssr_info.
-			oobr_regs.extrsrcreq;
-		if (saqm_extrsrcreq) {
-			/* read is for information purpose only.  */
-			dhd_sbreg_op(dhdp, saqm_extrsrcreq, &clockcontrolstatus_val, TRUE);
-			clockcontrolstatus = dhdp->sssr_reg_info->rev4.saqm_sssr_info.
-				base_regs.clockcontrolstatus;
-			dhd_sbreg_op(dhdp, clockcontrolstatus, &clockcontrolstatus_val,
-				TRUE);
-			clockcontrolstatus_val |=
-				dhdp->sssr_reg_info->rev4.saqm_sssr_info.
-				base_regs.clockcontrolstatus_val;
+			/* set PMU chip ctrl saqm_sr_enable bit */
+			pmuchip_ctl_addr_reg = dhdp->sssr_reg_info->rev5.saqm_sssr_info.
+				sssr_config_regs.pmuchip_ctl_addr_reg;
+			pmuchip_ctl_val = dhdp->sssr_reg_info->rev5.saqm_sssr_info.
+				sssr_config_regs.pmuchip_ctl_val;
+			if (pmuchip_ctl_addr_reg) {
+				dhd_sbreg_op(dhdp, pmuchip_ctl_addr_reg, &pmuchip_ctl_val, FALSE);
+			}
+			pmuchip_ctl_data_reg = dhdp->sssr_reg_info->rev5.saqm_sssr_info.
+				sssr_config_regs.pmuchip_ctl_data_reg;
+			pmuchip_ctl_setbit_val =
+				dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
+				pmuchip_ctl_setbit_val;
+			if (pmuchip_ctl_data_reg) {
+				dhd_sbreg_op(dhdp, pmuchip_ctl_data_reg, &val, TRUE);
+				val |= pmuchip_ctl_setbit_val;
+				dhd_sbreg_op(dhdp, pmuchip_ctl_data_reg, &val, FALSE);
+			}
+			break;
+		case SSSR_REG_INFO_VER_4 :
+			saqm_extrsrcreq = dhdp->sssr_reg_info->rev4.saqm_sssr_info.
+				oobr_regs.extrsrcreq;
+			if (saqm_extrsrcreq) {
+				/* read is for information purpose only.  */
+				dhd_sbreg_op(dhdp, saqm_extrsrcreq, &clockcontrolstatus_val, TRUE);
+				clockcontrolstatus = dhdp->sssr_reg_info->rev4.saqm_sssr_info.
+					base_regs.clockcontrolstatus;
+				dhd_sbreg_op(dhdp, clockcontrolstatus, &clockcontrolstatus_val,
+					TRUE);
+				clockcontrolstatus_val |=
+					dhdp->sssr_reg_info->rev4.saqm_sssr_info.
+					base_regs.clockcontrolstatus_val;
 
-			dhd_sbreg_op(dhdp, clockcontrolstatus, &clockcontrolstatus_val,
-				FALSE);
-			OSL_DELAY(SAQM_CLK_REQ_CLR_DELAY);
-		}
+				dhd_sbreg_op(dhdp, clockcontrolstatus, &clockcontrolstatus_val,
+					FALSE);
+				OSL_DELAY(SAQM_CLK_REQ_CLR_DELAY);
+			}
 
-		/* set DIG force_sr_all bit */
-		digsr_srcontrol2_addr =
-			dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
-			digsr_srcontrol2_addr;
-		if (digsr_srcontrol2_addr) {
-			dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, TRUE);
-			digsr_srcontrol2_setbit_val =
+			/* set DIG force_sr_all bit */
+			digsr_srcontrol2_addr =
 				dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
-				digsr_srcontrol2_setbit_val;
-			val |= digsr_srcontrol2_setbit_val;
-			dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, FALSE);
-		}
+				digsr_srcontrol2_addr;
+			if (digsr_srcontrol2_addr) {
+				dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, TRUE);
+				digsr_srcontrol2_setbit_val =
+					dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
+					digsr_srcontrol2_setbit_val;
+				val |= digsr_srcontrol2_setbit_val;
+				dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, FALSE);
+			}
 
-		/* Disable SR self test */
-		digsr_srcontrol1_addr =
-			dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
-			digsr_srcontrol1_addr;
-		digsr_srcontrol1_clrbit_val =
-			dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
-			digsr_srcontrol1_clrbit_val;
-		if (digsr_srcontrol1_addr) {
-			dhd_sbreg_op(dhdp, digsr_srcontrol1_addr, &val, TRUE);
-			val &= ~(digsr_srcontrol1_clrbit_val);
-			dhd_sbreg_op(dhdp, digsr_srcontrol1_addr, &val, FALSE);
-		}
+			/* Disable SR self test */
+			digsr_srcontrol1_addr =
+				dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
+				digsr_srcontrol1_addr;
+			digsr_srcontrol1_clrbit_val =
+				dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
+				digsr_srcontrol1_clrbit_val;
+			if (digsr_srcontrol1_addr) {
+				dhd_sbreg_op(dhdp, digsr_srcontrol1_addr, &val, TRUE);
+				val &= ~(digsr_srcontrol1_clrbit_val);
+				dhd_sbreg_op(dhdp, digsr_srcontrol1_addr, &val, FALSE);
+			}
 
-		/* set PMU chip ctrl saqm_sr_enable bit */
-		pmuchip_ctl_addr_reg = dhdp->sssr_reg_info->rev4.saqm_sssr_info.
-			sssr_config_regs.pmuchip_ctl_addr_reg;
-		pmuchip_ctl_val = dhdp->sssr_reg_info->rev4.saqm_sssr_info.
-			sssr_config_regs.pmuchip_ctl_val;
-		if (pmuchip_ctl_addr_reg) {
-			dhd_sbreg_op(dhdp, pmuchip_ctl_addr_reg, &pmuchip_ctl_val, FALSE);
-		}
-		pmuchip_ctl_data_reg = dhdp->sssr_reg_info->rev4.saqm_sssr_info.
-			sssr_config_regs.pmuchip_ctl_data_reg;
-		pmuchip_ctl_setbit_val =
-			dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
-			pmuchip_ctl_setbit_val;
-		if (pmuchip_ctl_data_reg) {
-			dhd_sbreg_op(dhdp, pmuchip_ctl_data_reg, &val, TRUE);
-			val |= pmuchip_ctl_setbit_val;
-			dhd_sbreg_op(dhdp, pmuchip_ctl_data_reg, &val, FALSE);
-		}
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+			/* set PMU chip ctrl saqm_sr_enable bit */
+			pmuchip_ctl_addr_reg = dhdp->sssr_reg_info->rev4.saqm_sssr_info.
+				sssr_config_regs.pmuchip_ctl_addr_reg;
+			pmuchip_ctl_val = dhdp->sssr_reg_info->rev4.saqm_sssr_info.
+				sssr_config_regs.pmuchip_ctl_val;
+			if (pmuchip_ctl_addr_reg) {
+				dhd_sbreg_op(dhdp, pmuchip_ctl_addr_reg, &pmuchip_ctl_val, FALSE);
+			}
+			pmuchip_ctl_data_reg = dhdp->sssr_reg_info->rev4.saqm_sssr_info.
+				sssr_config_regs.pmuchip_ctl_data_reg;
+			pmuchip_ctl_setbit_val =
+				dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
+				pmuchip_ctl_setbit_val;
+			if (pmuchip_ctl_data_reg) {
+				dhd_sbreg_op(dhdp, pmuchip_ctl_data_reg, &val, TRUE);
+				val |= pmuchip_ctl_setbit_val;
+				dhd_sbreg_op(dhdp, pmuchip_ctl_data_reg, &val, FALSE);
+			}
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 exit:
 	si_setcoreidx(dhdp->bus->sih, save_idx);
@@ -739,40 +737,40 @@ dhdpcie_saqm_clear_force_sr_all(dhd_pub_t *dhdp)
 
 	DHD_PRINT(("%s\n", __FUNCTION__));
 	switch (dhdp->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-	case SSSR_REG_INFO_VER_5:
-		/* clear DIG force_sr_all bit */
-		digsr_srcontrol2_addr =
-			dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
-			digsr_srcontrol2_addr;
-		if (digsr_srcontrol2_addr) {
-			dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, TRUE);
-			digsr_srcontrol2_setbit_val =
+		case SSSR_REG_INFO_VER_6:
+		case SSSR_REG_INFO_VER_5:
+			/* clear DIG force_sr_all bit */
+			digsr_srcontrol2_addr =
 				dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
-				digsr_srcontrol2_setbit_val;
-			val &= ~digsr_srcontrol2_setbit_val;
-			dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, FALSE);
-		}
+				digsr_srcontrol2_addr;
+			if (digsr_srcontrol2_addr) {
+				dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, TRUE);
+				digsr_srcontrol2_setbit_val =
+					dhdp->sssr_reg_info->rev5.saqm_sssr_info.sssr_config_regs.
+					digsr_srcontrol2_setbit_val;
+				val &= ~digsr_srcontrol2_setbit_val;
+				dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, FALSE);
+			}
 
-		break;
-	case SSSR_REG_INFO_VER_4:
-		/* clear DIG force_sr_all bit */
-		digsr_srcontrol2_addr =
-			dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
-			digsr_srcontrol2_addr;
-		if (digsr_srcontrol2_addr) {
-			dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, TRUE);
-			digsr_srcontrol2_setbit_val =
+			break;
+		case SSSR_REG_INFO_VER_4:
+			/* clear DIG force_sr_all bit */
+			digsr_srcontrol2_addr =
 				dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
-				digsr_srcontrol2_setbit_val;
-			val &= ~digsr_srcontrol2_setbit_val;
-			dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, FALSE);
-		}
+				digsr_srcontrol2_addr;
+			if (digsr_srcontrol2_addr) {
+				dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, TRUE);
+				digsr_srcontrol2_setbit_val =
+					dhdp->sssr_reg_info->rev4.saqm_sssr_info.sssr_config_regs.
+					digsr_srcontrol2_setbit_val;
+				val &= ~digsr_srcontrol2_setbit_val;
+				dhd_sbreg_op(dhdp, digsr_srcontrol2_addr, &val, FALSE);
+			}
 
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+			break;
+		default:
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 exit:
 	si_setcoreidx(dhdp->bus->sih, save_idx);
@@ -798,36 +796,36 @@ dhdpcie_d11_clear_clk_req(dhd_pub_t *dhd)
 			 * v1 shares most except dig_mem
 			 */
 			switch (dhd->sssr_reg_info->rev2.version) {
-			case SSSR_REG_INFO_VER_4:
-				clockrequeststatus = dhd->sssr_reg_info->rev4.
-					mac_regs[i].oobr_regs.extrsrcreq;
-				clockcontrolstatus = dhd->sssr_reg_info->rev4.
-					mac_regs[i].base_regs.clockcontrolstatus;
-				clockcontrolstatus_val = dhd->sssr_reg_info->rev4.
-					mac_regs[i].base_regs.clockcontrolstatus_val;
-				break;
-			case SSSR_REG_INFO_VER_3:
-				/* intentional fall through */
-			case SSSR_REG_INFO_VER_2:
-				clockrequeststatus = dhd->sssr_reg_info->rev2.
-					mac_regs[i].wrapper_regs.extrsrcreq;
-				clockcontrolstatus = dhd->sssr_reg_info->rev2.
-					mac_regs[i].base_regs.clockcontrolstatus;
-				clockcontrolstatus_val = dhd->sssr_reg_info->rev2.
-					mac_regs[i].base_regs.clockcontrolstatus_val;
-				break;
-			case SSSR_REG_INFO_VER_1:
-			case SSSR_REG_INFO_VER_0:
-				clockrequeststatus = dhd->sssr_reg_info->rev1.
-					mac_regs[i].wrapper_regs.itopoobb;
-				clockcontrolstatus = dhd->sssr_reg_info->rev1.
-					mac_regs[i].base_regs.clockcontrolstatus;
-				clockcontrolstatus_val = dhd->sssr_reg_info->rev1.
-					mac_regs[i].base_regs.clockcontrolstatus_val;
-				break;
-			default:
-				DHD_ERROR(("invalid sssr_reg_ver"));
-				return BCME_UNSUPPORTED;
+				case SSSR_REG_INFO_VER_4 :
+					clockrequeststatus = dhd->sssr_reg_info->rev4.
+						mac_regs[i].oobr_regs.extrsrcreq;
+					clockcontrolstatus = dhd->sssr_reg_info->rev4.
+						mac_regs[i].base_regs.clockcontrolstatus;
+					clockcontrolstatus_val = dhd->sssr_reg_info->rev4.
+						mac_regs[i].base_regs.clockcontrolstatus_val;
+					break;
+				case SSSR_REG_INFO_VER_3 :
+					/* intentional fall through */
+				case SSSR_REG_INFO_VER_2 :
+					clockrequeststatus = dhd->sssr_reg_info->rev2.
+						mac_regs[i].wrapper_regs.extrsrcreq;
+					clockcontrolstatus = dhd->sssr_reg_info->rev2.
+						mac_regs[i].base_regs.clockcontrolstatus;
+					clockcontrolstatus_val = dhd->sssr_reg_info->rev2.
+						mac_regs[i].base_regs.clockcontrolstatus_val;
+					break;
+				case SSSR_REG_INFO_VER_1 :
+				case SSSR_REG_INFO_VER_0 :
+					clockrequeststatus = dhd->sssr_reg_info->rev1.
+						mac_regs[i].wrapper_regs.itopoobb;
+					clockcontrolstatus = dhd->sssr_reg_info->rev1.
+						mac_regs[i].base_regs.clockcontrolstatus;
+					clockcontrolstatus_val = dhd->sssr_reg_info->rev1.
+						mac_regs[i].base_regs.clockcontrolstatus_val;
+					break;
+				default :
+					DHD_ERROR(("invalid sssr_reg_ver"));
+					return BCME_UNSUPPORTED;
 			}
 			/* Read is for information purpose only */
 			dhd_sbreg_op(dhd, clockrequeststatus, &val, TRUE);
@@ -851,49 +849,49 @@ dhdpcie_arm_clear_clk_req(dhd_pub_t *dhd)
 
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-	case SSSR_REG_INFO_VER_5:
-		clockrequeststatus = dhd->sssr_reg_info->rev5.
-			arm_regs.oobr_regs.extrsrcreq;
-		clockcontrolstatus = dhd->sssr_reg_info->rev5.
-			arm_regs.base_regs.clockcontrolstatus;
-		clockcontrolstatus_val = dhd->sssr_reg_info->rev5.
-			arm_regs.base_regs.clockcontrolstatus_val;
-		break;
-	case SSSR_REG_INFO_VER_4:
-		clockrequeststatus = dhd->sssr_reg_info->rev4.
-			arm_regs.oobr_regs.extrsrcreq;
-		clockcontrolstatus = dhd->sssr_reg_info->rev4.
-			arm_regs.base_regs.clockcontrolstatus;
-		clockcontrolstatus_val = dhd->sssr_reg_info->rev4.
-			arm_regs.base_regs.clockcontrolstatus_val;
-		break;
-	case SSSR_REG_INFO_VER_3:
-		/* intentional fall through */
-	case SSSR_REG_INFO_VER_2:
-		resetctrl = dhd->sssr_reg_info->rev2.
-			arm_regs.wrapper_regs.resetctrl;
-		clockrequeststatus = dhd->sssr_reg_info->rev2.
-			arm_regs.wrapper_regs.extrsrcreq;
-		clockcontrolstatus = dhd->sssr_reg_info->rev2.
-			arm_regs.base_regs.clockcontrolstatus;
-		clockcontrolstatus_val = dhd->sssr_reg_info->rev2.
-			arm_regs.base_regs.clockcontrolstatus_val;
-		break;
-	case SSSR_REG_INFO_VER_1:
-	case SSSR_REG_INFO_VER_0:
-		resetctrl = dhd->sssr_reg_info->rev1.
-			arm_regs.wrapper_regs.resetctrl;
-		clockrequeststatus = dhd->sssr_reg_info->rev1.
-			arm_regs.wrapper_regs.itopoobb;
-		clockcontrolstatus = dhd->sssr_reg_info->rev1.
-			arm_regs.base_regs.clockcontrolstatus;
-		clockcontrolstatus_val = dhd->sssr_reg_info->rev1.
-			arm_regs.base_regs.clockcontrolstatus_val;
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_6 :
+		case SSSR_REG_INFO_VER_5 :
+			clockrequeststatus = dhd->sssr_reg_info->rev5.
+				arm_regs.oobr_regs.extrsrcreq;
+			clockcontrolstatus = dhd->sssr_reg_info->rev5.
+				arm_regs.base_regs.clockcontrolstatus;
+			clockcontrolstatus_val = dhd->sssr_reg_info->rev5.
+				arm_regs.base_regs.clockcontrolstatus_val;
+			break;
+		case SSSR_REG_INFO_VER_4 :
+			clockrequeststatus = dhd->sssr_reg_info->rev4.
+				arm_regs.oobr_regs.extrsrcreq;
+			clockcontrolstatus = dhd->sssr_reg_info->rev4.
+				arm_regs.base_regs.clockcontrolstatus;
+			clockcontrolstatus_val = dhd->sssr_reg_info->rev4.
+				arm_regs.base_regs.clockcontrolstatus_val;
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			/* intentional fall through */
+		case SSSR_REG_INFO_VER_2 :
+			resetctrl = dhd->sssr_reg_info->rev2.
+				arm_regs.wrapper_regs.resetctrl;
+			clockrequeststatus = dhd->sssr_reg_info->rev2.
+				arm_regs.wrapper_regs.extrsrcreq;
+			clockcontrolstatus = dhd->sssr_reg_info->rev2.
+				arm_regs.base_regs.clockcontrolstatus;
+			clockcontrolstatus_val = dhd->sssr_reg_info->rev2.
+				arm_regs.base_regs.clockcontrolstatus_val;
+			break;
+		case SSSR_REG_INFO_VER_1 :
+		case SSSR_REG_INFO_VER_0 :
+			resetctrl = dhd->sssr_reg_info->rev1.
+				arm_regs.wrapper_regs.resetctrl;
+			clockrequeststatus = dhd->sssr_reg_info->rev1.
+				arm_regs.wrapper_regs.itopoobb;
+			clockcontrolstatus = dhd->sssr_reg_info->rev1.
+				arm_regs.base_regs.clockcontrolstatus;
+			clockcontrolstatus_val = dhd->sssr_reg_info->rev1.
+				arm_regs.base_regs.clockcontrolstatus_val;
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 
 	/* Check if bit 0 of resetctrl is cleared */
@@ -911,13 +909,7 @@ dhdpcie_arm_clear_clk_req(dhd_pub_t *dhd)
 			return BCME_ERROR;
 		}
 	} else {
-		/* if arm resetctrl address is not provided in sssr info */
-		if (resetctrl == 0) {
-			si_setcore(bus->sih, ARMCR4_CORE_ID, 0);
-			val = si_wrapperreg(bus->sih, AI_RESETCTRL, 0, 0);
-		} else {
-			dhd_sbreg_op(dhd, resetctrl, &val, TRUE);
-		}
+		dhd_sbreg_op(dhd, resetctrl, &val, TRUE);
 		val &= 1u;
 	}
 
@@ -974,36 +966,36 @@ dhdpcie_pcie_clear_clk_req(dhd_pub_t *dhd)
 
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_4:
-		clockrequeststatus = dhd->sssr_reg_info->rev4.
-			pcie_regs.oobr_regs.extrsrcreq;
-		clockcontrolstatus_addr = dhd->sssr_reg_info->rev4.
-			pcie_regs.base_regs.clockcontrolstatus;
-		clockcontrolstatus_val = dhd->sssr_reg_info->rev4.
-			pcie_regs.base_regs.clockcontrolstatus_val;
-		break;
-	case SSSR_REG_INFO_VER_3:
-		/* intentional fall through */
-	case SSSR_REG_INFO_VER_2:
-		clockrequeststatus = dhd->sssr_reg_info->rev2.
-			pcie_regs.wrapper_regs.extrsrcreq;
-		clockcontrolstatus_addr = dhd->sssr_reg_info->rev2.
-			pcie_regs.base_regs.clockcontrolstatus;
-		clockcontrolstatus_val = dhd->sssr_reg_info->rev2.
-			pcie_regs.base_regs.clockcontrolstatus_val;
-		break;
-	case SSSR_REG_INFO_VER_1:
-	case SSSR_REG_INFO_VER_0:
-		clockrequeststatus = dhd->sssr_reg_info->rev1.
-			pcie_regs.wrapper_regs.itopoobb;
-		clockcontrolstatus_addr = dhd->sssr_reg_info->rev1.
-			pcie_regs.base_regs.clockcontrolstatus;
-		clockcontrolstatus_val = dhd->sssr_reg_info->rev1.
-			pcie_regs.base_regs.clockcontrolstatus_val;
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_4 :
+			clockrequeststatus = dhd->sssr_reg_info->rev4.
+				pcie_regs.oobr_regs.extrsrcreq;
+			clockcontrolstatus_addr = dhd->sssr_reg_info->rev4.
+				pcie_regs.base_regs.clockcontrolstatus;
+			clockcontrolstatus_val = dhd->sssr_reg_info->rev4.
+				pcie_regs.base_regs.clockcontrolstatus_val;
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			/* intentional fall through */
+		case SSSR_REG_INFO_VER_2 :
+			clockrequeststatus = dhd->sssr_reg_info->rev2.
+				pcie_regs.wrapper_regs.extrsrcreq;
+			clockcontrolstatus_addr = dhd->sssr_reg_info->rev2.
+				pcie_regs.base_regs.clockcontrolstatus;
+			clockcontrolstatus_val = dhd->sssr_reg_info->rev2.
+				pcie_regs.base_regs.clockcontrolstatus_val;
+			break;
+		case SSSR_REG_INFO_VER_1 :
+		case SSSR_REG_INFO_VER_0 :
+			clockrequeststatus = dhd->sssr_reg_info->rev1.
+				pcie_regs.wrapper_regs.itopoobb;
+			clockcontrolstatus_addr = dhd->sssr_reg_info->rev1.
+				pcie_regs.base_regs.clockcontrolstatus;
+			clockcontrolstatus_val = dhd->sssr_reg_info->rev1.
+				pcie_regs.base_regs.clockcontrolstatus_val;
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 
 	dhd_sbreg_op(dhd, clockrequeststatus, &val, TRUE);
@@ -1023,25 +1015,25 @@ dhdpcie_pcie_send_ltrsleep(dhd_pub_t *dhd)
 
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-	case SSSR_REG_INFO_VER_5:
-		addr = dhd->sssr_reg_info->rev5.pcie_regs.base_regs.ltrstate;
-		break;
-	case SSSR_REG_INFO_VER_4:
-		addr = dhd->sssr_reg_info->rev4.pcie_regs.base_regs.ltrstate;
-		break;
-	case SSSR_REG_INFO_VER_3:
-		/* intentional fall through */
-	case SSSR_REG_INFO_VER_2:
-		addr = dhd->sssr_reg_info->rev2.pcie_regs.base_regs.ltrstate;
-		break;
-	case SSSR_REG_INFO_VER_1:
-	case SSSR_REG_INFO_VER_0:
-		addr = dhd->sssr_reg_info->rev1.pcie_regs.base_regs.ltrstate;
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_6 :
+		case SSSR_REG_INFO_VER_5 :
+			addr = dhd->sssr_reg_info->rev5.pcie_regs.base_regs.ltrstate;
+			break;
+		case SSSR_REG_INFO_VER_4 :
+			addr = dhd->sssr_reg_info->rev4.pcie_regs.base_regs.ltrstate;
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			/* intentional fall through */
+		case SSSR_REG_INFO_VER_2 :
+			addr = dhd->sssr_reg_info->rev2.pcie_regs.base_regs.ltrstate;
+			break;
+		case SSSR_REG_INFO_VER_1 :
+		case SSSR_REG_INFO_VER_0 :
+			addr = dhd->sssr_reg_info->rev1.pcie_regs.base_regs.ltrstate;
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 
 	val = LTR_ACTIVE;
@@ -1153,33 +1145,33 @@ dhdpcie_sssr_d11_header(dhd_pub_t *dhd, uint *buf, uint32 data_len, uint16 coreu
 	int ret = 0;
 
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-	case SSSR_REG_INFO_VER_5:
-		{
-			sssr_header_t sssr_header;
-			uint32 war_reg = 0;
-			bzero(&sssr_header, sizeof(sssr_header_t));
-			dhdpcie_sssr_common_header(dhd, &sssr_header);
-			sssr_header.data_len = data_len;
-			sssr_header.coreid = D11_CORE_ID;
-			sssr_header.coreunit = coreunit;
-			ret = dhd_sssr_mac_war_reg(dhd, coreunit, &war_reg);
-			if (ret == BCME_OK) {
-				sssr_header.war_reg = war_reg;
-			}
+		case SSSR_REG_INFO_VER_6 :
+		case SSSR_REG_INFO_VER_5 :
+			{
+				sssr_header_t sssr_header;
+				uint32 war_reg = 0;
+				bzero(&sssr_header, sizeof(sssr_header_t));
+				dhdpcie_sssr_common_header(dhd, &sssr_header);
+				sssr_header.data_len = data_len;
+				sssr_header.coreid = D11_CORE_ID;
+				sssr_header.coreunit = coreunit;
+				ret = dhd_sssr_mac_war_reg(dhd, coreunit, &war_reg);
+				if (ret == BCME_OK) {
+					sssr_header.war_reg = war_reg;
+				}
 
-			ret = memcpy_s(buf, data_len, &sssr_header, sizeof(sssr_header_t));
-			if (ret) {
-				DHD_ERROR(("%s: D11 sssr_header memcpy_s failed: %d\n",
-						__FUNCTION__, ret));
-					return ret;
-			}
+				ret = memcpy_s(buf, data_len, &sssr_header, sizeof(sssr_header_t));
+				if (ret) {
+					DHD_ERROR(("%s: D11 sssr_header memcpy_s failed: %d\n",
+							__FUNCTION__, ret));
+						return ret;
+				}
 
-			*len = sizeof(sssr_header_t);
-		}
-		break;
-	default:
-		*len = 0;
+				*len = sizeof(sssr_header_t);
+			}
+			break;
+		default :
+			*len = 0;
 	}
 
 	return BCME_OK;
@@ -1191,69 +1183,69 @@ dhdpcie_sssr_dig_header(dhd_pub_t *dhd, uint *buf, uint32 data_len, uint32 *len)
 	int ret = 0;
 
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-	case SSSR_REG_INFO_VER_5:
-		{
-			sssr_header_t sssr_header;
-			uint32 war_reg = 0;
-			bzero(&sssr_header, sizeof(sssr_header_t));
-			dhdpcie_sssr_common_header(dhd, &sssr_header);
-			sssr_header.data_len = data_len;
-			sssr_header.coreid = dhd->bus->coreid;
-			ret = dhd_sssr_arm_war_reg(dhd, &war_reg);
-			if (ret == BCME_OK) {
-				sssr_header.war_reg = war_reg;
-			}
+		case SSSR_REG_INFO_VER_6 :
+		case SSSR_REG_INFO_VER_5 :
+			{
+				sssr_header_t sssr_header;
+				uint32 war_reg = 0;
+				bzero(&sssr_header, sizeof(sssr_header_t));
+				dhdpcie_sssr_common_header(dhd, &sssr_header);
+				sssr_header.data_len = data_len;
+				sssr_header.coreid = dhd->bus->coreid;
+				ret = dhd_sssr_arm_war_reg(dhd, &war_reg);
+				if (ret == BCME_OK) {
+					sssr_header.war_reg = war_reg;
+				}
 
-			ret = memcpy_s(buf, data_len, &sssr_header, sizeof(sssr_header_t));
-			if (ret) {
-				DHD_ERROR(("%s: DIG sssr header memcpy_s failed: %d\n",
-						__FUNCTION__, ret));
-					return ret;
-			}
+				ret = memcpy_s(buf, data_len, &sssr_header, sizeof(sssr_header_t));
+				if (ret) {
+					DHD_ERROR(("%s: DIG sssr header memcpy_s failed: %d\n",
+							__FUNCTION__, ret));
+						return ret;
+				}
 
-			*len = sizeof(sssr_header_t);
-		}
-		break;
-	default:
-		*len = 0;
+				*len = sizeof(sssr_header_t);
+			}
+			break;
+		default :
+			*len = 0;
 	}
 
 	return BCME_OK;
 }
 
 static int
-dhdpcie_sssr_saqm_header(dhd_pub_t *dhd, uint *buf, uint32 data_len, uint32 *len)
+dhdpcie_sssr_saqm_header(dhd_pub_t *dhd, uint *buf, uint32 data_len, uint32 * len)
 {
 	int ret = 0;
 
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-	case SSSR_REG_INFO_VER_5:
-		{
-			sssr_header_t sssr_header;
-			uint32 war_reg = 0;
-			bzero(&sssr_header, sizeof(sssr_header_t));
-			dhdpcie_sssr_common_header(dhd, &sssr_header);
-			sssr_header.data_len = data_len;
-			sssr_header.coreid = D11_SAQM_CORE_ID;
-			ret = dhd_sssr_saqm_war_reg(dhd, &war_reg);
-			if (ret == BCME_OK) {
-				sssr_header.war_reg = war_reg;
-			}
+		case SSSR_REG_INFO_VER_6:
+		case SSSR_REG_INFO_VER_5:
+			{
+				sssr_header_t sssr_header;
+				uint32 war_reg = 0;
+				bzero(&sssr_header, sizeof(sssr_header_t));
+				dhdpcie_sssr_common_header(dhd, &sssr_header);
+				sssr_header.data_len = data_len;
+				sssr_header.coreid = D11_SAQM_CORE_ID;
+				ret = dhd_sssr_saqm_war_reg(dhd, &war_reg);
+				if (ret == BCME_OK) {
+					sssr_header.war_reg = war_reg;
+				}
 
-			ret = memcpy_s(buf, data_len, &sssr_header, sizeof(sssr_header_t));
-			if (ret) {
-				DHD_ERROR(("%s: SAQM sssr header memcpy_s failed: %d\n",
-						__FUNCTION__, ret));
-					return ret;
-			}
+				ret = memcpy_s(buf, data_len, &sssr_header, sizeof(sssr_header_t));
+				if (ret) {
+					DHD_ERROR(("%s: SAQM sssr header memcpy_s failed: %d\n",
+							__FUNCTION__, ret));
+						return ret;
+				}
 
-			*len = sizeof(sssr_header_t);
-		}
-		break;
-	default:
-		*len = 0;
+				*len = sizeof(sssr_header_t);
+			}
+			break;
+		default:
+			*len = 0;
 	}
 
 	return BCME_OK;
@@ -1265,31 +1257,31 @@ dhdpcie_sssr_srcb_header(dhd_pub_t *dhd, uint *buf, uint32 data_len, uint32 *len
 	int ret = 0;
 
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-		{
-			sssr_header_t sssr_header;
-			uint32 war_reg = 0;
-			bzero(&sssr_header, sizeof(sssr_header_t));
-			dhdpcie_sssr_common_header(dhd, &sssr_header);
-			sssr_header.data_len = data_len;
-			sssr_header.coreid = SRCB_CORE_ID;
-			ret = dhd_sssr_srcb_war_reg(dhd, &war_reg);
-			if (ret == BCME_OK) {
-				sssr_header.war_reg = war_reg;
-			}
+		case SSSR_REG_INFO_VER_6:
+			{
+				sssr_header_t sssr_header;
+				uint32 war_reg = 0;
+				bzero(&sssr_header, sizeof(sssr_header_t));
+				dhdpcie_sssr_common_header(dhd, &sssr_header);
+				sssr_header.data_len = data_len;
+				sssr_header.coreid = SRCB_CORE_ID;
+				ret = dhd_sssr_srcb_war_reg(dhd, &war_reg);
+				if (ret == BCME_OK) {
+					sssr_header.war_reg = war_reg;
+				}
 
-			ret = memcpy_s(buf, data_len, &sssr_header, sizeof(sssr_header_t));
-			if (ret) {
-				DHD_ERROR(("%s: SRCB sssr header memcpy_s failed: %d\n",
-						__FUNCTION__, ret));
-					return ret;
-			}
+				ret = memcpy_s(buf, data_len, &sssr_header, sizeof(sssr_header_t));
+				if (ret) {
+					DHD_ERROR(("%s: SRCB sssr header memcpy_s failed: %d\n",
+							__FUNCTION__, ret));
+						return ret;
+				}
 
-			*len = sizeof(sssr_header_t);
-		}
-		break;
-	default:
-		*len = 0;
+				*len = sizeof(sssr_header_t);
+			}
+			break;
+		default:
+			*len = 0;
 	}
 
 	return BCME_OK;
@@ -1301,25 +1293,25 @@ dhdpcie_sssr_cmn_header(dhd_pub_t *dhd, uint *buf, uint32 data_len, uint32 *len)
 	int ret = 0;
 
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-	case SSSR_REG_INFO_VER_5:
-		{
-			sssr_header_t sssr_header = {0};
-			dhdpcie_sssr_common_header(dhd, &sssr_header);
-			sssr_header.data_len = data_len;
-			sssr_header.coreid = CC_CORE_ID;
-			ret = memcpy_s(buf, data_len, &sssr_header, sizeof(sssr_header_t));
-			if (ret) {
-				DHD_ERROR(("%s: CMN sssr header memcpy_s failed: %d\n",
-						__FUNCTION__, ret));
-					return ret;
-			}
+		case SSSR_REG_INFO_VER_6:
+		case SSSR_REG_INFO_VER_5:
+			{
+				sssr_header_t sssr_header = {0};
+				dhdpcie_sssr_common_header(dhd, &sssr_header);
+				sssr_header.data_len = data_len;
+				sssr_header.coreid = CC_CORE_ID;
+				ret = memcpy_s(buf, data_len, &sssr_header, sizeof(sssr_header_t));
+				if (ret) {
+					DHD_ERROR(("%s: CMN sssr header memcpy_s failed: %d\n",
+							__FUNCTION__, ret));
+						return ret;
+				}
 
-			*len = sizeof(sssr_header_t);
-		}
-		break;
-	default:
-		*len = 0;
+				*len = sizeof(sssr_header_t);
+			}
+			break;
+		default:
+			*len = 0;
 	}
 
 	return BCME_OK;
@@ -1503,7 +1495,8 @@ dhdpcie_sssr_dump_get_after_sr(dhd_pub_t *dhd)
 		/* Dig buffer starts right after sssr dig  header */
 		dig_buffer = (uint *)((char *)dig_buffer + dig_header_len);
 		if (dhdpcie_get_sssr_dig_dump(dhd, dig_buffer, dig_buf_size, dig_buf_addr) !=
-				BCME_OK) {
+				BCME_OK)
+		{
 			DHD_ERROR(("%s: dhdpcie_get_sssr_dig_dump failed\n", __FUNCTION__));
 			return BCME_ERROR;
 		}
@@ -1663,8 +1656,7 @@ dhdpcie_dump_oobr(dhd_pub_t *dhd, uint core_bmap, uint coreunit_bmap)
 
 	curcore = si_coreid(dhd->bus->sih);
 
-	reg = si_setcore(sih, HND_OOBR_CORE_ID, 0);
-	if (reg != NULL) {
+	if ((reg = si_setcore(sih, HND_OOBR_CORE_ID, 0)) != NULL) {
 		uint corecap2 = R_REG(dhd->osh, &reg->capability2);
 		uint numtopextrsrc = (corecap2 >> OOBR_CAP2_NUMTOPEXTRSRC_SHIFT) &
 			OOBR_CAP2_NUMTOPEXTRSRC_MASK;
@@ -1728,7 +1720,6 @@ dhdpcie_sssr_dump(dhd_pub_t *dhd)
 	si_t *sih = bus->sih;
 	uint core_bmap = 0, coreunit_bmap = 0;
 	uint32 old_max_resmask = 0, min_resmask = 0, val = 0;
-	uint32 sssr_max_res_mask = 0;
 	bool saqm_isup = FALSE;
 	ulong flags;
 	int ret = BCME_OK;
@@ -1770,7 +1761,7 @@ dhdpcie_sssr_dump(dhd_pub_t *dhd)
 		goto exit;
 	}
 
-	dhdpcie_print_amni_regs(bus, FALSE);
+	dhdpcie_print_amni_regs(bus);
 
 	DHD_PRINT(("%s: Before WL down (powerctl: pcie:0x%x chipc:0x%x) "
 		"PMU rctl:0x%x res_state:0x%x\n", __FUNCTION__,
@@ -1797,18 +1788,17 @@ dhdpcie_sssr_dump(dhd_pub_t *dhd)
 	/* Set the flag to block all membytes or bus dumps */
 	bus->sssr_in_progress = TRUE;
 
+	/* Read Min and Max resource mask */
+	dhd_sbreg_op(dhd, dhd->sssr_reg_info->rev5.pmu_regs.base_regs.pmu_max_res_mask,
+		&old_max_resmask, TRUE);
+	dhd_sbreg_op(dhd, dhd->sssr_reg_info->rev5.pmu_regs.base_regs.pmu_min_res_mask,
+		&min_resmask, TRUE);
 	if (dhd->sssr_reg_info->rev2.version >= SSSR_REG_INFO_VER_5) {
-		/* Read Min and Max resource mask */
-		dhd_sbreg_op(dhd, dhd->sssr_reg_info->rev5.pmu_regs.base_regs.pmu_max_res_mask,
-			&old_max_resmask, TRUE);
-		dhd_sbreg_op(dhd, dhd->sssr_reg_info->rev5.pmu_regs.base_regs.pmu_min_res_mask,
-			&min_resmask, TRUE);
-		sssr_max_res_mask = dhd->sssr_reg_info->rev5.pmu_regs.base_regs.sssr_max_res_mask;
 		dhdpcie_arm_clear_clk_req(dhd);
 		dhdpcie_saqm_clear_clk_req(dhd);
 		dhdpcie_pcie_send_ltrsleep(dhd);
 		/* MaxRsrcMask is updated to bring down the resources for rev5 and above */
-		val = sssr_max_res_mask | min_resmask;
+		val = dhd->sssr_reg_info->rev5.pmu_regs.base_regs.sssr_max_res_mask | min_resmask;
 		dhd_sbreg_op(dhd, dhd->sssr_reg_info->rev5.pmu_regs.base_regs.pmu_max_res_mask,
 			&val, FALSE);
 		/* Wait for some time before Restore */
@@ -1840,7 +1830,8 @@ dhdpcie_sssr_dump(dhd_pub_t *dhd)
 		si_corereg(sih, sih->buscoreidx, CC_REG_OFF(PowerControl), 0, 0),
 		pwrctrl, PMU_REG(sih, RetentionControl, 0, 0),
 		PMU_REG(sih, RsrcState, 0, 0), old_max_resmask, min_resmask,
-		sssr_max_res_mask, PMU_REG(sih, MaxResourceMask, 0, 0)));
+		dhd->sssr_reg_info->rev5.pmu_regs.base_regs.sssr_max_res_mask,
+		PMU_REG(sih, MaxResourceMask, 0, 0)));
 
 	/* again check if some regs are read as 0xffffs to avoid getting
 	 * sssr from a bad pcie link
@@ -1909,7 +1900,8 @@ dhdpcie_sssr_dump(dhd_pub_t *dhd)
 				si_corereg(sih, 0, CC_REG_OFF(PowerControl), 0, 0),
 				PMU_REG(sih, RetentionControl, 0, 0),
 				PMU_REG(sih, RsrcState, 0, 0), old_max_resmask, min_resmask,
-				sssr_max_res_mask, PMU_REG(sih, MaxResourceMask, 0, 0)));
+				dhd->sssr_reg_info->rev5.pmu_regs.base_regs.sssr_max_res_mask,
+				PMU_REG(sih, MaxResourceMask, 0, 0)));
 	}
 
 	dhdpcie_resume_chipcommon_powerctrl(dhd, powerctrl_val);
@@ -1964,7 +1956,7 @@ dhdpcie_sssr_dump(dhd_pub_t *dhd)
 	dhd_write_sssr_dump(dhd, SSSR_DUMP_MODE_SSSR);
 	DHD_PRINT(("%s: sssr dump done\n", __FUNCTION__));
 
-	dhdpcie_print_amni_regs(bus, FALSE);
+	dhdpcie_print_amni_regs(bus);
 exit:
 	DHD_GENERAL_LOCK(bus->dhd, flags);
 	DHD_BUS_BUSY_CLEAR_IN_SSSR(bus->dhd);
@@ -2027,11 +2019,7 @@ dhdpcie_fis_recover(dhd_pub_t *dhd)
 	 */
 	if (!dhd_download_fw_on_driverload) {
 		DHD_PRINT(("%s: Toggle REG_ON and restore config space\n", __FUNCTION__));
-#ifdef BOARD_STB
-		dhd_plat_pcie_suspend_nosave(dhd->plat_info);
-#else
 		dhdpcie_bus_stop_host_dev(dhd->bus);
-#endif /* BOARD_STB */
 		dhd_wifi_platform_set_power(dhd, FALSE);
 		dhd_wifi_platform_set_power(dhd, TRUE);
 		dhd_bus_reset_link_state(dhd);
@@ -2164,9 +2152,6 @@ dhdpcie_fis_trigger(dhd_pub_t *dhd)
 
 	/* Use dhd save function instead of kernel api */
 	dhdpcie_config_save(dhd->bus);
-#ifdef BOARD_STB
-	dhd_plat_pcie_savestate(dhd->plat_info);
-#endif /* BOARD_STB */
 
 	/* Trigger FIS */
 	si_corereg(dhd->bus->sih, dhd->bus->sih->buscoreidx,
@@ -3104,24 +3089,24 @@ dhd_dump_sssr_reg_info(dhd_pub_t *dhd)
 	DHD_PRINT(("************** SSSR REG INFO start version:%d ****************\n",
 		sssr_reg_info->version));
 	switch (sssr_reg_info->version) {
-	case SSSR_REG_INFO_VER_6:
-		dhd_dump_sssr_reg_info_v6(dhd);
-		break;
-	case SSSR_REG_INFO_VER_5:
-		dhd_dump_sssr_reg_info_v5(dhd);
-		break;
-	case SSSR_REG_INFO_VER_4:
-		dhd_dump_sssr_reg_info_v4(dhd);
-		break;
-	case SSSR_REG_INFO_VER_3:
-		dhd_dump_sssr_reg_info_v3(dhd);
-		break;
-	case SSSR_REG_INFO_VER_2:
-		dhd_dump_sssr_reg_info_v2(dhd);
-		break;
-	default:
-		dhd_dump_sssr_reg_info_v1(dhd);
-		break;
+		case SSSR_REG_INFO_VER_6 :
+			dhd_dump_sssr_reg_info_v6(dhd);
+			break;
+		case SSSR_REG_INFO_VER_5 :
+			dhd_dump_sssr_reg_info_v5(dhd);
+			break;
+		case SSSR_REG_INFO_VER_4 :
+			dhd_dump_sssr_reg_info_v4(dhd);
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			dhd_dump_sssr_reg_info_v3(dhd);
+			break;
+		case SSSR_REG_INFO_VER_2 :
+			dhd_dump_sssr_reg_info_v2(dhd);
+			break;
+		default:
+			dhd_dump_sssr_reg_info_v1(dhd);
+			break;
 	}
 	DHD_PRINT(("************** SSSR REG INFO end ****************\n"));
 #endif /* DHD_PCIE_REG_ACCESS */
@@ -3152,46 +3137,46 @@ dhd_get_sssr_reg_info(dhd_pub_t *dhd)
 
 	/* Write sssr reg info to output file */
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-		ret = dhd_write_file_and_check(filepath_sssr,
-			(char *)(&dhd->sssr_reg_info->rev6),
-			sizeof(sssr_reg_info_v6_t));
-		break;
-	case SSSR_REG_INFO_VER_5:
-		ret = dhd_write_file_and_check(filepath_sssr,
-			(char *)(&dhd->sssr_reg_info->rev5),
-			sizeof(sssr_reg_info_v5_t));
-		break;
-	case SSSR_REG_INFO_VER_4:
-		ret = dhd_write_file_and_check(filepath_sssr,
-			(char *)(&dhd->sssr_reg_info->rev4),
-			sizeof(sssr_reg_info_v4_t));
-		break;
-	case SSSR_REG_INFO_VER_3:
-		ret = dhd_write_file_and_check(filepath_sssr,
-			(char *)(&dhd->sssr_reg_info->rev3),
-			sizeof(sssr_reg_info_v3_t));
-		break;
-	case SSSR_REG_INFO_VER_2:
-		ret = dhd_write_file_and_check(filepath_sssr,
-			(char *)(&dhd->sssr_reg_info->rev2),
-			sizeof(sssr_reg_info_v2_t));
-		break;
-	case SSSR_REG_INFO_VER_1:
-		ret = dhd_write_file_and_check(filepath_sssr,
-			(char *)(&dhd->sssr_reg_info->rev1),
-			sizeof(sssr_reg_info_v1_t));
-		break;
-	case SSSR_REG_INFO_VER_0:
-		ret = dhd_write_file_and_check(filepath_sssr,
-			(char *)(&dhd->sssr_reg_info->rev0),
-			sizeof(sssr_reg_info_v0_t));
-		break;
+		case SSSR_REG_INFO_VER_6 :
+			ret = dhd_write_file_and_check(filepath_sssr,
+				(char*)(&dhd->sssr_reg_info->rev6),
+				sizeof(sssr_reg_info_v6_t));
+			break;
+		case SSSR_REG_INFO_VER_5 :
+			ret = dhd_write_file_and_check(filepath_sssr,
+				(char*)(&dhd->sssr_reg_info->rev5),
+				sizeof(sssr_reg_info_v5_t));
+			break;
+		case SSSR_REG_INFO_VER_4 :
+			ret = dhd_write_file_and_check(filepath_sssr,
+				(char*)(&dhd->sssr_reg_info->rev4),
+				sizeof(sssr_reg_info_v4_t));
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			ret = dhd_write_file_and_check(filepath_sssr,
+				(char*)(&dhd->sssr_reg_info->rev3),
+				sizeof(sssr_reg_info_v3_t));
+			break;
+		case SSSR_REG_INFO_VER_2 :
+			ret = dhd_write_file_and_check(filepath_sssr,
+				(char*)(&dhd->sssr_reg_info->rev2),
+				sizeof(sssr_reg_info_v2_t));
+			break;
+		case SSSR_REG_INFO_VER_1 :
+			ret = dhd_write_file_and_check(filepath_sssr,
+				(char*)(&dhd->sssr_reg_info->rev1),
+				sizeof(sssr_reg_info_v1_t));
+			break;
+		case SSSR_REG_INFO_VER_0 :
+			ret = dhd_write_file_and_check(filepath_sssr,
+				(char*)(&dhd->sssr_reg_info->rev0),
+				sizeof(sssr_reg_info_v0_t));
+			break;
 	}
 
 	if (ret < 0) {
 		DHD_ERROR(("%s: SSSR REG INFO [%s] Failed to write into"
-		" File: %s\n", __FUNCTION__, (char *)(&dhd->sssr_reg_info->rev0), filepath_sssr));
+		" File: %s\n", __FUNCTION__, (char*)(&dhd->sssr_reg_info->rev0), filepath_sssr));
 	}
 
 done:
@@ -3209,56 +3194,56 @@ dhd_get_sssr_bufsize(dhd_pub_t *dhd)
 	num_d11cores = dhd_d11_slices_num_get(dhd);
 
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-	case SSSR_REG_INFO_VER_5:
-		sssr_bufsize += dhd->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_size;
-		break;
-	case SSSR_REG_INFO_VER_4:
-		sssr_bufsize += dhd->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_size;
-		break;
-	case SSSR_REG_INFO_VER_3:
-		for (i = 0; i < num_d11cores; i++) {
-			sssr_bufsize += dhd->sssr_reg_info->rev3.mac_regs[i].sr_size;
-		}
-		if ((dhd->sssr_reg_info->rev3.length >
-		 OFFSETOF(sssr_reg_info_v3_t, dig_mem_info)) &&
-		 dhd->sssr_reg_info->rev3.dig_mem_info.dig_sr_addr) {
-			sssr_bufsize += dhd->sssr_reg_info->rev3.dig_mem_info.dig_sr_size;
-		}
-		break;
-	case SSSR_REG_INFO_VER_2:
-		for (i = 0; i < num_d11cores; i++) {
-			sssr_bufsize += dhd->sssr_reg_info->rev2.mac_regs[i].sr_size;
-		}
-		if ((dhd->sssr_reg_info->rev2.length >
-		 OFFSETOF(sssr_reg_info_v2_t, dig_mem_info)) &&
-		 dhd->sssr_reg_info->rev2.dig_mem_info.dig_sr_addr) {
-			sssr_bufsize += dhd->sssr_reg_info->rev2.dig_mem_info.dig_sr_size;
-		}
-		break;
-	case SSSR_REG_INFO_VER_1:
-		for (i = 0; i < num_d11cores; i++) {
-			sssr_bufsize += dhd->sssr_reg_info->rev1.mac_regs[i].sr_size;
-		}
-		if (dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size) {
-			sssr_bufsize += dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size;
-		} else if ((dhd->sssr_reg_info->rev1.length > OFFSETOF(sssr_reg_info_v1_t,
-			dig_mem_info)) && dhd->sssr_reg_info->rev1.
-			dig_mem_info.dig_sr_addr) {
-			sssr_bufsize += dhd->sssr_reg_info->rev1.dig_mem_info.dig_sr_size;
-		}
-		break;
-	case SSSR_REG_INFO_VER_0:
-		for (i = 0; i < num_d11cores; i++) {
-			sssr_bufsize += dhd->sssr_reg_info->rev0.mac_regs[i].sr_size;
-		}
-		if (dhd->sssr_reg_info->rev0.vasip_regs.vasip_sr_size) {
-			sssr_bufsize += dhd->sssr_reg_info->rev0.vasip_regs.vasip_sr_size;
-		}
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_6 :
+		case SSSR_REG_INFO_VER_5 :
+			sssr_bufsize += dhd->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_size;
+			break;
+		case SSSR_REG_INFO_VER_4 :
+			sssr_bufsize += dhd->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_size;
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			for (i = 0; i < num_d11cores; i++) {
+				sssr_bufsize += dhd->sssr_reg_info->rev3.mac_regs[i].sr_size;
+			}
+			if ((dhd->sssr_reg_info->rev3.length >
+			 OFFSETOF(sssr_reg_info_v3_t, dig_mem_info)) &&
+			 dhd->sssr_reg_info->rev3.dig_mem_info.dig_sr_addr) {
+				sssr_bufsize += dhd->sssr_reg_info->rev3.dig_mem_info.dig_sr_size;
+			}
+			break;
+		case SSSR_REG_INFO_VER_2 :
+			for (i = 0; i < num_d11cores; i++) {
+				sssr_bufsize += dhd->sssr_reg_info->rev2.mac_regs[i].sr_size;
+			}
+			if ((dhd->sssr_reg_info->rev2.length >
+			 OFFSETOF(sssr_reg_info_v2_t, dig_mem_info)) &&
+			 dhd->sssr_reg_info->rev2.dig_mem_info.dig_sr_addr) {
+				sssr_bufsize += dhd->sssr_reg_info->rev2.dig_mem_info.dig_sr_size;
+			}
+			break;
+		case SSSR_REG_INFO_VER_1 :
+			for (i = 0; i < num_d11cores; i++) {
+				sssr_bufsize += dhd->sssr_reg_info->rev1.mac_regs[i].sr_size;
+			}
+			if (dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size) {
+				sssr_bufsize += dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size;
+			} else if ((dhd->sssr_reg_info->rev1.length > OFFSETOF(sssr_reg_info_v1_t,
+				dig_mem_info)) && dhd->sssr_reg_info->rev1.
+				dig_mem_info.dig_sr_addr) {
+				sssr_bufsize += dhd->sssr_reg_info->rev1.dig_mem_info.dig_sr_size;
+			}
+			break;
+		case SSSR_REG_INFO_VER_0 :
+			for (i = 0; i < num_d11cores; i++) {
+				sssr_bufsize += dhd->sssr_reg_info->rev0.mac_regs[i].sr_size;
+			}
+			if (dhd->sssr_reg_info->rev0.vasip_regs.vasip_sr_size) {
+				sssr_bufsize += dhd->sssr_reg_info->rev0.vasip_regs.vasip_sr_size;
+			}
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 
 #ifdef DHD_SSSR_DUMP_BEFORE_SR
@@ -3306,39 +3291,39 @@ dhd_sssr_dump_init(dhd_pub_t *dhd, bool fis_dump)
 		if (fis_dump) {
 			int err = -1;
 			char *filepath_sssr = "/root/sssr_reginfo.dat";
-			err = dhd_read_file(filepath_sssr, (char *)(&dhd->sssr_reg_info->rev0),
+			err = dhd_read_file(filepath_sssr, (char*)(&dhd->sssr_reg_info->rev0),
 				sizeof(sssr_reg_info_v0_t));
 			switch (dhd->sssr_reg_info->rev2.version) {
-			case SSSR_REG_INFO_VER_6:
-				err = dhd_read_file(filepath_sssr,
-					(char *)(&dhd->sssr_reg_info->rev6),
-					sizeof(sssr_reg_info_v6_t));
-				break;
-			case SSSR_REG_INFO_VER_5:
-				err = dhd_read_file(filepath_sssr,
-					(char *)(&dhd->sssr_reg_info->rev5),
-					sizeof(sssr_reg_info_v5_t));
-				break;
-			case SSSR_REG_INFO_VER_4:
-				err = dhd_read_file(filepath_sssr,
-					(char *)(&dhd->sssr_reg_info->rev4),
-					sizeof(sssr_reg_info_v4_t));
-				break;
-			case SSSR_REG_INFO_VER_3:
-				err = dhd_read_file(filepath_sssr,
-					(char *)(&dhd->sssr_reg_info->rev3),
-					sizeof(sssr_reg_info_v3_t));
-				break;
-			case SSSR_REG_INFO_VER_2:
-				err = dhd_read_file(filepath_sssr,
-					(char *)(&dhd->sssr_reg_info->rev2),
-					sizeof(sssr_reg_info_v2_t));
-				break;
-			case SSSR_REG_INFO_VER_1:
-				err = dhd_read_file(filepath_sssr,
-					(char *)(&dhd->sssr_reg_info->rev1),
-					sizeof(sssr_reg_info_v1_t));
-				break;
+				case SSSR_REG_INFO_VER_6 :
+					err = dhd_read_file(filepath_sssr,
+						(char*)(&dhd->sssr_reg_info->rev6),
+						sizeof(sssr_reg_info_v6_t));
+					break;
+				case SSSR_REG_INFO_VER_5 :
+					err = dhd_read_file(filepath_sssr,
+						(char*)(&dhd->sssr_reg_info->rev5),
+						sizeof(sssr_reg_info_v5_t));
+					break;
+				case SSSR_REG_INFO_VER_4 :
+					err = dhd_read_file(filepath_sssr,
+						(char*)(&dhd->sssr_reg_info->rev4),
+						sizeof(sssr_reg_info_v4_t));
+					break;
+				case SSSR_REG_INFO_VER_3 :
+					err = dhd_read_file(filepath_sssr,
+						(char*)(&dhd->sssr_reg_info->rev3),
+						sizeof(sssr_reg_info_v3_t));
+					break;
+				case SSSR_REG_INFO_VER_2 :
+					err = dhd_read_file(filepath_sssr,
+						(char*)(&dhd->sssr_reg_info->rev2),
+						sizeof(sssr_reg_info_v2_t));
+					break;
+				case SSSR_REG_INFO_VER_1 :
+					err = dhd_read_file(filepath_sssr,
+						(char*)(&dhd->sssr_reg_info->rev1),
+						sizeof(sssr_reg_info_v1_t));
+					break;
 			}
 			if (err < 0) {
 				DHD_ERROR(("%s: dhd_get_sssr_reg_info failed and there"
@@ -3359,74 +3344,74 @@ dhd_sssr_dump_init(dhd_pub_t *dhd, bool fis_dump)
 	num_d11cores = dhd_d11_slices_num_get(dhd);
 	/* Validate structure version and length */
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-		if (dhd->sssr_reg_info->rev6.length != sizeof(sssr_reg_info_v6_t)) {
-			DHD_ERROR(("%s: dhd->sssr_reg_info->rev6.length (%d : %d)"
-				 "mismatch on rev6\n", __FUNCTION__,
-				 (int)dhd->sssr_reg_info->rev6.length,
-				 (int)sizeof(sssr_reg_info_v6_t)));
-			return BCME_ERROR;
-		}
-		break;
-	case SSSR_REG_INFO_VER_5:
-		if ((dhd->sssr_reg_info->rev5.length != sizeof(sssr_reg_info_v5_t)) &&
-		(dhd->sssr_reg_info->rev5.length <
-		OFFSETOF(sssr_reg_info_v5_t, srcb_mem_info))) {
-			DHD_ERROR(("%s: dhd->sssr_reg_info->rev5.length (%d : %d)"
-				 "mismatch on rev5\n", __FUNCTION__,
-				 (int)dhd->sssr_reg_info->rev5.length,
-				 (int)sizeof(sssr_reg_info_v5_t)));
-			return BCME_ERROR;
-		}
-		break;
-	case SSSR_REG_INFO_VER_4:
-		if (dhd->sssr_reg_info->rev4.length != sizeof(sssr_reg_info_v4_t)) {
-			DHD_ERROR(("%s: dhd->sssr_reg_info->rev4.length (%d : %d)"
-				 "mismatch on rev4\n", __FUNCTION__,
-				 (int)dhd->sssr_reg_info->rev4.length,
-				 (int)sizeof(sssr_reg_info_v4_t)));
-			return BCME_ERROR;
-		}
-		break;
-	case SSSR_REG_INFO_VER_3:
-		if (dhd->sssr_reg_info->rev3.length != sizeof(sssr_reg_info_v3_t)) {
-			DHD_ERROR(("%s: dhd->sssr_reg_info->rev3.length (%d : %d)"
-				 "mismatch on rev3\n", __FUNCTION__,
-				 (int)dhd->sssr_reg_info->rev3.length,
-				 (int)sizeof(sssr_reg_info_v3_t)));
-			return BCME_ERROR;
-		}
-		break;
-	case SSSR_REG_INFO_VER_2:
-		if (dhd->sssr_reg_info->rev2.length != sizeof(sssr_reg_info_v2_t)) {
-			DHD_ERROR(("%s: dhd->sssr_reg_info->rev2.length (%d : %d)"
-				 "mismatch on rev2\n", __FUNCTION__,
-				 (int)dhd->sssr_reg_info->rev2.length,
-				 (int)sizeof(sssr_reg_info_v2_t)));
-			return BCME_ERROR;
-		}
-		break;
-	case SSSR_REG_INFO_VER_1:
-		if (dhd->sssr_reg_info->rev1.length != sizeof(sssr_reg_info_v1_t)) {
-			DHD_ERROR(("%s: dhd->sssr_reg_info->rev1.length (%d : %d)"
-				 "mismatch on rev1\n", __FUNCTION__,
-				 (int)dhd->sssr_reg_info->rev1.length,
-				 (int)sizeof(sssr_reg_info_v1_t)));
-			return BCME_ERROR;
-		}
-		break;
-	case SSSR_REG_INFO_VER_0:
-		if (dhd->sssr_reg_info->rev0.length != sizeof(sssr_reg_info_v0_t)) {
-			DHD_ERROR(("%s: dhd->sssr_reg_info->rev0.length (%d : %d)"
-				 "mismatch on rev0\n", __FUNCTION__,
-				 (int)dhd->sssr_reg_info->rev0.length,
-				 (int)sizeof(sssr_reg_info_v0_t)));
-			return BCME_ERROR;
-		}
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver\n"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_6 :
+			if (dhd->sssr_reg_info->rev6.length != sizeof(sssr_reg_info_v6_t)) {
+				DHD_ERROR(("%s: dhd->sssr_reg_info->rev6.length (%d : %d)"
+					 "mismatch on rev6\n", __FUNCTION__,
+					 (int)dhd->sssr_reg_info->rev6.length,
+					 (int)sizeof(sssr_reg_info_v6_t)));
+				return BCME_ERROR;
+			}
+			break;
+		case SSSR_REG_INFO_VER_5 :
+			if ((dhd->sssr_reg_info->rev5.length != sizeof(sssr_reg_info_v5_t)) &&
+			(dhd->sssr_reg_info->rev5.length <
+			OFFSETOF(sssr_reg_info_v5_t, srcb_mem_info))) {
+				DHD_ERROR(("%s: dhd->sssr_reg_info->rev5.length (%d : %d)"
+					 "mismatch on rev5\n", __FUNCTION__,
+					 (int)dhd->sssr_reg_info->rev5.length,
+					 (int)sizeof(sssr_reg_info_v5_t)));
+				return BCME_ERROR;
+			}
+			break;
+		case SSSR_REG_INFO_VER_4 :
+			if (dhd->sssr_reg_info->rev4.length != sizeof(sssr_reg_info_v4_t)) {
+				DHD_ERROR(("%s: dhd->sssr_reg_info->rev4.length (%d : %d)"
+					 "mismatch on rev4\n", __FUNCTION__,
+					 (int)dhd->sssr_reg_info->rev4.length,
+					 (int)sizeof(sssr_reg_info_v4_t)));
+				return BCME_ERROR;
+			}
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			if (dhd->sssr_reg_info->rev3.length != sizeof(sssr_reg_info_v3_t)) {
+				DHD_ERROR(("%s: dhd->sssr_reg_info->rev3.length (%d : %d)"
+					 "mismatch on rev3\n", __FUNCTION__,
+					 (int)dhd->sssr_reg_info->rev3.length,
+					 (int)sizeof(sssr_reg_info_v3_t)));
+				return BCME_ERROR;
+			}
+			break;
+		case SSSR_REG_INFO_VER_2 :
+			if (dhd->sssr_reg_info->rev2.length != sizeof(sssr_reg_info_v2_t)) {
+				DHD_ERROR(("%s: dhd->sssr_reg_info->rev2.length (%d : %d)"
+					 "mismatch on rev2\n", __FUNCTION__,
+					 (int)dhd->sssr_reg_info->rev2.length,
+					 (int)sizeof(sssr_reg_info_v2_t)));
+				return BCME_ERROR;
+			}
+			break;
+		case SSSR_REG_INFO_VER_1 :
+			if (dhd->sssr_reg_info->rev1.length != sizeof(sssr_reg_info_v1_t)) {
+				DHD_ERROR(("%s: dhd->sssr_reg_info->rev1.length (%d : %d)"
+					 "mismatch on rev1\n", __FUNCTION__,
+					 (int)dhd->sssr_reg_info->rev1.length,
+					 (int)sizeof(sssr_reg_info_v1_t)));
+				return BCME_ERROR;
+			}
+			break;
+		case SSSR_REG_INFO_VER_0 :
+			if (dhd->sssr_reg_info->rev0.length != sizeof(sssr_reg_info_v0_t)) {
+				DHD_ERROR(("%s: dhd->sssr_reg_info->rev0.length (%d : %d)"
+					 "mismatch on rev0\n", __FUNCTION__,
+					 (int)dhd->sssr_reg_info->rev0.length,
+					 (int)sizeof(sssr_reg_info_v0_t)));
+				return BCME_ERROR;
+			}
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver\n"));
+			return BCME_UNSUPPORTED;
 	}
 
 	/* validate fifo size */
@@ -3463,44 +3448,44 @@ dhd_sssr_dump_init(dhd_pub_t *dhd, bool fis_dump)
 		sr_size = 0;
 
 		switch (dhd->sssr_reg_info->rev2.version) {
-		case SSSR_REG_INFO_VER_6:
-			/* intentional fall through */
-		case SSSR_REG_INFO_VER_5:
-			if (dhd->sssr_reg_info->rev5.mac_regs[i].sr_size) {
-				alloc_sssr = TRUE;
-				sr_size = dhd->sssr_reg_info->rev5.mac_regs[i].sr_size;
-				sr_size += sizeof(sssr_header_t);
-			}
-			break;
-		case SSSR_REG_INFO_VER_4:
-			if (dhd->sssr_reg_info->rev4.mac_regs[i].sr_size) {
-				alloc_sssr = TRUE;
-				sr_size = dhd->sssr_reg_info->rev4.mac_regs[i].sr_size;
-			}
-			break;
-		case SSSR_REG_INFO_VER_3:
-			/* intentional fall through */
-		case SSSR_REG_INFO_VER_2:
-			if (dhd->sssr_reg_info->rev2.mac_regs[i].sr_size) {
-				alloc_sssr = TRUE;
-				sr_size = dhd->sssr_reg_info->rev2.mac_regs[i].sr_size;
-			}
-			break;
-		case SSSR_REG_INFO_VER_1:
-			if (dhd->sssr_reg_info->rev1.mac_regs[i].sr_size) {
-				alloc_sssr = TRUE;
-				sr_size = dhd->sssr_reg_info->rev1.mac_regs[i].sr_size;
-			}
-			break;
-		case SSSR_REG_INFO_VER_0:
-			if (dhd->sssr_reg_info->rev0.mac_regs[i].sr_size) {
-				alloc_sssr = TRUE;
-				sr_size = dhd->sssr_reg_info->rev0.mac_regs[i].sr_size;
-			}
-			break;
-		default:
-			DHD_ERROR(("invalid sssr_reg_ver"));
-			return BCME_UNSUPPORTED;
+			case SSSR_REG_INFO_VER_6 :
+				/* intentional fall through */
+			case SSSR_REG_INFO_VER_5 :
+				if (dhd->sssr_reg_info->rev5.mac_regs[i].sr_size) {
+					alloc_sssr = TRUE;
+					sr_size = dhd->sssr_reg_info->rev5.mac_regs[i].sr_size;
+					sr_size += sizeof(sssr_header_t);
+				}
+				break;
+			case SSSR_REG_INFO_VER_4 :
+				if (dhd->sssr_reg_info->rev4.mac_regs[i].sr_size) {
+					alloc_sssr = TRUE;
+					sr_size = dhd->sssr_reg_info->rev4.mac_regs[i].sr_size;
+				}
+				break;
+			case SSSR_REG_INFO_VER_3 :
+				/* intentional fall through */
+			case SSSR_REG_INFO_VER_2 :
+				if (dhd->sssr_reg_info->rev2.mac_regs[i].sr_size) {
+					alloc_sssr = TRUE;
+					sr_size = dhd->sssr_reg_info->rev2.mac_regs[i].sr_size;
+				}
+				break;
+			case SSSR_REG_INFO_VER_1 :
+				if (dhd->sssr_reg_info->rev1.mac_regs[i].sr_size) {
+					alloc_sssr = TRUE;
+					sr_size = dhd->sssr_reg_info->rev1.mac_regs[i].sr_size;
+				}
+				break;
+			case SSSR_REG_INFO_VER_0 :
+				if (dhd->sssr_reg_info->rev0.mac_regs[i].sr_size) {
+					alloc_sssr = TRUE;
+					sr_size = dhd->sssr_reg_info->rev0.mac_regs[i].sr_size;
+				}
+				break;
+			default :
+				DHD_ERROR(("invalid sssr_reg_ver"));
+				return BCME_UNSUPPORTED;
 		}
 
 		if (alloc_sssr) {
@@ -3518,66 +3503,66 @@ dhd_sssr_dump_init(dhd_pub_t *dhd, bool fis_dump)
 	alloc_sssr = FALSE;
 	sr_size = 0;
 	switch (dhd->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-		if ((dhd->sssr_reg_info->rev6.length >
-		 OFFSETOF(sssr_reg_info_v6_t, sssr_all_mem_info)) &&
-		 dhd->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_addr) {
-			alloc_sssr = TRUE;
-			sr_size =
-				dhd->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_size;
-			sr_size += sizeof(sssr_header_t);
-		}
-		break;
-	case SSSR_REG_INFO_VER_5:
-		if ((dhd->sssr_reg_info->rev5.length >
-		 OFFSETOF(sssr_reg_info_v5_t, sssr_all_mem_info)) &&
-		 dhd->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_addr) {
-			alloc_sssr = TRUE;
-			sr_size =
-				dhd->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_size;
-			sr_size += sizeof(sssr_header_t);
-		}
-		break;
-	case SSSR_REG_INFO_VER_4:
-		/* for v4 need to use sssr_all_mem_info instead of dig_mem_info */
-		if ((dhd->sssr_reg_info->rev4.length >
-		 OFFSETOF(sssr_reg_info_v4_t, sssr_all_mem_info)) &&
-		 dhd->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_addr) {
-			alloc_sssr = TRUE;
-			sr_size =
-				dhd->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_size;
-		}
-		break;
-	case SSSR_REG_INFO_VER_3:
-		/* intentional fall through */
-	case SSSR_REG_INFO_VER_2:
-		if ((dhd->sssr_reg_info->rev2.length >
-		 OFFSETOF(sssr_reg_info_v2_t, dig_mem_info)) &&
-		 dhd->sssr_reg_info->rev2.dig_mem_info.dig_sr_addr) {
-			alloc_sssr = TRUE;
-			sr_size = dhd->sssr_reg_info->rev2.dig_mem_info.dig_sr_size;
-		}
-		break;
-	case SSSR_REG_INFO_VER_1:
-		if (dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size) {
-			alloc_sssr = TRUE;
-			sr_size = dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size;
-		} else if ((dhd->sssr_reg_info->rev1.length > OFFSETOF(sssr_reg_info_v1_t,
-			dig_mem_info)) && dhd->sssr_reg_info->rev1.
-			dig_mem_info.dig_sr_addr) {
-			alloc_sssr = TRUE;
-			sr_size = dhd->sssr_reg_info->rev1.dig_mem_info.dig_sr_size;
-		}
-		break;
-	case SSSR_REG_INFO_VER_0:
-		if (dhd->sssr_reg_info->rev0.vasip_regs.vasip_sr_size) {
-			alloc_sssr = TRUE;
-			sr_size = dhd->sssr_reg_info->rev0.vasip_regs.vasip_sr_size;
-		}
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_6 :
+			if ((dhd->sssr_reg_info->rev6.length >
+			 OFFSETOF(sssr_reg_info_v6_t, sssr_all_mem_info)) &&
+			 dhd->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_addr) {
+				alloc_sssr = TRUE;
+				sr_size =
+					dhd->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_size;
+				sr_size += sizeof(sssr_header_t);
+			}
+			break;
+		case SSSR_REG_INFO_VER_5 :
+			if ((dhd->sssr_reg_info->rev5.length >
+			 OFFSETOF(sssr_reg_info_v5_t, sssr_all_mem_info)) &&
+			 dhd->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_addr) {
+				alloc_sssr = TRUE;
+				sr_size =
+					dhd->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_size;
+				sr_size += sizeof(sssr_header_t);
+			}
+			break;
+		case SSSR_REG_INFO_VER_4 :
+			/* for v4 need to use sssr_all_mem_info instead of dig_mem_info */
+			if ((dhd->sssr_reg_info->rev4.length >
+			 OFFSETOF(sssr_reg_info_v4_t, sssr_all_mem_info)) &&
+			 dhd->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_addr) {
+				alloc_sssr = TRUE;
+				sr_size =
+					dhd->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_size;
+			}
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			/* intentional fall through */
+		case SSSR_REG_INFO_VER_2 :
+			if ((dhd->sssr_reg_info->rev2.length >
+			 OFFSETOF(sssr_reg_info_v2_t, dig_mem_info)) &&
+			 dhd->sssr_reg_info->rev2.dig_mem_info.dig_sr_addr) {
+				alloc_sssr = TRUE;
+				sr_size = dhd->sssr_reg_info->rev2.dig_mem_info.dig_sr_size;
+			}
+			break;
+		case SSSR_REG_INFO_VER_1 :
+			if (dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size) {
+				alloc_sssr = TRUE;
+				sr_size = dhd->sssr_reg_info->rev1.vasip_regs.vasip_sr_size;
+			} else if ((dhd->sssr_reg_info->rev1.length > OFFSETOF(sssr_reg_info_v1_t,
+				dig_mem_info)) && dhd->sssr_reg_info->rev1.
+				dig_mem_info.dig_sr_addr) {
+				alloc_sssr = TRUE;
+				sr_size = dhd->sssr_reg_info->rev1.dig_mem_info.dig_sr_size;
+			}
+			break;
+		case SSSR_REG_INFO_VER_0 :
+			if (dhd->sssr_reg_info->rev0.vasip_regs.vasip_sr_size) {
+				alloc_sssr = TRUE;
+				sr_size = dhd->sssr_reg_info->rev0.vasip_regs.vasip_sr_size;
+			}
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 
 	if (alloc_sssr) {
@@ -3755,9 +3740,9 @@ int dhd_append_sssr_tlv(uint8 *buf_dst, int type_idx, int buf_remain)
 		return 0;
 	}
 
-	type = (uint32 *)buf_dst;
+	type = (uint32*)buf_dst;
 	*type = type_val;
-	length = (uint32 *)(buf_dst + sizeof(*type));
+	length = (uint32*)(buf_dst + sizeof(*type));
 	*length = length_val;
 
 	buf_dst += TLV_TYPE_LENGTH_SIZE;
@@ -3785,57 +3770,57 @@ dhd_sssr_dig_buf_size(dhd_pub_t *dhdp)
 
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	switch (dhdp->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-		if ((dhdp->sssr_reg_info->rev6.length >
-		 OFFSETOF(sssr_reg_info_v6_t, sssr_all_mem_info)) &&
-		 dhdp->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_size) {
-			dig_buf_size =
-			dhdp->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_size;
-		}
-		break;
-	case SSSR_REG_INFO_VER_5:
-		if ((dhdp->sssr_reg_info->rev5.length >
-		 OFFSETOF(sssr_reg_info_v5_t, sssr_all_mem_info)) &&
-		 dhdp->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_size) {
-			dig_buf_size =
-			dhdp->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_size;
-		}
-		break;
-	case SSSR_REG_INFO_VER_4:
-		/* for v4 need to use sssr_all_mem_info instead of dig_mem_info */
-		if ((dhdp->sssr_reg_info->rev4.length >
-		 OFFSETOF(sssr_reg_info_v4_t, sssr_all_mem_info)) &&
-		 dhdp->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_size) {
-			dig_buf_size =
-			dhdp->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_size;
-		}
-		break;
-	case SSSR_REG_INFO_VER_3:
-		/* intentional fall through */
-	case SSSR_REG_INFO_VER_2:
-		if ((dhdp->sssr_reg_info->rev2.length >
-		 OFFSETOF(sssr_reg_info_v2_t, dig_mem_info)) &&
-		 dhdp->sssr_reg_info->rev2.dig_mem_info.dig_sr_size) {
-			dig_buf_size = dhdp->sssr_reg_info->rev2.dig_mem_info.dig_sr_size;
-		}
-		break;
-	case SSSR_REG_INFO_VER_1:
-		if (dhdp->sssr_reg_info->rev1.vasip_regs.vasip_sr_size) {
-			dig_buf_size = dhdp->sssr_reg_info->rev1.vasip_regs.vasip_sr_size;
-		} else if ((dhdp->sssr_reg_info->rev1.length >
-		 OFFSETOF(sssr_reg_info_v1_t, dig_mem_info)) &&
-		 dhdp->sssr_reg_info->rev1.dig_mem_info.dig_sr_size) {
-			dig_buf_size = dhdp->sssr_reg_info->rev1.dig_mem_info.dig_sr_size;
-		}
-		break;
-	case SSSR_REG_INFO_VER_0:
-		if (dhdp->sssr_reg_info->rev0.vasip_regs.vasip_sr_size) {
-			dig_buf_size = dhdp->sssr_reg_info->rev0.vasip_regs.vasip_sr_size;
-		}
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_6:
+			if ((dhdp->sssr_reg_info->rev6.length >
+			 OFFSETOF(sssr_reg_info_v6_t, sssr_all_mem_info)) &&
+			 dhdp->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_size) {
+				dig_buf_size =
+				dhdp->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_size;
+			}
+			break;
+		case SSSR_REG_INFO_VER_5:
+			if ((dhdp->sssr_reg_info->rev5.length >
+			 OFFSETOF(sssr_reg_info_v5_t, sssr_all_mem_info)) &&
+			 dhdp->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_size) {
+				dig_buf_size =
+				dhdp->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_size;
+			}
+			break;
+		case SSSR_REG_INFO_VER_4:
+			/* for v4 need to use sssr_all_mem_info instead of dig_mem_info */
+			if ((dhdp->sssr_reg_info->rev4.length >
+			 OFFSETOF(sssr_reg_info_v4_t, sssr_all_mem_info)) &&
+			 dhdp->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_size) {
+				dig_buf_size =
+				dhdp->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_size;
+			}
+			break;
+		case SSSR_REG_INFO_VER_3:
+			/* intentional fall through */
+		case SSSR_REG_INFO_VER_2 :
+			if ((dhdp->sssr_reg_info->rev2.length >
+			 OFFSETOF(sssr_reg_info_v2_t, dig_mem_info)) &&
+			 dhdp->sssr_reg_info->rev2.dig_mem_info.dig_sr_size) {
+				dig_buf_size = dhdp->sssr_reg_info->rev2.dig_mem_info.dig_sr_size;
+			}
+			break;
+		case SSSR_REG_INFO_VER_1 :
+			if (dhdp->sssr_reg_info->rev1.vasip_regs.vasip_sr_size) {
+				dig_buf_size = dhdp->sssr_reg_info->rev1.vasip_regs.vasip_sr_size;
+			} else if ((dhdp->sssr_reg_info->rev1.length >
+			 OFFSETOF(sssr_reg_info_v1_t, dig_mem_info)) &&
+			 dhdp->sssr_reg_info->rev1.dig_mem_info.dig_sr_size) {
+				dig_buf_size = dhdp->sssr_reg_info->rev1.dig_mem_info.dig_sr_size;
+			}
+			break;
+		case SSSR_REG_INFO_VER_0 :
+			if (dhdp->sssr_reg_info->rev0.vasip_regs.vasip_sr_size) {
+				dig_buf_size = dhdp->sssr_reg_info->rev0.vasip_regs.vasip_sr_size;
+			}
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 
 	return dig_buf_size;
@@ -3848,57 +3833,57 @@ dhd_sssr_dig_buf_addr(dhd_pub_t *dhdp)
 
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	switch (dhdp->sssr_reg_info->rev2.version) {
-	case SSSR_REG_INFO_VER_6:
-		if ((dhdp->sssr_reg_info->rev6.length >
-		 OFFSETOF(sssr_reg_info_v6_t, sssr_all_mem_info)) &&
-		 dhdp->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_size) {
-			dig_buf_addr =
-			dhdp->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_addr;
-		}
-		break;
-	case SSSR_REG_INFO_VER_5:
-		if ((dhdp->sssr_reg_info->rev5.length >
-		 OFFSETOF(sssr_reg_info_v5_t, sssr_all_mem_info)) &&
-		 dhdp->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_size) {
-			dig_buf_addr =
-			dhdp->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_addr;
-		}
-		break;
-	case SSSR_REG_INFO_VER_4:
-		/* for v4 need to use sssr_all_mem_info instead of dig_mem_info */
-		if ((dhdp->sssr_reg_info->rev4.length >
-		 OFFSETOF(sssr_reg_info_v4_t, sssr_all_mem_info)) &&
-		 dhdp->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_size) {
-			dig_buf_addr =
-			dhdp->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_addr;
-		}
-		break;
-	case SSSR_REG_INFO_VER_3:
-		/* intentional fall through */
-	case SSSR_REG_INFO_VER_2:
-		if ((dhdp->sssr_reg_info->rev2.length >
-		 OFFSETOF(sssr_reg_info_v2_t, dig_mem_info)) &&
-		 dhdp->sssr_reg_info->rev2.dig_mem_info.dig_sr_size) {
-			dig_buf_addr = dhdp->sssr_reg_info->rev2.dig_mem_info.dig_sr_addr;
-		}
-		break;
-	case SSSR_REG_INFO_VER_1:
-		if (dhdp->sssr_reg_info->rev1.vasip_regs.vasip_sr_size) {
-			dig_buf_addr = dhdp->sssr_reg_info->rev1.vasip_regs.vasip_sr_addr;
-		} else if ((dhdp->sssr_reg_info->rev1.length >
-		 OFFSETOF(sssr_reg_info_v1_t, dig_mem_info)) &&
-		 dhdp->sssr_reg_info->rev1.dig_mem_info.dig_sr_size) {
-			dig_buf_addr = dhdp->sssr_reg_info->rev1.dig_mem_info.dig_sr_addr;
-		}
-		break;
-	case SSSR_REG_INFO_VER_0:
-		if (dhdp->sssr_reg_info->rev0.vasip_regs.vasip_sr_size) {
-			dig_buf_addr = dhdp->sssr_reg_info->rev0.vasip_regs.vasip_sr_addr;
-		}
-		break;
-	default:
-		DHD_ERROR(("invalid sssr_reg_ver"));
-		return BCME_UNSUPPORTED;
+		case SSSR_REG_INFO_VER_6 :
+			if ((dhdp->sssr_reg_info->rev6.length >
+			 OFFSETOF(sssr_reg_info_v6_t, sssr_all_mem_info)) &&
+			 dhdp->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_size) {
+				dig_buf_addr =
+				dhdp->sssr_reg_info->rev6.sssr_all_mem_info.sysmem_sssr_addr;
+			}
+			break;
+		case SSSR_REG_INFO_VER_5 :
+			if ((dhdp->sssr_reg_info->rev5.length >
+			 OFFSETOF(sssr_reg_info_v5_t, sssr_all_mem_info)) &&
+			 dhdp->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_size) {
+				dig_buf_addr =
+				dhdp->sssr_reg_info->rev5.sssr_all_mem_info.sysmem_sssr_addr;
+			}
+			break;
+		case SSSR_REG_INFO_VER_4 :
+			/* for v4 need to use sssr_all_mem_info instead of dig_mem_info */
+			if ((dhdp->sssr_reg_info->rev4.length >
+			 OFFSETOF(sssr_reg_info_v4_t, sssr_all_mem_info)) &&
+			 dhdp->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_size) {
+				dig_buf_addr =
+				dhdp->sssr_reg_info->rev4.sssr_all_mem_info.sysmem_sssr_addr;
+			}
+			break;
+		case SSSR_REG_INFO_VER_3 :
+			/* intentional fall through */
+		case SSSR_REG_INFO_VER_2 :
+			if ((dhdp->sssr_reg_info->rev2.length >
+			 OFFSETOF(sssr_reg_info_v2_t, dig_mem_info)) &&
+			 dhdp->sssr_reg_info->rev2.dig_mem_info.dig_sr_size) {
+				dig_buf_addr = dhdp->sssr_reg_info->rev2.dig_mem_info.dig_sr_addr;
+			}
+			break;
+		case SSSR_REG_INFO_VER_1 :
+			if (dhdp->sssr_reg_info->rev1.vasip_regs.vasip_sr_size) {
+				dig_buf_addr = dhdp->sssr_reg_info->rev1.vasip_regs.vasip_sr_addr;
+			} else if ((dhdp->sssr_reg_info->rev1.length >
+			 OFFSETOF(sssr_reg_info_v1_t, dig_mem_info)) &&
+			 dhdp->sssr_reg_info->rev1.dig_mem_info.dig_sr_size) {
+				dig_buf_addr = dhdp->sssr_reg_info->rev1.dig_mem_info.dig_sr_addr;
+			}
+			break;
+		case SSSR_REG_INFO_VER_0 :
+			if (dhdp->sssr_reg_info->rev0.vasip_regs.vasip_sr_size) {
+				dig_buf_addr = dhdp->sssr_reg_info->rev0.vasip_regs.vasip_sr_addr;
+			}
+			break;
+		default :
+			DHD_ERROR(("invalid sssr_reg_ver"));
+			return BCME_UNSUPPORTED;
 	}
 
 	return dig_buf_addr;
@@ -3915,27 +3900,27 @@ dhd_sssr_mac_buf_size(dhd_pub_t *dhdp, uint8 core_idx)
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	if (core_idx < num_d11cores) {
 		switch (dhdp->sssr_reg_info->rev2.version) {
-		case SSSR_REG_INFO_VER_6:
-		case SSSR_REG_INFO_VER_5:
-			mac_buf_size = dhdp->sssr_reg_info->rev5.mac_regs[core_idx].sr_size;
-			break;
-		case SSSR_REG_INFO_VER_4:
-			mac_buf_size = dhdp->sssr_reg_info->rev4.mac_regs[core_idx].sr_size;
-			break;
-		case SSSR_REG_INFO_VER_3:
-			/* intentional fall through */
-		case SSSR_REG_INFO_VER_2:
-			mac_buf_size = dhdp->sssr_reg_info->rev2.mac_regs[core_idx].sr_size;
-			break;
-		case SSSR_REG_INFO_VER_1:
-			mac_buf_size = dhdp->sssr_reg_info->rev1.mac_regs[core_idx].sr_size;
-			break;
-		case SSSR_REG_INFO_VER_0:
-			mac_buf_size = dhdp->sssr_reg_info->rev0.mac_regs[core_idx].sr_size;
-			break;
-		default:
-			DHD_ERROR(("invalid sssr_reg_ver"));
-			return BCME_UNSUPPORTED;
+			case SSSR_REG_INFO_VER_6 :
+			case SSSR_REG_INFO_VER_5 :
+				mac_buf_size = dhdp->sssr_reg_info->rev5.mac_regs[core_idx].sr_size;
+				break;
+			case SSSR_REG_INFO_VER_4 :
+				mac_buf_size = dhdp->sssr_reg_info->rev4.mac_regs[core_idx].sr_size;
+				break;
+			case SSSR_REG_INFO_VER_3 :
+				/* intentional fall through */
+			case SSSR_REG_INFO_VER_2 :
+				mac_buf_size = dhdp->sssr_reg_info->rev2.mac_regs[core_idx].sr_size;
+				break;
+			case SSSR_REG_INFO_VER_1 :
+				mac_buf_size = dhdp->sssr_reg_info->rev1.mac_regs[core_idx].sr_size;
+				break;
+			case SSSR_REG_INFO_VER_0 :
+				mac_buf_size = dhdp->sssr_reg_info->rev0.mac_regs[core_idx].sr_size;
+				break;
+			default :
+				DHD_ERROR(("invalid sssr_reg_ver"));
+				return BCME_UNSUPPORTED;
 		}
 	}
 
@@ -3953,32 +3938,32 @@ dhd_sssr_mac_xmtaddress(dhd_pub_t *dhdp, uint8 core_idx)
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	if (core_idx < num_d11cores) {
 		switch (dhdp->sssr_reg_info->rev2.version) {
-		case SSSR_REG_INFO_VER_6:
-		case SSSR_REG_INFO_VER_5:
-			xmtaddress = dhdp->sssr_reg_info->rev5.
-				mac_regs[core_idx].base_regs.xmtaddress;
-			break;
-		case SSSR_REG_INFO_VER_4:
-			xmtaddress = dhdp->sssr_reg_info->rev4.
-				mac_regs[core_idx].base_regs.xmtaddress;
-			break;
-		case SSSR_REG_INFO_VER_3:
-			/* intentional fall through */
-		case SSSR_REG_INFO_VER_2:
-			xmtaddress = dhdp->sssr_reg_info->rev2.
-				mac_regs[core_idx].base_regs.xmtaddress;
-			break;
-		case SSSR_REG_INFO_VER_1:
-			xmtaddress = dhdp->sssr_reg_info->rev1.
-				mac_regs[core_idx].base_regs.xmtaddress;
-			break;
-		case SSSR_REG_INFO_VER_0:
-			xmtaddress = dhdp->sssr_reg_info->rev0.
-				mac_regs[core_idx].base_regs.xmtaddress;
-			break;
-		default:
-			DHD_ERROR(("invalid sssr_reg_ver"));
-			return BCME_UNSUPPORTED;
+			case SSSR_REG_INFO_VER_6 :
+			case SSSR_REG_INFO_VER_5 :
+				xmtaddress = dhdp->sssr_reg_info->rev5.
+					mac_regs[core_idx].base_regs.xmtaddress;
+				break;
+			case SSSR_REG_INFO_VER_4 :
+				xmtaddress = dhdp->sssr_reg_info->rev4.
+					mac_regs[core_idx].base_regs.xmtaddress;
+				break;
+			case SSSR_REG_INFO_VER_3 :
+				/* intentional fall through */
+			case SSSR_REG_INFO_VER_2 :
+				xmtaddress = dhdp->sssr_reg_info->rev2.
+					mac_regs[core_idx].base_regs.xmtaddress;
+				break;
+			case SSSR_REG_INFO_VER_1 :
+				xmtaddress = dhdp->sssr_reg_info->rev1.
+					mac_regs[core_idx].base_regs.xmtaddress;
+				break;
+			case SSSR_REG_INFO_VER_0 :
+				xmtaddress = dhdp->sssr_reg_info->rev0.
+					mac_regs[core_idx].base_regs.xmtaddress;
+				break;
+			default :
+				DHD_ERROR(("invalid sssr_reg_ver"));
+				return BCME_UNSUPPORTED;
 		}
 	}
 
@@ -3996,32 +3981,32 @@ dhd_sssr_mac_xmtdata(dhd_pub_t *dhdp, uint8 core_idx)
 	/* SSSR register information structure v0 and v1 shares most except dig_mem */
 	if (core_idx < num_d11cores) {
 		switch (dhdp->sssr_reg_info->rev2.version) {
-		case SSSR_REG_INFO_VER_6:
-		case SSSR_REG_INFO_VER_5:
-			xmtdata = dhdp->sssr_reg_info->rev5.
-				mac_regs[core_idx].base_regs.xmtdata;
-			break;
-		case SSSR_REG_INFO_VER_4:
-			xmtdata = dhdp->sssr_reg_info->rev4.
-				mac_regs[core_idx].base_regs.xmtdata;
-			break;
-		case SSSR_REG_INFO_VER_3:
-			/* intentional fall through */
-		case SSSR_REG_INFO_VER_2:
-			xmtdata = dhdp->sssr_reg_info->rev2.
-				mac_regs[core_idx].base_regs.xmtdata;
-			break;
-		case SSSR_REG_INFO_VER_1:
-			xmtdata = dhdp->sssr_reg_info->rev1.
-				mac_regs[core_idx].base_regs.xmtdata;
-			break;
-		case SSSR_REG_INFO_VER_0:
-			xmtdata = dhdp->sssr_reg_info->rev0.
-				mac_regs[core_idx].base_regs.xmtdata;
-			break;
-		default:
-			DHD_ERROR(("invalid sssr_reg_ver"));
-			return BCME_UNSUPPORTED;
+			case SSSR_REG_INFO_VER_6 :
+			case SSSR_REG_INFO_VER_5 :
+				xmtdata = dhdp->sssr_reg_info->rev5.
+					mac_regs[core_idx].base_regs.xmtdata;
+				break;
+			case SSSR_REG_INFO_VER_4 :
+				xmtdata = dhdp->sssr_reg_info->rev4.
+					mac_regs[core_idx].base_regs.xmtdata;
+				break;
+			case SSSR_REG_INFO_VER_3 :
+				/* intentional fall through */
+			case SSSR_REG_INFO_VER_2 :
+				xmtdata = dhdp->sssr_reg_info->rev2.
+					mac_regs[core_idx].base_regs.xmtdata;
+				break;
+			case SSSR_REG_INFO_VER_1 :
+				xmtdata = dhdp->sssr_reg_info->rev1.
+					mac_regs[core_idx].base_regs.xmtdata;
+				break;
+			case SSSR_REG_INFO_VER_0 :
+				xmtdata = dhdp->sssr_reg_info->rev0.
+					mac_regs[core_idx].base_regs.xmtdata;
+				break;
+			default :
+				DHD_ERROR(("invalid sssr_reg_ver"));
+				return BCME_UNSUPPORTED;
 		}
 	}
 

@@ -93,7 +93,7 @@ typedef volatile struct sysmemregs {
 	sysmem_##regname##__##regfield##_SHIFT
 
 #define SYSMEM_REG_ADDR(regbase, regname) \
-	((volatile uint32 *)((uintptr)(regbase) + SYSMEM_REG_OFF(regname)))
+	(volatile uint32 *)((uintptr)(regbase) + SYSMEM_REG_OFF(regname))
 
 #if defined(VLSI_SYSMEM_ALL_REGS_H)
 /* FIXME: workaround missing sysmem registers */

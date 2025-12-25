@@ -38,7 +38,6 @@ rio-objs	:= rio-core.o \
 		   rio-debug.o \
 		   rio-devfreq.o \
 		   rio-device-group.o \
-		   rio-dt-mailbox-adapter.o \
 		   rio-external.o \
 		   rio-firmware.o \
 		   rio-fs.o \
@@ -59,7 +58,6 @@ CFLAGS_rio-core.o := -DCONFIG_RIO=1
 CFLAGS_rio-debug.o := -DCONFIG_RIO=1
 CFLAGS_rio-devfreq.o := -DCONFIG_RIO=1
 CFLAGS_rio-device-group.o := -DCONFIG_RIO=1
-CFLAGS_rio-dt-mailbox-adapter.o := -DCONFIG_RIO=1
 CFLAGS_rio-external.o := -DCONFIG_RIO=1
 CFLAGS_rio-firmware.o := -DCONFIG_RIO=1
 CFLAGS_rio-fs.o := -DCONFIG_RIO=1

@@ -155,13 +155,10 @@ int gcip_pm_get_if_powered(struct gcip_pm *pm, bool blocking)
 	if (!pm->count)
 		return ret;
 
-	if (blocking) {
-		ret = mutex_lock_interruptible(&pm->lock);
-		if (ret)
-			return ret;
-	} else if (!mutex_trylock(&pm->lock)) {
+	if (blocking)
+		mutex_lock(&pm->lock);
+	else if (!mutex_trylock(&pm->lock))
 		return ret;
-	}
 
 	if (pm->count)
 		ret = gcip_pm_get_locked(pm, 0);
@@ -175,9 +172,7 @@ int gcip_pm_get(struct gcip_pm *pm)
 {
 	int ret;
 
-	ret = mutex_lock_interruptible(&pm->lock);
-	if (ret)
-		return ret;
+	mutex_lock(&pm->lock);
 	ret = gcip_pm_get_locked(pm, 0);
 	mutex_unlock(&pm->lock);
 
@@ -188,9 +183,7 @@ int gcip_pm_get_flags(struct gcip_pm *pm, enum gcip_pm_flags flags)
 {
 	int ret;
 
-	ret = mutex_lock_interruptible(&pm->lock);
-	if (ret)
-		return ret;
+	mutex_lock(&pm->lock);
 	ret = gcip_pm_get_locked(pm, flags);
 	mutex_unlock(&pm->lock);
 

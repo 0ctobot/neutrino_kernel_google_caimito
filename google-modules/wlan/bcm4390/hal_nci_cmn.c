@@ -125,34 +125,34 @@ BCMPOSTTRAPFN(nci_error_helper)(void *osh, void *wrapper, bool is_master,
 	error_cont->wrapper_addr = wrapper_daddr;
 
 	switch (error_sts & IDM_ERRSTATUS_ERROR_CODE_MASK) {
-	case IDM_ERRSTATUS_ILLEGAL_ADDR_DECODE:
-		ret |= AXI_WRAP_STS_DECODE_ERR;
-		err_type = NCI_TYPE_STR_DECODE_ERR;
-		break;
-	case IDM_ERRSTATUS_SLAVE_ERROR_RESP:
-		ret |= AXI_WRAP_STS_SLAVE_ERR;
-		err_type = NCI_TYPE_STR_SLAVE_ERR;
-		break;
-	case IDM_ERRSTATUS_INTERNAL_TIMEOUT:
-		ret |= AXI_WRAP_STS_TIMEOUT;
-		internal_timeout = TRUE;
-		err_type = NCI_TYPE_STR_TIMEOUT;
-		break;
+		case IDM_ERRSTATUS_ILLEGAL_ADDR_DECODE:
+			ret |= AXI_WRAP_STS_DECODE_ERR;
+			err_type = NCI_TYPE_STR_DECODE_ERR;
+			break;
+		case IDM_ERRSTATUS_SLAVE_ERROR_RESP:
+			ret |= AXI_WRAP_STS_SLAVE_ERR;
+			err_type = NCI_TYPE_STR_SLAVE_ERR;
+			break;
+		case IDM_ERRSTATUS_INTERNAL_TIMEOUT:
+			ret |= AXI_WRAP_STS_TIMEOUT;
+			internal_timeout = TRUE;
+			err_type = NCI_TYPE_STR_TIMEOUT;
+			break;
 	}
 	switch (error_sts_ns & IDM_ERRSTATUS_ERROR_CODE_MASK) {
-	case IDM_ERRSTATUS_ILLEGAL_ADDR_DECODE:
-		ret |= (AXI_WRAP_STS_DECODE_ERR << AXI_WRAP_STS_NONSECURE_SHIFT);
-		err_type_ns = NCI_TYPE_STR_DECODE_ERR;
-		break;
-	case IDM_ERRSTATUS_SLAVE_ERROR_RESP:
-		ret |= (AXI_WRAP_STS_SLAVE_ERR << AXI_WRAP_STS_NONSECURE_SHIFT);
-		err_type_ns = NCI_TYPE_STR_SLAVE_ERR;
-		break;
-	case IDM_ERRSTATUS_INTERNAL_TIMEOUT:
-		ret |= (AXI_WRAP_STS_TIMEOUT << AXI_WRAP_STS_NONSECURE_SHIFT);
-		err_type_ns = NCI_TYPE_STR_TIMEOUT;
-		internal_timeout = TRUE;
-		break;
+		case IDM_ERRSTATUS_ILLEGAL_ADDR_DECODE:
+			ret |= (AXI_WRAP_STS_DECODE_ERR << AXI_WRAP_STS_NONSECURE_SHIFT);
+			err_type_ns = NCI_TYPE_STR_DECODE_ERR;
+			break;
+		case IDM_ERRSTATUS_SLAVE_ERROR_RESP:
+			ret |= (AXI_WRAP_STS_SLAVE_ERR << AXI_WRAP_STS_NONSECURE_SHIFT);
+			err_type_ns = NCI_TYPE_STR_SLAVE_ERR;
+			break;
+		case IDM_ERRSTATUS_INTERNAL_TIMEOUT:
+			ret |= (AXI_WRAP_STS_TIMEOUT << AXI_WRAP_STS_NONSECURE_SHIFT);
+			err_type_ns = NCI_TYPE_STR_TIMEOUT;
+			internal_timeout = TRUE;
+			break;
 	}
 
 	if (error_sts & IDM_ERRSTATUS_ERROR_VALID) {

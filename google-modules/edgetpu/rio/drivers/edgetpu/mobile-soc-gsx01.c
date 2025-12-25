@@ -755,7 +755,10 @@ int edgetpu_soc_pm_lpm_up(struct edgetpu_dev *etdev)
 	return 0;
 }
 
-/* Log TPU block power state for debugging. The block is not required to be powered up. */
+/*
+ * Log TPU block power state for debugging.  The block is not required to be powered up for
+ * this function on this SoC family.
+ */
 void edgetpu_soc_pm_dump_block_state(struct edgetpu_dev *etdev)
 {
 	if (IS_ENABLED(CONFIG_EDGETPU_TEST))
@@ -868,6 +871,32 @@ void edgetpu_soc_set_tpu_cpu_security(struct edgetpu_dev *etdev)
 
 int edgetpu_soc_setup_irqs(struct edgetpu_dev *etdev)
 {
-	/* gsX01 platforms only support mailbox interrupts, which are setup by mailbox code. */
+	struct platform_device *pdev = to_platform_device(etdev->dev);
+	int n = platform_irq_count(pdev);
+	int ret;
+	int i;
+
+	if (n < 0) {
+		dev_err(etdev->dev, "Error retrieving IRQ count: %d\n", n);
+		return n;
+	}
+
+	etdev->mailbox_irq = devm_kmalloc_array(etdev->dev, n, sizeof(*etdev->mailbox_irq),
+						GFP_KERNEL);
+	if (!etdev->mailbox_irq)
+		return -ENOMEM;
+
+	for (i = 0; i < n; i++) {
+		etdev->mailbox_irq[i] = platform_get_irq(pdev, i);
+		ret = devm_request_irq(etdev->dev, etdev->mailbox_irq[i],
+				       edgetpu_mailbox_irq_handler, IRQF_ONESHOT, etdev->dev_name,
+				       etdev);
+		if (ret) {
+			dev_err(etdev->dev, "%s: failed to request mailbox irq %d: %d\n",
+				etdev->dev_name, etdev->mailbox_irq[i], ret);
+			return ret;
+		}
+	}
+	etdev->n_mailbox_irq = n;
 	return 0;
 }

@@ -142,15 +142,6 @@ static enum power_supply_property gdbatt_fg_props[] = {
 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
 };
 
-static int gdbatt_get_weighted_value_by_cap(int base, int sec, int base_dcap, int sec_dcap)
-{
-	/* return avg if either design cap is unavailable */
-	if (!base_dcap || !sec_dcap)
-		return (base + sec) / 2;
-
-	return (base * base_dcap + sec * sec_dcap) / (base_dcap + sec_dcap);
-}
-
 static int gdbatt_get_temp(struct power_supply *fg_psy, int *temp)
 {
 	int err = 0;
@@ -794,7 +785,7 @@ static int gdbatt_gbms_get_property(struct power_supply *psy,
 {
 	struct dual_fg_drv *dual_fg_drv = (struct dual_fg_drv *)
 					power_supply_get_drvdata(psy);
-	int err = 0, data;
+	int err = 0;
 	union gbms_propval fg_1;
 	union gbms_propval fg_2;
 
@@ -833,22 +824,12 @@ static int gdbatt_gbms_get_property(struct power_supply *psy,
 	case GBMS_PROP_RESISTANCE_AVG:
 	case GBMS_PROP_BATTERY_AGE:
 	case GBMS_PROP_CHARGE_FULL_ESTIMATE:
+	case GBMS_PROP_CAPACITY_FADE_RATE:
+	case GBMS_PROP_CAPACITY_FADE_RATE_FCR:
 	case GBMS_PROP_BATT_ID:
 	case GBMS_PROP_AAFV_OFFSET:
 	case GBMS_PROP_NEED_CHARGE_TO_FULL:
 		val->prop.intval = fg_1.prop.intval;
-		break;
-	case GBMS_PROP_CAPACITY_FADE_RATE:
-		data = gdbatt_get_weighted_value_by_cap(get_fade_rate(fg_1.prop.intval),
-							fg_2.prop.intval,
-							dual_fg_drv->base_charge_full,
-							dual_fg_drv->sec_charge_full);
-		pr_debug("base_fr=%d, sec_fr=%d, base_dcap=%d, sec_dcap=%d, weighted_fr=%d\n",
-			 get_fade_rate(fg_1.prop.intval), fg_2.prop.intval,
-			 dual_fg_drv->base_charge_full, dual_fg_drv->sec_charge_full, data);
-
-		val->prop.intval = fg_1.prop.intval | fg_2.prop.intval << FADE_RATE_SEC_OFFSET |
-				   data << FADE_RATE_MIX_OFFSET;
 		break;
 	case GBMS_PROP_RECAL_FG:
 		/* TODO: under porting */
@@ -1104,14 +1085,13 @@ static void google_dual_batt_gauge_init_work(struct work_struct *work)
 			goto retry_init_work;
 		}
 
+		dual_fg_drv->first_fg_psy = first_fg_psy;
+
 		/* Don't use it if battery not present */
 		err = power_supply_get_property(first_fg_psy,
 						POWER_SUPPLY_PROP_PRESENT, &val);
 		if (err == -EAGAIN)
 			goto retry_init_work;
-
-		dual_fg_drv->first_fg_psy = first_fg_psy;
-
 		if (err == 0 && val.intval == 0) {
 			dev_info(dual_fg_drv->device, "First battery not PRESENT\n");
 			dual_fg_drv->first_fg_psy_name = NULL;
@@ -1127,14 +1107,13 @@ static void google_dual_batt_gauge_init_work(struct work_struct *work)
 			goto retry_init_work;
 		}
 
+		dual_fg_drv->second_fg_psy = second_fg_psy;
+
 		/* Don't use it if battery not present */
 		err = power_supply_get_property(second_fg_psy,
 						POWER_SUPPLY_PROP_PRESENT, &val);
 		if (err == -EAGAIN)
 			goto retry_init_work;
-
-		dual_fg_drv->second_fg_psy = second_fg_psy;
-
 		if (err == 0 && val.intval == 0) {
 			dev_info(dual_fg_drv->device, "Second battery not PRESENT\n");
 			dual_fg_drv->second_fg_psy_name = NULL;

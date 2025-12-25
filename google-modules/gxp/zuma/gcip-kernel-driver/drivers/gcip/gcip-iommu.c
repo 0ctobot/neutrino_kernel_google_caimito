@@ -2,7 +2,7 @@
 /*
  * Manages GCIP IOMMU domains and allocates/maps IOVAs.
  *
- * Copyright (C) 2023-2025 Google LLC
+ * Copyright (C) 2023 Google LLC
  */
 
 #include <linux/bitops.h>

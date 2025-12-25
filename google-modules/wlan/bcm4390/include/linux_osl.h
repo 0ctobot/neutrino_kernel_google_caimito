@@ -386,17 +386,7 @@ extern uint64 osl_sysuptime_ns(void);
 #define OSL_SYSUPTIME()		((uint32)jiffies_to_msecs(jiffies))
 #define OSL_SYSUPTIME_US()	osl_sysuptime_us()
 #define OSL_SYSUPTIME_NS()	osl_sysuptime_ns()
-#define OSL_TIME_MS()		OSL_SYSUPTIME()
-#define OSL_TIME_US()		OSL_SYSUPTIME_US()
 #define OSL_TIME_NS()		OSL_SYSUPTIME_NS()
-
-#define OSL_DURATION_NS_START()		OSL_TIME_NS()
-#define OSL_DURATION_NS(start)		((uint32)(OSL_TIME_NS() - (start)))
-#define OSL_DURATION_US_START()		OSL_TIME_US()
-#define OSL_DURATION_US(start)		((uint32)(OSL_TIME_US() - (start)))
-#define OSL_DURATION_MS_START()		OSL_TIME_MS()
-#define OSL_DURATION_MS(start)		((OSL_TIME_MS() - (start)))
-
 extern uint64 osl_localtime_ns(void);
 extern void osl_get_localtime(uint64 *sec, uint64 *usec);
 extern uint64 osl_systztime_us(void);
@@ -882,17 +872,6 @@ extern uint32 osl_rand(void);
 #define	DMA_MAP(osh, va, size, direction, p, dmah) \
 	osl_dma_map((osh), (va), (size), (direction), (p), (dmah))
 
-/*
- * The main router kernel has a separate namespace for some FS functions that
- * are exported in the mainline kernel. These functions include filp_open,
- * kernel_read, kernel_write, kern_path, and close_fd.  For compatibility we
- * import them using the NS below. If the NS doesn't exist, linux doesn't seem
- * to complain.
- */
-#ifdef MODULE_IMPORT_NS
-MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
-#endif
-
 #else /* ! BCMDRIVER */
 
 /* ASSERT */
@@ -1053,9 +1032,7 @@ typedef atomic_t osl_atomic_t;
 #define OSL_ATOMIC_DEC(osh, v)		atomic_dec(v)
 #define OSL_ATOMIC_DEC_RETURN(osh, v)	atomic_dec_return(v)
 #define OSL_ATOMIC_READ(osh, v)		atomic_read(v)
-#define OSL_ATOMIC_ADD(osh, x, v)	atomic_add(x, v)
-#define OSL_ATOMIC_ADD_RETURN(osh, v, x) atomic_add_return(x, v)
-#define OSL_ATOMIC_SUB_RETURN(osh, v, x) atomic_sub_return(x, v)
+#define OSL_ATOMIC_ADD(osh, v, x)	atomic_add(v, x)
 
 #ifndef atomic_set_mask
 #define OSL_ATOMIC_OR(osh, v, x)	atomic_or(x, v)
@@ -1086,9 +1063,7 @@ extern uint32 osl_get_fatal_logbuf_size(osl_t *osh);
 extern uchar *osl_get_fatal_logbuf_addr(osl_t *osh);
 extern void *osl_get_fatal_logbuf(osl_t *osh, uint32 request_size, uint32 *allocated_size);
 extern void *osl_get_fatal_logbuf_end(osl_t *osh, uint32 request_size, uint32 *allocated_size);
-extern int osl_create_directory(const char *pathname, int mode);
-extern struct task_struct *_get_task_info(const char *pname);
-extern int osl_send_sig_info(int signo, int arg, struct task_struct *tsk);
+extern int osl_create_directory(char *pathname, int mode);
 
 /*
  * LOG_CUSTOM_PREFIX - Adds only a custom string to all the logs emitted out

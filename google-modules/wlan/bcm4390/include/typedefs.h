@@ -115,7 +115,7 @@ typedef unsigned __int64 uint64;
 #define TYPEDEF_ULONG
 #endif
 
-#if defined(__linux__) && defined(__KERNEL__) && !(defined(EFI) || defined(WL_UNITTEST))
+#if defined(__linux__) && !(defined(EFI) || defined(WL_UNITTEST))
 /*
  * If this is either a Linux hybrid build or the per-port code of a hybrid build
  * then use the Linux header files to get some of the typedefs.  Otherwise, define

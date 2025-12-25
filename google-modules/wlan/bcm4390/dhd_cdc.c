@@ -98,7 +98,7 @@ dhdcdc_msg(dhd_pub_t *dhd)
 		len = CDC_MAX_MSG_SIZE;
 
 	/* Send request */
-	err = dhd_bus_txctl(dhd->bus, (uchar *)&prot->msg, len);
+	err = dhd_bus_txctl(dhd->bus, (uchar*)&prot->msg, len);
 
 	DHD_OS_WAKE_UNLOCK(dhd);
 	return err;
@@ -114,7 +114,7 @@ dhdcdc_cmplt(dhd_pub_t *dhd, uint32 id, uint32 len)
 	DHD_TRACE(("%s: Enter\n", __FUNCTION__));
 
 	do {
-		ret = dhd_bus_rxctl(dhd->bus, (uchar *)&prot->msg, cdc_len);
+		ret = dhd_bus_rxctl(dhd->bus, (uchar*)&prot->msg, cdc_len);
 		if (ret < 0)
 			break;
 	} while (CDC_IOC_ID(ltoh32(prot->msg.flags)) != id);
@@ -140,11 +140,15 @@ dhdcdc_query_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uin
 	DHD_CTL(("%s: cmd %d len %d\n", __FUNCTION__, cmd, len));
 
 	/* Respond "bcmerror" and "bcmerrorstr" with local cache */
-	if (cmd == WLC_GET_VAR && buf) {
-		if (!strcmp((char *)buf, "bcmerrorstr")) {
+	if (cmd == WLC_GET_VAR && buf)
+	{
+		if (!strcmp((char *)buf, "bcmerrorstr"))
+		{
 			strlcpy((char *)buf, bcmerrorstr(dhd->dongle_error), len);
 			goto done;
-		} else if (!strcmp((char *)buf, "bcmerror")) {
+		}
+		else if (!strcmp((char *)buf, "bcmerror"))
+		{
 			*(int *)buf = dhd->dongle_error;
 			goto done;
 		}
@@ -174,8 +178,7 @@ dhdcdc_query_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uin
 	if (buf)
 		memcpy(prot->buf, buf, len);
 
-	ret = dhdcdc_msg(dhd);
-	if (ret < 0) {
+	if ((ret = dhdcdc_msg(dhd)) < 0) {
 		if (!dhd->hang_was_sent)
 		DHD_ERROR(("dhdcdc_query_ioctl: dhdcdc_msg failed w/status %d\n", ret));
 		goto done;
@@ -183,8 +186,7 @@ dhdcdc_query_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uin
 
 retry:
 	/* wait for interrupt and get first fragment */
-	ret = dhdcdc_cmplt(dhd, prot->reqid, len);
-	if (ret < 0)
+	if ((ret = dhdcdc_cmplt(dhd, prot->reqid, len)) < 0)
 		goto done;
 
 	flags = ltoh32(msg->flags);
@@ -194,20 +196,22 @@ retry:
 		goto retry;
 	if (id != prot->reqid) {
 		DHD_ERROR(("%s: %s: unexpected request id %d (expected %d)\n",
-			dhd_ifname(dhd, ifidx), __FUNCTION__, id, prot->reqid));
+		           dhd_ifname(dhd, ifidx), __FUNCTION__, id, prot->reqid));
 		ret = -EINVAL;
 		goto done;
 	}
 
 	/* Copy info buffer */
-	if (buf) {
+	if (buf)
+	{
 		if (ret < (int)len)
 			len = ret;
-		memcpy(buf, (void *) prot->buf, len);
+		memcpy(buf, (void*) prot->buf, len);
 	}
 
 	/* Check the ERROR flag */
-	if (flags & CDCF_IOC_ERROR) {
+	if (flags & CDCF_IOC_ERROR)
+	{
 		ret = ltoh32(msg->status);
 		/* Cache error from dongle */
 		dhd->dongle_error = ret;
@@ -287,14 +291,12 @@ dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uint8
 	if (buf)
 		memcpy(prot->buf, buf, len);
 
-	ret = dhdcdc_msg(dhd);
-	if (ret < 0) {
+	if ((ret = dhdcdc_msg(dhd)) < 0) {
 		DHD_ERROR(("%s: dhdcdc_msg failed w/status %d\n", __FUNCTION__, ret));
 		goto done;
 	}
 
-	ret = dhdcdc_cmplt(dhd, prot->reqid, len);
-	if (ret < 0)
+	if ((ret = dhdcdc_cmplt(dhd, prot->reqid, len)) < 0)
 		goto done;
 
 	flags = ltoh32(msg->flags);
@@ -302,7 +304,7 @@ dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uint8
 
 	if (id != prot->reqid) {
 		DHD_ERROR(("%s: %s: unexpected request id %d (expected %d)\n",
-			dhd_ifname(dhd, ifidx), __FUNCTION__, id, prot->reqid));
+		           dhd_ifname(dhd, ifidx), __FUNCTION__, id, prot->reqid));
 		ret = -EINVAL;
 		goto done;
 	}
@@ -310,11 +312,12 @@ dhdcdc_set_ioctl(dhd_pub_t *dhd, int ifidx, uint cmd, void *buf, uint len, uint8
 	/* Copy fw response to buf */
 	if (buf) {
 		ASSERT(ret == len);
-		memcpy(buf, (void *) prot->buf, len);
+		memcpy(buf, (void*) prot->buf, len);
 	}
 
 	/* Check the ERROR flag */
-	if (flags & CDCF_IOC_ERROR) {
+	if (flags & CDCF_IOC_ERROR)
+	{
 		ret = ltoh32(msg->status);
 		/* Cache error from dongle */
 		dhd->dongle_error = ret;
@@ -326,7 +329,7 @@ done:
 
 /* due to overlays this should not be called directly; call dhd_wl_ioctl() instead */
 int
-dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
+dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t * ioc, void * buf, int len)
 {
 	dhd_prot_t *prot = dhd->prot;
 	int ret = -1;
@@ -350,7 +353,7 @@ dhd_prot_ioctl(dhd_pub_t *dhd, int ifidx, wl_ioctl_t *ioc, void *buf, int len)
 			ioc->cmd, (unsigned long)ioc->cmd, prot->lastcmd,
 			(unsigned long)prot->lastcmd));
 		if ((ioc->cmd == WLC_SET_VAR) || (ioc->cmd == WLC_GET_VAR)) {
-			DHD_TRACE(("iovar cmd=%s\n", buf ? (char *)buf : "\0"));
+			DHD_TRACE(("iovar cmd=%s\n", buf ? (char*)buf : "\0"));
 		}
 		goto done;
 	}
@@ -393,7 +396,7 @@ done:
 
 int
 dhd_prot_iovar_op(dhd_pub_t *dhdp, const char *name,
-	void *params, int plen, void *arg, int len, bool set)
+                  void *params, int plen, void *arg, int len, bool set)
 {
 	return BCME_UNSUPPORTED;
 }
@@ -492,7 +495,7 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf, uchar *reorder_buf_in
 
 	if (PKTLEN(dhd->osh, pktbuf) < BDC_HEADER_LEN) {
 		DHD_ERROR(("%s: rx data too short (%d < %d)\n", __FUNCTION__,
-			PKTLEN(dhd->osh, pktbuf), BDC_HEADER_LEN));
+		           PKTLEN(dhd->osh, pktbuf), BDC_HEADER_LEN));
 		return BCME_ERROR;
 	}
 
@@ -509,7 +512,7 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf, uchar *reorder_buf_in
 
 	if (((h->flags & BDC_FLAG_VER_MASK) >> BDC_FLAG_VER_SHIFT) != BDC_PROTO_VER) {
 		DHD_ERROR(("%s: non-BDC packet received, flags = 0x%x\n",
-			dhd_ifname(dhd, *ifidx), h->flags));
+		           dhd_ifname(dhd, *ifidx), h->flags));
 		if (((h->flags & BDC_FLAG_VER_MASK) >> BDC_FLAG_VER_SHIFT) == BDC_PROTO_VER_1)
 			h->dataOffset = 0;
 		else
@@ -518,7 +521,7 @@ dhd_prot_hdrpull(dhd_pub_t *dhd, int *ifidx, void *pktbuf, uchar *reorder_buf_in
 
 	if (h->flags & BDC_FLAG_SUM_GOOD) {
 		DHD_INFO(("%s: BDC packet received with good rx-csum, flags 0x%x\n",
-			dhd_ifname(dhd, *ifidx), h->flags));
+		          dhd_ifname(dhd, *ifidx), h->flags));
 		PKTSETSUMGOOD(pktbuf, TRUE);
 	}
 
@@ -547,8 +550,7 @@ dhd_prot_attach(dhd_pub_t *dhd)
 {
 	dhd_prot_t *cdc;
 
-	cdc = (dhd_prot_t *)DHD_OS_PREALLOC(dhd, DHD_PREALLOC_PROT, sizeof(dhd_prot_t));
-	if (!cdc) {
+	if (!(cdc = (dhd_prot_t *)DHD_OS_PREALLOC(dhd, DHD_PREALLOC_PROT, sizeof(dhd_prot_t)))) {
 		DHD_ERROR(("%s: kmalloc failed\n", __FUNCTION__));
 		goto fail;
 	}
@@ -646,8 +648,8 @@ dhd_sync_with_dongle(dhd_pub_t *dhd)
 		DHD_ERROR(("%s failed %d\n", __FUNCTION__, ret));
 		goto done;
 	} else {
-		dhd->wlc_ver_major = ((wl_wlc_version_t *)buf)->wlc_ver_major;
-		dhd->wlc_ver_minor = ((wl_wlc_version_t *)buf)->wlc_ver_minor;
+		dhd->wlc_ver_major = ((wl_wlc_version_t*)buf)->wlc_ver_major;
+		dhd->wlc_ver_minor = ((wl_wlc_version_t*)buf)->wlc_ver_minor;
 	}
 	DHD_PRINT(("\nwlc_ver_major %d, wlc_ver_minor %d", dhd->wlc_ver_major, dhd->wlc_ver_minor));
 
@@ -765,7 +767,8 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 		if (plast) {
 			PKTSETNEXT(dhd->osh, plast, cur_pkt);
 			cnt++;
-		} else {
+		}
+		else {
 			if (cnt != 0) {
 				DHD_ERROR(("%s: del flow: something fishy, pending packets %d\n",
 					__FUNCTION__, cnt));
@@ -784,7 +787,7 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 		uint32 buf_size_alloc = sizeof(reorder_info_t);
 		max_idx = reorder_info_buf[WLHOST_REORDERDATA_MAXIDX_OFFSET];
 
-		buf_size_alloc += ((max_idx + 1) * sizeof(void *));
+		buf_size_alloc += ((max_idx + 1) * sizeof(void*));
 		/* allocate space to hold the buffers, index etc */
 
 		DHD_REORDER(("%s: alloc buffer of size %d size, reorder info id %d, maxidx %d\n",
@@ -814,7 +817,8 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 		ptr->p[ptr->cur_idx] = cur_pkt;
 		ptr->pend_pkts++;
 		*pkt_count = cnt;
-	} else if (flags & WLHOST_REORDERDATA_CURIDX_VALID) {
+	}
+	else if (flags & WLHOST_REORDERDATA_CURIDX_VALID) {
 		cur_idx = reorder_info_buf[WLHOST_REORDERDATA_CURIDX_OFFSET];
 		exp_idx = reorder_info_buf[WLHOST_REORDERDATA_EXPIDX_OFFSET];
 
@@ -834,7 +838,8 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 				__FUNCTION__, ptr->pend_pkts));
 			*pkt_count = 0;
 			*pkt = NULL;
-		} else if (ptr->exp_idx == cur_idx) {
+		}
+		else if (ptr->exp_idx == cur_idx) {
 			/* got the right one ..flush from cur to exp and update exp */
 			DHD_REORDER(("%s: got the right one now, cur_idx is %d\n",
 				__FUNCTION__, cur_idx));
@@ -855,7 +860,8 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 			*pkt_count = cnt;
 			DHD_REORDER(("%s: freeing up buffers %d, still pending %d\n",
 				__FUNCTION__, cnt, ptr->pend_pkts));
-		} else {
+		}
+		else {
 			uint8 end_idx;
 			bool flush_current = FALSE;
 			/* both cur and exp are moved now .. */
@@ -884,7 +890,8 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 				else
 					*pkt = cur_pkt;
 				cnt++;
-			} else {
+			}
+			else {
 				ptr->p[cur_idx] = cur_pkt;
 				ptr->pend_pkts++;
 			}
@@ -892,7 +899,8 @@ dhd_process_pkt_reorder_info(dhd_pub_t *dhd, uchar *reorder_info_buf, uint reord
 			ptr->cur_idx = cur_idx;
 			*pkt_count = cnt;
 		}
-	} else {
+	}
+	else {
 		uint8 end_idx;
 		/* no real packet but update to exp_seq...that means explicit window move */
 		exp_idx = reorder_info_buf[WLHOST_REORDERDATA_EXPIDX_OFFSET];

@@ -160,17 +160,6 @@ typedef struct wme_param_ie wme_param_ie_t;
 #define WFA_OUI_TYPE_SAE_PK		0x1F
 #define WFA_OUI_TYPE_TD_INDICATION	0x20
 
-/* OUI_TYPE assignments for MRSNO */
-#define WFA_OUI_TYPE_RSN_OVERRIDE		0x29
-#define WFA_OUI_TYPE_RSN_OVERRIDE_2		0x2A
-#define WFA_OUI_TYPE_RSNXE_OVERRIDE		0x2B
-#define WFA_OUI_TYPE_RSN_SELECTION		0x2C
-#define WFA_OUI_TYPE_RSN_OVERRIDE_MLO_LINK_KDE	0x2D
-
-/* Snonce Cookie for MRSNO 4way-HS and FT reassociation */
-#define EAPOL_WPA2_WFA_SNONCE_COOKIE		"\x50\x6F\x9A\x00\x00\x29"
-#define EAPOL_WPA2_WFA_SNONCE_COOKIE_LEN	6u
-
 /* WCN */
 #define WCN_OUI			"\x00\x50\xf2"	/* WCN OUI */
 #define WCN_TYPE		4	/* WCN type */
@@ -265,9 +254,6 @@ typedef struct hs20_ie hs20_ie_t;
 
 /* DSCP Policy Action Frame OUI type */
 #define DSCP_POLICY_AF_OUI_TYPE		0x1Au
-
-/* Wi-Fi Alliance Capabilities frame, OUI type */
-#define WFA_CAP_AF_OUI_TYPE		0x1Bu
 
 /* DSCP Policy Action Frame OUI subtypes */
 #define DSCP_POLICY_QUERY_FRAME		0u
@@ -422,90 +408,6 @@ typedef BWL_PRE_PACKED_STRUCT struct dscp_policy_domain_name_attr {
 	uint8 data[];		/* domain name */
 } BWL_POST_PACKED_STRUCT dscp_policy_domain_name_attr_t;
 #define DSCP_POLICY_DOMAIN_NAME_ATTR_SIZE (sizeof(dscp_policy_domain_name_attr_t))
-
-/* WFA RSN/RSNXE Override Vendor Specific IE */
-#define WFA_RSN_OVERRIDE_OUI_TYPE_OFFSET	5u
-#define WFA_RSN_OVERRIDE_IE_DATA_OFFSET		6u
-typedef BWL_PRE_PACKED_STRUCT struct wfa_rsn_override_ie {
-	uint8 id;               /* DOT11_MNG_VS_ID 0xDD(221) */
-	uint8 len;              /* IE length */
-	uint8 oui[WFA_OUI_LEN]; /* WFA OUI 50:6F:9A */
-	uint8 oui_type;         /* WFA_OUI_TYPE_RSN(XE)_OVERRIDE */
-	uint8 data[];           /* RSN/RSNXE IE attributes */
-} BWL_POST_PACKED_STRUCT wfa_rsn_override_ie_t;
-#define WFA_RSN_OVERRIDE_IE_SIZE (sizeof(wfa_rsn_override_ie_t))
-
-/* WFA_RSN_SELECTION_IE definitions */
-#define RSN_SELECTION_RSNE	0u	/* RSNE */
-#define RSN_SELECTION_RSNO1E	1u	/* RSN Override Element */
-#define RSN_SELECTION_RSNO2E	2u	/* RSN Override 2 Element */
-typedef BWL_PRE_PACKED_STRUCT struct wfa_rsn_selection_ie {
-	uint8 id;               /* DOT11_MNG_VS_ID 0xDD(221) */
-	uint8 len;              /* IE length */
-	uint8 oui[WFA_OUI_LEN]; /* WFA OUI 50:6F:9A */
-	uint8 oui_type;         /* WFA_OUI_TYPE_RSN_SELECTION */
-	uint8 data;		/* 0 = RSNE, 1 = RSNE Override , 2 = RSN Override 2 */
-} BWL_POST_PACKED_STRUCT wfa_rsn_selection_ie_t;
-#define WFA_RSN_SELECTION_IE_SIZE (sizeof(wfa_rsn_selection_ie_t))
-
-#define WFA_RSNOV_LINK_KDE_IE_DATA_OFFSET 7u
-typedef BWL_PRE_PACKED_STRUCT struct wfa_rsnov_link_kde_ie {
-	uint8 id;               /* DOT11_MNG_PROPR_ID 0xDD(221) */
-	uint8 len;              /* IE length */
-	uint8 oui[WFA_OUI_LEN]; /* WFA OUI 50:6F:9A */
-	uint8 oui_type;         /* WFA_OUI_TYPE_RSN_OVERRIDE_MLO_LINK_KDE */
-	uint8 link_id;		/* Link identifier */
-	uint8 data[];		/* The set of RSN Override, Override 2, RSNXE Overrie IEs */
-} BWL_POST_PACKED_STRUCT wfa_rsnov_link_kde_ie_t;
-#define WFA_RSNOV_LINK_KDE_IE_SIZE (sizeof(wfa_rsnov_link_kde_ie_t))
-
-/* Wi-Fi Alliance Capabilities frame header */
-typedef BWL_PRE_PACKED_STRUCT struct wfa_capabilities_vs_frmhdr {
-	uint8 category;			/* Category VS/VSP; see 802.11.h */
-	uint8 oui[WFA_OUI_LEN];		/* WFA OUI */
-	uint8 oui_type;			/* DSCP_POLICY_AF_OUI_TYPE */
-	uint8 capabilities_length;	/* Length of the Capabilities field in octets */
-	uint8 data[];			/* zero or more capabilities and zero or more
-					 * Wi-Fi Alliance Capabilities attributes
-					 */
-} BWL_POST_PACKED_STRUCT wfa_capabilities_action_vs_frmhdr_t;
-#define WFA_CAPABILITIES_ACTION_FRAME_HDR_SIZE (sizeof(wfa_capabilities_action_vs_frmhdr_t))
-
-/* Wi-Fi Alliance Capabilities attributes */
-typedef enum wfa_capabilities_attrs {
-	/* Generational Capabilities Indication attribute */
-	WFA_GEN_CAP_INDICATION_ATTR	= 1
-} wfa_capabilities_attrs_t;
-
-/* Supported Generations field */
-typedef enum wifi_supported_gen_bits {
-	/* When bit is set to 1, the corresponding technology is supported */
-	SUPPORTED_GEN_WIFI_4			= (1u << 0u),
-	SUPPORTED_GEN_WIFI_5			= (1u << 1u),
-	SUPPORTED_GEN_WIFI_6			= (1u << 2u),
-	SUPPORTED_GEN_WIFI_7			= (1u << 3u)
-} wifi_supported_gen_bits_t;
-
-/* Certified Generations field */
-typedef enum wifi_certified_gen_bits {
-	/* When bit is set to 1, the corresponding technnology is certified */
-	CERTIFIED_GEN_WIFI_n			= (1u << 0u),
-	CERTIFIED_GEN_WIFI_ac			= (1u << 1u),
-	CERTIFIED_GEN_WIFI_6			= (1u << 2u),
-	CERTIFIED_GEN_WIFI_7			= (1u << 3u)
-} wifi_certified_gen_bits_t;
-
-/* Wi-Fi Alliance Capabilities attribute */
-typedef BWL_PRE_PACKED_STRUCT struct wfa_gen_cap_attr {
-	uint8 id;		/* Attribute id */
-	uint8 len;		/* Length of data */
-	uint8 data[];		/* Supported Generations Length (1 octet)
-				 * Supported Generations n (>= 1)
-				 * Certified Generations Length (0 or 1)
-				 * Certified Generations (0 or n (>=1))
-				 */
-} BWL_POST_PACKED_STRUCT wfa_gen_cap_attr_t;
-#define WFA_GEN_CAP_ATTR_SIZE (sizeof(wfa_gen_cap_attr_t))
 
 /* This marks the end of a packed structure section. */
 #include <packed_section_end.h>

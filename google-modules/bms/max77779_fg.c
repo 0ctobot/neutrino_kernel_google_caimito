@@ -1764,7 +1764,7 @@ static int max77779_fg_aafv_update(struct max77779_fg_chip *chip)
 	ret = maxfg_aafv_apply(mon, chip->dev, &chip->regmap, chip->aafv,
 			       chip->aafv_cfgs, chip->aafv_config_limits,
 			       MAX77779_FG_MiscCfg_FUS_CLEAR, MAX77779_FG_MiscCfg_FUS_SHIFT,
-			       &chip->aafv_modified_fus, &idx);
+			       &idx);
 	if (ret) {
 		dev_err(chip->dev, "failed to maxfg_aafv_apply (%d)\n", ret);
 		goto done;
@@ -1773,12 +1773,12 @@ static int max77779_fg_aafv_update(struct max77779_fg_chip *chip)
 	if (chip->aafv_cur_idx != idx) {
 		cfg = &chip->aafv_cfgs[idx];
 		chip->aafv_cur_idx = idx;
+		chip->aafv_modified_fus = true;
 
 		gbms_logbuffer_devlog(mon, chip->dev, LOGLEVEL_INFO, 0, LOGLEVEL_INFO,
-				      "%s with cycle_count:%d fullsoc:%d%% voffset:%dmV fus:%#x(%s) ichgterm:%duA",
+				      "%s with cycle_count:%d fullsoc:%d%% voffset:%dmV fus:%#x ichgterm:%duA",
 				      __func__, chip->cycle_count, cfg->fullsoc, cfg->voffset,
-				      cfg->fus, chip->aafv_modified_fus ? "set" : "unset",
-				      reg_to_micro_amp(cfg->ichgterm, chip->RSense));
+				      cfg->fus, reg_to_micro_amp(cfg->ichgterm, chip->RSense));
 	}
 
 done:
@@ -1835,7 +1835,8 @@ static int max77779_gbms_fg_get_property(struct power_supply *psy,
 		val->prop.intval = batt_ce_full_estimate(&chip->cap_estimate);
 		break;
 	case GBMS_PROP_CAPACITY_FADE_RATE:
-		err = maxfg_get_fade_rate(chip->dev, chip->bhi_fcn_count, &val->prop.intval);
+	case GBMS_PROP_CAPACITY_FADE_RATE_FCR:
+		err = maxfg_get_fade_rate(chip->dev, chip->bhi_fcn_count, &val->prop.intval, psp);
 		break;
 	case GBMS_PROP_BATT_ID:
 		val->prop.intval = chip->batt_id;

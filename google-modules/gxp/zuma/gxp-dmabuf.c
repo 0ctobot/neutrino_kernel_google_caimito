@@ -2,7 +2,7 @@
 /*
  * Support for using dma-bufs.
  *
- * Copyright (C) 2022-2025 Google LLC
+ * Copyright (C) 2022 Google LLC
  */
 
 #include <linux/dma-buf.h>
@@ -88,3 +88,5 @@ err_dma_buf_put:
 	dma_buf_put(dmabuf);
 	return ERR_PTR(ret);
 }
+
+MODULE_IMPORT_NS(DMA_BUF);

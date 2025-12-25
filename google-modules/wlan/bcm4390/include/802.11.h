@@ -922,34 +922,28 @@ BWL_PRE_PACKED_STRUCT struct dot11_management_notification {
 #define DOT11_CHALLENGE_LEN	128	/* d11 challenge text length */
 
 /* Frame control macros */
-#define FC_PVER_MASK            0x0003  /* PVER mask */
-#define FC_PVER_SHIFT           0       /* PVER shift */
-#define FC_TYPE_MASK            0x000C  /* type mask */
-#define FC_TYPE_SHIFT           2       /* type shift */
-#define FC_SUBTYPE_MASK         0x00F0  /* subtype mask */
-#define FC_SUBTYPE_SHIFT        4       /* subtype shift */
-#define FC_TODS                 0x0100  /* to DS */
-#define FC_TODS_SHIFT           8       /* to DS shift */
-#define FC_FROMDS               0x0200  /* from DS */
-#define FC_FROMDS_SHIFT         9       /* from DS shift */
-#define FC_MOREFRAG             0x0400  /* more frag. */
-#define FC_MOREFRAG_SHIFT       10      /* more frag. shift */
-#define FC_RETRY                0x0800  /* retry */
-#define FC_RETRY_SHIFT          11      /* retry shift */
-#define FC_PM                   0x1000  /* PM */
-#define FC_PM_SHIFT             12      /* PM shift */
-#define FC_MOREDATA             0x2000  /* more data */
-#define FC_MOREDATA_SHIFT       13      /* more data shift */
-#define FC_PROTECTED            0x4000  /* Protected Frame */
-#define FC_PROTECTED_SHIFT      14      /* Protected Frame shift */
-#define FC_HTC                  0x8000  /* +HTC */
-#define FC_HTC_SHIFT            15      /* +HTC shift */
-
-/* OBSOLETE FC bit names. Migrate to the names above */
-#define FC_WEP                  0x4000  /* WEP, OBSOLETE NAME, now Protected Frame */
-#define FC_WEP_SHIFT            14      /* WEP shift */
-#define FC_ORDER                0x8000  /* order OBSOLETE NAME, now +HTC */
-#define FC_ORDER_SHIFT          15      /* order shift */
+#define FC_PVER_MASK		0x3	/* PVER mask */
+#define FC_PVER_SHIFT		0	/* PVER shift */
+#define FC_TYPE_MASK		0xC	/* type mask */
+#define FC_TYPE_SHIFT		2	/* type shift */
+#define FC_SUBTYPE_MASK		0xF0	/* subtype mask */
+#define FC_SUBTYPE_SHIFT	4	/* subtype shift */
+#define FC_TODS			0x100	/* to DS */
+#define FC_TODS_SHIFT		8	/* to DS shift */
+#define FC_FROMDS		0x200	/* from DS */
+#define FC_FROMDS_SHIFT		9	/* from DS shift */
+#define FC_MOREFRAG		0x400	/* more frag. */
+#define FC_MOREFRAG_SHIFT	10	/* more frag. shift */
+#define FC_RETRY		0x800	/* retry */
+#define FC_RETRY_SHIFT		11	/* retry shift */
+#define FC_PM			0x1000	/* PM */
+#define FC_PM_SHIFT		12	/* PM shift */
+#define FC_MOREDATA		0x2000	/* more data */
+#define FC_MOREDATA_SHIFT	13	/* more data shift */
+#define FC_WEP			0x4000	/* WEP */
+#define FC_WEP_SHIFT		14	/* WEP shift */
+#define FC_ORDER		0x8000	/* order */
+#define FC_ORDER_SHIFT		15	/* order shift */
 
 /* sequence control macros */
 #define SEQNUM_SHIFT		4	/* seq. number shift */
@@ -981,7 +975,6 @@ BWL_PRE_PACKED_STRUCT struct dot11_management_notification {
 
 /* Control Subtypes */
 #define FC_SUBTYPE_TRIGGER		2	/* Trigger frame */
-#define FC_SUBTYPE_BFR_RPT_POLL		4	/* Beamforming Report Poll */
 #define FC_SUBTYPE_NDPA                 5	/* NDPA  */
 #define FC_SUBTYPE_CTL_WRAPPER		7	/* Control Wrapper */
 #define FC_SUBTYPE_BLOCKACK_REQ		8	/* Block Ack Req */
@@ -1588,18 +1581,6 @@ enum dot11_tag_ids {
 #define DOT11_MNG_SRPS_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_SRPS_ID)
 #define EXT_MNG_BSSCOLOR_CHANGE_ID		42u	/* BSS Color Change Announcement */
 #define DOT11_MNG_BSSCOLOR_CHANGE_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_BSSCOLOR_CHANGE_ID)
-
-#define EXTID_MRSNO_RSNO1E                      41u     /* RSN override Element id */
-#define DOT11_MNG_MRSNO_RSNO1E_ID               (DOT11_MNG_ID_EXT_ID + EXTID_MRSNO_RSNO1E)
-#define EXTID_MRSNO_RSNO2E                      42u     /* RSN override 2 Element id */
-#define DOT11_MNG_MRSNO_RSNO2E_ID               (DOT11_MNG_ID_EXT_ID + EXTID_MRSNO_RSNO2E)
-#define EXTID_MRSNO_RSNXEOV                     43u     /* RSNXE override Element id */
-#define DOT11_MNG_MRSNO_RSNXEOV_ID              (DOT11_MNG_ID_EXT_ID + EXTID_MRSNO_RSNXEOV)
-#define EXTID_MRSNO_RSNSEL                      44u     /* RSN selection Element id */
-#define DOT11_MNG_MRSNO_RSNSEL_ID               (DOT11_MNG_ID_EXT_ID + EXTID_MRSNO_RSNSEL)
-#define EXTID_MRSNO_LINK_KDE                    45u     /* RSN override link KDE Element id */
-#define DOT11_MNG_MRSNO_LINK_KDE_ID             (DOT11_MNG_ID_EXT_ID + EXTID_MRSNO_LINK_KDE)
-
 #define EXT_MNG_MAX_CST_ID			52u	/* Max channel switch time */
 #define DOT11_MNG_MAX_CST_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_MAX_CST_ID)
 #define EXT_MNG_OCI_ID				54u     /* Operating Channel Information */
@@ -1678,20 +1659,6 @@ enum dot11_tag_ids {
 #define EXT_MNG_NON_AP_STA_REG_CONN_ID		137u
 #define DOT11_MNG_NON_AP_STA_REG_CONN_ID	(DOT11_MNG_ID_EXT_ID + \
 						EXT_MNG_NON_AP_STA_REG_CONN_ID)
-
-/* Draft P802.11REVme_D7.0; D1.2 Table 9-130 Element IDs */
-#define EXT_MNG_TWT_CONSTRAINT_PARAMS_ID	142u
-#define DOT11_MNG_TWT_CONSTRAINT_PARAMS_ID	(DOT11_MNG_ID_EXT_ID + \
-						EXT_MNG_TWT_CONSTRAINT_PARAMS_ID)
-#define EXT_MNG_TUNNELED_PASN_ID		143u
-#define DOT11_MNG_TUNNELED_PASN_ID		(DOT11_MNG_ID_EXT_ID + EXT_MNG_TUNNELED_PASN_ID)
-
-/* Draft 802.11bn DXX Table x-xx Element IDs */
-/* UHR_TBD: this needs to be updated to exact values */
-#define EXT_MNG_UHR_OP_ID			144u	/* UHR Operation */
-#define DOT11_MNG_UHR_OP_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_UHR_OP_ID)
-#define EXT_MNG_UHR_CAP_ID			145u	/* UHR Capabilities */
-#define DOT11_MNG_UHR_CAP_ID			(DOT11_MNG_ID_EXT_ID + EXT_MNG_UHR_CAP_ID)
 
 /* For RCM see Draft P802.11bh_D1.0.pdf. The RCM extension IDs 250 and 251
  * are chosen temporarily until they get assigned by the ANA.

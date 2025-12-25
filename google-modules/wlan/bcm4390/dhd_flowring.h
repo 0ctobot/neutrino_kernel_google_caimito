@@ -124,7 +124,6 @@
 #define DHD_IF_ROLE_WDS(pub, idx)	(DHD_IF_ROLE(pub, idx) == WLC_E_IF_ROLE_WDS)
 #define DHD_IF_ROLE_IBSS(pub, idx)	(DHD_IF_ROLE(pub, idx) == WLC_E_IF_ROLE_IBSS)
 #define DHD_IF_ROLE_NAN(pub, idx)	(DHD_IF_ROLE(pub, idx) == WLC_E_IF_ROLE_NAN)
-#define DHD_IF_ROLE_ART(pub, idx)	(DHD_IF_ROLE(pub, idx) == WLC_E_IF_ROLE_ART)
 
 #define DHD_IF_ROLE_GENERIC_STA(pub, idx) \
 	(DHD_IF_ROLE_STA(pub, idx) || DHD_IF_ROLE_P2PGC(pub, idx) || DHD_IF_ROLE_WDS(pub, idx))
@@ -144,7 +143,7 @@
 struct flow_queue;
 
 /* Flow Ring Queue Enqueue overflow callback */
-typedef int (*flow_queue_cb_t)(struct flow_queue *queue, void *pkt);
+typedef int (*flow_queue_cb_t)(struct flow_queue * queue, void * pkt);
 
 /**
  * Each flow ring has an associated (tx flow controlled) queue. 802.3 packets are transferred
@@ -154,16 +153,16 @@ typedef int (*flow_queue_cb_t)(struct flow_queue *queue, void *pkt);
  */
 typedef struct flow_queue {
 	dll_t  list;                /* manage a flowring queue in a double linked list */
-	void *head;                /* first packet in the queue */
-	void *tail;                /* last packet in the queue */
+	void * head;                /* first packet in the queue */
+	void * tail;                /* last packet in the queue */
 	uint16 len;                 /* number of packets in the queue */
 	uint16 max;                 /* maximum or min budget (used in cumm) */
 	uint32 threshold;           /* parent's cummulative length threshold */
-	void *clen_ptr;            /* parent's cummulative length counter */
+	void * clen_ptr;            /* parent's cummulative length counter */
 	uint32 failures;            /* enqueue failures due to queue overflow */
 	flow_queue_cb_t cb;         /* callback invoked on threshold crossing */
 	uint32 l2threshold;         /* grandparent's (level 2) cummulative length threshold */
-	void *l2clen_ptr;          /* grandparent's (level 2) cummulative length counter */
+	void * l2clen_ptr;          /* grandparent's (level 2) cummulative length counter */
 } flow_queue_t;
 
 #define DHD_FLOW_QUEUE_LEN(queue)       ((int)(queue)->len)
@@ -315,25 +314,25 @@ dhd_constlist_to_flowring(dll_t *item)
 /* Exported API */
 
 /* Flow ring's queue management functions */
-extern flow_ring_node_t *dhd_flow_ring_node(dhd_pub_t *dhdp, uint16 flowid);
-extern flow_queue_t *dhd_flow_queue(dhd_pub_t *dhdp, uint16 flowid);
+extern flow_ring_node_t * dhd_flow_ring_node(dhd_pub_t *dhdp, uint16 flowid);
+extern flow_queue_t * dhd_flow_queue(dhd_pub_t *dhdp, uint16 flowid);
 
 extern void dhd_flow_queue_init(dhd_pub_t *dhdp, flow_queue_t *queue, int max);
 extern void dhd_flow_queue_reinit(dhd_pub_t *dhdp, flow_queue_t *queue, int max);
 extern void dhd_flow_queue_register(flow_queue_t *queue, flow_queue_cb_t cb);
 extern int  dhd_flow_queue_enqueue(dhd_pub_t *dhdp, flow_queue_t *queue, void *pkt);
-extern void *dhd_flow_queue_dequeue(dhd_pub_t *dhdp, flow_queue_t *queue);
+extern void * dhd_flow_queue_dequeue(dhd_pub_t *dhdp, flow_queue_t *queue);
 extern void dhd_flow_queue_reinsert(dhd_pub_t *dhdp, flow_queue_t *queue, void *pkt);
 
 extern void dhd_flow_ring_config_thresholds(dhd_pub_t *dhdp, uint16 flowid,
-	int queue_budget, int cumm_threshold, void *cumm_ctr,
-	int l2cumm_threshold, void *l2cumm_ctr);
+                          int queue_budget, int cumm_threshold, void *cumm_ctr,
+                          int l2cumm_threshold, void *l2cumm_ctr);
 extern int  dhd_flow_rings_init(dhd_pub_t *dhdp, uint32 num_h2d_rings);
 
 extern void dhd_flow_rings_deinit(dhd_pub_t *dhdp);
 
 extern int dhd_flowid_update(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio,
-	void *pktbuf);
+                void *pktbuf);
 extern int dhd_flowid_debug_create(dhd_pub_t *dhdp, uint8 ifindex,
 	uint8 prio, char *sa, char *da, uint16 *flowid);
 extern int dhd_flowid_find_by_ifidx(dhd_pub_t *dhdp, uint8 ifidex, uint16 flowid);
@@ -346,15 +345,15 @@ extern void dhd_update_multicilent_flow_rings(dhd_pub_t *dhdp, uint8 ifindex,
 extern void dhd_flow_rings_flush(dhd_pub_t *dhdp, uint8 ifindex);
 
 extern void dhd_flow_rings_delete_for_peer(dhd_pub_t *dhdp, uint8 ifindex,
-	char *addr);
+                char *addr);
 
 /* Handle Interface ADD, DEL operations */
 extern void dhd_update_interface_flow_info(dhd_pub_t *dhdp, uint8 ifindex,
-	uint8 op, uint8 role, uint8 if_flags);
+                                           uint8 op, uint8 role, uint8 if_flags);
 
 /* Handle a STA interface link status update */
 extern int dhd_update_interface_link_status(dhd_pub_t *dhdp, uint8 ifindex,
-	uint8 status);
+                uint8 status);
 extern int dhd_flow_prio_map(dhd_pub_t *dhd, uint8 *map, bool set);
 extern int dhd_update_flow_prio_map(dhd_pub_t *dhdp, uint8 map);
 int dhd_flow_prio_map_init(dhd_pub_t *dhd);

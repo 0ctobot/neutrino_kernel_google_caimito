@@ -446,9 +446,6 @@ typedef uint8 he_phy_cap_t[HE_PHY_CAP_INFO_SIZE];
 * 128 in the SSID element
 */
 #define WLC_SSID_VAL_IN_SHORT_SSID	128u
-#define WLC_SSID_LEN_IN_SHORT_SSID	1u
-#define IS_SSID_IE_INDICATING_SHORT_SSID(ssidie) (((ssidie)->len == WLC_SSID_LEN_IN_SHORT_SSID) && \
-						 ((ssidie)->data[0] == WLC_SSID_VAL_IN_SHORT_SSID))
 
 /* Defines for The Max HE MCS For n SS subfield (where n = 1, ..., 8) */
 #define HE_MCS_MAP_NSS_MAX	8u	/* Max number of streams possible */

@@ -2823,7 +2823,6 @@ typedef volatile struct chipcregs chipcregs_t;
 // Please leave this UNRELEASEDCHIP MOG wrapper in place even if there is nothing inside it
 /* Based on the 4383 BackPlane Acrhitecture, RAM address base updated as 0x6E_0000 */
 #define CR4_4383_RAM_BASE                    (0x6E0000)
-#define CR4_4384_RAM_BASE                    (0x700000)
 #define CR4_4387_RAM_BASE                    (0x740000)
 #define CR4_4385_RAM_BASE                    (0x740000)
 #define CA7_4385_RAM_BASE                    (0x200000)
@@ -2831,13 +2830,6 @@ typedef volatile struct chipcregs chipcregs_t;
 #define CA7_4389_RAM_BASE                    (0x200000)
 #define CA7_4390_RAM_BASE                    (0x2A0000)
 #define CA7_4399_RAM_BASE                    (0x2A0000)
-
-/* Coex CPU memory geometry */
-#define CXCPU_4390_ITCM_BASE			(0x1a000000u)
-#define CXCPU_4390_ITCM_SIZE			(98304u)
-#define CXCPU_4390_DTCM_BASE			(0x1a018000u)
-#define CXCPU_4390_DTCM_SIZE			(24576u)
-// Please leave this UNRELEASEDCHIP MOG wrapper in place even if there is nothing inside it
 
 /* Physical memory in 4388a0 HWA is 64KB (8192 x 64 bits) even though
  * the memory space allows 192KB (0x1850_0000 - 0x1852_FFFF)
@@ -4232,21 +4224,19 @@ cncb2rdig_scan2G_dedicated_path_en_core1_ovr_en	13
 	((((value) >> CTRL_FIELD_SHIFT(regtype, name, slice)) & \
 	 CTRL_FIELD_MASK(regtype, name, slice)) << CTRL_REG_SHIFT(regtype, name, slice))
 
-#define _SI_REG_WRITE_SLICE(si_fn, sih, regtype, name, value, slicenum) do { \
-		if (CTRL_REG_NUM_SLICES(regtype, name) > (slicenum - 1)) { \
-			si_fn(sih, CTRL_REG_NUM(regtype, name, slicenum), \
-				CTRL_REG_MASK(regtype, name, slicenum), \
-				CTRL_WR_VALUE(regtype, name, value, slicenum)); \
-		} \
-	} while (0)
+#define _SI_REG_WRITE_SLICE(si_fn, sih, regtype, name, value, slicenum) \
+	if (CTRL_REG_NUM_SLICES(regtype, name) > (slicenum - 1)) { \
+		si_fn(sih, CTRL_REG_NUM(regtype, name, slicenum), \
+			CTRL_REG_MASK(regtype, name, slicenum), \
+			CTRL_WR_VALUE(regtype, name, value, slicenum)); \
+	} \
 
-#define _SI_REG_MOD_SLICE(si_fn, sih, regtype, name, mask, value, slicenum)  do { \
-		if (CTRL_REG_NUM_SLICES(regtype, name) > (slicenum - 1)) { \
-			si_fn(sih, CTRL_REG_NUM(regtype, name, slicenum), \
-				CTRL_WR_VALUE(regtype, name, mask, slicenum), \
-				CTRL_WR_VALUE(regtype, name, value, slicenum)); \
-		} \
-	} while (0)
+#define _SI_REG_MOD_SLICE(si_fn, sih, regtype, name, mask, value, slicenum) \
+	if (CTRL_REG_NUM_SLICES(regtype, name) > (slicenum - 1)) { \
+		si_fn(sih, CTRL_REG_NUM(regtype, name, slicenum), \
+			CTRL_WR_VALUE(regtype, name, mask, slicenum), \
+			CTRL_WR_VALUE(regtype, name, value, slicenum)); \
+	} \
 
 #define _SI_REG_READ_SLICE_FIELD(si_fn, sih, regtype, name, slice) \
 	((si_fn(sih, CTRL_REG_NUM(regtype, name, slice), 0, 0) & \
@@ -4392,15 +4382,9 @@ cncb2rdig_scan2G_dedicated_path_en_core1_ovr_en	13
 #define SI_GCI_CC_WRITE(sih, field, value) si_gci_chipcontrol_wr_api(sih, field, value)
 #define SI_GCI_CC_READ(sih, field) si_gci_chipcontrol_rd_api(sih, field)
 #else
-#define SI_GCI_CC_WRITE(sih, name, value)	{ \
-		BCM_REFERENCE(value); \
-		(void)SI_CTRLREGS_INVALID; \
-	}
-#define SI_GCI_CC_MOD(sih, name, mask, value)	{ \
-		BCM_REFERENCE(mask); \
-		BCM_REFERENCE(value); \
-		(void)SI_CTRLREGS_INVALID; \
-	}
+#define SI_GCI_CC_WRITE(sih, name, value)	{BCM_REFERENCE(value);(void)SI_CTRLREGS_INVALID;}
+#define SI_GCI_CC_MOD(sih, name, mask, value)	{BCM_REFERENCE(mask); BCM_REFERENCE(value); \
+	(void)SI_CTRLREGS_INVALID;}
 #define SI_GCI_CC_READ(sih, name)		SI_CTRLREGS_INVALID
 #endif /* BCMCHIPID */
 
@@ -4410,22 +4394,13 @@ cncb2rdig_scan2G_dedicated_path_en_core1_ovr_en	13
 #ifndef _LANGUAGE_ASSEMBLY
 extern uint16 hnd_invalid_ctrlreg(void); // Note: this function must not be defined anywhere
 #endif /* _LANGUAGE_ASSEMBLY */
-#define SI_PMU_CC_WRITE(sih, name, value)	{ \
-		BCM_REFERENCE(value); \
-		(void)SI_CTRLREGS_INVALID; \
-	}
+#define SI_PMU_CC_WRITE(sih, name, value)	{BCM_REFERENCE(value);(void)SI_CTRLREGS_INVALID;}
 #define SI_PMU_CC_READ(sih, name)		SI_CTRLREGS_INVALID
-#define SI_PMU_PLL_WRITE(sih, name, value)	{ \
-		BCM_REFERENCE(value); \
-		(void)SI_CTRLREGS_INVALID; \
-	}
+#define SI_PMU_PLL_WRITE(sih, name, value)	{BCM_REFERENCE(value);(void)SI_CTRLREGS_INVALID;}
 #define SI_PMU_PLL_READ(sih, name)		SI_CTRLREGS_INVALID
 #define SI_GCI_CC_READ64(sih, name)		SI_CTRLREGS_INVALID
 #define SI_GCI_CS_READ(sih, name)               SI_CTRLREGS_INVALID
-#define SI_VREG_WRITE(sih, name, value)		{ \
-		BCM_REFERENCE(value); \
-		(void)SI_CTRLREGS_INVALID; \
-	}
+#define SI_VREG_WRITE(sih, name, value)		{BCM_REFERENCE(value);(void)SI_CTRLREGS_INVALID;}
 #define SI_VREG_READ(sih, name)			SI_CTRLREGS_INVALID
 #endif /* VLSI_CTRL_REGS */
 

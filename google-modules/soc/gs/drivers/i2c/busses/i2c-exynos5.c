@@ -207,10 +207,6 @@
  * Otherwise, the transaction will be handled by interrupt.
  */
 #define HSI2C_HYBRID_THRESHOLD 8
-#define HSI2C_HYBRID_TIMEOUT_NS 300000
-#define HSI2C_TRAILING_POLL_TIMEOUT_NS 1000000
-
-#define HSI2C_IDLE_TIMEOUT_MS 100
 
 #define EXYNOS5_I2C_TIMEOUT (msecs_to_jiffies(100))
 #define EXYNOS5_FIFO_SIZE		16
@@ -228,6 +224,8 @@
 
 #define USI_SW_CONF_MASK	(0x7 << 0)
 #define USI_I2C_SW_CONF		BIT(2)
+
+#define HSI2C_FAST_TRIGGER_TRAILING_CNT 	0x20000
 
 static const struct of_device_id exynos5_i2c_match[] = {
 	{ .compatible = "samsung,exynos5-hsi2c" },
@@ -757,9 +755,8 @@ static irqreturn_t exynos5_i2c_irq(int irqno, void *dev_id)
 			exynos5_i2c_stop(i2c);
 		} else if (i2c->msg->flags & I2C_M_RD && i2c->msg_ptr < i2c->msg->len) {
 			/* INT_TRANSFER_DONE but Read fifo is not done yet.*/
-			dev_warn(i2c->dev, "TRANSFER_DONE without read fifo finished, poll reset fifo.\n");
-			i2c->has_trailing_bytes = true;
-			exynos5_i2c_stop(i2c);
+			/* Fast trigger interrupt for trailing RX. */
+			writel(HSI2C_FAST_TRIGGER_TRAILING_CNT, i2c->regs + HSI2C_TRAILING_CTL);
 		}
 	}
 
@@ -769,48 +766,10 @@ out:
 	return IRQ_HANDLED;
 }
 
-/* return true : xfer timeout, false : xfer completed.*/
-static bool exynos_i2c_wait_for_xfer_timeout(struct exynos5_i2c *i2c,
-						int operation_mode, unsigned long timeout)
-{
-	if (operation_mode == HSI2C_POLLING) {
-		unsigned long start_time = ktime_get_ns();
-		/* If polling timeout, fallback to wait_for_completion. */
-		while (ktime_get_ns() - start_time < HSI2C_HYBRID_TIMEOUT_NS) {
-			if (completion_done(&i2c->msg_complete))
-				return false;
-			udelay(2);
-		}
-	}
-
-	return wait_for_completion_timeout(&i2c->msg_complete, timeout) == 0;
-}
-
-/* return true : wait idle timeout, false : wait idle completed.*/
-static bool exynos_i2c_wait_for_master_idle(struct exynos5_i2c *i2c)
-{
-	unsigned long timeout;
-	unsigned long trans_status;
-
-	if (i2c->scl_clk_stretch) {
-		timeout = jiffies + msecs_to_jiffies(HSI2C_IDLE_TIMEOUT_MS);
-		do {
-			trans_status = readl(i2c->regs +
-					HSI2C_TRANS_STATUS);
-			if ((trans_status & HSI2C_MAST_ST_MASK) ==
-					HSI2C_MASTER_ST_INIT){
-				return false;
-			}
-			udelay(2);
-		} while (time_before(jiffies, timeout));
-	}
-
-	return true;
-}
-
 static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 				struct i2c_msg *msgs, int stop)
 {
+	unsigned long timeout;
 	unsigned long timeout_max;
 	unsigned long trans_status;
 	unsigned long i2c_ctl;
@@ -820,16 +779,13 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 	unsigned long i2c_int_en;
 	unsigned long i2c_fifo_ctl;
 	unsigned long trig_level;
-	unsigned int cpu = raw_smp_processor_id();
+	unsigned char byte;
 	int ret = 0;
 	int operation_mode = i2c->operation_mode;
-	bool xfer_timeout;
-	struct cpumask cpu_mask;
 
 	i2c->msg = msgs;
 	i2c->msg_ptr = 0;
 	i2c->trans_done = 0;
-	i2c->has_trailing_bytes = false;
 
 	/* For hybrid polling, operation mode is determined by message length */
 	if (operation_mode == HSI2C_HYBRID_POLLING) {
@@ -908,17 +864,25 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 
 	writel(i2c_ctl, i2c->regs + HSI2C_CTL);
 
-	i2c_int_en |= HSI2C_INT_CHK_TRANS_STATE |
-		HSI2C_INT_TRANSFER_DONE;
-	writel(i2c_int_en, i2c->regs + HSI2C_INT_ENABLE);
+	if (operation_mode == HSI2C_INTERRUPT) {
+		unsigned int cpu = raw_smp_processor_id();
+		struct cpumask m;
 
-	if (!IS_ENABLED(CONFIG_IRQ_SBALANCE)) {
-	    cpumask_set_cpu(cpu, &cpu_mask);
-	    if (IS_ENABLED(CONFIG_SOC_ZUMA) && cpu == 8) {
-	        cpumask_setall(&cpu_mask);
-	        cpumask_clear_cpu(cpu, &cpu_mask);
-	    }
-	    irq_set_affinity_and_hint(i2c->irq, &cpu_mask);
+		i2c_int_en |= HSI2C_INT_CHK_TRANS_STATE |
+			HSI2C_INT_TRANSFER_DONE;
+		writel(i2c_int_en, i2c->regs + HSI2C_INT_ENABLE);
+
+		if (!IS_ENABLED(CONFIG_IRQ_SBALANCE)) {
+			cpumask_set_cpu(cpu, &m);
+			if (IS_ENABLED(CONFIG_SOC_ZUMA) && cpu == 8) {
+				cpumask_setall(&m);
+				cpumask_clear_cpu(cpu, &m);
+			}
+			irq_set_affinity_and_hint(i2c->irq, &m);
+		}
+		enable_irq(i2c->irq);
+	} else {
+		writel(HSI2C_INT_TRANSFER_DONE, i2c->regs + HSI2C_INT_ENABLE);
 	}
 
 	i2c_auto_conf &= ~(0xffff);
@@ -929,51 +893,144 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
 	i2c_auto_conf |= HSI2C_MASTER_RUN;
 	writel(i2c_auto_conf, i2c->regs + HSI2C_AUTO_CONF);
 
-	enable_irq(i2c->irq);
-
-	xfer_timeout = exynos_i2c_wait_for_xfer_timeout
-		(i2c, operation_mode, timeout_max);
-
-	disable_irq(i2c->irq);
-
-	if (msgs->flags & I2C_M_RD && i2c->has_trailing_bytes) {
-		unsigned long start_time = ktime_get_ns();
-		unsigned char byte;
-		while (ktime_get_ns() - start_time < HSI2C_TRAILING_POLL_TIMEOUT_NS &&
+	ret = -EAGAIN;
+	if (msgs->flags & I2C_M_RD && operation_mode == HSI2C_POLLING) {
+		timeout = jiffies + msecs_to_jiffies(timeout_max);
+		while (time_before(jiffies, timeout) &&
 				i2c->msg_ptr < i2c->msg->len) {
 			if ((readl(i2c->regs + HSI2C_FIFO_STATUS) &
 						HSI2C_RX_FIFO_EMPTY) == 0) {
 				/* RX FIFO is not empty */
-				byte = (unsigned char)readl(i2c->regs + HSI2C_RX_DATA);
+				byte = (unsigned char)readl
+					(i2c->regs + HSI2C_RX_DATA);
 				i2c->msg->buf[i2c->msg_ptr++] = byte;
 			}
+
 		}
-		if (i2c->msg_ptr < i2c->msg->len) {
-			dev_err(i2c->dev, "polling trailing read fifo timeout.\n");
-			i2c->trans_done = -EIO;
+		if (i2c->msg_ptr >= i2c->msg->len)
+			ret = 0;
+
+		if (ret == -EAGAIN) {
+			dump_i2c_register(i2c);
+			exynos5_i2c_reset(i2c);
+			dev_warn(i2c->dev, "rx timeout\n");
+			return ret;
 		}
-		i2c->has_trailing_bytes = false;
-	}
+	} else if (msgs->flags & I2C_M_RD &&
+			operation_mode == HSI2C_INTERRUPT) {
+		timeout = wait_for_completion_timeout
+			(&i2c->msg_complete,
+			 msecs_to_jiffies(timeout_max));
 
-	if (exynos_i2c_wait_for_master_idle(i2c)) {
-		trans_status = readl(i2c->regs + HSI2C_TRANS_STATUS);
-		dev_err(i2c->dev, "SDA check timeout HSI2C_TRANS_STATUS = 0x%8lx\n",
-				trans_status);
-	}
+		ret = 0;
 
-	if (i2c->trans_done < 0) {
-		dev_dbg(i2c->dev, "ack was not received\n");
-		ret = i2c->trans_done;
-	}
+		if (i2c->scl_clk_stretch) {
+			unsigned long timeout = jiffies + msecs_to_jiffies(100);
 
-	if (xfer_timeout) {
-		dev_warn(i2c->dev, (msgs->flags & I2C_M_RD) ?  "rx timeout\n" : "tx timeout\n");
-		ret = -EAGAIN;
-	}
+			do {
+				trans_status = readl(i2c->regs +
+						HSI2C_TRANS_STATUS);
+				if ((trans_status & HSI2C_MAST_ST_MASK) ==
+						HSI2C_MASTER_ST_INIT){
+					timeout = 0;
+					break;
+				}
+			} while (time_before(jiffies, timeout));
 
-	if (ret) {
-		dump_i2c_register(i2c);
-		exynos5_i2c_reset(i2c);
+			if (timeout)
+				dev_err(i2c->dev, "SDA check timeout AT READ!!! = 0x%8lx\n",
+					trans_status);
+		}
+
+		disable_irq(i2c->irq);
+
+		if (i2c->trans_done < 0) {
+			dev_dbg(i2c->dev, "ack was not received at read\n");
+			ret = i2c->trans_done;
+			exynos5_i2c_reset(i2c);
+		}
+
+		if (timeout == 0) {
+			dump_i2c_register(i2c);
+			exynos5_i2c_reset(i2c);
+			dev_warn(i2c->dev, "rx timeout\n");
+			ret = -EAGAIN;
+			return ret;
+		}
+	} else if (!(msgs->flags & I2C_M_RD) &&
+			operation_mode == HSI2C_POLLING) {
+		unsigned long int_status;
+		unsigned long fifo_status;
+
+		timeout = jiffies + msecs_to_jiffies(timeout_max);
+		while (time_before(jiffies, timeout) &&
+		       (i2c->msg_ptr < i2c->msg->len)) {
+			if ((readl(i2c->regs + HSI2C_FIFO_STATUS)
+						& HSI2C_TX_FIFO_LVL_MASK) <
+					EXYNOS5_FIFO_SIZE) {
+				byte = i2c->msg->buf[i2c->msg_ptr++];
+				writel(byte, i2c->regs + HSI2C_TX_DATA);
+			}
+		}
+		while (time_before(jiffies, timeout)) {
+			int_status = readl(i2c->regs + HSI2C_INT_STATUS);
+			fifo_status = readl(i2c->regs + HSI2C_FIFO_STATUS);
+			if (int_status & HSI2C_INT_TRANSFER_DONE &&
+			    fifo_status & HSI2C_TX_FIFO_EMPTY) {
+				writel(int_status, i2c->regs +
+						HSI2C_INT_STATUS);
+				ret = 0;
+				break;
+			}
+			udelay(1);
+		}
+		if (ret == -EAGAIN) {
+			dump_i2c_register(i2c);
+			exynos5_i2c_reset(i2c);
+			dev_warn(i2c->dev, "tx timeout\n");
+			return ret;
+		}
+	} else if (!(msgs->flags & I2C_M_RD) &&
+			operation_mode == HSI2C_INTERRUPT) {
+		timeout = wait_for_completion_timeout
+			(&i2c->msg_complete,
+			 msecs_to_jiffies(timeout_max));
+		disable_irq(i2c->irq);
+
+		if (timeout == 0) {
+			dump_i2c_register(i2c);
+			exynos5_i2c_reset(i2c);
+			dev_warn(i2c->dev, "tx timeout\n");
+			return ret;
+		}
+
+		timeout = jiffies + timeout;
+		if (i2c->trans_done < 0) {
+			dev_dbg(i2c->dev, "ack was not received at write\n");
+			ret = i2c->trans_done;
+			exynos5_i2c_reset(i2c);
+			return ret;
+		}
+
+		if (i2c->scl_clk_stretch) {
+			unsigned long timeout = jiffies + msecs_to_jiffies(100);
+
+			do {
+				trans_status = readl(i2c->regs +
+						HSI2C_TRANS_STATUS);
+				if ((trans_status & HSI2C_MAST_ST_MASK) ==
+						HSI2C_MASTER_ST_INIT){
+					timeout = 0;
+					break;
+				}
+			} while (time_before(jiffies, timeout));
+
+			if (timeout)
+				dev_err(i2c->dev, "SDA check timeout AT WRITE!!! = 0x%8lx\n",
+					trans_status);
+		}
+
+		ret = 0;
 	}
 
 	return ret;
@@ -1280,22 +1337,25 @@ static int exynos5_i2c_probe(struct platform_device *pdev)
 	/* Reset i2c SFR from u-boot or misc causes */
 	exynos5_i2c_reset(i2c);
 
+	/* Set up IRQ for Hybrid polling and interrupt modes */
+	if (i2c->operation_mode == HSI2C_INTERRUPT ||
+	    i2c->operation_mode == HSI2C_HYBRID_POLLING) {
+		i2c->irq = irq_of_parse_and_map(np, 0);
+		if (i2c->irq <= 0) {
+			dev_err(&pdev->dev, "cannot find HS-I2C IRQ\n");
+			ret = -EINVAL;
+			goto err_clk1;
+		}
 
-	i2c->irq = irq_of_parse_and_map(np, 0);
-	if (i2c->irq <= 0) {
-		dev_err(&pdev->dev, "cannot find HS-I2C IRQ\n");
-		ret = -EINVAL;
-		goto err_clk1;
-	}
+		ret = devm_request_irq(&pdev->dev, i2c->irq, exynos5_i2c_irq,
+					IRQF_NO_SUSPEND, dev_name(&pdev->dev), i2c);
+		disable_irq(i2c->irq);
 
-	ret = devm_request_irq(&pdev->dev, i2c->irq, exynos5_i2c_irq,
-				IRQF_NO_SUSPEND, dev_name(&pdev->dev), i2c);
-	disable_irq(i2c->irq);
-
-	if (ret != 0) {
-		dev_err(&pdev->dev, "cannot request HS-I2C IRQ %d\n",
-			i2c->irq);
-		goto err_clk1;
+		if (ret != 0) {
+			dev_err(&pdev->dev, "cannot request HS-I2C IRQ %d\n",
+				i2c->irq);
+			goto err_clk1;
+		}
 	}
 
 	i2c->bus_id = of_alias_get_id(i2c->adap.dev.of_node, "hsi2c");

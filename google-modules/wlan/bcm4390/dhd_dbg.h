@@ -60,24 +60,12 @@ do {	\
 #if defined(BCMDBG) || defined(DHD_DEBUG)
 
 #if defined(NDIS)
-#define DHD_ERROR(args)		do { \
-		if (dhd_msg_level & DHD_ERROR_VAL) {\
-			printf args; \
-			DHD_NDDBG_OUTPUT args; \
-		} \
-	} while (0)
-#define DHD_TRACE(args)		do { \
-		if (dhd_msg_level & DHD_TRACE_VAL) {\
-			printf args; \
-			DHD_NDDBG_OUTPUT args; \
-		} \
-	} while (0)
-#define DHD_INFO(args)		do { \
-		if (dhd_msg_level & DHD_INFO_VAL) {\
-			printf args; \
-			DHD_NDDBG_OUTPUT args; \
-		} \
-	} while (0)
+#define DHD_ERROR(args)		do {if (dhd_msg_level & DHD_ERROR_VAL) \
+					{printf args;  DHD_NDDBG_OUTPUT args;}} while (0)
+#define DHD_TRACE(args)		do {if (dhd_msg_level & DHD_TRACE_VAL) \
+					{printf args; DHD_NDDBG_OUTPUT args;}} while (0)
+#define DHD_INFO(args)		do {if (dhd_msg_level & DHD_INFO_VAL) \
+					{printf args; DHD_NDDBG_OUTPUT args;}} while (0)
 #else
 /* NON-NDIS cases */
 #ifdef DHD_LOG_DUMP
@@ -127,28 +115,16 @@ do {	\
 	}	\
 } while (0)
 #else
-#define DHD_INFO(args)		do { \
-		if (dhd_msg_level & DHD_INFO_VAL) \
-			printf args; \
-	} while (0)
+#define DHD_INFO(args)		do {if (dhd_msg_level & DHD_INFO_VAL) printf args;} while (0)
 #endif /* DHD_DEBUGABILITY_LOG_DUMP_RING */
 #endif /* DHD_EFI */
 #else /* DHD_LOG_DUMP */
 /* !defined(DHD_LOG_DUMP cases) */
-#define DHD_ERROR(args)		do { \
-		if (dhd_msg_level & DHD_ERROR_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_INFO(args)		do { \
-		if (dhd_msg_level & DHD_INFO_VAL) \
-			printf args; \
-	} while (0)
+#define DHD_ERROR(args)		do {if (dhd_msg_level & DHD_ERROR_VAL) printf args;} while (0)
+#define DHD_INFO(args)		do {if (dhd_msg_level & DHD_INFO_VAL) printf args;} while (0)
 #endif /* DHD_LOG_DUMP */
 
-#define DHD_TRACE(args)		do { \
-		if (dhd_msg_level & DHD_TRACE_VAL) \
-			printf args; \
-	} while (0)
+#define DHD_TRACE(args)		do {if (dhd_msg_level & DHD_TRACE_VAL) printf args;} while (0)
 #endif /* defined(NDIS) */
 
 #ifdef DHD_LOG_DUMP
@@ -451,17 +427,11 @@ do { \
 #endif /* DHD_EFI */
 #else /* DHD_LOG_DUMP */
 /* !DHD_LOG_DUMP */
-#define DHD_MSGTRACE_LOG(args)  do { \
-		if (dhd_msg_level & DHD_MSGTRACE_VAL) \
-			printf args; \
-	} while (0)
+#define DHD_MSGTRACE_LOG(args)  do {if (dhd_msg_level & DHD_MSGTRACE_VAL) printf args;} while (0)
 #define DHD_ERROR_MEM(args)	DHD_ERROR(args)
 #define DHD_IOVAR_MEM(args)	DHD_ERROR(args)
 #define DHD_LOG_MEM(args)	DHD_ERROR(args)
-#define DHD_EVENT(args)		do { \
-		if (dhd_msg_level & DHD_EVENT_VAL) \
-			printf args; \
-	} while (0)
+#define DHD_EVENT(args)		do {if (dhd_msg_level & DHD_EVENT_VAL) printf args;} while (0)
 #define DHD_ECNTR_LOG(args)	DHD_EVENT(args)
 #define DHD_PRSRV_MEM(args)	DHD_EVENT(args)
 #define DHD_ERROR_EX(args)	DHD_ERROR(args)
@@ -469,65 +439,23 @@ do { \
 #define DHD_PKT_MON(args)	DHD_ERROR(args)
 #endif /* DHD_LOG_DUMP */
 
-#if defined(DHD_EFI) || !defined(DHD_LOG_DUMP)
-#define DHD_CTL(args)		do { \
-		if (dhd_msg_level & DHD_CTL_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_TIMER(args)		do { \
-		if (dhd_msg_level & DHD_TIMER_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_INTR(args)		do { \
-		if (dhd_msg_level & DHD_INTR_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_ISCAN(args)		do { \
-		if (dhd_msg_level & DHD_ISCAN_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_ARPOE(args)		do { \
-		if (dhd_msg_level & DHD_ARPOE_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_REORDER(args)		do { \
-		if (dhd_msg_level & DHD_REORDER_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_PNO(args)		do { \
-		if (dhd_msg_level & DHD_PNO_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_RTT(args)		do { \
-		if (dhd_msg_level & DHD_RTT_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_RPM(args)		do { \
-		if (dhd_msg_level & DHD_RPM_VAL) \
-			printf args; \
-	} while (0)
+#if defined (DHD_EFI) || !defined(DHD_LOG_DUMP)
+#define DHD_CTL(args)		do {if (dhd_msg_level & DHD_CTL_VAL) printf args;} while (0)
+#define DHD_TIMER(args)		do {if (dhd_msg_level & DHD_TIMER_VAL) printf args;} while (0)
+#define DHD_INTR(args)		do {if (dhd_msg_level & DHD_INTR_VAL) printf args;} while (0)
+#define DHD_ISCAN(args)		do {if (dhd_msg_level & DHD_ISCAN_VAL) printf args;} while (0)
+#define DHD_ARPOE(args)		do {if (dhd_msg_level & DHD_ARPOE_VAL) printf args;} while (0)
+#define DHD_REORDER(args)	do {if (dhd_msg_level & DHD_REORDER_VAL) printf args;} while (0)
+#define DHD_PNO(args)		do {if (dhd_msg_level & DHD_PNO_VAL) printf args;} while (0)
+#define DHD_RTT(args)		do {if (dhd_msg_level & DHD_RTT_VAL) printf args;} while (0)
+#define DHD_RPM(args)		do {if (dhd_msg_level & DHD_RPM_VAL) printf args;} while (0)
 #endif /* defined(DHD_EFI) || !defined(DHD_LOG_DUMP) */
 
-#define DHD_DATA(args)		do { \
-		if (dhd_msg_level & DHD_DATA_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_HDRS(args)		do { \
-		if (dhd_msg_level & DHD_HDRS_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_BYTES(args)		do { \
-		if (dhd_msg_level & DHD_BYTES_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_GLOM(args)		do { \
-		if (dhd_msg_level & DHD_GLOM_VAL) \
-			printf args; \
-	} while (0)
-#define DHD_BTA(args)		do { \
-		if (dhd_msg_level & DHD_BTA_VAL) \
-			printf args; \
-	} while (0)
+#define DHD_DATA(args)		do {if (dhd_msg_level & DHD_DATA_VAL) printf args;} while (0)
+#define DHD_HDRS(args)		do {if (dhd_msg_level & DHD_HDRS_VAL) printf args;} while (0)
+#define DHD_BYTES(args)		do {if (dhd_msg_level & DHD_BYTES_VAL) printf args;} while (0)
+#define DHD_GLOM(args)		do {if (dhd_msg_level & DHD_GLOM_VAL) printf args;} while (0)
+#define DHD_BTA(args)		do {if (dhd_msg_level & DHD_BTA_VAL) printf args;} while (0)
 
 #if defined(DHD_LOG_DUMP)
 #if defined(DHD_EFI)
@@ -558,31 +486,18 @@ do { \
 #endif /* DHD_EFI */
 #else /* DHD_LOG_DUMP */
 #if defined(NDIS)
-#define DHD_FWLOG(args)		do { \
-		if (dhd_msg_level & DHD_FWLOG_VAL) {\
-			printf args; \
-			DHD_NDDBG_OUTPUT args; \
-		} \
-	} while (0)
+#define DHD_FWLOG(args)		do {if (dhd_msg_level & DHD_FWLOG_VAL) \
+					{printf args;  DHD_NDDBG_OUTPUT args;}} while (0)
 #else
-#define DHD_FWLOG(args)		do { \
-		if (dhd_msg_level & DHD_FWLOG_VAL) \
-			printf args; \
-	} while (0)
+#define DHD_FWLOG(args)		do {if (dhd_msg_level & DHD_FWLOG_VAL) printf args;} while (0)
 #endif /* defined(NDIS) */
 #endif /* DHD_LOG_DUMP */
 
-#define DHD_DBGIF(args)		do { \
-		if (dhd_msg_level & DHD_DBGIF_VAL) \
-			printf args; \
-	} while (0)
+#define DHD_DBGIF(args)		do {if (dhd_msg_level & DHD_DBGIF_VAL) printf args;} while (0)
 
 #if defined(DHD_MESH)
 extern uint32 mesh_msg_level;
-#define DHD_MESH_HDR(args)	do { \
-		if (mesh_msg_level & MESH_MSG_HDR_VAL) \
-			printf args; \
-	} while (0)
+#define DHD_MESH_HDR(args)	do {if (mesh_msg_level & MESH_MSG_HDR_VAL) printf args;} while (0)
 #define DHD_MESH_HDR_ON()	(mesh_msg_level & MESH_MSG_HDR_VAL)
 #endif
 
@@ -626,22 +541,12 @@ extern uint32 mesh_msg_level;
 #else /* defined(BCMDBG) || defined(DHD_DEBUG) */
 
 #if defined(NDIS)
-#define DHD_ERROR(args)		do { \
-		if (dhd_msg_level & DHD_ERROR_VAL) {\
-			printf args; \
-			DHD_NDDBG_OUTPUT args; \
-		} \
-	} while (0)
-#define DHD_TRACE(args)		do { \
-		if (dhd_msg_level & DHD_TRACE_VAL) {\
-			DHD_NDDBG_OUTPUT args; \
-		} \
-	} while (0)
-#define DHD_INFO(args)		do { \
-		if (dhd_msg_level & DHD_INFO_VAL) {\
-			DHD_NDDBG_OUTPUT args; \
-		} \
-	} while (0)
+#define DHD_ERROR(args)		do {if (dhd_msg_level & DHD_ERROR_VAL) \
+					{printf args;  DHD_NDDBG_OUTPUT args;}} while (0)
+#define DHD_TRACE(args)		do {if (dhd_msg_level & DHD_TRACE_VAL) \
+					{DHD_NDDBG_OUTPUT args;}} while (0)
+#define DHD_INFO(args)		do {if (dhd_msg_level & DHD_INFO_VAL) \
+					{DHD_NDDBG_OUTPUT args;}} while (0)
 #elif defined(DHD_EFI) && defined(DHD_LOG_DUMP)
 #define DHD_ERROR(args)	\
 do {	\
@@ -662,10 +567,8 @@ do {	\
 #define DHD_TRACE(args)
 #else /* DHD_EFI && DHD_LOG_DUMP */
 
-#define DHD_ERROR(args)		do { \
-		if (dhd_msg_level & DHD_ERROR_VAL) \
-			printf args; \
-	} while (0)
+#define DHD_ERROR(args)		do {if (dhd_msg_level & DHD_ERROR_VAL) \
+								printf args;} while (0)
 #define DHD_TRACE(args)
 #define DHD_INFO(args)
 #endif /* defined(NDIS) */
@@ -797,8 +700,8 @@ do {	\
 #define DHD_ERROR_RLMT(args) \
 do {	\
 	if (dhd_msg_level & DHD_ERROR_VAL) {	\
-		static uint64 __err_ts; \
-		static uint32 __err_cnt; \
+		static uint64 __err_ts = 0; \
+		static uint32 __err_cnt = 0; \
 		uint64 __cur_ts = 0; \
 		__cur_ts = OSL_SYSUPTIME_US(); \
 		if (__err_ts == 0 || (__cur_ts > __err_ts && \
@@ -814,16 +717,11 @@ do {	\
 } while (0)
 
 /* even in non-BCMDBG builds, logging of dongle iovars should be available */
-#define DHD_DNGL_IOVAR_SET(args) do { \
-		if (dhd_msg_level & DHD_DNGL_IOVAR_SET_VAL) \
-			printf args; \
-	} while (0)
+#define DHD_DNGL_IOVAR_SET(args) \
+	do {if (dhd_msg_level & DHD_DNGL_IOVAR_SET_VAL) printf args;} while (0)
 
 #ifdef BCMPERFSTATS
-#define DHD_LOG(args)		do { \
-		if (dhd_msg_level & DHD_LOG_VAL) \
-			bcmlog args; \
-	} while (0)
+#define DHD_LOG(args)		do {if (dhd_msg_level & DHD_LOG_VAL) bcmlog args;} while (0)
 #else
 #define DHD_LOG(args)
 #endif
@@ -831,9 +729,7 @@ do {	\
 #if defined(BCMINTERNAL) && defined(__linux__) && defined(BCMSDIO) && (defined(BCMDBG) || \
 	defined(DHD_DEBUG))
 extern void dhd_blog(char *cp, int size);
-#define DHD_BLOG(cp, size) do {\
-		dhd_blog(cp, size); \
-	} while (0)
+#define DHD_BLOG(cp, size)		do { dhd_blog(cp, size);} while (0)
 #else
 #define DHD_BLOG(cp, size)
 #endif

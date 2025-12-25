@@ -57,6 +57,8 @@ enum gcip_fw_crash_type {
 	GCIP_FW_CRASH_UNDEFINED_EXCEPTION = 3,
 	/* Exception which cannot be recovered by the firmware itself. */
 	GCIP_FW_CRASH_UNRECOVERABLE_FAULT = 4,
+	/* Used in debug dump. */
+	GCIP_FW_CRASH_DUMMY_CRASH_TYPE = 0xFF,
 
 	/* HW watchdog timeout. */
 	GCIP_FW_CRASH_HW_WDG_TIMEOUT = 0x100,

@@ -186,6 +186,9 @@ bool gcip_pm_suspendable_locked(struct gcip_pm *pm, int *count);
 /* Make sure @pm->lock is held. */
 static inline void gcip_pm_lockdep_assert_held(struct gcip_pm *pm)
 {
+	if (!pm)
+		return;
+
 	lockdep_assert_held(&pm->lock);
 }
 
@@ -197,6 +200,9 @@ static inline void gcip_pm_lockdep_assert_held(struct gcip_pm *pm)
  */
 static inline void gcip_pm_lock(struct gcip_pm *pm)
 {
+	if (!pm)
+		return;
+
 	mutex_lock(&pm->lock);
 }
 
@@ -207,12 +213,18 @@ static inline void gcip_pm_lock(struct gcip_pm *pm)
  */
 static inline int gcip_pm_trylock(struct gcip_pm *pm)
 {
+	if (!pm)
+		return 1;
+
 	return mutex_trylock(&pm->lock);
 }
 
 /* Unlock the PM lock. */
 static inline void gcip_pm_unlock(struct gcip_pm *pm)
 {
+	if (!pm)
+		return;
+
 	lockdep_assert_held(&pm->lock);
 	mutex_unlock(&pm->lock);
 }

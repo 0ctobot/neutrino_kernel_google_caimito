@@ -219,10 +219,10 @@ void kbase_regmap_term(struct kbase_device *kbdev);
  *
  * Return: 0 if condition is met, -ETIMEDOUT if timed out.
  */
-#define kbase_reg_poll32_timeout(kbdev, reg_enum, val, cond, delay_us, timeout_us,       \
-				 delay_before_read)                                      \
-	mali_read_poll_timeout_atomic(kbase_reg_read32, val, cond, delay_us, timeout_us, \
-				      delay_before_read, kbdev, reg_enum)
+#define kbase_reg_poll32_timeout(kbdev, reg_enum, val, cond, delay_us, timeout_us,  \
+				 delay_before_read)                                 \
+	read_poll_timeout_atomic(kbase_reg_read32, val, cond, delay_us, timeout_us, \
+				 delay_before_read, kbdev, reg_enum)
 
 /**
  * kbase_reg_poll64_timeout - Poll a 64 bit register with timeout
@@ -236,8 +236,35 @@ void kbase_regmap_term(struct kbase_device *kbdev);
  *
  * Return: 0 if condition is met, -ETIMEDOUT if timed out.
  */
-#define kbase_reg_poll64_timeout(kbdev, reg_enum, val, cond, delay_us, timeout_us,       \
-				 delay_before_read)                                      \
-	mali_read_poll_timeout_atomic(kbase_reg_read64, val, cond, delay_us, timeout_us, \
-				      delay_before_read, kbdev, reg_enum)
+#define kbase_reg_poll64_timeout(kbdev, reg_enum, val, cond, delay_us, timeout_us,  \
+				 delay_before_read)                                 \
+	read_poll_timeout_atomic(kbase_reg_read64, val, cond, delay_us, timeout_us, \
+				 delay_before_read, kbdev, reg_enum)
+
+/**
+ * kbase_reg_gpu_irq_all - Return a mask for all GPU IRQ sources
+ * @is_legacy:       Indicates a legacy GPU IRQ mask.
+ *
+ * Return: a mask for all GPU IRQ sources.
+ *
+ * Note that the following sources are not included:
+ * CLEAN_CACHES_COMPLETED - Used separately for cache operation.
+ * DOORBELL_MIRROR - Do not have it included for GPU_IRQ_REG_COMMON
+ *                   as it can't be cleared by GPU_IRQ_CLEAR, thus interrupt storm might happen
+ */
+static inline u32 kbase_reg_gpu_irq_all(bool is_legacy)
+{
+	u32 mask = GPU_IRQ_REG_COMMON;
+
+	if (is_legacy) {
+#if MALI_USE_CSF
+		mask |= (RESET_COMPLETED | POWER_CHANGED_ALL);
+#endif /* MALI_USE_CSF */
+		/* Include POWER_CHANGED_SINGLE in debug builds for use in irq latency test. */
+		if (IS_ENABLED(CONFIG_MALI_DEBUG))
+			mask |= POWER_CHANGED_SINGLE;
+	}
+
+	return mask;
+}
 #endif /* _MALI_KBASE_HW_ACCESS_H_ */

@@ -112,6 +112,10 @@ static char *align_status_str[] = {
 	"...", "M2C", "OK", "-1"
 };
 
+static char *uevent_source_str[] = {
+	"WLC", "FAN", "RTX"
+};
+
 static size_t p9221_hex_str(u8 *data, size_t len, char *buf, size_t max_buf,
 			    bool msbfirst)
 {

@@ -18,7 +18,6 @@
 //#define FTH_IOCTL_CONFIGURE_TOUCH_FD_V4    113
 //#define FTH_IOCTL_CONFIGURE_TOUCH_FD_V5    114
 #define FTH_IOCTL_CONFIGURE_TOUCH_FD_V6      115
-#define FTH_IOCTL_GET_TOUCH_DEVICE_STATUS    116
 
 #define FTH_TOUCH_FD_VERSION_6 6
 
@@ -111,15 +110,6 @@ struct fth_touch_config_v6 {
 	__s32 bottom;
 	__s32 rad_x;
 	__s32 rad_y;
-};
-
-/*
- * struct fth_touch_device_status -
- *		used to get touch device connection status
- * @is_connected: touch device connection status
- */
-struct fth_touch_device_status {
-	_Bool is_connected;
 };
 
 #endif /* _UAPI_FTH_HANDLER_H_ */

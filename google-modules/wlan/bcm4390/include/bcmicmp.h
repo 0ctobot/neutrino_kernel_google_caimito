@@ -61,7 +61,7 @@
 BWL_PRE_PACKED_STRUCT struct icmp6_opt {
 	uint8	type;		/* Option identifier */
 	uint8	length;		/* Lenth including type and length */
-	uint8	data[];	/* Variable length data */
+	uint8	data[0];	/* Variable length data */
 } BWL_POST_PACKED_STRUCT;
 
 #define	ICMP6_OPT_TYPE_SRC_LINK_LAYER	1

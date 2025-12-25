@@ -45,7 +45,7 @@
 #define DONGLE_REG_MAP_SIZE (32 * 1024)
 #define DONGLE_TCM_MAP_SIZE (4096 * 1024)
 #define DONGLE_BAR2_MAP_SIZE (1024 * 1024)
-#define DONGLE_MIN_MEMSIZE (128 * 1024)
+#define DONGLE_MIN_MEMSIZE (128 *1024)
 #ifdef DHD_DEBUG
 #define DHD_PCIE_SUCCESS 0
 #define DHD_PCIE_FAILURE 1
@@ -110,18 +110,6 @@
 #define DHDPCIE_PM_D3_DELAY 200000 /* 200ms in units of us */
 #define DHDPCIE_PM_D2_DELAY 200 /* 200us */
 
-#define DHD_VALID_SYSMEM_ADDR(bus, addr) \
-	(((ulong)addr >= bus->dongle_ram_base) && \
-	((ulong)addr < (bus->dongle_ram_base + bus->ramsize)))
-
-#define DHD_VALID_SYSMEM_ADDR_RANGE(bus, addr, len) \
-	(((ulong)addr >= bus->dongle_ram_base) && \
-	((ulong)(addr + len) <= (bus->dongle_ram_base + bus->ramsize)))
-
-#ifdef DHD_ART
-#define ART_ACTIVE(dhd)	(((dhd)->dongle_art_enabled) && ((dhd)->host_art_enabled) && \
-		((dhd)->dongle_txpost_ext_enabled))
-#endif /* DHD_ART */
 #ifdef TX_CSO
 #define TXCSO_ENAB(dhd)		((dhd)->dongle_txcso_enabled)
 #define TXCSO_ACTIVE(dhd)	(((dhd)->dongle_txcso_enabled) && ((dhd)->host_txcso_enabled) && \
@@ -202,7 +190,8 @@ struct dhd_pcie_rev {
 	void (*handle_mb_data)(struct dhd_bus *);
 };
 
-typedef struct dhdpcie_config_save {
+typedef struct dhdpcie_config_save
+{
 	uint32 header[DHDPCIE_CONFIG_HDR_SIZE];
 	/* pmcsr save */
 	uint32 pmcsr;
@@ -479,8 +468,8 @@ typedef struct dhd_bus {
 	bool	d2h_intr_control;
 #ifdef SUPPORT_LINKDOWN_RECOVERY
 	uint8 no_cfg_restore;
-#endif /* SUPPORT_LINKDOWN_RECOVERY */
 	bool read_shm_fail;
+#endif /* SUPPORT_LINKDOWN_RECOVERY */
 	int32 idletime;                 /* Control for activity timeout */
 	bool rpm_enabled;
 #ifdef DHD_PCIE_RUNTIMEPM
@@ -534,7 +523,7 @@ typedef struct dhd_bus {
 #endif /* DHD_SSSR_DUMP */
 
 	uint32  hostready_count; /* Number of hostready issued */
-#if defined(PCIE_OOB) || defined(BCMPCIE_OOB_HOST_WAKE)
+#if defined(PCIE_OOB) || defined (BCMPCIE_OOB_HOST_WAKE)
 	bool	oob_presuspend;
 #endif /* PCIE_OOB || BCMPCIE_OOB_HOST_WAKE */
 	dhdpcie_config_save_t saved_config;
@@ -688,7 +677,6 @@ typedef struct dhd_bus {
 	dhd_pcie_link_state_type_t link_state;
 
 	uint32 rot_dpc_sched_count;
-	uint32 rot_consec_retry;
 
 	bool lpm_mode;	/* lpm enabled */
 	bool lpm_keep_in_reset; /* during LPM keep in FLR, if FLR force is enabled */
@@ -909,7 +897,7 @@ dhd_set_bus_lps_d3_acked(dhd_bus_t *bus)
 
 /* function declarations */
 
-extern uint32 *dhdpcie_bus_reg_map(osl_t *osh, ulong addr, int size);
+extern uint32* dhdpcie_bus_reg_map(osl_t *osh, ulong addr, int size);
 extern int dhdpcie_bus_register(void);
 extern void dhdpcie_bus_unregister(void);
 extern bool dhdpcie_chipmatch(uint16 vendor, uint16 device);
@@ -956,35 +944,16 @@ extern uint32 dhdpcie_rc_access_cap(dhd_bus_t *bus, int cap, uint offset, bool i
 extern uint32 dhdpcie_ep_access_cap(dhd_bus_t *bus, int cap, uint offset, bool is_ext,
 		bool is_write, uint32 writeval);
 extern uint32 dhd_debug_get_rc_linkcap(dhd_bus_t *bus);
+extern void dhdpcie_enable_irq_loop(dhd_bus_t *bus);
 #else
-static INLINE uint32 dhdpcie_rc_config_read(dhd_bus_t *bus, uint offset)
-{
-	return 0;
-}
-
+static INLINE uint32 dhdpcie_rc_config_read(dhd_bus_t *bus, uint offset) { return 0;}
 static INLINE uint32 dhdpcie_rc_access_cap(dhd_bus_t *bus, int cap, uint offset, bool is_ext,
-	bool is_write, uint32 writeval)
-{
-	return -1;
-}
-
+		bool is_write, uint32 writeval) { return -1;}
 static INLINE uint32 dhdpcie_ep_access_cap(dhd_bus_t *bus, int cap, uint offset, bool is_ext,
-	bool is_write, uint32 writeval)
-{
-	return -1;
-}
-
-static INLINE uint32 dhd_debug_get_rc_linkcap(dhd_bus_t *bus)
-{
-	return -1;
-}
-
-static INLINE void dhdpcie_enable_irq_loop(dhd_bus_t *bus)
-{
-	return;
-}
+		bool is_write, uint32 writeval) { return -1;}
+static INLINE uint32 dhd_debug_get_rc_linkcap(dhd_bus_t *bus) { return -1;}
+static INLINE void dhdpcie_enable_irq_loop(dhd_bus_t *bus) { return; }
 #endif /* LINUX || linux */
-
 #if defined(__linux__)
 extern int dhdpcie_start_host_dev(dhd_bus_t *bus);
 extern int dhdpcie_stop_host_dev(dhd_bus_t *bus);
@@ -1071,8 +1040,8 @@ extern bool dhdpcie_bus_get_pcie_inband_dw_supported(dhd_bus_t *bus);
 extern void dhdpcie_bus_set_pcie_inband_dw_state(dhd_bus_t *bus,
 	enum dhd_bus_ds_state state);
 extern enum dhd_bus_ds_state dhdpcie_bus_get_pcie_inband_dw_state(dhd_bus_t *bus);
-extern const char *dhd_convert_inb_state_names(enum dhd_bus_ds_state inbstate);
-extern const char *dhd_convert_dsval(uint32 val, bool d2h);
+extern const char * dhd_convert_inb_state_names(enum dhd_bus_ds_state inbstate);
+extern const char * dhd_convert_dsval(uint32 val, bool d2h);
 extern int dhd_bus_inb_set_device_wake(struct dhd_bus *bus, bool val, const char *context);
 extern void dhd_bus_inb_ack_pending_ds_req(dhd_bus_t *bus, const char *context);
 #endif /* PCIE_INB_DW */
@@ -1081,15 +1050,9 @@ extern void dhdpcie_bus_enab_pcie_dw(dhd_bus_t *bus, uint8 dw_option);
 extern int dhdpcie_irq_disabled(struct dhd_bus *bus);
 extern int dhdpcie_set_master_and_d0_pwrstate(struct dhd_bus *bus);
 #else
-static INLINE bool dhdpcie_irq_disabled(struct dhd_bus *bus)
-{
-	return BCME_ERROR;
-}
-
+static INLINE bool dhdpcie_irq_disabled(struct dhd_bus *bus) { return BCME_ERROR;}
 static INLINE int dhdpcie_set_master_and_d0_pwrstate(struct dhd_bus *bus)
-{
-	return BCME_ERROR;
-}
+{ return BCME_ERROR;}
 #endif /* defined(__linux__) */
 
 #ifdef DHD_EFI
@@ -1107,16 +1070,8 @@ int dhdpcie_enable_intr_poll(dhd_bus_t *bus);
 int dhd_btop_test(dhd_bus_t *bus, char *arg, int len);
 #endif /* BT_OVER_PCIE */
 #else
-static INLINE bool dhdpcie_is_arm_halted(struct dhd_bus *bus)
-{
-	return TRUE;
-}
-
-static INLINE int dhd_os_wifi_platform_set_power(uint32 value)
-{
-	return BCME_OK;
-}
-
+static INLINE bool dhdpcie_is_arm_halted(struct dhd_bus *bus) {return TRUE;}
+static INLINE int dhd_os_wifi_platform_set_power(uint32 value) {return BCME_OK; }
 static INLINE void
 dhdpcie_dongle_flr_or_pwr_toggle(dhd_bus_t *bus)
 { return; }
@@ -1170,7 +1125,7 @@ extern wifi_properties_t *dhd_get_props(dhd_bus_t *bus);
 #endif
 
 #if defined(DHD_EFI) || defined(NDIS)
-extern int dhd_get_platform(dhd_pub_t *dhd, char *progname);
+extern int dhd_get_platform(dhd_pub_t* dhd, char *progname);
 extern bool dhdpcie_is_chip_supported(uint32 chipid, int *idx);
 #endif
 
@@ -1269,5 +1224,5 @@ void dhd_bus_pcie_pwr_req_clear(struct dhd_bus *bus);
 #define PCIE_SUBSYS_CTRL_BPACCESS_ENABLE 0x800C0u
 #define PCIE_SUBSYS_CTRL_BPACCESS_DISABLE 0x80080u
 #define BP_INDACCESS_SHIFT (0x1 << 6)
-void dhdpcie_print_amni_regs(dhd_bus_t *bus, bool trap_or_rot);
+void dhdpcie_print_amni_regs(dhd_bus_t *bus);
 #endif /* dhd_pcie_h */

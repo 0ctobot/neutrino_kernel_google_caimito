@@ -14,7 +14,8 @@ Users:		Edge TPU runtime library (libedgetpu)
 What:		/sys/class/edgetpu/edgetpu-soc/device/firmware_type
 Date:		August 2020
 Description:
-		“prod” or “test” firmware type/flavor.  (Or “unknown”.)
+		“prod” or “test” firmware type/flavor.  (Or “unknown” or “custom” or “stage 2
+		bootloader”.)
 Users:		Edge TPU runtime library (libedgetpu)
 
 What:		/sys/class/edgetpu/edgetpu-soc/device/firmware_version
@@ -33,21 +34,14 @@ Date:		July 2021
 Description:
 		List clients that have opened the device by process and thread IDs.  Also shows
 		current wakelock counts for debugging which client is holding the device powered.
-Users:		Edge TPU runtime library (libedgetpu), bugreports.
+Users:		Edge TPU runtime library (libedgetpu)
 
 What:		/sys/class/edgetpu/edgetpu-soc/device/groups
 Date:		August 2021
 Description:
 		List currently formed, forming, and disbanding device groups, with client PIDs and
 		amount of host and dma-buf memory mapped to the TPU, plus errors and VCIDs.
-Users:		Edge TPU runtime library (libedgetpu), bugreports.
-
-What:		/sys/class/edgetpu/edgetpu-soc/device/eventlog
-Date:		September 2025
-Description:
-		Circular buffer of most recent internal events with timestamps and additional info.
-		Keeps track of client lifetime and power events for diagnostic purposes.
-Users:		Edge TPU runtime library (libedgetpu), bugreports.
+Users:		Edge TPU runtime library (libedgetpu)
 
 # Error Statistics
 # These statistics are maintained by the kernel driver.
@@ -160,6 +154,9 @@ Date:		April 2021
 Description:
 		Maximum stack depth per thread id.  Write to clear.
 Users:		Edge TPU runtime library (libedgetpu)
+
+# The following are not present or not meaningful (always zero) on Abrolhos or Hermosa; are present
+# on mobile Janeiro and beyond.
 
 What:		/sys/class/edgetpu/edgetpu-soc/device/hardware_preempt_count
 Date:		November 2021

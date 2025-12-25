@@ -21,11 +21,6 @@
  * <<Broadcom-WL-IPTag/Dual:>>
  */
 
-#if defined(__linux__) && !defined(BCMDRIVER)
-// for 'uint'
-#define USE_TYPEDEF_DEFAULTS
-#endif
-
 #include <typedefs.h>
 #include <bcmdefs.h>
 
@@ -387,8 +382,6 @@ static const capext_bitpos_to_string_map_t capext_wl_features_subfeature_map[] =
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_SPMI_SCAN_FWD, "spmi_scan_fwd"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_OWE_AP, "owe_ap"),
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_MPF_SCAN, "mpf_scan"),
-	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_MRSNO, "mrsno"),
-	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_AOP_SCAN, "aop_scan"),
 
 	CAPEXT_SUBFEATURE_MAP(WLC_CAPEXT_FEATURE_BITPOS_MAX, NULL)
 };

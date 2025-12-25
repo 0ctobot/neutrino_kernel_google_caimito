@@ -125,25 +125,6 @@ struct maxfg_eeprom_history {
 };
 #pragma pack()
 
-struct max1720x_eeprom_history {
-	u16 qrtable00;
-	u16 qrtable10;
-	u16 qrtable20;
-	u16 qrtable30;
-	u16 cycles;
-	u16 fullcapnom;
-	u16 rcomp0;
-	u16 tempco;
-	u16 iavgempty;
-	u16 fullcaprep;
-	u16 volttemp;
-	u16 maxmincurr;
-	u16 maxminvolt;
-	u16 maxmintemp;
-	u16 soc;
-	u16 timerh;
-};
-
 /* Capacity Estimation */
 struct gbatt_capacity_estimation {
 	const struct maxfg_reg *bcea;
@@ -415,7 +396,7 @@ static inline int maxfg_regmap_writeverify(const struct maxfg_regmap *map,
 	maxfg_regmap_writeverify(regmap, what, value, #what)
 /* dump FG model data */
 void dump_model(struct device *dev, u16 model_start, u16 *data, int count);
-int maxfg_get_fade_rate(struct device *dev, int bhi_fcn_count, int *fade_rate);
+int maxfg_get_fade_rate(struct device *dev, int bhi_fcn_count, int *fade_rate, enum gbms_property p);
 const struct maxfg_reg * maxfg_find_by_tag(struct maxfg_regmap *map, enum maxfg_reg_tags tag);
 int maxfg_reg_read(struct maxfg_regmap *map, enum maxfg_reg_tags tag, u16 *val);
 int maxfg_collect_history_data(void *buff, size_t size, bool is_por, u16 designcap, u16 RSense,
@@ -513,7 +494,7 @@ int maxfg_aafv_scan_inputs(const char *inputs, const int input_sz,
 			   struct aafv_fg_config* cfg, const int cfg_max);
 int maxfg_aafv_apply(struct logbuffer *mon, struct device *dev, struct maxfg_regmap *regmap,
 		     int aafv, const struct aafv_fg_config *cfgs, const int cfg_max,
-		     int fus_clear, int fus_shift, bool *fus_set, int *aafv_cur_index);
+		     int fus_clear, int fus_shift, int *aafv_cur_index);
 int maxfg_aafv_restore_fus(struct maxfg_regmap *regmap, int fus_clear, int fus_shift, u16 fus);
 int maxfg_aafv_init(struct device_node *node, const char * prop,
 		    struct aafv_fg_config *config, int *config_limits);

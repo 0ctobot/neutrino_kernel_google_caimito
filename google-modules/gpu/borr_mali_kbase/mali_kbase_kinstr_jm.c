@@ -651,9 +651,7 @@ static __poll_t reader_poll(struct file *const file, struct poll_table_struct *c
 
 /* The file operations virtual function table */
 static const struct file_operations file_operations = { .owner = THIS_MODULE,
-#if (KERNEL_VERSION(6, 12, 0) > LINUX_VERSION_CODE)
 							.llseek = no_llseek,
-#endif
 							.read = reader_read,
 							.poll = reader_poll,
 							.release = reader_release };
@@ -754,7 +752,6 @@ int kbase_kinstr_jm_get_fd(struct kbase_kinstr_jm *const ctx, union kbase_kinstr
 	size_t const change_size = sizeof(struct kbase_kinstr_jm_atom_state_change);
 	int status;
 	int fd;
-	size_t i;
 
 	if (!ctx || !jm_fd_arg)
 		return -EINVAL;
@@ -763,10 +760,6 @@ int kbase_kinstr_jm_get_fd(struct kbase_kinstr_jm *const ctx, union kbase_kinstr
 
 	if (!is_power_of_2(in->count))
 		return -EINVAL;
-
-	for (i = 0; i < sizeof(in->padding); ++i)
-		if (in->padding[i])
-			return -EINVAL;
 
 	status = reader_init(&reader, ctx, in->count);
 	if (status < 0)

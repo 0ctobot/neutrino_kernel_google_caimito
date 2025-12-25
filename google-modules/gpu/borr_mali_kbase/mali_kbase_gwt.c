@@ -180,20 +180,16 @@ int kbase_gpu_gwt_dump(struct kbase_context *kctx, union kbase_ioctl_cinstr_gwt_
 	size_t copy_size;
 	int ret = 0;
 
+	/* We don't have any valid user space buffer to copy the write modified addresses. */
+	if (!gwt_dump->in.len || !gwt_dump->in.addr_buffer || !gwt_dump->in.size_buffer)
+		return -EINVAL;
+
 	kbase_gpu_vm_lock(kctx);
 
 	if (!kctx->gwt_enabled) {
 		/* gwt_dump shouldn't be called when gwt is disabled */
 		ret = -EPERM;
 		goto unlock_and_exit;
-	}
-
-	if (!gwt_dump->in.len || !gwt_dump->in.addr_buffer || !gwt_dump->in.size_buffer) {
-		kbase_gpu_vm_unlock(kctx);
-		/* We don't have any valid user space buffer to copy the
-		 * write modified addresses.
-		 */
-		return -EINVAL;
 	}
 
 	if (list_empty(&kctx->gwt_snapshot_list) && !list_empty(&kctx->gwt_current_list)) {

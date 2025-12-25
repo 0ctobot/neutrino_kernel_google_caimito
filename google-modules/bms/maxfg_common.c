@@ -34,13 +34,11 @@ void dump_model(struct device *dev, u16 model_start, u16 *data, int count)
 	}
 }
 
-int maxfg_get_fade_rate(struct device *dev, int bhi_fcn_count, int *fade_rate)
+int maxfg_get_fade_rate(struct device *dev, int bhi_fcn_count, int *fade_rate, enum gbms_property p)
 {
 	struct maxfg_eeprom_history hist = { 0 };
-	int ret, i, hist_max_size;
-	int fcn_sum = 0, fcr_sum = 0, fcn_max = 0, fcn_min = 0, fcr_max = 0, fcr_min = 0;
+	int ret, ratio, i, fc_sum = 0, fc = 0, hist_max_size, max = 0, min = 0;
 	u16 hist_idx;
-	s8 ratio_fcn, ratio_fcr;
 
 	ret = gbms_storage_read(GBMS_TAG_HCNT, &hist_idx, sizeof(hist_idx));
 	if (ret < 0) {
@@ -80,48 +78,36 @@ int maxfg_get_fade_rate(struct device *dev, int bhi_fcn_count, int *fade_rate)
 			     __func__, hist_idx, hist.fullcapnom, hist.fullcapnom,
 			     hist.fullcaprep, hist.fullcaprep, ret);
 
-		if (ret != sizeof(hist))
+		if (ret < 0 || ret != sizeof(hist))
 			return -EINVAL;
 
-		/* ignore the invalid history */
-		if (hist.tempco == 0xFFFF && hist.rcomp0 == 0xFFFF) {
-			bhi_fcn_count--;
-			continue;
-		}
+		/* hist.fullcapnom = fullcapnom * 800 / designcap */
+		fc = p == GBMS_PROP_CAPACITY_FADE_RATE_FCR ? hist.fullcaprep : hist.fullcapnom;
 
-		fcn_sum += hist.fullcapnom;
-		fcr_sum += hist.fullcaprep;
+		fc_sum += fc;
 
-		if (fcn_min == 0 || hist.fullcapnom < fcn_min)
-			fcn_min = hist.fullcapnom;
+		if (max == 0 || min == 0)
+			max = min = fc;
 
-		if (fcn_max == 0 || hist.fullcapnom > fcn_max)
-			fcn_max = hist.fullcapnom;
+		if (fc < min)
+			min = fc;
 
-		if (fcr_max == 0 || hist.fullcaprep > fcr_max)
-			fcr_max = hist.fullcaprep;
+		if (fc > max)
+			max = fc;
 
-		if (fcr_min == 0 || hist.fullcaprep < fcr_min)
-			fcr_min = hist.fullcaprep;
 	}
-
-	if (bhi_fcn_count == 0)
-		return -EINVAL;
 
 	if (bhi_fcn_count > BHI_CAP_FILTER_VALUE_COUNT) {
 		/* filter max/min values */
-		fcn_sum = fcn_sum - fcn_min - fcn_max;
-		fcr_sum = fcr_sum - fcr_min - fcr_max;
+		fc_sum = fc_sum - min - max;
 		bhi_fcn_count -= BHI_CAP_FILTER_VALUE_COUNT;
 	}
 
-	/* convert from maxfg_eeprom_history to percent, lsb 0.125% */
-	ratio_fcn = fcn_sum / (bhi_fcn_count * 8);
-	ratio_fcr = fcr_sum / (bhi_fcn_count * 8);
+	/* convert from maxfg_eeprom_history to percent */
+	ratio = fc_sum / (bhi_fcn_count * 8);
 
-	/* allow negative value when capacity larger than design, pack FCN and FCR fade rates */
-	*fade_rate = ((s8)(100 - ratio_fcn) & 0xFF) |
-		     ((s8)(100 - ratio_fcr) & 0xFF) << FADE_RATE_FCR_OFFSET;
+	/* allow negative value when capacity larger than design */
+	*fade_rate = 100 - ratio;
 
 	return 0;
 }
@@ -1260,7 +1246,7 @@ static inline int maxfg_aafv_pick_config(const struct aafv_fg_config *cfgs, cons
 
 int maxfg_aafv_apply(struct logbuffer *mon, struct device *dev, struct maxfg_regmap *regmap,
 		     int aafv, const struct aafv_fg_config *cfgs, const int cfg_max,
-		     int fus_clear, int fus_shift, bool *fus_set, int *aafv_cur_index)
+		     int fus_clear, int fus_shift, int *aafv_cur_index)
 {
 	const struct aafv_fg_config *cfg;
 	u16 fullsoc, fullsoc_reg, misccfg, ichgterm;
@@ -1325,7 +1311,6 @@ int maxfg_aafv_apply(struct logbuffer *mon, struct device *dev, struct maxfg_reg
 			      __func__, fullsoc, misccfg, ichgterm);
 
 	*aafv_cur_index = idx;
-	*fus_set = true;
 
 	return ret;
 }
@@ -1580,13 +1565,9 @@ bool maxfg_need_force_fullcharge(struct logbuffer *lb, struct device *dev,
 
 	switch (limit->mode) {
 	case MAXFG_BYPASS_MODE_CYCLE_DELTA:
-		/*
-		 * if no last full charge record or it's beyond current cycle count,
-		 * use current cycle count as base
-		 */
-		if (limit->last_fullcharge == 0 || (limit->last_fullcharge > cycle && cycle > 0))
+		/* if no last full charge record, use current cycle count as base */
+		if (limit->last_fullcharge == 0)
 			maxfg_update_bypass_charge_limit(lb, dev, regmap, limit, cycle);
-
 		force = cycle - limit->last_fullcharge >= limit->threshold_cycle_delta;
 		if (force)
 			gbms_logbuffer_devlog(lb, dev, LOGLEVEL_INFO, 0, LOGLEVEL_INFO,

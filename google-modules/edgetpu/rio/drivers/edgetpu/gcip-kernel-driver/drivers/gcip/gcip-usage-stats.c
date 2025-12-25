@@ -155,7 +155,10 @@ static void gcip_usage_stats_update_core_usage(struct gcip_usage_stats *ustats,
 {
 	struct gcip_usage_stats_core_usage_uid_entry *uid_entry;
 	unsigned int state = gcip_usage_stats_find_dvfs_freq_index(ustats, new->operating_point);
-	uint8_t subcomponent_id = new->core_id;
+	uint8_t subcomponent_id = 0;
+
+	if (fw_metric_version >= GCIP_USAGE_STATS_V2)
+		subcomponent_id = new->core_id;
 
 	if (subcomponent_id >= ustats->subcomponents) {
 		dev_warn_once(ustats->dev,
@@ -333,7 +336,7 @@ gcip_usage_stats_update_component_utilization(struct gcip_usage_stats *ustats,
 
 	if (new->component < 0 ||
 	    new->component >= GCIP_USAGE_STATS_COMPONENT_UTILIZATION_NUM_TYPES) {
-		dev_warn_once(ustats->dev, "FW sent an unknown component utilization type, type=%d",
+		dev_warn_once(ustats->dev, "FW sent an invalid component utilization type, type=%d",
 			      new->component);
 		return;
 	}
@@ -367,8 +370,8 @@ gcip_usage_stats_update_component_utilization(struct gcip_usage_stats *ustats,
  * register the `gcip_usage_stats_user_defined_store` function as the store function if the kernel
  * driver enables the write permission.
  *
- * If the @attr->subcomponent is `GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS`, print the value
- * of all subcomponents in one array with whitespace separation, otherwise, print the value of the
+ * If the @attr->subcomponent is `GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS`, print the counters
+ * of all subcomponents in one array with whitespace separation, otherwise, print the counter of the
  * specific subcomponent.
  *
  * Called when the runtime reads the device attribute.
@@ -416,18 +419,21 @@ static void gcip_usage_stats_update_counter(struct gcip_usage_stats *ustats,
 					    struct gcip_usage_stats_counter *new,
 					    uint16_t fw_metric_version)
 {
-	uint8_t component_id = new->component_id;
+	uint8_t component_id = 0;
 
 	if (new->type < 0 || new->type >= GCIP_USAGE_STATS_COUNTER_NUM_TYPES) {
-		dev_warn_once(ustats->dev, "FW sent an unknown counter type, type=%d", new->type);
+		dev_warn_once(ustats->dev, "FW sent an invalid counter type, type=%d", new->type);
 		return;
 	}
 
-	if (component_id >= ustats->counter_maxsubcomponents) {
+	if (fw_metric_version >= GCIP_USAGE_STATS_V2)
+		component_id = new->component_id;
+
+	if (component_id >= ustats->subcomponents) {
 		dev_warn_once(
 			ustats->dev,
-			"FW sent an invalid counter component_id=%d, max=%d",
-			component_id, ustats->counter_maxsubcomponents - 1);
+			"FW sent an invalid component_id for the counter update, component_id=%d",
+			component_id);
 		return;
 	}
 
@@ -437,30 +443,10 @@ static void gcip_usage_stats_update_counter(struct gcip_usage_stats *ustats,
 }
 
 /*
- * Return the starting and ending subcomponent numbers to process for a counter attr subcomponent
- * spec.
- */
-static void set_subcomponent_range(struct gcip_usage_stats *ustats, int subcomponent_spec,
-				   int *start_subcomponent, int *end_subcomponent)
-{
-	if (subcomponent_spec >= 0) {
-		*start_subcomponent = subcomponent_spec;
-		*end_subcomponent = subcomponent_spec;
-		return;
-	}
-
-	*start_subcomponent = 0;
-	*end_subcomponent =
-		(subcomponent_spec == GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS ?
-		 ustats->subcomponents : -subcomponent_spec) - 1;
-}
-
-/*
  * Prints the value(s) of counter.
- * If the @attr->subcomponent is `GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS` or
- * `GCIP_USAGE_STATS_ATTR_SUBCOMPONENTS(n)`, it will print the counters of all subcomponents
- * (either the default # of components or the specified #) in one array with whitespace separation.
- * Otherwise, it will print the counter of the specific subcomponent.
+ * If the @attr->subcomponent is `GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS`, it will print the
+ * counters of all subcomponents in one array with whitespace separation. Otherwise, it will print
+ * the counter of the specific subcomponent.
  *
  * Called when the runtime reads the device attribute.
  */
@@ -471,17 +457,30 @@ static ssize_t gcip_usage_stats_counter_show(struct device *dev, struct device_a
 		container_of(dev_attr, struct gcip_usage_stats_attr, dev_attr);
 	struct gcip_usage_stats *ustats = attr->ustats;
 	ssize_t written = 0;
-	int start_subcomponent, end_subcomponent, i;
+	int subcomponent, i;
 
 	ustats->ops->update_usage_kci(ustats->data);
-	set_subcomponent_range(ustats, attr->subcomponent, &start_subcomponent, &end_subcomponent);
+
+	/*
+	 * We need to decide @subcomponent after calling `update_usage_kci` because IP kernel
+	 * drivers may want to change the version of @ustats to lower one if the firmware doesn't
+	 * support a higher version.
+	 */
+	subcomponent = ustats->version >= GCIP_USAGE_STATS_V2 ? attr->subcomponent : 0;
 
 	mutex_lock(&ustats->usage_stats_lock);
-	for (i = start_subcomponent; i <= end_subcomponent; i++) {
-		/* Prints a blank only when @i is bigger than 0. */
-		written += scnprintf(buf + written, PAGE_SIZE - written, "%.*s%lld", i, " ",
-				     ustats->counter[i][attr->type]);
+
+	if (subcomponent == GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS) {
+		for (i = 0; i < ustats->subcomponents; i++) {
+			/* Prints a blank only when @i is bigger than 0. */
+			written += scnprintf(buf + written, PAGE_SIZE - written, "%.*s%lld", i, " ",
+					     ustats->counter[i][attr->type]);
+		}
+	} else {
+		written += scnprintf(buf + written, PAGE_SIZE - written, "%lld",
+				     ustats->counter[subcomponent][attr->type]);
 	}
+
 	mutex_unlock(&ustats->usage_stats_lock);
 	written += scnprintf(buf + written, PAGE_SIZE - written, "\n");
 
@@ -490,10 +489,9 @@ static ssize_t gcip_usage_stats_counter_show(struct device *dev, struct device_a
 
 /*
  * Clears the value(s) of counter.
- * As described in the show function, it will clear the counters of all subcomponents when
- * @attr->subcomponent is `GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS` or
- * `GCIP_USAGE_STATS_ATTR_SUBCOMPONENTS(n)`. Otherwise, it will clear the counter of the specific
- * subcomponent.
+ * As described in the show function, it will clears the counters of all subcomponents when
+ * @attr->subcomponent is `GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS`. Otherwise, it will clear the
+ * counter of the specific subcomponent.
  *
  * Called when the runtime writes the device attribute.
  */
@@ -503,12 +501,18 @@ static ssize_t gcip_usage_stats_counter_store(struct device *dev, struct device_
 	struct gcip_usage_stats_attr *attr =
 		container_of(dev_attr, struct gcip_usage_stats_attr, dev_attr);
 	struct gcip_usage_stats *ustats = attr->ustats;
-	int start_subcomponent, end_subcomponent, i;
+	int subcomponent = ustats->version >= GCIP_USAGE_STATS_V2 ? attr->subcomponent : 0;
+	int i;
 
-	set_subcomponent_range(ustats, attr->subcomponent, &start_subcomponent, &end_subcomponent);
 	mutex_lock(&ustats->usage_stats_lock);
-	for (i = start_subcomponent; i <= end_subcomponent; i++)
-		ustats->counter[i][attr->type] = 0;
+
+	if (subcomponent == GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS) {
+		for (i = 0; i < ustats->subcomponents; i++)
+			ustats->counter[i][attr->type] = 0;
+	} else {
+		ustats->counter[subcomponent][attr->type] = 0;
+	}
+
 	mutex_unlock(&ustats->usage_stats_lock);
 
 	return count;
@@ -526,7 +530,7 @@ static void gcip_usage_stats_update_thread_stats(struct gcip_usage_stats *ustats
 						 uint16_t fw_metric_version)
 {
 	if (new->thread_id < 0 || new->thread_id >= GCIP_USAGE_STATS_THREAD_NUM_TYPES) {
-		dev_warn_once(ustats->dev, "FW sent an unknown thread_id, thread_id=%d",
+		dev_warn_once(ustats->dev, "FW sent an invalid thread_id, thread_id=%d",
 			      new->thread_id);
 		return;
 	}
@@ -599,13 +603,16 @@ static void gcip_usage_stats_update_max_watermark(struct gcip_usage_stats *ustat
 						  struct gcip_usage_stats_max_watermark *new,
 						  uint16_t fw_metric_version)
 {
-	uint8_t component_id = new->component_id;
+	uint8_t component_id = 0;
 
 	if (new->type < 0 || new->type >= GCIP_USAGE_STATS_MAX_WATERMARK_NUM_TYPES) {
-		dev_warn_once(ustats->dev, "FW sent an unknown max watermark type, type=%d",
+		dev_warn_once(ustats->dev, "FW sent an invalid max watermark type, type=%d",
 			      new->type);
 		return;
 	}
+
+	if (fw_metric_version >= GCIP_USAGE_STATS_V2)
+		component_id = new->component_id;
 
 	if (component_id >= ustats->subcomponents) {
 		dev_warn_once(
@@ -642,7 +649,13 @@ static ssize_t gcip_usage_stats_max_watermark_show(struct device *dev,
 	int subcomponent, i;
 
 	ustats->ops->update_usage_kci(ustats->data);
-	subcomponent = attr->subcomponent;
+
+	/*
+	 * We need to decide @subcomponent after calling `update_usage_kci` because IP kernel
+	 * drivers may want to change the version of @ustats to lower one if the firmware doesn't
+	 * support a higher version.
+	 */
+	subcomponent = ustats->version >= GCIP_USAGE_STATS_V2 ? attr->subcomponent : 0;
 
 	mutex_lock(&ustats->usage_stats_lock);
 
@@ -678,7 +691,7 @@ static ssize_t gcip_usage_stats_max_watermark_store(struct device *dev,
 	struct gcip_usage_stats_attr *attr =
 		container_of(dev_attr, struct gcip_usage_stats_attr, dev_attr);
 	struct gcip_usage_stats *ustats = attr->ustats;
-	int subcomponent = attr->subcomponent;
+	int subcomponent = ustats->version >= GCIP_USAGE_STATS_V2 ? attr->subcomponent : 0;
 	int i;
 
 	mutex_lock(&ustats->usage_stats_lock);
@@ -818,28 +831,10 @@ static int gcip_usage_stats_fill_attr(struct gcip_usage_stats *ustats,
 	/*
 	 * For metrics which store stats per subcomponent, we have to check whether the caller set
 	 * a proper subcomponent index.
-	 *
-	 * In the case of counter attributes, check if a custom subcomponent count is specified;
-	 * if so, see if need to realloc the array for a larger size.
 	 */
-
-	if (attr->metric == GCIP_USAGE_STATS_METRIC_TYPE_COUNTER && attr->subcomponent <
-	    GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS) {
-		int n_subcomponents = -attr->subcomponent;
-
-		if (n_subcomponents > ustats->counter_maxsubcomponents) {
-			ustats->counter_maxsubcomponents = n_subcomponents;
-			devm_kfree(ustats->dev, ustats->counter);
-			ustats->counter =
-				devm_kcalloc(ustats->dev, n_subcomponents, sizeof(*ustats->counter),
-					     GFP_KERNEL);
-			if (!ustats->counter)
-				return -ENOMEM;
-		}
-	} else if (attr->subcomponent != GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS &&
-		   (attr->subcomponent < 0 || attr->subcomponent >= ustats->subcomponents)) {
+	if (attr->subcomponent != GCIP_USAGE_STATS_ATTR_ALL_SUBCOMPONENTS &&
+	    (attr->subcomponent < 0 || attr->subcomponent >= ustats->subcomponents))
 		return -EINVAL;
-	}
 
 	switch (attr->metric) {
 	case GCIP_USAGE_STATS_METRIC_TYPE_COMPONENT_UTILIZATION:
@@ -967,14 +962,8 @@ static int gcip_usage_stats_alloc_stats(struct gcip_usage_stats *ustats)
 	if (!ustats->core_usage_htable)
 		return -ENOMEM;
 
-	/*
-	 * Set the initial maximum # of counter subcomponents to the default #.  This may be
-	 * updated later at gcip_usage_stats_alloc_attrs if a counter attr declares a larger number
-	 * of subcomponents.
-	 */
-	ustats->counter_maxsubcomponents = ustats->subcomponents;
-	ustats->counter = devm_kcalloc(ustats->dev, ustats->counter_maxsubcomponents,
-				       sizeof(*ustats->counter), GFP_KERNEL);
+	ustats->counter = devm_kcalloc(ustats->dev, ustats->subcomponents, sizeof(*ustats->counter),
+				       GFP_KERNEL);
 	if (!ustats->counter)
 		goto err_free_core_usage_htable;
 
@@ -1065,7 +1054,7 @@ int gcip_usage_stats_init(struct gcip_usage_stats *ustats, const struct gcip_usa
 {
 	int ret;
 
-	if (args->version < GCIP_USAGE_STATS_V2 || args->version > GCIP_USAGE_STATS_V3)
+	if (args->version <= GCIP_USAGE_STATS_V1 || args->version > GCIP_USAGE_STATS_V3)
 		return -EINVAL;
 
 	if (!args->dev)

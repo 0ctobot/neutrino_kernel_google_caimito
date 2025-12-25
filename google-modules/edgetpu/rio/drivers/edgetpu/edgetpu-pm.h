@@ -79,15 +79,6 @@ static inline void edgetpu_pm_put(struct edgetpu_dev *etdev)
 }
 
 /*
- * Decreases @pm->count and powers off the device if @pm->count reaches zero, asynchronously in a
- * worker.  Wrapper for gcip_pm_put_async.
- */
-static inline void edgetpu_pm_put_async(struct edgetpu_dev *etdev)
-{
-	gcip_pm_put_async(etdev->pm->gpm);
-}
-
-/*
  * Decreases @pm->count and powers off the device if @pm->count reaches zero.
  * Passes gcip_pm_flags @flags.
  * Wrapper for gcip_pm_put_flags.

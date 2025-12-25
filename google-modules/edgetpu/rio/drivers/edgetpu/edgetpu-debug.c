@@ -17,7 +17,6 @@
 #include <linux/mutex.h>
 #include <linux/platform_data/sscoredump.h>
 #include <linux/platform_device.h>
-#include <linux/pm_runtime.h>
 #include <linux/rbtree.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
@@ -325,9 +324,9 @@ err_external_debug_lock:
 
 void edgetpu_debug_dump_cpu_regs(struct edgetpu_dev *etdev)
 {
-	/* Ensure the TPU block and control cluster are powered. */
-	if (pm_runtime_get_if_active(etdev->dev, false) <= 0) {
-		dev_info(etdev->dev, "pm_runtime not active, skip CPU registers dump.");
+	/* Acquires the PM count to ensure the TPU block and control cluster are powered. */
+	if (edgetpu_pm_get_if_powered(etdev, false)) {
+		dev_info(etdev->dev, "Device off. Skip CPU registers dump.");
 		return;
 	}
 
@@ -341,7 +340,7 @@ void edgetpu_debug_dump_cpu_regs(struct edgetpu_dev *etdev)
 
 err_unlock:
 	mutex_unlock(&edgetpu_debug_regs_lock);
-	pm_runtime_put(etdev->dev);
+	edgetpu_pm_put(etdev);
 }
 
 #if IS_ENABLED(CONFIG_SUBSYSTEM_COREDUMP) || IS_ENABLED(CONFIG_EDGETPU_TEST)

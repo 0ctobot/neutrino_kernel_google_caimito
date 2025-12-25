@@ -21,14 +21,12 @@
 #include <linux/mutex.h>
 #include <linux/refcount.h>
 #include <linux/scatterlist.h>
-#include <linux/time64.h>
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
 #include <gcip/gcip-dma-fence.h>
 #include <gcip/gcip-firmware.h>
 #include <gcip/gcip-memory.h>
-#include <gcip/gcip-telemetry.h>
 #include <gcip/gcip-thermal.h>
 #include <iif/iif-manager.h>
 
@@ -65,36 +63,6 @@ struct edgetpu_soc_data;
 #define EDGETPU_NUM_PERDIE_EVENTS	2
 #define perdie_event_id_to_num(event_id)				      \
 	(event_id - EDGETPU_PERDIE_EVENT_LOGS_AVAILABLE)
-
-/* Internal eventlog event codes. */
-enum edgetpu_eventlog_eventcode {
-	EVENTLOG_EMPTY_SLOT,
-	EVENTLOG_EVENT_CLIENT_GROUP,
-	EVENTLOG_EVENT_CLIENT_REMOVE,
-	EVENTLOG_EVENT_WAKELOCK_ACQUIRE_START,
-	EVENTLOG_EVENT_WAKELOCK_ACQUIRE_END,
-	EVENTLOG_EVENT_WAKELOCK_RELEASE,
-	EVENTLOG_EVENT_POWER_STATE_START,
-	EVENTLOG_EVENT_POWER_STATE_END,
-	EVENTLOG_EVENT_POWER_WAITSTATE,
-	EVENTLOG_EVENT_POWER_RPMDONE,
-	EVENTLOG_EVENT_COUNT /* Number of valid event codes above. */
-};
-
-/* Max number of events in the eventlog; older entries are overwritten. */
-#define EDGETPU_EVENTLOG_SLOTS 1024
-
-struct edgetpu_eventlog_event {
-	struct timespec64 timestamp;
-	pid_t pid; /* pid of current thread at event log time */
-	enum edgetpu_eventlog_eventcode code;
-	long arg; /* extra info associated with the particular code */
-};
-
-struct edgetpu_eventlog {
-	atomic_t next_slot; /* index into event[] for next entry */
-	struct edgetpu_eventlog_event event[EDGETPU_EVENTLOG_SLOTS];
-};
 
 struct edgetpu_client {
 	pid_t pid;
@@ -202,7 +170,7 @@ struct edgetpu_dev {
 	struct device *dev;	   /* platform/pci bus device */
 	uint num_ifaces;		   /* Number of device interfaces */
 	uint num_cores; /* Number of cores */
-	uint num_telemetry_buffers; /* Number of log+trace telemetry buffers */
+	uint num_telemetry_buffers; /* Number of telemetry buffers */
         /*
          * Available frequencies the TPU can operate at.
          * Initialized in edgetpu_soc_early_init() and will not change after.
@@ -219,7 +187,6 @@ struct edgetpu_dev {
 	struct edgetpu_dev_iface *etiface;
 	char dev_name[EDGETPU_DEVICE_NAME_MAX];
 	struct edgetpu_mapped_resource regs; /* ioremapped TPU TOP CSRs */
-	uint regs_offset_from_top; /* Offset from TPU_TOP to the start of @regs, if any. */
 	/* SoC-specific data */
 	struct edgetpu_soc_data *soc_data;
 	struct dentry *d_entry;    /* debugfs dir for this device */
@@ -246,10 +213,8 @@ struct edgetpu_dev {
 	struct edgetpu_iif *etiif;
 	struct edgetpu_firmware *firmware; /* firmware management */
 	struct gcip_fw_tracing *fw_tracing; /* firmware tracing */
-	struct gcip_telemetry *telemetry_log; /* array of @num_telemetry_buffers entries */
-	struct gcip_telemetry *telemetry_trace; /* array of @num_telemetry_buffers entries */
-	struct gcip_telemetry telemetry_hwtrace; /* single hardware trace buffer entry. */
-
+	struct gcip_telemetry *telemetry_log;
+	struct gcip_telemetry *telemetry_trace;
 	struct gcip_thermal *thermal;
 	struct gcip_devfreq *devfreq;
 	struct edgetpu_usage_stats *usage_stats; /* usage stats private data */
@@ -263,6 +228,11 @@ struct edgetpu_dev {
 	atomic_t job_count;	/* # times a device group has been created for this device */
 	/* To save device properties */
 	struct edgetpu_dev_prop device_prop;
+
+	/* Length of @mailbox_irq */
+	int n_mailbox_irq;
+	/* Array of mailbox IRQ numbers */
+	int *mailbox_irq;
 
 	/* counts of error events */
 	uint firmware_crash_count;
@@ -282,9 +252,6 @@ struct edgetpu_dev {
 
 	struct mutex first_open_lock;
 	bool is_first_open;
-
-	/* Internal eventlog for bug triage. */
-	struct edgetpu_eventlog eventlog;
 };
 
 struct edgetpu_dev_iface {
@@ -308,39 +275,39 @@ static inline const char *edgetpu_dma_dir_rw_s(enum dma_data_direction dir)
 static inline u32 edgetpu_dev_read_32(struct edgetpu_dev *etdev,
 				      uint reg_offset)
 {
-	return readl_relaxed(etdev->regs.mem + reg_offset - etdev->regs_offset_from_top);
+	return readl_relaxed(etdev->regs.mem + reg_offset);
 }
 
 /* Read 32-bit reg with memory barrier completing before following CPU reads. */
 static inline u32 edgetpu_dev_read_32_sync(struct edgetpu_dev *etdev,
 					   uint reg_offset)
 {
-	return readl(etdev->regs.mem + reg_offset - etdev->regs_offset_from_top);
+	return readl(etdev->regs.mem + reg_offset);
 }
 
 static inline u64 edgetpu_dev_read_64(struct edgetpu_dev *etdev,
 				      uint reg_offset)
 {
-	return readq_relaxed(etdev->regs.mem + reg_offset - etdev->regs_offset_from_top);
+	return readq_relaxed(etdev->regs.mem + reg_offset);
 }
 
 static inline void edgetpu_dev_write_32(struct edgetpu_dev *etdev,
 					uint reg_offset, u32 value)
 {
-	writel_relaxed(value, etdev->regs.mem + reg_offset - etdev->regs_offset_from_top);
+	writel_relaxed(value, etdev->regs.mem + reg_offset);
 }
 
 /* Write 32-bit reg with memory barrier completing CPU writes first. */
 static inline void edgetpu_dev_write_32_sync(struct edgetpu_dev *etdev,
 					     uint reg_offset, u32 value)
 {
-	writel(value, etdev->regs.mem + reg_offset - etdev->regs_offset_from_top);
+	writel(value, etdev->regs.mem + reg_offset);
 }
 
 static inline void edgetpu_dev_write_64(struct edgetpu_dev *etdev,
 					uint reg_offset, u64 value)
 {
-	writeq_relaxed(value, etdev->regs.mem + reg_offset - etdev->regs_offset_from_top);
+	writeq_relaxed(value, etdev->regs.mem + reg_offset);
 }
 
 /* Checks if @file belongs to edgetpu driver */
@@ -424,9 +391,5 @@ int edgetpu_release_ext_mailbox(struct edgetpu_client *client,
 
 /* External mailbox/secure client removal, called by edgetpu_client_remove() */
 void edgetpu_ext_client_remove(struct edgetpu_client *client);
-
-/* Log an internal eventlog event. */
-void edgetpu_eventlog_event(struct edgetpu_dev *etdev, enum edgetpu_eventlog_eventcode code,
-			    void *arg);
 
 #endif /* __EDGETPU_INTERNAL_H__ */

@@ -43,7 +43,7 @@ struct wifi_platform_data {
 #ifdef BCMSDIO
 	int (*get_wake_irq)(void);
 #endif
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 58)) || defined(CUSTOM_COUNTRY_CODE)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 58)) || defined (CUSTOM_COUNTRY_CODE)
 	void *(*get_country_code)(char *ccode, u32 flags);
 #else /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 58)) || defined (CUSTOM_COUNTRY_CODE) */
 	void *(*get_country_code)(char *ccode);
@@ -84,9 +84,6 @@ extern void dhd_plat_bus_post_init_quirks(void *plat_info, void *dhd_bus);
 extern void dhd_plat_tx_pktcount(void *plat_info, uint cnt);
 extern void dhd_plat_rx_pktcount(void *plat_info, uint cnt);
 
-extern int dhd_plat_pcie_suspend_nosave(void *plat_info);
-extern int dhd_plat_pcie_savestate(void *plat_info);
-
 extern uint32 dhd_plat_get_info_size(void);
 extern void dhd_plat_l1ss_ctrl(bool ctrl);
 
@@ -99,9 +96,6 @@ extern void dhd_plat_l1_exit(void);
 extern uint32 dhd_plat_get_rc_vendor_id(void);
 extern uint32 dhd_plat_get_rc_device_id(void);
 
-extern int dhd_plat_check_pcie_state(void);
-extern void dhd_plat_check_msi(void);
-
 extern uint16 dhd_plat_align_rxbuf_size(uint16 rxbufpost_sz);
 extern void dhd_plat_pcie_skip_config_set(bool val);
 extern bool dhd_plat_pcie_enable_big_core(void);
@@ -110,6 +104,5 @@ int dhd_plat_get_wlan_reg_on_gpio(void);
 void dhd_plat_register_coredump(void);
 void dhd_plat_unregister_coredump(void);
 #endif /* DHD_COREDUMP */
-extern void dhd_plat_pcie_dump_debug(void);
 #endif /* __linux__ */
 #endif /* __DHD_PLAT_H__ */

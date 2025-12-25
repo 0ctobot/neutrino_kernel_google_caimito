@@ -21,14 +21,6 @@
  * <<Broadcom-WL-IPTag/Dual:>>
  */
 
-// For strict C17 Posix 2008 target builds, enable bzero()
-#define _GNU_SOURCE 1
-
-#if defined(__linux__) && !defined(BCMDRIVER)
-// for 'uint'
-#define USE_TYPEDEF_DEFAULTS
-#endif
-
 #include <typedefs.h>
 #include <bcmdefs.h>
 
@@ -51,9 +43,6 @@
 
 #else /* !BCMDRIVER */
 
-#if defined(__linux__) && !defined(BCMFUZZ)
-#include <strings.h>
-#endif
 #include <stdio.h>
 #include <string.h>
 #include <bcmutils.h>
@@ -133,11 +122,6 @@ BCMRAMFN(privacy_addrmask_get)(void)
 	return &privacy_addrmask;
 }
 #endif /* PRIVACY_MASK */
-
-#if defined(PRIORITIZE_ARP)
-/* default value is set at NC/TID=7 */
-uint8 prio_arp = PRIO_8021D_NC;
-#endif
 
 #ifdef BCMDRIVER
 
@@ -547,7 +531,7 @@ BCMFASTPATH(pktsegcnt)(osl_t *osh, void *p)
 			cnt++;
 		}
 #ifdef BCMLFRAG
-		if (BCMLFRAG_ENAB() && PKTISTXFRAG(osh, p)) {
+		if (BCMLFRAG_ENAB() && PKTISFRAG(osh, p)) {
 				cnt += PKTFRAGTOTNUM(osh, p);
 		}
 #endif /* BCMLFRAG */
@@ -756,7 +740,7 @@ struct bcm_sm_log_info {
  *
  * @return Returns the pointer to logger instance
  */
-bcm_sm_log_info_t *
+void *
 bcm_sm_logger_init(osl_t *osh, uint32 flags, uint32 num_entries, uint32 module_entry_sz)
 {
 	bcm_sm_log_info_t *bsli;
@@ -774,7 +758,7 @@ bcm_sm_logger_init(osl_t *osh, uint32 flags, uint32 num_entries, uint32 module_e
 
 		if (flags & BCM_SM_LOG_FLAG_EVENT_PRESENT) {
 			bsli->event = MALLOCZ(osh, (num_entries * sizeof(*bsli->state)));
-			if (!bsli->event) {
+			if (!bsli->state) {
 				goto fail;
 			}
 		}
@@ -798,23 +782,14 @@ bcm_sm_logger_init(osl_t *osh, uint32 flags, uint32 num_entries, uint32 module_e
 	return bsli;
 
 fail:
-	bcm_sm_logger_deinit(osh, bsli);
-	return NULL;
-}
-
-void
-bcm_sm_logger_deinit(osl_t *osh, bcm_sm_log_info_t *bsli)
-{
-	if (bsli == NULL) {
-		return;
-	}
-
-	MFREE(osh, bsli->state, (bsli->num_entries * sizeof(*bsli->state)));
-	MFREE(osh, bsli->event, (bsli->num_entries * sizeof(*bsli->event)));
-	MFREE(osh, bsli->call_site, (bsli->num_entries * sizeof(*bsli->call_site)));
-	MFREE(osh, bsli->time_stamp, (bsli->num_entries * sizeof(*bsli->time_stamp)));
-	MFREE(osh, bsli->data, (bsli->num_entries * bsli->module_entry_sz));
+	MFREE(osh, bsli->state, (num_entries * sizeof(*bsli->state)));
+	MFREE(osh, bsli->event, (num_entries * sizeof(*bsli->event)));
+	MFREE(osh, bsli->call_site, (num_entries * sizeof(*bsli->call_site)));
+	MFREE(osh, bsli->time_stamp, (num_entries * sizeof(*bsli->time_stamp)));
+	MFREE(osh, bsli->data, (num_entries * (num_entries * module_entry_sz)));
 	MFREE(osh, bsli, sizeof(*bsli));
+
+	return NULL;
 }
 
 /**
@@ -832,6 +807,10 @@ bcm_sm_log(bcm_sm_log_info_t *bsli, uint32 state, uint32 event, void *call_site)
 {
 	uint32 idx = bsli->idx;
 	void *data;
+
+	if (state > 255u) {
+		OSL_SYS_HALT();
+	}
 
 	bsli->state[idx] = (uint8) state;
 	bsli->call_site[idx] = call_site;
@@ -1292,10 +1271,8 @@ BCMFASTPATH(pktsetprio)(void *pkt, bool update_vtag)
 		 * congested scenarios with traffic, ARP packets may not get chance
 		 * for transmission leading to disconnection. so prioritize it.
 		 */
-		if (prio_arp) {
-			priority = prio_arp;
-			rc = PKTPRIO_DSCP;
-		}
+		priority = PRIO_8021D_NC;
+		rc = PKTPRIO_DSCP;
 #endif /* PRIORITIZE_ARP */
 #if defined(WLTDLS)
 	} else if (eh->ether_type == hton16(ETHER_TYPE_89_0D)) {
@@ -1550,7 +1527,7 @@ const char *
 BCMRAMFN(bcmerrorstr)(int bcmerror)
 {
 	/* check if someone added a bcmerror code but forgot to add errorstring */
-	STATIC_ASSERT(ABS(BCME_LAST) == (ARRAYSIZE(bcmerrorstrtable) - 1));
+	ASSERT(ABS(BCME_LAST) == (ARRAYSIZE(bcmerrorstrtable) - 1));
 
 	if (bcmerror > 0 || bcmerror < BCME_LAST) {
 		snprintf(bcm_undeferrstr, sizeof(bcm_undeferrstr), "Undefined error %d", bcmerror);
@@ -1949,7 +1926,7 @@ typedef struct bcm_mwbmap {     /* Hierarchical multiword bitmap allocator    */
 	int8   wd_count[BCM_MWBMAP_WORDS_MAX];  /* free id running count, 1st lvl */
 #endif /*  ! BCM_MWBMAP_USE_CNTSETBITS */
 
-	uint32 id_bitmap[];        /* Second level bitmap */
+	uint32 id_bitmap[0];        /* Second level bitmap                        */
 } bcm_mwbmap_t;
 
 /* Incarnate a hierarchical multiword bitmap based small index allocator. */
@@ -2346,7 +2323,7 @@ typedef struct id16_map {
 	uint16  total;     /* total number of ids managed by allocator */
 	uint16  start;     /* start value of 16bit ids to be managed */
 	int     stack_idx; /* index into stack of available ids */
-	uint16  stack[];  /* stack of 16 bit ids */
+	uint16  stack[0];  /* stack of 16 bit ids */
 } id16_map_t;
 
 #define ID16_MAP_SZ(items)      (sizeof(id16_map_t) + \
@@ -2359,7 +2336,7 @@ typedef struct id16_map {
 
 typedef struct id16_map_dbg {
 	uint16  total;
-	bool    avail[];
+	bool    avail[0];
 } id16_map_dbg_t;
 #define ID16_MAP_DBG_SZ(items)  (sizeof(id16_map_dbg_t) + \
 				     (sizeof(bool) * (items)))
@@ -2962,7 +2939,8 @@ bcm_find_vendor_ie(const  void *tlvs, uint tlvs_len, const char *voui, uint8 *ty
 		ie_len = ie->len;
 		if ((ie->id == DOT11_MNG_VS_ID) &&
 		    (ie_len >= (DOT11_OUI_LEN + type_len)) &&
-		    !memcmp(ie->data, voui, DOT11_OUI_LEN)) {
+		    !memcmp(ie->data, voui, DOT11_OUI_LEN))
+		{
 			/* compare optional type */
 			if (type_len == 0 ||
 			    !memcmp(((const char *)ie->data) + DOT11_OUI_LEN, type, type_len)) {
@@ -2994,7 +2972,8 @@ BCMRAMFN(bcm_addrmask_set)(int enable)
 			privacy->octet[3] = 0;
 		privacy->octet[0] = privacy->octet[5] = 0xff;
 		privacy->octet[4] = 0x0f;
-	} else {
+	} else
+	{
 		/* No masking. All are 0xff. */
 		eacopy(&ether_bcast, privacy);
 	}
@@ -3004,6 +2983,7 @@ BCMRAMFN(bcm_addrmask_set)(int enable)
 	BCM_REFERENCE(enable);
 	return BCME_UNSUPPORTED;
 #endif /* PRIVACY_MASK */
+
 }
 
 int
@@ -3048,10 +3028,11 @@ BCMRAMFN(bcm_ether_ntou64)(const struct ether_addr *ea)
 char *
 bcm_ether_ntoa(const struct ether_addr *ea, char *buf)
 {
-	static const char hex[] = {
-		'0', '1', '2', '3', '4', '5', '6', '7',
-		'8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
-	};
+	static const char hex[] =
+	  {
+		  '0', '1', '2', '3', '4', '5', '6', '7',
+		  '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
+	  };
 	const uint8 *octet = ea->octet;
 	char *p = buf;
 	int i;
@@ -5058,10 +5039,8 @@ prhex(const char *msg, const uchar *buf, uint nbytes)
 	int nchar;
 	uint i;
 
-	if (msg && (msg[0] != '\0')) {
-		printf("%s (len=%u):\n", msg, nbytes);
+	if (msg && (msg[0] != '\0'))
 		printf("%s:\n", msg);
-	}
 
 	p = line;
 	for (i = 0; i < nbytes; i++) {

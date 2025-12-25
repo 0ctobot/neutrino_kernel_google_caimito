@@ -133,20 +133,20 @@ static struct wlan_mem_prealloc wlan_mem_array[PREALLOC_WLAN_SEC_NUM] = {
 	{NULL, (WLAN_SECTION_SIZE_3 + PREALLOC_WLAN_SECTION_HEADER)}
 };
 
-static void *wlan_static_scan_buf0;
-static void *wlan_static_scan_buf1;
-static void *wlan_static_dhd_info_buf;
+static void *wlan_static_scan_buf0 = NULL;
+static void *wlan_static_scan_buf1 = NULL;
+static void *wlan_static_dhd_info_buf = NULL;
 #ifdef CONFIG_BCMDHD_PCIE
-static void *wlan_static_if_flow_lkup;
+static void *wlan_static_if_flow_lkup = NULL;
 #else
-static void *wlan_static_dhd_wlfc_buf;
-static void *wlan_static_dhd_wlfc_hanger;
+static void *wlan_static_dhd_wlfc_buf = NULL;
+static void *wlan_static_dhd_wlfc_hanger = NULL;
 #endif /* CONFIG_BCMDHD_PCIE */
 #ifdef CONFIG_BCMDHD_PREALLOC_MEMDUMP
-static void *wlan_static_dhd_memdump_ram;
+static void *wlan_static_dhd_memdump_ram = NULL;
 #endif /* #ifdef CONFIG_BCMDHD_PREALLOC_MEMDUMP */
-static void *wlan_static_dhd_log_dump_buf;
-static void *wlan_static_dhd_log_dump_buf_ex;
+static void *wlan_static_dhd_log_dump_buf = NULL;
+static void *wlan_static_dhd_log_dump_buf_ex = NULL;
 
 void dhd_exit_wlan_mem(void);
 

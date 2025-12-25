@@ -166,10 +166,19 @@
  *   from the parent process.
  * 11.46:
  * - Remove renderpass_id from base_jd_atom_v2 to deprecate support for JM Incremental Rendering
- */
+ * 11.47:
+ * - Reject non-protected allocations containing the BASE_MEM_PROTECTED memory flag.
+ * - Reject allocations containing the BASE_MEM_DONT_NEED memory flag (it is only settable).
+ * - Reject allocations containing the BASE_MEM_UNUSED_BIT_xx memory flags.
+ * 11.48:
+ * - Add UNUSED_BIT_5, UNUSED_BIT_7, UNUSED_BIT_27 and UNUSED_BIT_29 previously occupied by
+ *   kernel-only flags to kbase cap table.
+ * 11.49:
+ * - Increased KBASE_MEM_PROFILE_MAX_BUF_SIZE for more cctx memory classes.
+  */
 
 #define BASE_UK_VERSION_MAJOR 11
-#define BASE_UK_VERSION_MINOR 46
+#define BASE_UK_VERSION_MINOR 49
 
 /**
  * struct kbase_ioctl_version_check - Check version compatibility between
@@ -261,5 +270,45 @@ union kbase_kinstr_jm_fd {
 
 #define KBASE_IOCTL_VERSION_CHECK_RESERVED \
 	_IOWR(KBASE_IOCTL_TYPE, 52, struct kbase_ioctl_version_check)
+
+/* [Begin Pixel-Mod] Adding the csf removed IOCTL into the JM list until the JM GPU update */
+#define KBASE_IOCTL_CINSTR_GWT_START _IO(KBASE_IOCTL_TYPE, 33)
+
+#define KBASE_IOCTL_CINSTR_GWT_STOP _IO(KBASE_IOCTL_TYPE, 34)
+
+/**
+ * union kbase_ioctl_cinstr_gwt_dump - Used to collect all GPU write fault
+ *                                     addresses.
+ * @in: Input parameters
+ * @in.addr_buffer: Address of buffer to hold addresses of gpu modified areas.
+ * @in.size_buffer: Address of buffer to hold size of modified areas (in pages)
+ * @in.len: Number of addresses the buffers can hold.
+ * @in.padding: padding
+ * @out: Output parameters
+ * @out.no_of_addr_collected: Number of addresses collected into addr_buffer.
+ * @out.more_data_available: Status indicating if more addresses are available.
+ * @out.padding: padding
+ *
+ * This structure is used when performing a call to dump GPU write fault
+ * addresses.
+ */
+union kbase_ioctl_cinstr_gwt_dump {
+	struct {
+		__u64 addr_buffer;
+		__u64 size_buffer;
+		__u32 len;
+		__u32 padding;
+
+	} in;
+	struct {
+		__u32 no_of_addr_collected;
+		__u8 more_data_available;
+		__u8 padding[27];
+	} out;
+};
+
+#define KBASE_IOCTL_CINSTR_GWT_DUMP _IOWR(KBASE_IOCTL_TYPE, 35, union kbase_ioctl_cinstr_gwt_dump)
+
+/* [Done Pixel-Mod] */
 
 #endif /* _UAPI_KBASE_JM_IOCTL_H_ */

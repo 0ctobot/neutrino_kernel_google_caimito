@@ -104,8 +104,8 @@ get_asd(const si_t *sih, uint32 **eromptr, uint sp, uint ad, uint st, uint32 *ad
 
 	asd = get_erom_ent(sih, eromptr, ER_VALID, ER_VALID);
 	if (((asd & ER_TAG1) != ER_ADD) ||
-		(((asd & AD_SP_MASK) >> AD_SP_SHIFT) != sp) ||
-		((asd & AD_ST_MASK) != st)) {
+	    (((asd & AD_SP_MASK) >> AD_SP_SHIFT) != sp) ||
+	    ((asd & AD_ST_MASK) != st)) {
 		/* This is not what we want, "push" it back */
 		(*eromptr)--;
 		return 0;
@@ -126,7 +126,7 @@ get_asd(const si_t *sih, uint32 **eromptr, uint sp, uint ad, uint st, uint32 *ad
 		*sizel = AD_SZ_BASE << (sz >> AD_SZ_SHIFT);
 
 	SI_VMSG(("  SP %d, ad %d: st = %d, 0x%08x_0x%08x @ 0x%08x_0x%08x\n",
-		sp, ad, st, *sizeh, *sizel, *addrh, *addrl));
+	        sp, ad, st, *sizeh, *sizel, *addrh, *addrl));
 
 	return asd;
 }
@@ -151,7 +151,7 @@ BCMATTACHFN(ai_scan)(si_t *sih, void *regs, uint devid)
 	si_cores_info_t *cores_info = (si_cores_info_t *)sii->cores_info;
 	chipcregs_t *cc = (chipcregs_t *)regs;
 	uint32 erombase, *eromptr, *eromlim;
-	axi_wrapper_t *axi_wrapper = sii->axi_wrapper;
+	axi_wrapper_t * axi_wrapper = sii->axi_wrapper;
 
 	SI_MSG_DBG_REG(("%s: Enter\n", __FUNCTION__));
 	BCM_REFERENCE(devid);
@@ -188,7 +188,7 @@ BCMATTACHFN(ai_scan)(si_t *sih, void *regs, uint devid)
 	sii->axi_num_wrappers = 0;
 
 	SI_VMSG(("ai_scan: regs = 0x%p, erombase = 0x%08x, eromptr = 0x%p, eromlim = 0x%p\n",
-		OSL_OBFUSCATE_BUF(regs), erombase,
+	         OSL_OBFUSCATE_BUF(regs), erombase,
 		OSL_OBFUSCATE_BUF(eromptr), OSL_OBFUSCATE_BUF(eromlim)));
 	while (eromptr < eromlim) {
 		uint32 cia, cib, cid, mfg, crev, nmw, nsw, nmp, nsp;
@@ -223,8 +223,8 @@ BCMATTACHFN(ai_scan)(si_t *sih, void *regs, uint devid)
 
 #ifdef BCMDBG_SI
 		SI_VMSG(("Found component 0x%04x/0x%04x rev %d at erom addr 0x%p, with nmw = %d, "
-			"nsw = %d, nmp = %d & nsp = %d\n",
-			mfg, cid, crev, OSL_OBFUSCATE_BUF(eromptr - 1), nmw, nsw, nmp, nsp));
+		         "nsw = %d, nmp = %d & nsp = %d\n",
+		         mfg, cid, crev, OSL_OBFUSCATE_BUF(eromptr - 1), nmw, nsw, nmp, nsp));
 #else
 		BCM_REFERENCE(crev);
 #endif
@@ -272,7 +272,7 @@ BCMATTACHFN(ai_scan)(si_t *sih, void *regs, uint devid)
 		 * both use and setup happen in si_buscore_setup().
 		 */
 		if (BUSTYPE(sih->bustype) == PCI_BUS &&
-			(cid == PCI_CORE_ID || cid == PCIE_CORE_ID || cid == PCIE2_CORE_ID)) {
+		    (cid == PCI_CORE_ID || cid == PCIE_CORE_ID || cid == PCIE2_CORE_ID)) {
 			sii->pub.buscoretype = (uint16)cid;
 		}
 
@@ -284,8 +284,8 @@ BCMATTACHFN(ai_scan)(si_t *sih, void *regs, uint devid)
 			}
 			/* Record something? */
 			SI_VMSG(("  Master port %d, mp: %d id: %d\n", i,
-				(mpd & MPD_MP_MASK) >> MPD_MP_SHIFT,
-				(mpd & MPD_MUI_MASK) >> MPD_MUI_SHIFT));
+			         (mpd & MPD_MP_MASK) >> MPD_MP_SHIFT,
+			         (mpd & MPD_MUI_MASK) >> MPD_MUI_SHIFT));
 		}
 
 		/* First Slave Address Descriptor should be port 0:
@@ -296,7 +296,7 @@ BCMATTACHFN(ai_scan)(si_t *sih, void *regs, uint devid)
 			do {
 			/* Try again to see if it is a bridge */
 			asd = get_asd(sih, &eromptr, 0, 0, AD_ST_BRIDGE, &addrl, &addrh,
-				&sizel, &sizeh);
+			              &sizel, &sizeh);
 			if (asd != 0)
 				br = TRUE;
 			else {
@@ -305,7 +305,7 @@ BCMATTACHFN(ai_scan)(si_t *sih, void *regs, uint devid)
 			} while (1);
 		} else {
 			if (addrl == 0 || sizel == 0) {
-				SI_ERROR((" Invalid ASD %x for slave port\n", asd));
+				SI_ERROR((" Invalid ASD %x for slave port \n", asd));
 				goto error;
 			}
 			cores_info->coresba[idx] = addrl;
@@ -316,7 +316,7 @@ BCMATTACHFN(ai_scan)(si_t *sih, void *regs, uint devid)
 		j = 1;
 		do {
 			asd = get_asd(sih, &eromptr, 0, j, AD_ST_SLAVE, &addrl, &addrh,
-				&sizel, &sizeh);
+			              &sizel, &sizeh);
 			/* Support ARM debug core ASD with address space > 4K */
 			if ((asd != 0) && (j == 1)) {
 				SI_VMSG(("Warning: sizel > 0x1000\n"));
@@ -331,7 +331,7 @@ BCMATTACHFN(ai_scan)(si_t *sih, void *regs, uint devid)
 			j = 0;
 			do {
 				asd = get_asd(sih, &eromptr, i, j, AD_ST_SLAVE, &addrl, &addrh,
-					&sizel, &sizeh);
+				              &sizel, &sizeh);
 				/* To get the first base address of second slave port */
 				if ((asd != 0) && (i == 1) && (j == 0)) {
 					cores_info->csp2ba[idx] = addrl;
@@ -350,7 +350,7 @@ BCMATTACHFN(ai_scan)(si_t *sih, void *regs, uint devid)
 		/* Now get master wrappers */
 		for (i = 0; i < nmw; i++) {
 			asd = get_asd(sih, &eromptr, i, 0, AD_ST_MWRAP, &addrl, &addrh,
-				&sizel, &sizeh);
+			              &sizel, &sizeh);
 			if (asd == 0) {
 				SI_ERROR(("Missing descriptor for MW %d\n", i));
 				goto error;
@@ -384,7 +384,7 @@ BCMATTACHFN(ai_scan)(si_t *sih, void *regs, uint devid)
 		for (i = 0; i < nsw; i++) {
 			uint fwp = (nsp <= 1) ? 0 : 1;
 			asd = get_asd(sih, &eromptr, fwp + i, 0, AD_ST_SWRAP, &addrl, &addrh,
-				&sizel, &sizeh);
+			              &sizel, &sizeh);
 			if (asd == 0) {
 				SI_ERROR(("Missing descriptor for SW %d cid %x eromp %p fwp %d \n",
 					i, cid, eromptr, fwp));
@@ -577,9 +577,9 @@ BCMPOSTTRAPFN(_ai_setcoreidx)(si_t *sih, uint coreidx, uint use_wrapn)
 
 			/* point bar0 window */
 			ai_corereg(sih, sih->buscoreidx,
-				PCIE_TER_BAR0_WIN_REG(sih->buscorerev), ~0, addr);
+			            PCIE_TER_BAR0_WIN_REG(sih->buscorerev), ~0, addr);
 			ai_corereg(sih, sih->buscoreidx,
-				PCIE_TER_BAR0_WRAPPER_REG(sih->buscorerev), ~0, wrap);
+			            PCIE_TER_BAR0_WRAPPER_REG(sih->buscorerev), ~0, wrap);
 			break;
 
 		default: /* other slices */
@@ -683,13 +683,13 @@ ai_coreaddrspaceX(const si_t *sih, uint asidx, uint32 *addr, uint32 *size)
 	if (asd == 0) {
 		/* Try again to see if it is a bridge */
 		asd = get_asd(sih, &eromptr, 0, 0, AD_ST_BRIDGE, &addrl, &addrh,
-			&sizel, &sizeh);
+		              &sizel, &sizeh);
 	}
 
 	j = 1;
 	do {
 		asd = get_asd(sih, &eromptr, 0, j, AD_ST_SLAVE, &addrl, &addrh,
-			&sizel, &sizeh);
+		              &sizel, &sizeh);
 		j++;
 	} while (asd != 0);
 
@@ -751,7 +751,8 @@ BCMPOSTTRAPFN(ai_addrspace)(const si_t *sih, uint spidx, uint baidx)
 			return cores_info->coresba[cidx];
 		else if (baidx == CORE_BASE_ADDR_1)
 			return cores_info->coresba2[cidx];
-	} else if (spidx == CORE_SLAVE_PORT_1) {
+	}
+	else if (spidx == CORE_SLAVE_PORT_1) {
 		if (baidx == CORE_BASE_ADDR_0)
 			return cores_info->csp2ba[cidx];
 	}
@@ -782,7 +783,8 @@ BCMPOSTTRAPFN(ai_addrspacesize)(const si_t *sih, uint spidx, uint baidx)
 			return cores_info->coresba_size[cidx];
 		else if (baidx == CORE_BASE_ADDR_1)
 			return cores_info->coresba2_size[cidx];
-	} else if (spidx == CORE_SLAVE_PORT_1) {
+	}
+	else if (spidx == CORE_SLAVE_PORT_1) {
 		if (baidx == CORE_BASE_ADDR_0)
 			return cores_info->csp2ba_size[cidx];
 	}
@@ -884,7 +886,7 @@ BCMPOSTTRAPFN(ai_iscoreup)(const si_t *sih)
 	aidmp_t *ai = sii->curwrap;
 
 	return (((R_REG(sii->osh, &ai->ioctrl) & (SICF_FGC | SICF_CLOCK_EN)) == SICF_CLOCK_EN) &&
-		((R_REG(sii->osh, &ai->resetctrl) & AIRC_RESET) == 0));
+	        ((R_REG(sii->osh, &ai->resetctrl) & AIRC_RESET) == 0));
 }
 
 /*
@@ -920,7 +922,7 @@ BCMPOSTTRAPFN(ai_corereg)(si_t *sih, uint coreidx, uint regoff, uint mask, uint 
 		/* map if does not exist */
 		if (!cores_info->regs[coreidx]) {
 			cores_info->regs[coreidx] = REG_MAP(cores_info->coresba[coreidx],
-				SI_CORE_SIZE);
+			                            SI_CORE_SIZE);
 			ASSERT_FP(GOODREGS(cores_info->regs[coreidx]));
 		}
 		r = (volatile uint32 *)((volatile uchar *)cores_info->regs[coreidx] + regoff);
@@ -932,7 +934,7 @@ BCMPOSTTRAPFN(ai_corereg)(si_t *sih, uint coreidx, uint regoff, uint mask, uint 
 
 			fast = TRUE;
 			r = (volatile uint32 *)((volatile char *)sii->curmap +
-				PCI_16KB0_CCREGS_OFFSET + regoff);
+			               PCI_16KB0_CCREGS_OFFSET + regoff);
 		} else if (sii->pub.buscoreidx == coreidx) {
 			/* pci registers are at either in the last 2KB of an 8KB window
 			 * or, in pcie and pci rev 13 at 8KB
@@ -940,12 +942,12 @@ BCMPOSTTRAPFN(ai_corereg)(si_t *sih, uint coreidx, uint regoff, uint mask, uint 
 			fast = TRUE;
 			if (SI_FAST(sii))
 				r = (volatile uint32 *)((volatile char *)sii->curmap +
-				PCI_16KB0_PCIREGS_OFFSET + regoff);
+				               PCI_16KB0_PCIREGS_OFFSET + regoff);
 			else
 				r = (volatile uint32 *)((volatile char *)sii->curmap +
-					((regoff >= SBCONFIGOFF) ?
-					PCI_BAR0_PCISBR_OFFSET : PCI_BAR0_PCIREGS_OFFSET) +
-					regoff);
+				               ((regoff >= SBCONFIGOFF) ?
+				                PCI_BAR0_PCISBR_OFFSET : PCI_BAR0_PCIREGS_OFFSET) +
+				               regoff);
 		}
 	}
 
@@ -956,8 +958,8 @@ BCMPOSTTRAPFN(ai_corereg)(si_t *sih, uint coreidx, uint regoff, uint mask, uint 
 		origidx = si_coreidx(&sii->pub);
 
 		/* switch core */
-		r = (volatile uint32 *) ((volatile uchar *) ai_setcoreidx(&sii->pub, coreidx) +
-			regoff);
+		r = (volatile uint32*) ((volatile uchar*) ai_setcoreidx(&sii->pub, coreidx) +
+		               regoff);
 	}
 
 	/* mask and set */
@@ -1004,7 +1006,7 @@ BCMPOSTTRAPFN(ai_corereg_writearr)(si_t *sih, uint coreidx, uint regoff, uint *m
 		/* map if does not exist */
 		if (!cores_info->regs[coreidx]) {
 			cores_info->regs[coreidx] = REG_MAP(cores_info->coresba[coreidx],
-				SI_CORE_SIZE);
+			                            SI_CORE_SIZE);
 			ASSERT_FP(GOODREGS(cores_info->regs[coreidx]));
 		}
 		r = (volatile uint32 *)((volatile uchar *)cores_info->regs[coreidx] + regoff);
@@ -1033,7 +1035,7 @@ BCMPOSTTRAPFN(ai_corereg_writearr)(si_t *sih, uint coreidx, uint regoff, uint *m
 	/* readback */
 	w = R_REG(sii->osh, r);
 
-	return w;
+	return (w);
 }
 
 /*
@@ -1069,7 +1071,7 @@ ai_corereg_writeonly(si_t *sih, uint coreidx, uint regoff, uint mask, uint val)
 		/* map if does not exist */
 		if (!cores_info->regs[coreidx]) {
 			cores_info->regs[coreidx] = REG_MAP(cores_info->coresba[coreidx],
-				SI_CORE_SIZE);
+			                            SI_CORE_SIZE);
 			ASSERT(GOODREGS(cores_info->regs[coreidx]));
 		}
 		r = (volatile uint32 *)((volatile uchar *)cores_info->regs[coreidx] + regoff);
@@ -1081,7 +1083,7 @@ ai_corereg_writeonly(si_t *sih, uint coreidx, uint regoff, uint mask, uint val)
 
 			fast = TRUE;
 			r = (volatile uint32 *)((volatile char *)sii->curmap +
-				PCI_16KB0_CCREGS_OFFSET + regoff);
+			               PCI_16KB0_CCREGS_OFFSET + regoff);
 		} else if (sii->pub.buscoreidx == coreidx) {
 			/* pci registers are at either in the last 2KB of an 8KB window
 			 * or, in pcie and pci rev 13 at 8KB
@@ -1089,12 +1091,12 @@ ai_corereg_writeonly(si_t *sih, uint coreidx, uint regoff, uint mask, uint val)
 			fast = TRUE;
 			if (SI_FAST(sii))
 				r = (volatile uint32 *)((volatile char *)sii->curmap +
-					PCI_16KB0_PCIREGS_OFFSET + regoff);
+				               PCI_16KB0_PCIREGS_OFFSET + regoff);
 			else
 				r = (volatile uint32 *)((volatile char *)sii->curmap +
-					((regoff >= SBCONFIGOFF) ?
-					PCI_BAR0_PCISBR_OFFSET : PCI_BAR0_PCIREGS_OFFSET) +
-					regoff);
+				               ((regoff >= SBCONFIGOFF) ?
+				                PCI_BAR0_PCISBR_OFFSET : PCI_BAR0_PCIREGS_OFFSET) +
+				               regoff);
 		}
 	}
 
@@ -1105,8 +1107,8 @@ ai_corereg_writeonly(si_t *sih, uint coreidx, uint regoff, uint mask, uint val)
 		origidx = si_coreidx(&sii->pub);
 
 		/* switch core */
-		r = (volatile uint32 *) ((volatile uchar *) ai_setcoreidx(&sii->pub, coreidx) +
-			regoff);
+		r = (volatile uint32*) ((volatile uchar*) ai_setcoreidx(&sii->pub, coreidx) +
+		               regoff);
 	}
 	ASSERT(r != NULL);
 
@@ -1156,7 +1158,7 @@ BCMPOSTTRAPFN(ai_corereg_addr)(si_t *sih, uint coreidx, uint regoff)
 		/* map if does not exist */
 		if (!cores_info->regs[coreidx]) {
 			cores_info->regs[coreidx] = REG_MAP(cores_info->coresba[coreidx],
-				SI_CORE_SIZE);
+			                            SI_CORE_SIZE);
 			ASSERT(GOODREGS(cores_info->regs[coreidx]));
 		}
 		r = (volatile uint32 *)((volatile uchar *)cores_info->regs[coreidx] + regoff);
@@ -1168,7 +1170,7 @@ BCMPOSTTRAPFN(ai_corereg_addr)(si_t *sih, uint coreidx, uint regoff)
 
 			fast = TRUE;
 			r = (volatile uint32 *)((volatile char *)sii->curmap +
-				PCI_16KB0_CCREGS_OFFSET + regoff);
+			               PCI_16KB0_CCREGS_OFFSET + regoff);
 		} else if (sii->pub.buscoreidx == coreidx) {
 			/* pci registers are at either in the last 2KB of an 8KB window
 			 * or, in pcie and pci rev 13 at 8KB
@@ -1176,18 +1178,18 @@ BCMPOSTTRAPFN(ai_corereg_addr)(si_t *sih, uint coreidx, uint regoff)
 			fast = TRUE;
 			if (SI_FAST(sii))
 				r = (volatile uint32 *)((volatile char *)sii->curmap +
-					PCI_16KB0_PCIREGS_OFFSET + regoff);
+				               PCI_16KB0_PCIREGS_OFFSET + regoff);
 			else
 				r = (volatile uint32 *)((volatile char *)sii->curmap +
-					((regoff >= SBCONFIGOFF) ?
-					PCI_BAR0_PCISBR_OFFSET : PCI_BAR0_PCIREGS_OFFSET) +
-					regoff);
+				               ((regoff >= SBCONFIGOFF) ?
+				                PCI_BAR0_PCISBR_OFFSET : PCI_BAR0_PCIREGS_OFFSET) +
+				               regoff);
 		}
 	}
 
 	if (!fast) {
 		ASSERT(sii->curidx == coreidx);
-		r = (volatile uint32 *) ((volatile uchar *)sii->curmap + regoff);
+		r = (volatile uint32*) ((volatile uchar*)sii->curmap + regoff);
 	}
 
 	return (r);
@@ -1435,7 +1437,7 @@ ai_dumpregs(const si_t *sih, struct bcmstrbuf *b)
 	aidmp_t *ai;
 	uint i;
 	uint32 prev_value = 0;
-	const axi_wrapper_t *axi_wrapper = sii->axi_wrapper;
+	const axi_wrapper_t * axi_wrapper = sii->axi_wrapper;
 	uint32 cfg_reg = 0;
 	uint bar0_win_offset = 0;
 
@@ -1480,33 +1482,33 @@ ai_dumpregs(const si_t *sih, struct bcmstrbuf *b)
 			axi_wrapper[i].wrapper_addr);
 
 		bcm_bprintf(b, "ioctrlset 0x%x ioctrlclear 0x%x ioctrl 0x%x iostatus 0x%x "
-			"ioctrlwidth 0x%x iostatuswidth 0x%x\n"
-			"resetctrl 0x%x resetstatus 0x%x resetreadid 0x%x resetwriteid 0x%x\n"
-			"errlogctrl 0x%x errlogdone 0x%x errlogstatus 0x%x "
-			"errlogaddrlo 0x%x errlogaddrhi 0x%x\n"
-			"errlogid 0x%x errloguser 0x%x errlogflags 0x%x\n"
-			"intstatus 0x%x config 0x%x itcr 0x%x\n\n",
-			R_REG(osh, &ai->ioctrlset),
-			R_REG(osh, &ai->ioctrlclear),
-			R_REG(osh, &ai->ioctrl),
-			R_REG(osh, &ai->iostatus),
-			R_REG(osh, &ai->ioctrlwidth),
-			R_REG(osh, &ai->iostatuswidth),
-			R_REG(osh, &ai->resetctrl),
-			R_REG(osh, &ai->resetstatus),
-			R_REG(osh, &ai->resetreadid),
-			R_REG(osh, &ai->resetwriteid),
-			R_REG(osh, &ai->errlogctrl),
-			R_REG(osh, &ai->errlogdone),
-			R_REG(osh, &ai->errlogstatus),
-			R_REG(osh, &ai->errlogaddrlo),
-			R_REG(osh, &ai->errlogaddrhi),
-			R_REG(osh, &ai->errlogid),
-			R_REG(osh, &ai->errloguser),
-			R_REG(osh, &ai->errlogflags),
-			R_REG(osh, &ai->intstatus),
-			R_REG(osh, &ai->config),
-			R_REG(osh, &ai->itcr));
+			    "ioctrlwidth 0x%x iostatuswidth 0x%x\n"
+			    "resetctrl 0x%x resetstatus 0x%x resetreadid 0x%x resetwriteid 0x%x\n"
+			    "errlogctrl 0x%x errlogdone 0x%x errlogstatus 0x%x "
+			    "errlogaddrlo 0x%x errlogaddrhi 0x%x\n"
+			    "errlogid 0x%x errloguser 0x%x errlogflags 0x%x\n"
+			    "intstatus 0x%x config 0x%x itcr 0x%x\n\n",
+			    R_REG(osh, &ai->ioctrlset),
+			    R_REG(osh, &ai->ioctrlclear),
+			    R_REG(osh, &ai->ioctrl),
+			    R_REG(osh, &ai->iostatus),
+			    R_REG(osh, &ai->ioctrlwidth),
+			    R_REG(osh, &ai->iostatuswidth),
+			    R_REG(osh, &ai->resetctrl),
+			    R_REG(osh, &ai->resetstatus),
+			    R_REG(osh, &ai->resetreadid),
+			    R_REG(osh, &ai->resetwriteid),
+			    R_REG(osh, &ai->errlogctrl),
+			    R_REG(osh, &ai->errlogdone),
+			    R_REG(osh, &ai->errlogstatus),
+			    R_REG(osh, &ai->errlogaddrlo),
+			    R_REG(osh, &ai->errlogaddrhi),
+			    R_REG(osh, &ai->errlogid),
+			    R_REG(osh, &ai->errloguser),
+			    R_REG(osh, &ai->errlogflags),
+			    R_REG(osh, &ai->intstatus),
+			    R_REG(osh, &ai->config),
+			    R_REG(osh, &ai->itcr));
 	}
 
 	/* Restore the initial wrapper space */
@@ -1529,65 +1531,65 @@ _ai_view(osl_t *osh, aidmp_t *ai, uint32 cid, uint32 addr, bool verbose)
 
 	if (config & AICFG_RST)
 		SI_PRINT(("resetctrl 0x%x, resetstatus 0x%x, resetreadid 0x%x, resetwriteid 0x%x\n",
-			R_REG(osh, &ai->resetctrl), R_REG(osh, &ai->resetstatus),
-			R_REG(osh, &ai->resetreadid), R_REG(osh, &ai->resetwriteid)));
+		          R_REG(osh, &ai->resetctrl), R_REG(osh, &ai->resetstatus),
+		          R_REG(osh, &ai->resetreadid), R_REG(osh, &ai->resetwriteid)));
 
 	if (config & AICFG_IOC)
 		SI_PRINT(("ioctrl 0x%x, width %d\n", R_REG(osh, &ai->ioctrl),
-			R_REG(osh, &ai->ioctrlwidth)));
+		          R_REG(osh, &ai->ioctrlwidth)));
 
 	if (config & AICFG_IOS)
 		SI_PRINT(("iostatus 0x%x, width %d\n", R_REG(osh, &ai->iostatus),
-			R_REG(osh, &ai->iostatuswidth)));
+		          R_REG(osh, &ai->iostatuswidth)));
 
 	if (config & AICFG_ERRL) {
 		SI_PRINT(("errlogctrl 0x%x, errlogdone 0x%x, errlogstatus 0x%x, intstatus 0x%x\n",
-			R_REG(osh, &ai->errlogctrl), R_REG(osh, &ai->errlogdone),
-			R_REG(osh, &ai->errlogstatus), R_REG(osh, &ai->intstatus)));
+		          R_REG(osh, &ai->errlogctrl), R_REG(osh, &ai->errlogdone),
+		          R_REG(osh, &ai->errlogstatus), R_REG(osh, &ai->intstatus)));
 		SI_PRINT(("errlogid 0x%x, errloguser 0x%x, errlogflags 0x%x, errlogaddr "
-			"0x%x/0x%x\n",
-			R_REG(osh, &ai->errlogid), R_REG(osh, &ai->errloguser),
-			R_REG(osh, &ai->errlogflags), R_REG(osh, &ai->errlogaddrhi),
-			R_REG(osh, &ai->errlogaddrlo)));
+		          "0x%x/0x%x\n",
+		          R_REG(osh, &ai->errlogid), R_REG(osh, &ai->errloguser),
+		          R_REG(osh, &ai->errlogflags), R_REG(osh, &ai->errlogaddrhi),
+		          R_REG(osh, &ai->errlogaddrlo)));
 	}
 
 	if (verbose && (config & AICFG_OOB)) {
 		SI_PRINT(("oobselina30 0x%x, oobselina74 0x%x\n",
-			R_REG(osh, &ai->oobselina30), R_REG(osh, &ai->oobselina74)));
+		          R_REG(osh, &ai->oobselina30), R_REG(osh, &ai->oobselina74)));
 		SI_PRINT(("oobselinb30 0x%x, oobselinb74 0x%x\n",
-			R_REG(osh, &ai->oobselinb30), R_REG(osh, &ai->oobselinb74)));
+		          R_REG(osh, &ai->oobselinb30), R_REG(osh, &ai->oobselinb74)));
 		SI_PRINT(("oobselinc30 0x%x, oobselinc74 0x%x\n",
-			R_REG(osh, &ai->oobselinc30), R_REG(osh, &ai->oobselinc74)));
+		          R_REG(osh, &ai->oobselinc30), R_REG(osh, &ai->oobselinc74)));
 		SI_PRINT(("oobselind30 0x%x, oobselind74 0x%x\n",
-			R_REG(osh, &ai->oobselind30), R_REG(osh, &ai->oobselind74)));
+		          R_REG(osh, &ai->oobselind30), R_REG(osh, &ai->oobselind74)));
 		SI_PRINT(("oobselouta30 0x%x, oobselouta74 0x%x\n",
-			R_REG(osh, &ai->oobselouta30), R_REG(osh, &ai->oobselouta74)));
+		          R_REG(osh, &ai->oobselouta30), R_REG(osh, &ai->oobselouta74)));
 		SI_PRINT(("oobseloutb30 0x%x, oobseloutb74 0x%x\n",
-			R_REG(osh, &ai->oobseloutb30), R_REG(osh, &ai->oobseloutb74)));
+		          R_REG(osh, &ai->oobseloutb30), R_REG(osh, &ai->oobseloutb74)));
 		SI_PRINT(("oobseloutc30 0x%x, oobseloutc74 0x%x\n",
-			R_REG(osh, &ai->oobseloutc30), R_REG(osh, &ai->oobseloutc74)));
+		          R_REG(osh, &ai->oobseloutc30), R_REG(osh, &ai->oobseloutc74)));
 		SI_PRINT(("oobseloutd30 0x%x, oobseloutd74 0x%x\n",
-			R_REG(osh, &ai->oobseloutd30), R_REG(osh, &ai->oobseloutd74)));
+		          R_REG(osh, &ai->oobseloutd30), R_REG(osh, &ai->oobseloutd74)));
 		SI_PRINT(("oobsynca 0x%x, oobseloutaen 0x%x\n",
-			R_REG(osh, &ai->oobsynca), R_REG(osh, &ai->oobseloutaen)));
+		          R_REG(osh, &ai->oobsynca), R_REG(osh, &ai->oobseloutaen)));
 		SI_PRINT(("oobsyncb 0x%x, oobseloutben 0x%x\n",
-			R_REG(osh, &ai->oobsyncb), R_REG(osh, &ai->oobseloutben)));
+		          R_REG(osh, &ai->oobsyncb), R_REG(osh, &ai->oobseloutben)));
 		SI_PRINT(("oobsyncc 0x%x, oobseloutcen 0x%x\n",
-			R_REG(osh, &ai->oobsyncc), R_REG(osh, &ai->oobseloutcen)));
+		          R_REG(osh, &ai->oobsyncc), R_REG(osh, &ai->oobseloutcen)));
 		SI_PRINT(("oobsyncd 0x%x, oobseloutden 0x%x\n",
-			R_REG(osh, &ai->oobsyncd), R_REG(osh, &ai->oobseloutden)));
+		          R_REG(osh, &ai->oobsyncd), R_REG(osh, &ai->oobseloutden)));
 		SI_PRINT(("oobaextwidth 0x%x, oobainwidth 0x%x, oobaoutwidth 0x%x\n",
-			R_REG(osh, &ai->oobaextwidth), R_REG(osh, &ai->oobainwidth),
-			R_REG(osh, &ai->oobaoutwidth)));
+		          R_REG(osh, &ai->oobaextwidth), R_REG(osh, &ai->oobainwidth),
+		          R_REG(osh, &ai->oobaoutwidth)));
 		SI_PRINT(("oobbextwidth 0x%x, oobbinwidth 0x%x, oobboutwidth 0x%x\n",
-			R_REG(osh, &ai->oobbextwidth), R_REG(osh, &ai->oobbinwidth),
-			R_REG(osh, &ai->oobboutwidth)));
+		          R_REG(osh, &ai->oobbextwidth), R_REG(osh, &ai->oobbinwidth),
+		          R_REG(osh, &ai->oobboutwidth)));
 		SI_PRINT(("oobcextwidth 0x%x, oobcinwidth 0x%x, oobcoutwidth 0x%x\n",
-			R_REG(osh, &ai->oobcextwidth), R_REG(osh, &ai->oobcinwidth),
-			R_REG(osh, &ai->oobcoutwidth)));
+		          R_REG(osh, &ai->oobcextwidth), R_REG(osh, &ai->oobcinwidth),
+		          R_REG(osh, &ai->oobcoutwidth)));
 		SI_PRINT(("oobdextwidth 0x%x, oobdinwidth 0x%x, oobdoutwidth 0x%x\n",
-			R_REG(osh, &ai->oobdextwidth), R_REG(osh, &ai->oobdinwidth),
-			R_REG(osh, &ai->oobdoutwidth)));
+		          R_REG(osh, &ai->oobdextwidth), R_REG(osh, &ai->oobdinwidth),
+		          R_REG(osh, &ai->oobdoutwidth)));
 	}
 }
 
@@ -1646,7 +1648,7 @@ BCMPOSTTRAPFN(ai_update_backplane_timeouts)(const si_t *sih, bool enable, uint32
 	const si_info_t *sii = SI_INFO(sih);
 	volatile aidmp_t *ai;
 	uint32 i;
-	axi_wrapper_t *axi_wrapper = sii->axi_wrapper;
+	axi_wrapper_t * axi_wrapper = sii->axi_wrapper;
 	uint32 errlogctrl = (enable << AIELC_TO_ENAB_SHIFT) |
 		((timeout_exp << AIELC_TO_EXP_SHIFT) & AIELC_TO_EXP_MASK);
 	uint32 pcie_wrapper_addr = 0;
@@ -1743,7 +1745,7 @@ BCMPOSTTRAPFN(ai_clear_backplane_to)(si_t *sih)
 	const si_info_t *sii = SI_INFO(sih);
 	volatile aidmp_t *ai;
 	uint32 i;
-	axi_wrapper_t *axi_wrapper = sii->axi_wrapper;
+	axi_wrapper_t * axi_wrapper = sii->axi_wrapper;
 
 	if (sii->axi_num_wrappers == 0) {
 		SI_VMSG(("ai_clear_backplane_to, axi_num_wrappers:%d, Is_PCIE:%d, BUS_TYPE:%d,"

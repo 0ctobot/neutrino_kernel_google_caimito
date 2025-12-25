@@ -60,9 +60,9 @@ uint32 hnd_oobr_dump_op(si_t *sih, uchar *p, hnd_oobr_dump_op_t op);
 #define OOBR_EXT_RSRC_REQ_PERCORE_OFFSET 0x34u
 #define OOBR_EXT_RSRC_OFFSET 0x100u
 #define OOBR_EXT_RSRC_SHIFT 7u
-#define OOBR_EXT_RSRC_REQ_ADDR(oodr_base, core_idx) ((uint32)((uintptr)(oodr_base) +\
+#define OOBR_EXT_RSRC_REQ_ADDR(oodr_base, core_idx) (uint32)((uintptr)(oodr_base) +\
 	 OOBR_EXT_RSRC_OFFSET + ((core_idx) << OOBR_EXT_RSRC_SHIFT) +\
-	 OOBR_EXT_RSRC_REQ_PERCORE_OFFSET))
+	 OOBR_EXT_RSRC_REQ_PERCORE_OFFSET)
 
 typedef volatile struct hndoobr_percore_reg {
 	uint32 sourcesel[OOBR_INTR_PER_CONFREG];        /* 0x00 - 0x0c */

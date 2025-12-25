@@ -108,6 +108,7 @@ static void on_gpu_stop(struct device *dev)
 	}
 
 	KBASE_TLSTREAM_TL_ARBITER_STOP_REQUESTED(kbdev, kbdev);
+	KBASE_KTRACE_ADD(kbdev, ARB_GPU_STOP_REQUESTED, NULL, 0);
 	kbase_arbiter_pm_vm_event(kbdev, KBASE_VM_GPU_STOP_EVT);
 }
 
@@ -133,6 +134,7 @@ static void on_gpu_granted(struct device *dev)
 	}
 
 	KBASE_TLSTREAM_TL_ARBITER_GRANTED(kbdev, kbdev);
+	KBASE_KTRACE_ADD(kbdev, ARB_GPU_GRANTED, NULL, 0);
 	kbase_arbiter_pm_vm_event(kbdev, KBASE_VM_GPU_GRANTED_EVT);
 }
 
@@ -156,7 +158,8 @@ static void on_gpu_lost(struct device *dev)
 		dev_err(dev, "%s(): kbdev is NULL", __func__);
 		return;
 	}
-
+	KBASE_TLSTREAM_TL_ARBITER_LOST(kbdev, kbdev);
+	KBASE_KTRACE_ADD(kbdev, ARB_GPU_LOST, NULL, 0);
 	kbase_arbiter_pm_vm_event(kbdev, KBASE_VM_GPU_LOST_EVT);
 }
 
@@ -206,7 +209,6 @@ static int kbase_arbif_of_init(struct kbase_device *kbdev)
 	}
 
 	kbdev->arb.arb_if = arb_if;
-
 	return 0;
 }
 
@@ -221,6 +223,7 @@ static void kbase_arbif_of_term(struct kbase_device *kbdev)
 	}
 	kbdev->arb.arb_dev = NULL;
 }
+
 
 /**
  * kbase_arbif_init() - Kbase Arbiter interface initialisation.
@@ -283,7 +286,9 @@ int kbase_arbif_init(struct kbase_device *kbdev)
 	return 0;
 
 failure_term:
-	kbase_arbif_of_term(kbdev);
+	{
+		kbase_arbif_of_term(kbdev);
+	}
 
 	if (err != -EPROBE_DEFER)
 		err = -EFAULT;
@@ -303,7 +308,9 @@ void kbase_arbif_destroy(struct kbase_device *kbdev)
 	if (arb_if && arb_if->vm_ops.vm_arb_unregister_dev)
 		arb_if->vm_ops.vm_arb_unregister_dev(kbdev->arb.arb_if);
 
-	kbase_arbif_of_term(kbdev);
+	{
+		kbase_arbif_of_term(kbdev);
+	}
 	kbdev->arb.arb_if = NULL;
 }
 
@@ -333,6 +340,7 @@ void kbase_arbif_gpu_request(struct kbase_device *kbdev)
 
 	if (arb_if && arb_if->vm_ops.vm_arb_gpu_request) {
 		KBASE_TLSTREAM_TL_ARBITER_REQUESTED(kbdev, kbdev);
+		KBASE_KTRACE_ADD(kbdev, ARB_GPU_REQUESTED, NULL, 0);
 		arb_if->vm_ops.vm_arb_gpu_request(arb_if);
 	}
 }
@@ -349,8 +357,11 @@ void kbase_arbif_gpu_stopped(struct kbase_device *kbdev, u8 gpu_required)
 
 	if (arb_if && arb_if->vm_ops.vm_arb_gpu_stopped) {
 		KBASE_TLSTREAM_TL_ARBITER_STOPPED(kbdev, kbdev);
-		if (gpu_required)
+		KBASE_KTRACE_ADD(kbdev, ARB_GPU_STOPPED, NULL, 0);
+		if (gpu_required) {
 			KBASE_TLSTREAM_TL_ARBITER_REQUESTED(kbdev, kbdev);
+			KBASE_KTRACE_ADD(kbdev, ARB_GPU_REQUESTED, NULL, 0);
+		}
 		arb_if->vm_ops.vm_arb_gpu_stopped(arb_if, gpu_required);
 	}
 }

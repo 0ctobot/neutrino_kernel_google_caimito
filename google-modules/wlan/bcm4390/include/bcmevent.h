@@ -300,7 +300,7 @@ typedef union bcm_event_msg_u {
 #define WLC_E_WSEC			186	/* wsec keymgmt event */
 #define WLC_E_OBSS_DETECTION		187	/* OBSS HW event */
 #define WLC_E_AP_BCN_MUTE		188	/* Beacon mute mitigation event */
-#define WLC_E_SC_CHAN_QUAL		189	/* Event to indicate the SC channel quality */
+#define WLC_E_SC_CHAN_QUAL		189	/* Event to indicate the SC chanel quality */
 #define WLC_E_DYNSAR			190	/* Dynamic SAR indicate optimize on/off */
 #define WLC_E_ROAM_CACHE_UPDATE		191	/* Roam cache update indication */
 #define WLC_E_AP_BCN_DRIFT		192	/* Beacon Drift event */
@@ -328,10 +328,7 @@ typedef union bcm_event_msg_u {
 						 * Management has kicked in
 						 */
 #define WLC_E_AIRIQ_EVENT		214	/* AIRIQ driver event */
-#define WLC_E_VLPTPC			215	/* Very Low Power (VLP) TPC */
-#define WLC_E_SBI_SC_EVENT		216	/* SBI SC event */
-#define WLC_E_SSID_MITIGATION           217     /* SSID mitigation event */
-#define WLC_E_LAST			218	/* highest val + 1 for range checking */
+#define WLC_E_LAST			215	/* highest val + 1 for range checking */
 
 /* define an API for getting the string name of an event */
 extern const char *bcmevent_get_name(uint event_type);
@@ -602,11 +599,6 @@ typedef struct wl_event_sdb_trans {
 #define WLC_E_PRUNE_SAE_TRANSITION_DISABLE	39u	/* Prune by  SAE transition disable */
 #define WLC_E_PRUNE_BCNPROT_DISABLED		40u	/* Prune AP due to no Beacon protection */
 #define WLC_E_PRUNE_RNR_INVALID_OPCLASS		41u	/* Prune RNR-invalid operating class */
-#define WLC_E_PRUNE_NO_AKM_MATCH		42u	/* No AKM found */
-#define WLC_E_PRUNE_P2P_BLOCKED			43u	/* P2P not allowd */
-#define WLC_E_PRUNE_ASSOC_DISALLOWED		44u	/* Assoc is not allowed */
-#define WLC_E_PRUNE_LINK_MISMATCH		45u	/* Number of link mismatch  */
-#define WLC_E_PRUNE_SCORE_ZERO			46u	/* Prune due to score is 0 */
 
 /* WPA failure reason codes carried in the WLC_E_PSK_SUP event */
 #define WLC_E_SUP_OTHER			0u	/* Other reason */
@@ -653,7 +645,6 @@ typedef struct wl_event_sdb_trans {
 #define WLC_E_SUP_IGTK_BAD_LINK_ID	39u	/* Bad IGTK link id */
 #define WLC_E_SUP_BIGTK_BAD_LINK_ID	40u	/* Bad BIGTK link id */
 #define WLC_E_SUP_FT_ELEM_CNT_MISMATCH	41u	/* Element cnt mismatch with num of elem in FTIE */
-#define WLC_E_SUP_M4_TX_NOACK		42u	/* No ack to M4 TX */
 
 /* event msg for WLC_E_SUP_PTK_UPDATE */
 typedef struct wlc_sup_ptk_update {
@@ -713,22 +704,7 @@ typedef struct wlc_wsec_event {
  * WLC_E_ACTION_FRAME_RX
  */
 
-#define BCM_RX_FRAME_DATA_VERSION_3 3u
-
 #define MAX_PHY_CORE_NUM 4u
-
-typedef struct wl_event_rx_frame_data_v3 {
-	uint16	version;
-	uint16	len;
-	uint16	channel;	/* Matches chanspec_t format from bcmwifi_channels.h */
-	uint16	pad;
-	int32	rssi;
-	uint32	mactime;
-	uint32	rate;
-	int8    per_core_rssi[MAX_PHY_CORE_NUM];
-	struct ether_addr dst_addr; /* 6 bytes */
-	struct ether_addr bssid;    /* 6 bytes */
-} wl_event_rx_frame_data_v3_t;
 
 #define BCM_RX_FRAME_DATA_VERSION_2	2u
 
@@ -754,15 +730,9 @@ typedef BWL_PRE_PACKED_STRUCT struct wl_event_rx_frame_data_v1 {
 #define BCM_RX_FRAME_DATA_VERSION_1 1u
 
 #ifndef WL_EVENT_RX_FRAME_DATA_ALIAS
-#ifdef WL_EVENT_RX_FRAME_DATA_ALIAS_ADDR
-#define BCM_RX_FRAME_DATA_VERSION BCM_RX_FRAME_DATA_VERSION_3
-typedef wl_event_rx_frame_data_v3_t wl_event_rx_frame_data_t;
-#else /* !WL_EVENT_RX_FRAME_DATA_ALIAS_ADDR */
-
 #define BCM_RX_FRAME_DATA_VERSION BCM_RX_FRAME_DATA_VERSION_1
 typedef wl_event_rx_frame_data_v1_t wl_event_rx_frame_data_t;
-#endif /* WL_EVENT_RX_FRAME_DATA_ALIAS_ADDR */
-#endif /* WL_EVENT_RX_FRAME_DATA_ALIAS */
+#endif
 
 /* WLC_E_IF event data */
 typedef struct wl_event_data_if {
@@ -792,14 +762,11 @@ typedef struct wl_event_data_natoe {
 #define WLC_E_IF_ROLE_WDS		2	/* WDS link */
 #define WLC_E_IF_ROLE_P2P_GO		3	/* P2P Group Owner */
 #define WLC_E_IF_ROLE_P2P_CLIENT	4	/* P2P Client */
-#define WLC_E_IF_ROLE_ART		5	/* Active Radiotap */
 
 #define WLC_E_IF_ROLE_IBSS		8	/* IBSS */
 #define WLC_E_IF_ROLE_NAN		9	/* NAN */
 
 #define WLC_E_IF_ROLE_MESH		10u	/* identifies the role as MESH */
-
-#define WLC_E_IF_ROLE_NAN_NMI		11u	/* identifies the interface role as NAN NMI */
 
 /* WLC_E_RSSI event data */
 typedef struct wl_event_data_rssi {
@@ -1134,8 +1101,6 @@ typedef enum wl_nan_events {
 	WL_NAN_EVENT_TETHER_PEER_ADD		= 57,	/* NAN Tether client added on peer side */
 	WL_NAN_EVENT_TETHER_PEER_DEL		= 58,	/* NAN Tether client deleted on peer side */
 	WL_NAN_EVENT_UNENCRYPTED_AF_RECV	= 59,	/* Unencrypted Rx on secured link */
-	WL_NAN_EVENT_AUTH_RX			= 60,	/* NAN auth rx for Host based nan pairing */
-	WL_NAN_EVENT_GROUP_PN_ROLLOVER		= 61,	/* PN rollover event */
 	/* keep WL_NAN_EVENT_INVALID as the last element */
 	WL_NAN_EVENT_INVALID				/* delimiter for max value */
 } nan_app_events_e;
@@ -1328,7 +1293,7 @@ typedef struct wl_twt_setup_cplt {
 	uint8 dialog;	/* Setup frame dialog token */
 	uint8 reason_code;	/* see WL_TWT_SETUP_RC_XXXX */
 	uint8 configID;	/* TWT Configuration ID */
-	uint8 mlo_link_id;
+	uint8 pad[1];
 	int32 status;
 	/* wl_twt_sdesc_t desc; - defined in wlioctl.h */
 } wl_twt_setup_cplt_t;
@@ -1357,8 +1322,7 @@ typedef struct wl_twt_teardown_cplt {
 	uint16 length;		/* the byte count of fields from 'reason_code' onwards */
 	uint8 reason_code;	/* WL_TWT_TD_RC_XXXX */
 	uint8 configID;		/* TWT Configuration ID */
-	uint8 mlo_link_id;	/* MLO Link ID */
-	uint8 pad[1];
+	uint8 pad[2];
 	int32 status;
 	/* wl_twt_teardesc_t; - defined in wlioctl.h */
 } wl_twt_teardown_cplt_t;
@@ -1380,8 +1344,7 @@ typedef struct wl_twt_info_cplt {
 	uint16 length;		/* the byte count of fields from 'reason_code' onwards */
 	uint8 reason_code;	/* WL_TWT_INFO_RC_XXXX */
 	uint8 configID;		/* TWT Configuration ID */
-	uint8 mlo_link_id;	/* MLO Link ID */
-	uint8 pad[1];
+	uint8 pad[2];
 	int32 status;
 	/* wl_twt_infodesc_t; - defined in wlioctl.h */
 } wl_twt_info_cplt_t;
@@ -1399,8 +1362,7 @@ typedef struct wl_twt_notify {
 	uint16 version;
 	uint16 length;		/* the byte count of fields from 'reason_code' onwards */
 	uint8 notification;
-	uint8 mlo_link_id;	/* MLO Link ID */
-	uint8 PAD[2];
+	uint8 PAD[3];
 } wl_twt_notify_t;
 
 /* Beacon TSF Event */
@@ -1450,34 +1412,34 @@ typedef enum {
 #if defined(WL_CHANSW_REASONS_0TO13_INCLUDED)
 	CHANSW_UNKNOWN = 0,	/* channel switch due to unknown reason */
 	CHANSW_SCAN = 1,	/* channel switch due to scan */
-	CHANSW_OFFCHAN_AF = 2,	/* channel switch due to off channel action frame */
+	CHANSW_PHYCAL = 2,	/* channel switch due to phy calibration */
 	CHANSW_INIT = 3,	/* channel set at WLC up time */
 	CHANSW_ASSOC = 4,	/* channel switch due to association */
 	CHANSW_ROAM = 5,	/* channel switch due to roam */
-
+	CHANSW_MCHAN = 6,	/* channel switch triggered by mchan module */
 	CHANSW_IOVAR = 7,	/* channel switch due to IOVAR */
-	CHANSW_NAN_SCAN = 8,	/* channel switch due to NAN Scan */
+	CHANSW_CSA_DFS = 8,	/* channel switch due to chan switch  announcement from AP */
 	CHANSW_APCS = 9,	/* Channel switch from AP channel select module */
-	CHANSW_P2PDTIM = 10,	/* channel switch due to P2P DTIM */
 	CHANSW_FBT = 11,	/* Channel switch from FBT module for action frame response */
 	CHANSW_UPDBW = 12,	/* channel switch at update bandwidth */
-	CHANSW_DTIM = 13,	/* channel switch at DTIM */
+	CHANSW_ULB = 13,	/* channel switch at ULB */
 #endif	/* WL_CHANSW_REASONS_0TO13_INCLUDED */
+	CHANSW_DFS = 10,	/* channel switch due to DFS module */
 	CHANSW_HOMECH_REQ = 14, /* channel switch due to HOME Channel Request */
 	CHANSW_STA = 15,	/* channel switch due to STA */
-	CHANSW_SOFTAP = 16,	/* channel switch due to SoftAP */
-	CHANSW_P2P_GC = 17,	/* channel switch due to P2P GC */
+	CHANSW_SOFTAP = 16,	/* channel switch due to SodtAP */
+	CHANSW_AIBSS = 17,	/* channel switch due to AIBSS */
 	CHANSW_NAN = 18,	/* channel switch due to NAN */
 	CHANSW_NAN_DISC = 19,	/* channel switch due to NAN Disc */
 	CHANSW_NAN_SCHED = 20,	/* channel switch due to NAN Sched */
 
-	CHANSW_ASSOC_P2P = 25,	/* channel swtich due to assoc for P2P sta */
 	CHANSW_TDLS = 26,	/* channel switch due to TDLS */
 	CHANSW_PROXD = 27,	/* channel switch due to PROXD */
 	CHANSW_SLOTTED_BSS = 28, /* channel switch due to slotted bss */
 	CHANSW_SLOTTED_CMN_SYNC = 29, /* channel switch due to Common Sync Layer */
 	CHANSW_SLOTTED_BSS_CAL = 30,	/* channel switch due to Cal request from slotted bss */
 	CHANSW_PASN = 31,	/* channel switch due to PASN authentication */
+
 	CHANSW_MAX_NUMBER = 32	/* max channel switch reason */
 } wl_chansw_reason_t;
 
@@ -1755,7 +1717,6 @@ typedef struct wl_event_dynsar {
 #define BCN_MUTE_MITI_SA_QUERY_FAIL		16u /* Mitigation failed due to SA query failure */
 #define BCN_MUTE_MITI_OTHER_ML_BCN_RCVD		17u /* The Other ML link receives the beacon */
 #define BCN_MUTE_MITI_OTHER_ML_NO_BCN		18u /* The Other ML link has no beacons */
-#define BCN_MUTE_MITI_SDB_MODESWITCH		19u /* Mitigation end due to sdb up/dn Modeswitch */
 
 /* bcn_mute_miti event data */
 #define WLC_BCN_MUTE_MITI_EVENT_DATA_VER_1	1u
@@ -2092,25 +2053,4 @@ typedef struct wl_eds_status_event_v1 {
 	uint32				remain_dur;
 	uint32				accumulated_dur;
 } wl_eds_status_event_v1_t;
-
-/* WLC_E_VLPTPC subevents */
-typedef enum wl_vlptpc_events {
-	WL_EVT_VLPTPC_BKOFF_OFF = 0,	/* TPC backoff is disabled */
-	WL_EVT_VLPTPC_BKOFF_ON = 1	/* TPC backoff is enabled */
-} wl_vlptpc_events_e;
-
-#define WL_VLPTPC_EVT_RXINFO_V1		1u
-typedef struct wl_vlptpc_event_rxinfo_v1 {
-	uint16		version;	/* event data version */
-	uint16		len;		/* total length */
-	struct ether_addr sender_mac;	/* sender MAC address */
-	chanspec_t	chanspec;	/* rx chanspec */
-	int8		rssi;		/* rssi */
-	uint8		pad[3];
-} wl_vlptpc_event_rxinfo_v1_t;
-
-/* WLC_E_SBI_SC_EVENT subevents */
-typedef enum wl_sbi_sc_events {
-	WL_SBI_SC_CHAN_STATS = 1
-} wl_sbi_sc_events_t;
 #endif /* _BCMEVENT_H_ */

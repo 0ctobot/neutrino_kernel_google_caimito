@@ -658,26 +658,26 @@ dhd_pktlog_ring_tx_status(dhd_pub_t *dhdp, void *pkt, void *pktdata, uint32 pkti
 	/* Inverse traverse from the last packets */
 	for (item_p = dll_tail_p(&pktlog_ring->ring_info_head);
 		!dll_end(&pktlog_ring->ring_info_head, item_p);
-		item_p = next_p) {
-		if (dll_empty(item_p)) {
-			break;
-		}
-		next_p = dll_prev_p(item_p);
-		tx_pkt = (dhd_pktlog_ring_info_t *)item_p;
-		temp_hash = tx_pkt->info.pkt_hash;
-		if (temp_hash == pkt_hash) {
-			tx_pkt->tx_fate = pkt_fate;
+		item_p = next_p)
+	{
+	    if (dll_empty(item_p)) {
+		break;
+	    }
+	    next_p = dll_prev_p(item_p);
+	    tx_pkt = (dhd_pktlog_ring_info_t *)item_p;
+	    temp_hash = tx_pkt->info.pkt_hash;
+	    if (temp_hash == pkt_hash) {
+		tx_pkt->tx_fate = pkt_fate;
 #ifdef BDC
-			h = (struct bdc_header *)PKTDATA(dhdp->osh, tx_pkt->info.pkt);
-			PKTPULL(dhdp->osh, tx_pkt->info.pkt, BDC_HEADER_LEN);
-			PKTPULL(dhdp->osh, tx_pkt->info.pkt,
-				(h->dataOffset << DHD_WORD_TO_LEN_SHIFT));
+		h = (struct bdc_header *)PKTDATA(dhdp->osh, tx_pkt->info.pkt);
+		PKTPULL(dhdp->osh, tx_pkt->info.pkt, BDC_HEADER_LEN);
+		PKTPULL(dhdp->osh, tx_pkt->info.pkt, (h->dataOffset << DHD_WORD_TO_LEN_SHIFT));
 #endif /* BDC */
-			tx_pkt->info.tx_status_ts_sec = (uint32)ts_nsec;
-			tx_pkt->info.tx_status_ts_usec = (uint32)(rem_nsec/NSEC_PER_USEC);
-			DHD_PKT_LOG(("%s(): Found pkt hash in prev pos\n", __FUNCTION__));
-			break;
-		}
+		tx_pkt->info.tx_status_ts_sec = (uint32)ts_nsec;
+		tx_pkt->info.tx_status_ts_usec = (uint32)(rem_nsec/NSEC_PER_USEC);
+		DHD_PKT_LOG(("%s(): Found pkt hash in prev pos\n", __FUNCTION__));
+		break;
+	    }
 	}
 	DHD_PKT_LOG_UNLOCK(pktlog_ring->pktlog_ring_lock, flags);
 	return BCME_OK;
@@ -834,20 +834,17 @@ dhd_pktlog_filter_add(dhd_pktlog_filter_t *filter, char *arg)
 		return BCME_ERROR;
 	}
 
-	offset = bcmstrtok(&arg, " ", 0);
-	if (offset == NULL) {
+	if ((offset = bcmstrtok(&arg, " ", 0)) == NULL) {
 		DHD_ERROR(("%s(): offset not found\n", __FUNCTION__));
 		return BCME_ERROR;
 	}
 
-	bitmask = bcmstrtok(&arg, " ", 0);
-	if (bitmask == NULL) {
+	if ((bitmask = bcmstrtok(&arg, " ", 0)) == NULL) {
 		DHD_ERROR(("%s(): bitmask not found\n", __FUNCTION__));
 		return BCME_ERROR;
 	}
 
-	pattern = bcmstrtok(&arg, " ", 0);
-	if (pattern == NULL) {
+	if ((pattern = bcmstrtok(&arg, " ", 0)) == NULL) {
 		DHD_ERROR(("%s(): pattern not found\n", __FUNCTION__));
 		return BCME_ERROR;
 	}
@@ -1183,7 +1180,7 @@ dhd_pktlog_filter_pull_forward(dhd_pktlog_filter_t *filter, uint32 del_filter_id
 
 	move_list_cnt = list_cnt - del_filter_id;
 
-	pos = del_filter_id - 1;
+	pos = del_filter_id -1;
 	move_bytes = sizeof(dhd_pktlog_filter_info_t) * move_list_cnt;
 	if (move_list_cnt) {
 		ret = memmove_s(&filter->info[pos], move_bytes + sizeof(dhd_pktlog_filter_info_t),
@@ -1192,7 +1189,7 @@ dhd_pktlog_filter_pull_forward(dhd_pktlog_filter_t *filter, uint32 del_filter_id
 			DHD_ERROR(("filter moving failed\n"));
 			return;
 		}
-		for (; pos < list_cnt - 1; pos++) {
+		for (; pos < list_cnt -1; pos++) {
 			filter->info[pos].id -= 1;
 		}
 	}
@@ -1431,13 +1428,13 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 		}
 
 #ifdef DHD_PKT_LOGGING_DBGRING
-		ret = memcpy_s((void *)(user_buf + len), size - len,
-			(char *)&report_ptr->info.driver_ts_sec,
+		ret = memcpy_s((void*)(user_buf + len), size - len,
+			(char*)&report_ptr->info.driver_ts_sec,
 			sizeof(report_ptr->info.driver_ts_sec));
 		len += sizeof(report_ptr->info.driver_ts_sec);
 
-		ret = memcpy_s((void *)(user_buf + len), size - len,
-			(char *)&report_ptr->info.driver_ts_usec,
+		ret = memcpy_s((void*)(user_buf + len), size - len,
+			(char*)&report_ptr->info.driver_ts_usec,
 			sizeof(report_ptr->info.driver_ts_usec));
 		len += sizeof(report_ptr->info.driver_ts_usec);
 
@@ -1457,19 +1454,19 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 		captured_frame_len = frame_len + bytes_user_data;
 
 		/* pcap pkt head has incl_len and orig_len */
-		ret = memcpy_s((void *)(user_buf + len), size - len,
-			(char *)&captured_frame_len, sizeof(captured_frame_len));
+		ret = memcpy_s((void*)(user_buf + len), size - len,
+			(char*)&captured_frame_len, sizeof(captured_frame_len));
 		len += sizeof(captured_frame_len);
 
-		ret = memcpy_s((void *)(user_buf + len), size - len,
-			(char *)&write_frame_len, sizeof(write_frame_len));
+		ret = memcpy_s((void*)(user_buf + len), size - len,
+			(char*)&write_frame_len, sizeof(write_frame_len));
 		len += sizeof(write_frame_len);
 
-		ret = memcpy_s((void *)(user_buf + len), size - len, PKTDATA(pktlog_ring->dhdp->osh,
+		ret = memcpy_s((void*)(user_buf + len), size - len, PKTDATA(pktlog_ring->dhdp->osh,
 			report_ptr->info.pkt), frame_len);
 		len += frame_len;
 
-		ret = memcpy_s((void *)(user_buf + len), size - len, buf, bytes_user_data);
+		ret = memcpy_s((void*)(user_buf + len), size - len, buf, bytes_user_data);
 		len += bytes_user_data;
 
 		dll_delete((dll_t *)report_ptr);
@@ -1477,11 +1474,11 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 		pktlog_ring->pktcount--;
 		dll_append(&pktlog_ring->ring_info_free, (dll_t *)report_ptr);
 #else
-		ret = dhd_export_debug_data((char *)&report_ptr->info.driver_ts_sec, file,
+		ret = dhd_export_debug_data((char*)&report_ptr->info.driver_ts_sec, file,
 				user_buf, sizeof(report_ptr->info.driver_ts_sec), &pos);
 		len += sizeof(report_ptr->info.driver_ts_sec);
 
-		ret = dhd_export_debug_data((char *)&report_ptr->info.driver_ts_usec, file,
+		ret = dhd_export_debug_data((char*)&report_ptr->info.driver_ts_usec, file,
 				user_buf, sizeof(report_ptr->info.driver_ts_usec), &pos);
 		len += sizeof(report_ptr->info.driver_ts_usec);
 
@@ -1504,11 +1501,11 @@ dhd_pktlog_dump_write(dhd_pub_t *dhdp, void *file, const void *user_buf, uint32 
 		write_frame_len = frame_len + bytes_user_data;
 
 		/* pcap pkt head has incl_len and orig_len */
-		ret = dhd_export_debug_data((char *)&write_frame_len, file, user_buf,
+		ret = dhd_export_debug_data((char*)&write_frame_len, file, user_buf,
 				sizeof(write_frame_len), &pos);
 		len += sizeof(write_frame_len);
 
-		ret = dhd_export_debug_data((char *)&write_frame_len, file, user_buf,
+		ret = dhd_export_debug_data((char*)&write_frame_len, file, user_buf,
 				sizeof(write_frame_len), &pos);
 		len += sizeof(write_frame_len);
 

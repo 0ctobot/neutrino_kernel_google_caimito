@@ -176,14 +176,6 @@ extern int bcm_ether_atoe(const char *p, struct ether_addr *ea);
 	} \
 }
 
-#define SPINWAIT_1US(exp, us) { \
-	uint countdown = (us); \
-	while (((exp) != 0) && (uint)(countdown >= 1U)) { \
-		OSL_DELAY(1U); \
-		countdown -= 1U; \
-	} \
-}
-
 /* No TRAP in bootloader */
 #if defined(BCM_BOOTLOADER)
 #define SPINWAIT_TRAP(x, y)	SPINWAIT(x, y)
@@ -244,9 +236,7 @@ typedef struct bcm_sm_log_info bcm_sm_log_info_t;
 
 #define BCM_SM_LOG_FLAG_EVENT_PRESENT (1u << 0u)
 
-bcm_sm_log_info_t *bcm_sm_logger_init(osl_t *osh, uint32 flags, uint32 num_entries,
-	uint32 module_entry_sz);
-void bcm_sm_logger_deinit(osl_t *osh, bcm_sm_log_info_t *bsli);
+void *bcm_sm_logger_init(osl_t *osh, uint32 flags, uint32 num_entries, uint32 module_entry_sz);
 void *bcm_sm_log(bcm_sm_log_info_t *bsli, uint32 state, uint32 event, void *call_site);
 
 /* Get priority from a packet and pass it back in scb (or equiv) */
@@ -590,11 +580,16 @@ uint16 bcmhex2bin(const uint8* hex, uint hex_len, uint8 *buf, uint buf_len);
 #define VALID_MASK(mask)	!((mask) & ((mask) + 1))
 
 #ifndef OFFSETOF
-#if ((__GNUC__ >= 4) && (__GNUC_MINOR__ >= 8)) || defined(BCMFUZZ)
+#if ((__GNUC__ >= 4) && (__GNUC_MINOR__ >= 8))
 	/* GCC 4.8+ complains when using our OFFSETOF macro in array length declarations. */
 	#define	OFFSETOF(type, member)	__builtin_offsetof(type, member)
 #else
+#ifdef BCMFUZZ
+	/* use 0x10 offset to avoid undefined behavior error due to NULL access */
+	#define OFFSETOF(type, member)	(((uint)(uintptr)&((type *)0x10)->member) - 0x10)
+#else
 	#define	OFFSETOF(type, member)	((uint)(uintptr)&((type *)0)->member)
+#endif /* BCMFUZZ */
 #endif /* GCC 4.8 or newer */
 #endif /* OFFSETOF */
 
@@ -781,88 +776,49 @@ DECLARE_MAP_API(8, 2, 3, 3u, 0x00FFu) /* setbit8() and getbit8() */
 #define CRC32_GOOD_VALUE  0xdebb20e3u		/* Good final CRC32 checksum value */
 
 #ifdef DONGLEBUILD
-#define MACF			"MACADDR:%08x%04x"
-#define ETHERP_TO_MACF(ea)	(uint32)bcm_ether_ntou64(ea), \
-				(uint32)(bcm_ether_ntou64(ea) >> 32)
+#define MACF				"MACADDR:%08x%04x"
+#define ETHERP_TO_MACF(ea)		(uint32)bcm_ether_ntou64(ea), \
+					(uint32)(bcm_ether_ntou64(ea) >> 32)
+
+#define CONST_ETHERP_TO_MACF(ea)	ETHERP_TO_MACF(ea)
+
+#define ETHER_TO_MACF(ea)		ETHERP_TO_MACF(&ea)
+
 #else
-#define MACF			"%02x:%02x:%02x:%02x:%02x:%02x"
-#define ETHERP_TO_MACF(ea)	((const struct ether_addr *)(ea))->octet[0], \
-				((const struct ether_addr *)(ea))->octet[1], \
-				((const struct ether_addr *)(ea))->octet[2], \
-				((const struct ether_addr *)(ea))->octet[3], \
-				((const struct ether_addr *)(ea))->octet[4], \
-				((const struct ether_addr *)(ea))->octet[5]
+/* use for direct output of MAC address in printf etc */
+#define MACF				"%02x:%02x:%02x:%02x:%02x:%02x"
+#define ETHERP_TO_MACF(ea)	((const struct ether_addr *) (ea))->octet[0], \
+				((const struct ether_addr *) (ea))->octet[1], \
+				((const struct ether_addr *) (ea))->octet[2], \
+				((const struct ether_addr *) (ea))->octet[3], \
+				((const struct ether_addr *) (ea))->octet[4], \
+				((const struct ether_addr *) (ea))->octet[5]
+
+#define CONST_ETHERP_TO_MACF(ea)	ETHERP_TO_MACF(ea)
+
+#define ETHER_TO_MACF(ea)	(ea).octet[0], \
+				(ea).octet[1], \
+				(ea).octet[2], \
+				(ea).octet[3], \
+				(ea).octet[4], \
+				(ea).octet[5]
 #endif /* DONGLEBUILD */
-
-#define ETHER_TO_MACF(ea)	ETHERP_TO_MACF(&ea)
-#define CONST_ETHERP_TO_MACF(ea) ETHERP_TO_MACF(ea)
-
-/* chanspec format */
-#ifdef DONGLEBUILD
-#define CHF			"CHSPEC:X%04F"
-#define CHSPEC_TO_CHF(ch, buf)	(BCM_REFERENCE(buf), ch)
-#else
-#define CHF			"%s"
-#define CHSPEC_TO_CHF(ch, buf)	(wf_chspec_ntoa_ex(ch, buf), buf)
-#endif /* DONGLEBUILD */
-
-/* SSID format ('ssid' is at least 4 octet long i.e. it is DOT11_MAX_SSID_LEN long!) */
-/* wlc_format_ssid() is defined in wlc_dbg.h so it's better to either move these defines
- * to wl layer or move wlc_format_ssid) to bcmutils component...
- */
-#ifdef DONGLEBUILD
-#define SSIDF			"SSID:X%X..%X:L%u"
-#define SSIDP_TO_SSIDF(ssid, ssid_len, ssidbuf) \
-				ssid_len > 0 ? ntoh32_ua(&((const uint8 *)(ssid))[0]) : 0, \
-				({ \
-				uint pos = ssid_len > 8 ? ssid_len - 4 : ssid_len > 4 ? 4 : 0; \
-				pos > 0 ? ntoh32_ua(&((const uint8 *)(ssid))[pos]) : 0; \
-				}), \
-				(BCM_REFERENCE(ssidbuf), ssid_len)
-#else
-#define SSIDF			"\"%s\""
-#define SSIDP_TO_SSIDF(ssid, ssid_len, ssidbuf) \
-				(wlc_format_ssid(ssidbuf, ssid, ssid_len), ssidbuf)
-#endif /* DONGLEBUILD */
-
-/* IP v4 Address format */
-#ifdef DONGLEBUILD
-#define IPV4F			"IPADDR:%08X"
-#define IPV4P_TO_IPV4F(ip)	ntoh32_ua(((const struct ipv4_addr *)(ip))->addr)
-#else
-#define IPV4F			"\"%u.%u.%u.%u\""
-#define IPV4P_TO_IPV4F(ip)	((const struct ipv4_addr *)(ip))->addr[0], \
-				((const struct ipv4_addr *)(ip))->addr[1], \
-				((const struct ipv4_addr *)(ip))->addr[2], \
-				((const struct ipv4_addr *)(ip))->addr[3]
-#endif /* DONGLEBUILD */
-
-/* CC or Country Abbreviation format */
-#ifdef DONGLEBUILD
-#define CCF			"CC:%c%c"
-#define CCP_TO_CCF(cc)		((const uint8 *)(cc))[0], \
-				((const uint8 *)(cc))[1]
-#else
-#define CCF			"\"%s\""
-#define CCP_TO_CCF(cc)		((const uint8 *)(cc))
-#endif /* DONGLEBUILD */
-
 /* use only for debug, the string length can be changed
  * If you want to use this macro to the logic,
  * USE MACF instead
  */
 #define MACDBG_FULL		"%02x:%02x:%02x:%02x:%02x:%02x"
-#define MAC2STRDBG_FULL(ea)	((const uint8 *)(ea))[0], \
-				((const uint8 *)(ea))[1], \
-				((const uint8 *)(ea))[2], \
-				((const uint8 *)(ea))[3], \
-				((const uint8 *)(ea))[4], \
-				((const uint8 *)(ea))[5]
+#define MAC2STRDBG_FULL(ea)	((const uint8*)(ea))[0], \
+			((const uint8*)(ea))[1], \
+			((const uint8*)(ea))[2], \
+			((const uint8*)(ea))[3], \
+			((const uint8*)(ea))[4], \
+			((const uint8*)(ea))[5]
 
 #define MACDBG_SIMPLE		"%02x:xx:xx:xx:x%x:%02x"
-#define MAC2STRDBG_SIMPLE(ea)	((const uint8 *)(ea))[0], \
-				(((const uint8 *)(ea))[4] & 0xf), \
-				((const uint8 *)(ea))[5]
+#define MAC2STRDBG_SIMPLE(ea)	((const uint8*)(ea))[0], \
+			(((const uint8*)(ea))[4] & 0xf), \
+			((const uint8*)(ea))[5]
 
 #if !defined(SIMPLE_MAC_PRINT)
 #define MACDBG MACDBG_FULL
@@ -872,12 +828,12 @@ DECLARE_MAP_API(8, 2, 3, 3u, 0x00FFu) /* setbit8() and getbit8() */
 #define MAC2STRDBG MAC2STRDBG_SIMPLE
 #endif /* SIMPLE_MAC_PRINT */
 
-#define MACOUIDBG		"%02x:%x:%02x"
-#define MACOUI2STRDBG(ea)	((const uint8 *)(ea))[0], \
-				((const uint8 *)(ea))[1] & 0xf, \
-				((const uint8 *)(ea))[2]
+#define MACOUIDBG "%02x:%x:%02x"
+#define MACOUI2STRDBG(ea)	((const uint8*)(ea))[0], \
+				((const uint8*)(ea))[1] & 0xf, \
+				((const uint8*)(ea))[2]
 
-#define MACOUI			"%02x:%02x:%02x"
+#define MACOUI "%02x:%02x:%02x"
 #define MACOUI2STR(ea) (ea)[0], (ea)[1], (ea)[2]
 
 #ifdef DONGLEBUILD
@@ -1286,9 +1242,6 @@ void bcm_sub_64(uint32* r_hi, uint32* r_lo, uint32 offset);
 
 #define EXTRACT_LOW32(num)	(uint32)(num & MASK_32_BITS)
 #define EXTRACT_HIGH32(num)	(uint32)(((uint64)num >> 32) & MASK_32_BITS)
-
-#define LEN_TO_512KB(_x)	((_x) >> 8u)
-#define LEN_FROM_512KB(_x)	((_x) << 8u)
 
 #define MAXIMUM(a, b) ((a > b) ? a : b)
 #define MINIMUM(a, b) ((a < b) ? a : b)

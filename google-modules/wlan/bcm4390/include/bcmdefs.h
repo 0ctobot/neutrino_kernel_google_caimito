@@ -153,17 +153,12 @@
 /* Compile-time assert can be used in place of ASSERT if the expression evaluates
  * to a constant at compile time.
  */
-#if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
-/* _Static_assert() is supported in ISO C from C11. */
-#define STATIC_ASSERT(expr) _Static_assert(expr, "Static ASSERT failure")
-#else
 #define STATIC_ASSERT(expr) { \
 	/* Make sure the expression is constant. */ \
 	typedef enum { _STATIC_ASSERT_NOT_CONSTANT = (expr) } _static_assert_e BCM_UNUSED_VAR; \
 	/* Make sure the expression is true. */ \
 	typedef char STATIC_ASSERT_FAIL[(expr) ? 1 : -1] BCM_UNUSED_VAR; \
 }
-#endif /* __STDC_VERSION__ >= 201112L */
 
 /* Reclaiming text and data :
  * The following macros specify special linker sections that can be reclaimed
@@ -364,15 +359,6 @@ extern bool bcm_postattach_part_reclaimed;
 
 /* Use BCMSPECSYM() macro to tag symbols going to a special output section in the binary. */
 #define BCMSPECSYM(_sym)	__attribute__ ((__section__ (".special." #_sym))) _sym
-
-#ifdef BCMFUZZ
-#define BCM_UNROLL_LOOPS
-#else
-/** Use on functions with small loops with boundaries known at compile time to trade increased
- * memory usage for a few saved cycles by avoiding the branch statement caused by the loop.
- */
-#define BCM_UNROLL_LOOPS	__attribute__ ((optimize("unroll-loops")))
-#endif /* BCMFUZZ */
 
 #define STATIC	static
 
@@ -816,19 +802,6 @@ extern bool _dvfsenab;
 	#define BCMDVFS_ENAB() (FALSE)
 #endif /* BCMDVFS */
 
-#ifdef BCM_HW_SFHLLC
-extern bool _hw_sfhllc_enab;
-#if defined(ROM_ENAB_RUNTIME_CHECK)
-	#define BCM_HW_SFHLLC_ENAB() (_hw_sfhllc_enab)
-#elif !defined(BCM_HW_SFHLLC_DISABLED)
-	#define BCM_HW_SFHLLC_ENAB() (TRUE)
-#else
-	#define BCM_HW_SFHLLC_ENAB() (FALSE)
-#endif
-#else
-	#define BCM_HW_SFHLLC_ENAB() (FALSE)
-#endif /* BCMDVFS */
-
 /* Max size for reclaimable NVRAM array */
 #ifndef ATE_BUILD
 #ifdef DL_NVRAM
@@ -1056,12 +1029,10 @@ void* BCM_ASLR_CODE_FNPTR_RELOCATOR(void *func_ptr);
 	/* 'func_ptr_err_chk' performs a compile time error check to ensure that only a constant
 	 * function name is passed as an argument to BCM_FUNC_PTR(). This ensures that the macro is
 	 * only used for function pointer references, and not for function pointer invocations.
-	 *
-	 * Cast function ptr arg to avoid warnings related to conversion of function ptr to void*.
 	 */
-	#define BCM_FUNC_PTR(fn) \
-		({ static void *func_ptr_err_chk __attribute__ ((unused)) = (void *)(uintptr)(fn); \
-		(__typeof__(&fn))(uintptr)BCM_ASLR_CODE_FNPTR_RELOCATOR((void *)(uintptr)(fn)); })
+	#define BCM_FUNC_PTR(func) \
+		({ static void *func_ptr_err_chk __attribute__ ((unused)) = (func); \
+		BCM_ASLR_CODE_FNPTR_RELOCATOR(func); })
 #else
 	#define BCM_FUNC_PTR(func)         (func)
 #endif /* BCM_ASLR_CODE_FNPTR_RELOC */

@@ -2651,9 +2651,13 @@ static int goodix_ts_stage2_init(struct goodix_ts_core *cd)
 	size_t touch_frame_size =
 		misc->frame_data_addr - misc->touch_data_addr +
 		misc->frame_data_head_len + misc->fw_attr_len +
-		misc->fw_log_len + sizeof(struct goodix_mutual_data) +
-		mutual_size + sizeof(struct goodix_self_sensing_data) +
-		self_sensing_size;
+		misc->fw_log_len +
+#if defined(CONFIG_SOC_ZUMA) && !defined(CONFIG_SOC_ZUMAPRO)
+		misc->mutual_struct_len +
+#else
+		sizeof(struct goodix_mutual_data) + mutual_size +
+#endif
+		sizeof(struct goodix_self_sensing_data) + self_sensing_size;
 #if IS_ENABLED(CONFIG_GOOG_TOUCH_INTERFACE)
 	struct gti_optional_configuration *options;
 #endif

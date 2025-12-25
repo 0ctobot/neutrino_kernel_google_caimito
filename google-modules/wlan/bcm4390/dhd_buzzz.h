@@ -37,9 +37,9 @@ void dhd_buzzz_log0(uint32 evt_id);
 void dhd_buzzz_log1(uint32 evt_id, uint32 arg1);
 void dhd_buzzz_log2(uint32 evt_id, uint32 arg1, uintptr arg2);
 
-void dhd_buzzz_fmt_reg(uint32 id, char *fmt);
+void dhd_buzzz_fmt_reg(uint32 id, char * fmt);
 
-extern void *dhd_os_create_buzzz_thread(void);
+extern void* dhd_os_create_buzzz_thread(void);
 extern void dhd_os_destroy_buzzz_thread(void *thr_hdl);
 extern void dhd_os_sched_buzzz_thread(void *thr_hdl);
 
@@ -50,7 +50,8 @@ extern void dhd_os_sched_buzzz_thread(void *thr_hdl);
 #define BUZZZ_FMT(ID, format) \
 	dhd_buzzz_fmt_reg(BUZZZ_EVT__## ID, "\t" format);
 
-typedef enum buzzz_evt_id {
+typedef enum buzzz_evt_id
+{
 	BUZZZ_EVT__DHD = 100, /* BUZZZ_EVT(DHD) */
 	BUZZZ_EVT(GENERAL_LOCK)
 	BUZZZ_EVT(GENERAL_UNLOCK)

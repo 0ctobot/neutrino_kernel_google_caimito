@@ -51,13 +51,13 @@
 static INLINE int dhd_flow_queue_throttle(flow_queue_t *queue);
 
 static INLINE uint16 dhd_flowid_find(dhd_pub_t *dhdp, uint8 ifindex,
-	uint8 prio, char *sa, char *da);
+                                     uint8 prio, char *sa, char *da);
 
 static INLINE uint16 dhd_flowid_alloc(dhd_pub_t *dhdp, uint8 ifindex,
-	uint8 prio, char *sa, char *da);
+                                      uint8 prio, char *sa, char *da);
 
 static INLINE int dhd_flowid_lookup(dhd_pub_t *dhdp, uint8 ifindex,
-	uint8 prio, char *sa, char *da, uint16 *flowid);
+                                uint8 prio, char *sa, char *da, uint16 *flowid);
 int dhd_flow_queue_overflow(flow_queue_t *queue, void *pkt);
 
 #define FLOW_QUEUE_PKT_NEXT(p)          PKTLINK(p)
@@ -101,15 +101,15 @@ BCMFASTPATH(dhd_flow_queue_overflow)(flow_queue_t *queue, void *pkt)
 flow_ring_node_t *
 dhd_flow_ring_node(dhd_pub_t *dhdp, uint16 flowid)
 {
-	flow_ring_node_t *flow_ring_node;
+	flow_ring_node_t * flow_ring_node;
 
-	ASSERT(dhdp != (dhd_pub_t *)NULL);
+	ASSERT(dhdp != (dhd_pub_t*)NULL);
 	ASSERT(flowid <= dhdp->max_tx_flowid);
 	if (flowid > dhdp->max_tx_flowid) {
 		return NULL;
 	}
 
-	flow_ring_node = &(((flow_ring_node_t *)(dhdp->flow_ring_table))[flowid]);
+	flow_ring_node = &(((flow_ring_node_t*)(dhdp->flow_ring_table))[flowid]);
 
 	ASSERT(flow_ring_node->flowid == flowid);
 	return flow_ring_node;
@@ -119,7 +119,7 @@ dhd_flow_ring_node(dhd_pub_t *dhdp, uint16 flowid)
 flow_queue_t *
 dhd_flow_queue(dhd_pub_t *dhdp, uint16 flowid)
 {
-	flow_ring_node_t *flow_ring_node = NULL;
+	flow_ring_node_t * flow_ring_node = NULL;
 
 	flow_ring_node = dhd_flow_ring_node(dhdp, flowid);
 	if (flow_ring_node)
@@ -209,7 +209,7 @@ done:
 void *
 BCMFASTPATH(dhd_flow_queue_dequeue)(dhd_pub_t *dhdp, flow_queue_t *queue)
 {
-	void *pkt;
+	void * pkt;
 
 	ASSERT(queue != NULL);
 
@@ -255,17 +255,17 @@ BCMFASTPATH(dhd_flow_queue_reinsert)(dhd_pub_t *dhdp, flow_queue_t *queue, void 
 /** Fetch the backup queue for a flowring, and assign flow control thresholds */
 void
 dhd_flow_ring_config_thresholds(dhd_pub_t *dhdp, uint16 flowid,
-	int queue_budget, int cumm_threshold, void *cumm_ctr,
-	int l2cumm_threshold, void *l2cumm_ctr)
+                     int queue_budget, int cumm_threshold, void *cumm_ctr,
+                     int l2cumm_threshold, void *l2cumm_ctr)
 {
-	flow_queue_t *queue = NULL;
+	flow_queue_t * queue = NULL;
 
-	ASSERT(dhdp != (dhd_pub_t *)NULL);
+	ASSERT(dhdp != (dhd_pub_t*)NULL);
 	ASSERT(queue_budget > 1);
 	ASSERT(cumm_threshold > 1);
-	ASSERT(cumm_ctr != (void *)NULL);
+	ASSERT(cumm_ctr != (void*)NULL);
 	ASSERT(l2cumm_threshold > 1);
-	ASSERT(l2cumm_ctr != (void *)NULL);
+	ASSERT(l2cumm_ctr != (void*)NULL);
 
 	queue = dhd_flow_queue(dhdp, flowid);
 	if (queue) {
@@ -292,7 +292,8 @@ dhd_num_prio_supported_per_flow_ring(dhd_pub_t *dhdp)
 	uint8 prio_count = 0;
 	int i;
 	/* Pick all elements one by one */
-	for (i = 0; i < NUMPRIO; i++) {
+	for (i = 0; i < NUMPRIO; i++)
+	{
 		/* Check if the picked element is already counted */
 		int j;
 		for (j = 0; j < i; j++) {
@@ -444,7 +445,7 @@ dhd_flow_rings_init(dhd_pub_t *dhdp, uint32 num_h2d_rings)
 
 		/* Initialize the per flow ring backup queue */
 		dhd_flow_queue_init(dhdp, &flow_ring_table[idx].queue,
-			flowring_bkp_qsize);
+		                    flowring_bkp_qsize);
 	}
 
 	/* Allocate per interface hash table (for fast lookup from interface to flow ring) */
@@ -714,11 +715,7 @@ dhd_flowid_map_alloc(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, char *da)
 
 	/* P2P Connections are always 80Mhz */
 	if (DHD_IF_ROLE_P2PGC(dhdp, ifindex) ||
-	    DHD_IF_ROLE_P2PGO(dhdp, ifindex) ||
-#ifdef DHD_ART
-	    DHD_IF_ROLE_ART(dhdp, ifindex) ||
-#endif /* DHD_ART */
-	    FALSE) {
+	    DHD_IF_ROLE_P2PGO(dhdp, ifindex)) {
 		flowid = id16_map_alloc(dhdp->flowid_allocator);
 		return flowid;
 	}
@@ -847,7 +844,7 @@ dhd_flowid_alloc(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, char *sa, char *da)
 /** Get flow ring ID, if not present try to create one */
 static INLINE int
 dhd_flowid_lookup(dhd_pub_t *dhdp, uint8 ifindex,
-	uint8 prio, char *sa, char *da, uint16 *flowid)
+                  uint8 prio, char *sa, char *da, uint16 *flowid)
 {
 	uint16 id;
 	flow_ring_node_t *flow_ring_node;
@@ -873,12 +870,6 @@ dhd_flowid_lookup(dhd_pub_t *dhdp, uint8 ifindex,
 		bool if_role_multi_client;
 		if_flow_lkup_t *if_flow_lkup;
 		if_flow_lkup = (if_flow_lkup_t *)dhdp->if_flow_lkup;
-
-		if (dhd_check_del_in_progress(dhdp, ifindex)) {
-			DHD_ERROR(("%s: skip as ifindex:%d del_in_progress\n",
-				__FUNCTION__, ifindex));
-			return BCME_ERROR;
-		}
 
 		if (!if_flow_lkup[ifindex].status)
 			return BCME_ERROR;
@@ -1128,14 +1119,14 @@ BCMFASTPATH(dhd_flowid_update)(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, void 
 			 * Note: dhd_flowid_find() doesn't need to pass the src mac address.
 			 */
 			flowid  = dhd_flowid_find(dhdp, ifindex, prio, NULL,
-					(char *)route_info.route_mac.octet);
+			                          (char *) route_info.route_mac.octet);
 
 			if (flowid == FLOWID_INVALID) {
 				/* Second route lookup to reach to the next hop */
 				if (dhd_mesh_get_route(dhdp, &route_mac_temp, &route_info)
 				    != BCME_OK) {
 					DHD_ERROR(("Missing Non-gated route \n"));
-					return BCME_ERROR;
+					return (BCME_ERROR);
 				}
 			}
 		} else {
@@ -1148,7 +1139,7 @@ BCMFASTPATH(dhd_flowid_update)(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, void 
 		if (flowid == FLOWID_INVALID) {
 			/* Find the flowid for the non-gated route */
 			flowid  = dhd_flowid_find(dhdp, ifindex, prio, NULL,
-					(char *)route_info.route_mac.octet);
+			                          (char *) route_info.route_mac.octet);
 			if (flowid == FLOWID_INVALID) {
 				DHD_ERROR(("dhd_flowid_find has failed route\n"));
 				return BCME_ERROR;
@@ -1156,8 +1147,7 @@ BCMFASTPATH(dhd_flowid_update)(dhd_pub_t *dhdp, uint8 ifindex, uint8 prio, void 
 		}
 
 		/* Get the flow ring node based on the flowid */
-		ring_node = dhd_flow_ring_node(dhdp, flowid);
-		if (ring_node == NULL) {
+		if ((ring_node = dhd_flow_ring_node(dhdp, flowid)) == NULL) {
 			DHD_ERROR(("***dhd_flow_ring_node has failed \n"));
 			return BCME_ERROR;
 		}
@@ -1172,7 +1162,7 @@ done:
 #endif /* defined(DHD_MESH) */
 	{
 		if (dhd_flowid_lookup(dhdp, ifindex, prio, (char *)eh->ether_shost,
-			(char *)eh->ether_dhost, &flowid) != BCME_OK) {
+		                      (char *)eh->ether_dhost, &flowid) != BCME_OK) {
 			return BCME_ERROR;
 		}
 	}
@@ -1270,7 +1260,7 @@ dhd_flowid_free(dhd_pub_t *dhdp, uint8 ifindex, uint16 flowid)
 
 	DHD_FLOWID_UNLOCK(dhdp->flowid_lock, flags);
 	DHD_ERROR(("%s: could not free flow ring hash entry flowid %d\n",
-		__FUNCTION__, flowid));
+	           __FUNCTION__, flowid));
 } /* dhd_flowid_free */
 
 /**
@@ -1298,7 +1288,7 @@ dhd_flow_rings_delete(dhd_pub_t *dhdp, uint8 ifindex)
 			(flow_ring_table[id].flow_info.ifindex == ifindex) &&
 			(flow_ring_table[id].status == FLOW_RING_STATUS_OPEN)) {
 			dhd_bus_flow_ring_delete_request(dhdp->bus,
-				(void *)&flow_ring_table[id]);
+			                                 (void *) &flow_ring_table[id]);
 		}
 	}
 }
@@ -1369,7 +1359,7 @@ dhd_flow_rings_flush(dhd_pub_t *dhdp, uint8 ifindex)
 			(flow_ring_table[id].flow_info.ifindex == ifindex) &&
 			(flow_ring_table[id].status == FLOW_RING_STATUS_OPEN)) {
 			dhd_bus_flow_ring_flush_request(dhdp->bus,
-				(void *)&flow_ring_table[id]);
+			                                 (void *) &flow_ring_table[id]);
 		}
 	}
 }
@@ -1423,7 +1413,7 @@ dhd_flow_rings_delete_for_peer(dhd_pub_t *dhdp, uint8 ifindex, char *addr)
  */
 void
 dhd_update_interface_flow_info(dhd_pub_t *dhdp, uint8 ifindex,
-	uint8 op, uint8 role, uint8 if_flags)
+                               uint8 op, uint8 role, uint8 if_flags)
 {
 	if_flow_lkup_t *if_flow_lkup;
 	unsigned long flags;
@@ -1433,7 +1423,7 @@ dhd_update_interface_flow_info(dhd_pub_t *dhdp, uint8 ifindex,
 		return;
 
 	DHD_INFO(("%s: ifindex %u op %u role is %u \n",
-		__FUNCTION__, ifindex, op, role));
+	          __FUNCTION__, ifindex, op, role));
 	if (!dhdp->flowid_allocator) {
 		DHD_ERROR(("%s: Flow ring not intited yet  \n", __FUNCTION__));
 		return;
@@ -1444,7 +1434,7 @@ dhd_update_interface_flow_info(dhd_pub_t *dhdp, uint8 ifindex,
 
 	if (op == WLC_E_IF_ADD || op == WLC_E_IF_CHANGE) {
 		DHD_ERROR(("%s: ifindex:%d previous role:%d new role:%d if_flags:%x\n",
-			__FUNCTION__, ifindex, if_flow_lkup[ifindex].role, role, if_flags));
+		           __FUNCTION__, ifindex, if_flow_lkup[ifindex].role, role, if_flags));
 
 		if_flow_lkup[ifindex].role = role;
 		if_flow_lkup[ifindex].flags = if_flags;
@@ -1466,12 +1456,12 @@ dhd_update_interface_flow_info(dhd_pub_t *dhdp, uint8 ifindex,
 			 */
 			if_flow_lkup[ifindex].status = TRUE;
 			DHD_INFO(("%s: Mcast Flow ring for ifindex %d role is %d \n",
-				__FUNCTION__, ifindex, role));
+			          __FUNCTION__, ifindex, role));
 		}
 	} else	if ((op == WLC_E_IF_DEL) && (role == WLC_E_IF_ROLE_WDS)) {
 		if_flow_lkup[ifindex].status = FALSE;
 		DHD_INFO(("%s: cleanup all Flow rings for ifindex %d role is %d \n",
-			__FUNCTION__, ifindex, role));
+		          __FUNCTION__, ifindex, role));
 	}
 	DHD_FLOWID_UNLOCK(dhdp->flowid_lock, flags);
 }
@@ -1487,7 +1477,7 @@ dhd_update_interface_link_status(dhd_pub_t *dhdp, uint8 ifindex, uint8 status)
 	if (ifindex >= DHD_MAX_IFS)
 		return BCME_BADARG;
 
-	DHD_PRINT(("%s: ifindex %d status %d\n", __FUNCTION__, ifindex, status));
+	DHD_INFO(("%s: ifindex %d status %d\n", __FUNCTION__, ifindex, status));
 
 	DHD_FLOWID_LOCK(dhdp->flowid_lock, flags);
 	if_flow_lkup = (if_flow_lkup_t *)dhdp->if_flow_lkup;
@@ -1547,7 +1537,7 @@ int dhd_flow_prio_map(dhd_pub_t *dhd, uint8 *map, bool set)
 	uint32 val;
 	if (!set) {
 		bzero(&iovbuf, sizeof(iovbuf));
-		len = bcm_mkiovar("bus:fl_prio_map", NULL, 0, (char *)iovbuf, sizeof(iovbuf));
+		len = bcm_mkiovar("bus:fl_prio_map", NULL, 0, (char*)iovbuf, sizeof(iovbuf));
 		if (len == 0) {
 			return BCME_BUFTOOSHORT;
 		}
@@ -1560,7 +1550,7 @@ int dhd_flow_prio_map(dhd_pub_t *dhd, uint8 *map, bool set)
 	}
 	val = (uint32)map[0];
 	len = bcm_mkiovar("bus:fl_prio_map", (char *)&val, sizeof(val),
-		(char *)iovbuf, sizeof(iovbuf));
+		(char*)iovbuf, sizeof(iovbuf));
 	if (len == 0) {
 		return BCME_BUFTOOSHORT;
 	}
@@ -1582,7 +1572,7 @@ int dhd_flow_prio_map_init(dhd_pub_t *dhd)
 	int len = 0;
 
 	len = bcm_mkiovar("bus:llr_enable", (char *)&llr_enab,
-		sizeof(llr_enab), (char *)iovbuf, sizeof(iovbuf));
+		sizeof(llr_enab), (char*)iovbuf, sizeof(iovbuf));
 	if (len == 0) {
 		return BCME_BUFTOOSHORT;
 	}
@@ -1599,7 +1589,8 @@ int dhd_flow_prio_map_init(dhd_pub_t *dhd)
 				__FUNCTION__, ret));
 			return BCME_ERROR;
 		}
-	} else if (ret == BCME_OK)
+	}
+	else if (ret == BCME_OK)
 #endif /* DHD_LOSSLESS_ROAMING || EAPOL_PKT_PRIO */
 	{
 		DHD_INFO(("%s: read prio map from fw... \n",
@@ -1726,7 +1717,7 @@ dhd_bus_idle_scan(dhd_bus_t *bus)
 	DHD_FLOWRING_LIST_LOCK(bus->dhd->flowring_list_lock, flags);
 
 	for (item = dll_tail_p(&bus->flowring_active_list);
-		!dll_end(&bus->flowring_active_list, item); item = prev) {
+	         !dll_end(&bus->flowring_active_list, item); item = prev) {
 		prev = dll_prev_p(item);
 
 		flow_ring_node = dhd_constlist_to_flowring(item);
@@ -1777,7 +1768,7 @@ dhd_bus_idle_scan(dhd_bus_t *bus)
 void dhd_flow_ring_move_to_active_list_head(struct dhd_bus *bus, flow_ring_node_t *flow_ring_node)
 {
 	unsigned long flags;
-	dll_t *list;
+	dll_t* list;
 
 	DHD_FLOWRING_LIST_LOCK(bus->dhd->flowring_list_lock, flags);
 	/* check if the node is already at head, otherwise delete it and prepend */

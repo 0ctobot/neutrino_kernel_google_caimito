@@ -449,7 +449,9 @@ struct gcip_thermal *gcip_thermal_create(const struct gcip_thermal_args *args)
 
 	thermal->dentry = debugfs_create_dir("cooling", args->dentry);
 	/* Don't let debugfs creation failure abort the init procedure. */
-	if (!IS_ERR_OR_NULL(thermal->dentry))
+	if (IS_ERR_OR_NULL(thermal->dentry))
+		dev_warn(args->dev, "Failed to create debugfs for thermal cooling");
+	else
 		debugfs_create_file("enable", 0660, thermal->dentry, thermal,
 				    &fops_gcip_thermal_enable);
 

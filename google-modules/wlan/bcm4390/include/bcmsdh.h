@@ -67,7 +67,8 @@ extern bcmsdh_info_t *bcmsdh_attach(osl_t *osh, void *sdioh, ulong *regsva);
 /**
  * BCMSDH API context
  */
-struct bcmsdh_info {
+struct bcmsdh_info
+{
 	bool	init_success;	/* underlying driver successfully attached */
 	void	*sdioh;		/* handler for sdioh */
 	uint32  vendevid;	/* Target Vendor and Device ID on SD bus */
@@ -157,11 +158,11 @@ extern bool bcmsdh_regfail(void *sdh);
 
 typedef void (*bcmsdh_cmplt_fn_t)(void *handle, int status, bool sync_waiting);
 extern int bcmsdh_send_buf(void *sdh, uint32 addr, uint fn, uint flags,
-	uint8 *buf, uint nbytes, void *pkt,
-	bcmsdh_cmplt_fn_t complete_fn, void *handle);
+                           uint8 *buf, uint nbytes, void *pkt,
+                           bcmsdh_cmplt_fn_t complete_fn, void *handle);
 extern int bcmsdh_recv_buf(void *sdh, uint32 addr, uint fn, uint flags,
-	uint8 *buf, uint nbytes, void *pkt,
-	bcmsdh_cmplt_fn_t complete_fn, void *handle);
+                           uint8 *buf, uint nbytes, void *pkt,
+                           bcmsdh_cmplt_fn_t complete_fn, void *handle);
 
 extern void bcmsdh_glom_post(void *sdh, uint8 *frame, void *pkt, uint len);
 extern void bcmsdh_glom_clear(void *sdh);
@@ -210,7 +211,7 @@ extern uint bcmsdh_query_iofnum(void *sdh);
 
 /* Miscellaneous knob tweaker. */
 extern int bcmsdh_iovar_op(void *sdh, const char *name,
-	void *params, uint plen, void *arg, uint len, bool set);
+                           void *params, uint plen, void *arg, uint len, bool set);
 
 /* Reset and reinitialize the device */
 extern int bcmsdh_reset(bcmsdh_info_t *sdh);
@@ -221,8 +222,8 @@ extern int bcmsdh_reset(bcmsdh_info_t *sdh);
 typedef struct {
 	/* probe the device */
 	void *(*probe)(uint16 vend_id, uint16 dev_id, uint16 bus, uint16 slot,
-		uint16 func, uint bustype, void *regsva, osl_t *osh,
-		void *param);
+	                uint16 func, uint bustype, void * regsva, osl_t * osh,
+	                void * param);
 	/* remove the device */
 	void (*remove)(void *context);
 	/* can we suspend now */
@@ -235,14 +236,14 @@ typedef struct {
 extern int bcmsdh_register(bcmsdh_driver_t *driver);
 extern void bcmsdh_unregister(void);
 extern bool bcmsdh_chipmatch(uint16 vendor, uint16 device);
-extern void bcmsdh_device_remove(void *sdh);
+extern void bcmsdh_device_remove(void * sdh);
 
-extern int bcmsdh_reg_sdio_notify(void *semaphore);
+extern int bcmsdh_reg_sdio_notify(void* semaphore);
 extern void bcmsdh_unreg_sdio_notify(void);
 
 #if defined(OOB_INTR_ONLY) || defined(BCMSPI_ANDROID)
 extern int bcmsdh_oob_intr_register(bcmsdh_info_t *bcmsdh, bcmsdh_cb_fn_t oob_irq_handler,
-	void *oob_irq_handler_context);
+	void* oob_irq_handler_context);
 extern void bcmsdh_oob_intr_unregister(bcmsdh_info_t *sdh);
 extern void bcmsdh_oob_intr_set(bcmsdh_info_t *sdh, bool enable);
 extern int bcmsdh_get_oob_intr_num(bcmsdh_info_t *bcmsdh);

@@ -94,15 +94,6 @@ extern int wl_cfg80211_set_mgmt_vndr_ies(struct bcm_cfg80211 *cfg,
 #define CTG_TOKEN_IDX 13
 #define PKT_TOKEN_IDX 15
 #define IDLE_TOKEN_IDX 12
-
-struct wl_dump_survey {
-	u32 obss;
-	u32 ibss;
-	u32 no_ctg;
-	u32 no_pckt;
-	u32 tx;
-	u32 idle;
-};
 #endif /* WL_SUPPORT_ACS */
 
 extern s32 wl_cfg80211_dfs_ap_move(struct net_device *ndev, char *data,
@@ -174,17 +165,10 @@ extern s32 wl_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device *dev,
 extern s32 wl_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device *dev,
 	const u8 *peer, u8 action_code, u8 dialog_token, u16 status_code,
 	u32 peer_capability, const u8 *buf, size_t len);
-#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0) &&	\
-	(LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)))
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 18, 0))
 extern s32 wl_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device *dev,
        const u8 *peer, u8 action_code, u8 dialog_token, u16 status_code,
        u32 peer_capability, bool initiator, const u8 *buf, size_t len);
-#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0))
-int wl_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device *dev,
-	const u8 *peer, int link_id,
-	u8 action_code, u8 dialog_token, u16 status_code,
-	u32 peer_capability, bool initiator,
-	const u8 *buf, size_t len);
 #else /* CONFIG_ARCH_MSM && TDLS_MGMT_VERSION2 */
 extern s32 wl_cfg80211_tdls_mgmt(struct wiphy *wiphy, struct net_device *dev,
 	u8 *peer, u8 action_code, u8 dialog_token, u16 status_code,
@@ -344,7 +328,7 @@ extern s32 wl_cfgvif_apply_default_keep_alive(struct net_device *ndev, struct bc
 extern s32 wl_cfgvif_get_eht_features(struct net_device *dev, u32 *eht_feature_val);
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0))
 extern s32 wl_cfgvif_set_eht_features(struct net_device *dev, struct bcm_cfg80211 *cfg,
-	u32 eht_mask);
+        u32 eht_mask);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0) */
 
 extern void wl_cfgvif_sta_multilink_config(struct bcm_cfg80211 *cfg, wl_assoc_state_t assoc_state);
@@ -359,6 +343,4 @@ extern s32 wl_cfgvif_interface_ops(struct bcm_cfg80211 *cfg,
 extern void wl_cfgvif_enable_aggressive_roam(struct bcm_cfg80211 *cfg, struct net_device *dev,
 	bool enable);
 #endif /* WL_AGGRESSIVE_ROAM */
-extern int wl_cfgvif_dump_survey(struct wiphy *wiphy, struct net_device *ndev,
-	int idx, struct survey_info *info);
 #endif /* _wl_cfgvif_h_ */

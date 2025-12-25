@@ -64,8 +64,6 @@
 #define NAN_PUB_ACT_FRAME_HDR_SIZE (OFFSETOF(nan_pub_act_frame_t, data))
 /* NAN network ID */
 #define NAN_NETWORK_ID		"\x51\x6F\x9A\x01\x00\x00"
-/* NAN Cluster ID common bytes length */
-#define NAN_CLUSTER_ID_CMN_LEN      (WFA_OUI_LEN + 1u)
 /* Service Control Type length */
 #define NAN_SVC_CONTROL_TYPE_LEN	2
 /* Binding Bitmap length */
@@ -116,18 +114,9 @@
 #define NAN_SLOT_DUR_8192TU	8192
 
 #define NAN_SOC_CHAN_2G		6	/* NAN 2.4G discovery channel */
+#define NAN_SOC_CHAN_5G_CH149	149	/* NAN 5G discovery channel if upper band allowed */
 #define NAN_SOC_CHAN_5G_CH44	44	/* NAN 5G discovery channel if only lower band allowed */
 
-#ifdef BCMQT
-/* for fpga testing  ch:149 may not be enabled, use ch:36 for fpga testing
- *  this can be configured from chip make file
- */
-#ifndef NAN_SOC_CHAN_5G_CH149
-#define NAN_SOC_CHAN_5G_CH149 36
-#endif /* NAN_SOC_CHAN_5G_CH149 */
-#else
-#define NAN_SOC_CHAN_5G_CH149	149	/* NAN 5G discovery channel if upper band allowed */
-#endif /* BCMQT */
 /* size of ndc id */
 #define NAN_DATA_NDC_ID_SIZE 6
 
@@ -258,7 +247,7 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_cluster_attr_s {
 typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_svc_id_attr_s {
 	uint8	id;
 	uint16	len;
-	uint8	svcid[]; /* 6*len of srvc IDs */
+	uint8	svcid[0]; /* 6*len of srvc IDs */
 } BWL_POST_PACKED_STRUCT wifi_nan_svc_id_attr_t;
 
 /* service_control bitmap for wifi_nan_svc_descriptor_attr_t below */
@@ -626,7 +615,7 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_chan_entry_s {
 	uint8 oper_class;		/* Operating Class */
 	uint16 chan_bitmap;		/* Channel Bitmap */
 	uint8 primary_chan_bmp;		/* Primary Channel Bitmap */
-	uint8 aux_chan[];			/* Auxiliary Channel bitmap */
+	uint8 aux_chan[0];			/* Auxiliary Channel bitmap */
 } BWL_POST_PACKED_STRUCT wifi_nan_chan_entry_t;
 
 /* Channel entry */
@@ -1891,7 +1880,7 @@ typedef BWL_PRE_PACKED_STRUCT struct wifi_nan_nmsg_attr_s {
 	uint8 mc_id; /* Multicast id similar to NDPID */
 	uint8 nmsg_ctrl; /* NMSG control field */
 	/* Optional publish id, NMSGID and svc info are included in var[] */
-	uint8 var[];
+	uint8 var[0];
 } BWL_POST_PACKED_STRUCT wifi_nan_nmsg_attr_t;
 
 #define NMSG_ATTR_MCAST_SCHED_MAP_ID_MASK     0x1E

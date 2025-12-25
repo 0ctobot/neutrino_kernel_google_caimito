@@ -28,7 +28,6 @@ static int gxp_firmware_loader_gsa_auth(struct gxp_dev *gxp)
 {
 	struct gxp_firmware_loader_manager *mgr = gxp->fw_loader_mgr;
 	int ret;
-	size_t fw_header_size;
 	uint core;
 	dma_addr_t headers_dma_addr;
 	void *header_vaddr;
@@ -48,13 +47,12 @@ static int gxp_firmware_loader_gsa_auth(struct gxp_dev *gxp)
 		return 0;
 	}
 	/* Authenticate MCU firmware */
-	fw_header_size = gcip_common_get_fw_header_size(mgr->mcu_firmware->data, GXP_FW_MAGIC);
-	header_vaddr =
-		dma_alloc_coherent(gxp->gsa_dev, fw_header_size, &headers_dma_addr, GFP_KERNEL);
+	header_vaddr = dma_alloc_coherent(gxp->gsa_dev, GCIP_FW_HEADER_SIZE,
+					  &headers_dma_addr, GFP_KERNEL);
 	if (!header_vaddr)
 		return -ENOMEM;
 
-	memcpy(header_vaddr, mgr->mcu_firmware->data, fw_header_size);
+	memcpy(header_vaddr, mgr->mcu_firmware->data, GCIP_FW_HEADER_SIZE);
 	ret = gsa_load_dsp_fw_image(gxp->gsa_dev, headers_dma_addr, mcu_fw->image_buf.phys_addr);
 	if (ret) {
 		dev_err(gxp->dev, "MCU fw GSA authentication fails");
@@ -63,13 +61,8 @@ static int gxp_firmware_loader_gsa_auth(struct gxp_dev *gxp)
 
 	for (core = 0; core < GXP_NUM_CORES; core++) {
 		data = mgr->core_firmware[core]->data;
-		/*
-		 * Authenticate core firmware.
-		 * On the given platform, the firmware header size remains the same for both MCU
-		 * and core fw. Thus reusing the @fw_header_size fetched from MCU firmware header
-		 * for core firmware header too.
-		 */
-		memcpy(header_vaddr, data, fw_header_size);
+		/* Authenticate core firmware */
+		memcpy(header_vaddr, data, GCIP_FW_HEADER_SIZE);
 		ret = gsa_load_dsp_fw_image(gxp->gsa_dev, headers_dma_addr,
 					    gxp->fwbufs[core].phys_addr);
 		if (ret) {
@@ -78,13 +71,13 @@ static int gxp_firmware_loader_gsa_auth(struct gxp_dev *gxp)
 			goto err_load_core_fw;
 		}
 	}
-	dma_free_coherent(gxp->gsa_dev, fw_header_size, header_vaddr,
+	dma_free_coherent(gxp->gsa_dev, GCIP_FW_HEADER_SIZE, header_vaddr,
 			  headers_dma_addr);
 	return 0;
 err_load_core_fw:
 	gsa_unload_dsp_fw_image(gxp->gsa_dev);
 err_load_mcu_fw:
-	dma_free_coherent(gxp->gsa_dev, fw_header_size, header_vaddr,
+	dma_free_coherent(gxp->gsa_dev, GCIP_FW_HEADER_SIZE, header_vaddr,
 			  headers_dma_addr);
 	return ret;
 }
@@ -153,7 +146,7 @@ static void gxp_firmware_loader_get_core_image_config(struct gxp_dev *gxp)
 	struct gxp_firmware_loader_manager *mgr = gxp->fw_loader_mgr;
 	const struct gcip_image_config *cfg;
 
-	if (unlikely(mgr->core_firmware[0]->size < GCIP_FW_MAX_HEADER_SIZE))
+	if (unlikely(mgr->core_firmware[0]->size < GCIP_FW_HEADER_SIZE))
 		return;
 	cfg = gcip_common_image_get_config_from_hdr(mgr->core_firmware[0]->data, GXP_FW_MAGIC);
 	if (cfg)

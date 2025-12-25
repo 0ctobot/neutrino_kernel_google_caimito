@@ -21,7 +21,6 @@
 #include "edgetpu-config.h"
 #include "edgetpu-devfreq.h"
 #include "edgetpu-dmabuf.h"
-#include "edgetpu-dt-mailbox-adapter.h"
 #include "edgetpu-firmware.h"
 #include "edgetpu-ikv.h"
 #include "edgetpu-internal.h"
@@ -124,8 +123,6 @@ static int edgetpu_mobile_platform_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	/* Initialize any potential offset between `regs` and the base of TPU_TOP first. */
-	edgetpu_dt_mailbox_adapter_init_regs_offset_from_top(etdev);
 	regs.phys = r->start;
 	regs.size = resource_size(r);
 	regs.mem = devm_ioremap_resource(dev, r);

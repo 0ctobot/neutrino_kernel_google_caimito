@@ -89,7 +89,7 @@ typedef struct {
 	uint32 rtsfail;        /**< count of rts attempts that failed to receive cts */
 	uint32 acked;          /**< count of packets sent (acked) successfully */
 	uint32 txrate_succ;    /**< running total of phy rate of packets sent successfully */
-	uint32 txrate_main;    /**< running total of primary phy rate of all packets */
+	uint32 txrate_main;    /**< running totoal of primary phy rate of all packets */
 	uint32 throughput;     /**< actual data transferred successfully */
 	uint32 airtime;        /**< cumulative total medium access delay in useconds */
 	uint32  _logtime;      /**< timestamp of last counter clear  */
@@ -114,7 +114,7 @@ struct pktq {
 	uint16 num_prec;        /**< number of precedences in use */
 	uint16 hi_prec;         /**< rapid dequeue hint (>= highest non-empty prec) */
 	uint16 max_pkts;        /**< max  packets */
-	uint16 n_pkts_tot;      /**< total (cumulative over all precedences) number of packets */
+	uint16 n_pkts_tot;      /**< total (cummulative over all precedences) number of packets */
 	/* q array must be last since # of elements can be either PKTQ_MAX_PREC or 1 */
 	struct pktq_prec q[PKTQ_MAX_PREC];
 };

@@ -186,7 +186,6 @@ typedef irqreturn_t(*FN_ISR) (int irq, void *dev_id, struct pt_regs *ptregs);
 #include <linux/sched/rt.h>
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0) */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-#include <linux/sched/clock.h>
 #include <uapi/linux/sched/types.h>
 #endif /* LINUX_VERS >= 4.11.0 */
 
@@ -700,29 +699,6 @@ static inline bool binary_sema_up(tsk_ctl_t *tsk)
 	}; \
 }
 
-#define PROC_START_ON(thread_func, owner, tsk_ctl, flags, name, cpu_on) \
-{ \
-	sema_init(&((tsk_ctl)->sema), 0); \
-	init_completion(&((tsk_ctl)->completed)); \
-	init_completion(&((tsk_ctl)->flushed)); \
-	(tsk_ctl)->parent = owner; \
-	(tsk_ctl)->proc_name = name;  \
-	(tsk_ctl)->terminated = FALSE; \
-	(tsk_ctl)->flush_ind = FALSE; \
-	(tsk_ctl)->up_cnt = 0; \
-	(tsk_ctl)->p_task  = kthread_create_on_cpu(thread_func, tsk_ctl, cpu_on, (char *)name); \
-	if (IS_ERR((tsk_ctl)->p_task)) { \
-		(tsk_ctl)->thr_pid = -1; \
-		DBG_THR(("%s(): thread:%s create failed\n", __FUNCTION__, \
-			(tsk_ctl)->proc_name)); \
-	} else { \
-		(tsk_ctl)->thr_pid = (tsk_ctl)->p_task->pid; \
-		spin_lock_init(&((tsk_ctl)->spinlock)); \
-		wake_up_process((tsk_ctl)->p_task); \
-		DBG_THR(("%s(): thread:%s:%lx started on cpu %d\n", __FUNCTION__, \
-			(tsk_ctl)->proc_name, (tsk_ctl)->thr_pid, cpu_on)); \
-	}; \
-}
 #define PROC_WAIT_TIMEOUT_MSEC	5000 /* 5 seconds */
 
 #define PROC_STOP(tsk_ctl) \

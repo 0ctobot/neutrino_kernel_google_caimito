@@ -734,15 +734,7 @@ void gbms_log_cstr_handler(struct logbuffer *log, char *buf, int len);
 /* decode EEPROM serial number to readable string */
 int gbms_decode_eeprom_sn(char *decode_sn, const size_t max_len);
 
-#define FADE_RATE_OFFSET	0
-#define FADE_RATE_FCR_OFFSET	8
-#define FADE_RATE_SEC_OFFSET	16
-#define FADE_RATE_MIX_OFFSET	24
 
-#define get_fade_rate(fr)	((s8)((fr) >> FADE_RATE_OFFSET & 0xFF))
-#define get_fade_rate_fcr(fr)	((s8)((fr) >> FADE_RATE_FCR_OFFSET & 0xFF))
-#define get_fade_rate_sec(fr)	((s8)((fr) >> FADE_RATE_SEC_OFFSET & 0xFF))
-#define get_fade_rate_mix(fr)	((s8)((fr) >> FADE_RATE_MIX_OFFSET & 0xFF))
 
 /*
  * Charger modes
@@ -788,8 +780,6 @@ enum bhi_algo {
 	BHI_ALGO_DTOOL		=  9, /* diagnostics for Cavalry b/304878620 */
 	BHI_ALGO_ACHI_FCR	= 10, /* average of FCR from history b/310501655*/
 	BHI_ALGO_ACHI_CARETAKER	= 11, /* same as ACHI_B + caretaker */
-	BHI_ALGO_ACHI_SEC	= 12, /* same as ACHI_B report from secondary battery */
-	BHI_ALGO_ACHI_MIX	= 13, /* same as ACHI_B mix the capacity from both batteries */
 	BHI_ALGO_MAX,
 };
 

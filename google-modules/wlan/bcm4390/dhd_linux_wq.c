@@ -82,7 +82,7 @@ static inline struct kfifo*
 dhd_kfifo_init(u8 *buf, int size, spinlock_t *lock)
 {
 	struct kfifo *fifo;
-	gfp_t flags = CAN_SLEEP() ? GFP_KERNEL : GFP_ATOMIC;
+	gfp_t flags = CAN_SLEEP()? GFP_KERNEL : GFP_ATOMIC;
 
 	fifo = (struct kfifo *)kzalloc(sizeof(struct kfifo), flags);
 	if (!fifo) {
@@ -105,10 +105,10 @@ static void dhd_deferred_work_handler(struct work_struct *data);
 void*
 dhd_deferred_work_init(void *dhd_info)
 {
-	struct dhd_deferred_wq *work = NULL;
-	u8 *buf;
+	struct dhd_deferred_wq	*work = NULL;
+	u8*	buf;
 	unsigned long	fifo_size = 0;
-	gfp_t	flags = CAN_SLEEP() ? GFP_KERNEL : GFP_ATOMIC;
+	gfp_t	flags = CAN_SLEEP()? GFP_KERNEL : GFP_ATOMIC;
 
 	if (!dhd_info) {
 		DHD_ERROR(("%s: dhd info not initialized\n", __FUNCTION__));
@@ -131,7 +131,7 @@ dhd_deferred_work_init(void *dhd_info)
 	fifo_size = DHD_PRIO_WORK_FIFO_SIZE;
 	fifo_size = is_power_of_2(fifo_size) ? fifo_size :
 			roundup_pow_of_two(fifo_size);
-	buf = (u8 *)kzalloc(fifo_size, flags);
+	buf = (u8*)kzalloc(fifo_size, flags);
 	if (!buf) {
 		DHD_ERROR(("%s: prio work fifo allocation failed\n",
 			__FUNCTION__));
@@ -149,7 +149,7 @@ dhd_deferred_work_init(void *dhd_info)
 	fifo_size = DHD_WORK_FIFO_SIZE;
 	fifo_size = is_power_of_2(fifo_size) ? fifo_size :
 			roundup_pow_of_two(fifo_size);
-	buf = (u8 *)kzalloc(fifo_size, flags);
+	buf = (u8*)kzalloc(fifo_size, flags);
 	if (!buf) {
 		DHD_ERROR(("%s: work fifo allocation failed\n", __FUNCTION__));
 		goto return_null;

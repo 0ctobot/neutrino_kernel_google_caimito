@@ -455,21 +455,6 @@
 #define EVENT_LOG_SET_DATAPATH_BLOCK_SIZE	(EVENT_LOG_BLOCK_SIZE_1648B)
 #endif
 
-/* This log set is used to log important mgmt frames,EAPOL frames
- * and DHCP packets. This logset will be flushed whenever there
- * will be failure(noack) rcvd for these frames from ucode.
- * AUTH/ASSOC/EAPOL/DHCP
- */
-#define EVENT_LOG_SET_44                 (44u)
-#define EVENT_LOG_SET_IMP_FRAMES         (EVENT_LOG_SET_44)
-#ifndef EVENT_LOG_SET_IMP_FRAMES_NUM_BLOCKS
-#define EVENT_LOG_SET_IMP_FRAMES_NUM_BLOCKS  (2u)
-#endif
-
-#ifndef EVENT_LOG_SET_IMP_FRAMES_BLOCK_SIZE
-#define EVENT_LOG_SET_IMP_FRAMES_BLOCK_SIZE       (EVENT_LOG_BLOCK_SIZE_1K)
-#endif
-
 #ifndef NUM_EVENT_LOG_SETS
 /* Set a maximum number of sets here.  It is not dynamic for
  * efficiency of the EVENT_LOG calls. Old branches could define
@@ -478,9 +463,9 @@
  */
 #ifdef NUM_EVENT_LOG_SETS_V2
 /* for v2, everything has became unsigned */
-#define NUM_EVENT_LOG_SETS (45u)
+#define NUM_EVENT_LOG_SETS (44u)
 #else /* NUM_EVENT_LOG_SETS_V2 */
-#define NUM_EVENT_LOG_SETS (45)
+#define NUM_EVENT_LOG_SETS (44)
 #endif /* NUM_EVENT_LOG_SETS_V2 */
 #endif /* NUM_EVENT_LOG_SETS */
 

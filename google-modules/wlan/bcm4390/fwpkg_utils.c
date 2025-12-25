@@ -30,11 +30,6 @@
 #include <assert.h>
 #endif /* BCMDRIVER */
 
-#if defined(__linux__) && !defined(BCMDRIVER) && !defined(BCMFUZZ)
-/* For bcopy() */
-#include <strings.h>
-#endif /* __linux__ */
-
 #include <typedefs.h>
 #include <bcmutils.h>
 #include <bcmendian.h>

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
 /*
  *
- * (C) COPYRIGHT 2019-2023 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2024 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -19,7 +19,17 @@
  *
  */
 
-#ifndef _UAPI_KBASE_GPU_REGMAP_JM_H_
-#define _UAPI_KBASE_GPU_REGMAP_JM_H_
+#ifndef _KBASE_CSF_MEM_FLAGS_H_
+#define _KBASE_CSF_MEM_FLAGS_H_
 
-#endif /* _UAPI_KBASE_GPU_REGMAP_JM_H_ */
+#include <uapi/gpu/arm/midgard/csf/mali_kbase_csf_mem_flags.h>
+
+/* Kernel-side only flags allocated from 63 bit downwards */
+
+/* The first available bit which can be used to define new memory flag
+ * if needed. It should be decremented by one once new flag is added
+ * and BASEP_MEM_FLAGS_NR_BITS should be incremented accordingly
+ */
+#define BASEP_MEM_FIRST_FREE_FLAG ((base_mem_alloc_flags)1 << 61)
+
+#endif /* _KBASE_CSF_MEM_FLAGS_H_ */

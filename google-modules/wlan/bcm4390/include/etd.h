@@ -117,33 +117,14 @@ typedef enum etd_subcode_psmassert {
 	ETDSC_PSMAS_SENSORC_CX_WRONG_TX_CHAIN	= 103,	/* TX attempted with inhibited TX Chain */
 } etd_subcode_psmassert_t;
 
-/* following is to address cases when subcodes data collection is skipped due to errors like
- * clock/memcpy failures etc. These are mainly used for reinit cases for MAC/phy paths with
- * general failures due to which no tag/subcode are updated. This leads to difficulty in
- * identification of reinit cases. subcode's MSB 8 bits are used here for identification.
- */
-#define ETD_SUBCODE_ERR_MASK			(0xFF000000u)
-#define ETD_SUBCODE_ERR_SHIFT			(24u)
-#define ETD_SUBCODE_ERR_UPDATE(subcode, ec)	(((subcode) & ~ETD_SUBCODE_ERR_MASK) |	\
-							(ec << ETD_SUBCODE_ERR_SHIFT))
-
-/* ec is one of below */
-#define ETD_SUBCODE_ERR_NOCLK			(0x01u)
-#define ETD_SUBCODE_ERR_DATACP			(0x02u)
-#define ETD_SUBCODE_ERR_REGCP			(0x03u)
-#define ETD_SUBCODE_ERR_PHYDMP			(0x04u)
-#define ETD_SUBCODE_ERR_SLEPT			(0x05u)
-#define ETD_SUBCODE_ERR_MAXLEN			(0x06u)
-#define ETD_SUBCODE_ERR_OTHREINIT		(0x07u)
-
 /* sub codes corresponding to TAG_TRAP_ERR_ATTN. This is of the format:
  *  31.........16		15 ........ 0
  *  wlan err attn codes		cmn err attn codes
  */
 #define ETDSC_ERR_ATTN_CMN_MASK				(0xFFFFu)
-#define ETDSC_ERR_ATTN_CMN_SHIFT			(0u)
+#define ETDSC_ERR_ATTN_CMN_SHIFT			(0x0u)
 #define ETDSC_ERR_ATTN_FN0_MASK				(0xFFFF0000u)
-#define ETDSC_ERR_ATTN_FN0_SHIFT			(16u)
+#define ETDSC_ERR_ATTN_FN0_SHIFT			(0x16u)
 
 /* cmn */
 #define ETDSC_PCIE_ERR_ATTN_CMN_UNKNOWNTYPE		(0x1u << 9u)	/* Unknown Header Type err
@@ -780,11 +761,9 @@ typedef struct hnd_ext_trap_fb_mem_err {
 #if defined(ETD) && !defined(WLETD)
 #define ETD_SW_FLAG_MEM		0x00000001
 
-typedef uint8* (*etd_cb_t)(void *arg, trap_t *tr, uint8 *dst, uint *dst_maxlen);
-
 int etd_init(osl_t *osh);
-int etd_register_trap_ext_callback(etd_cb_t cb, void *arg);
-int etd_register_trap_ext_callback_late(etd_cb_t cb, void *arg);
+int etd_register_trap_ext_callback(void *cb, void *arg);
+int (etd_register_trap_ext_callback_late)(void *cb, void *arg);
 uint32 *etd_get_trap_ext_data(void);
 uint32 etd_get_trap_ext_swflags(void);
 void etd_set_trap_ext_swflag(uint32 flag);

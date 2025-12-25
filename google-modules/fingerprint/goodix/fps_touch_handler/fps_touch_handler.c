@@ -663,20 +663,6 @@ static long fth_ioctl(
 			drvdata->fd_touch.up_config.bottom);
 		break;
 	}
-	case FTH_IOCTL_GET_TOUCH_DEVICE_STATUS:
-	{
-		struct fth_touch_device_status status;
-
-		status.is_connected = drvdata->input_touch_dev != NULL;
-		rc = copy_to_user((void __user *)priv_arg,
-				&status, sizeof(status));
-		if (rc != 0) {
-			pr_err("Failed to copy touch device status: %d\n", rc);
-			rc = -EFAULT;
-			goto end;
-		}
-		break;
-	}
 	default:
 		pr_err("invalid cmd %d\n", cmd);
 		rc = -ENOIOCTLCMD;
